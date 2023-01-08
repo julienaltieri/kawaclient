@@ -8,3 +8,4 @@
 !/src/components/*
 !/src/fonts/*
 !/src/processors/*
+!.gitignore
