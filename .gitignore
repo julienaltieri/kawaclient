@@ -4,4 +4,7 @@
 !/src/*
 !/public/*
 !package.json
-!*/
+!/src/assests/*
+!/src/components/*
+!/src/fonts/*
+!/src/processors/*
