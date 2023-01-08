@@ -1,11 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 *
 
-!/src/
-!/public/*
+!/src/**
+!/public/**
 !package.json
-!/src/assests/*
-!/src/components/*
-!/src/fonts/*
-!/src/processors/*
 !.gitignore
