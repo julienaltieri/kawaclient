@@ -345,20 +345,26 @@ export class GenericChartView extends GenericAnalysisView{
 		/*OR: implement on long press only: https://stackoverflow.com/questions/6139225/how-to-detect-a-long-touch-pressure-with-javascript-for-android-and-iphone*/
 		let date = d[0].x
 		let ans = this.getAnnotationsAtDate(d[0].x)
-		return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
+		if(Core.isMobile()){
+			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
+				<AnnotationInput	controller={ModalManager.currentModalController} 
+									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
+									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){resolve(state?.inputValue)}}).catch(e => {})
+		}else {
+			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
 				<AnnotationInput 	controller={ModalManager.currentModalController} 
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
-									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {
-			if(buttonIndex==1){
-				let input = state?.inputValue
-				if(input==""){this.props.stream.saveAnnotation(date,"").then(refreshLiveRenderComponents)}
-				else if(!input){console.log("do nothing")}
-				else{
-					let toSave = input.split('\n').map(a => a.trim()).filter(a => a!="").join("\n")
-					this.props.stream.saveAnnotation(date,toSave).then(refreshLiveRenderComponents)
-				}
+									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){resolve(state?.inputValue)}}).catch(e => {})
+		}
+
+		const resolve = (input) => {
+			if(input==""){this.props.stream.saveAnnotation(date,"").then(refreshLiveRenderComponents)}
+			else if(!input){console.log("do nothing")}
+			else{
+				let toSave = input.split('\n').map(a => a.trim()).filter(a => a!="").join("\n")
+				this.props.stream.saveAnnotation(date,toSave).then(refreshLiveRenderComponents)
 			}
-		}).catch(e => {})
+		}
 	}
 	getAnnotationsAtDate(d){
 		let s = this.props.analysis?.stream //the stream this of this graph

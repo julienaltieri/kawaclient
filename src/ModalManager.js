@@ -404,7 +404,7 @@ export class ModalContainer extends BaseComponent{
 				</ModalBaseMobile>
 			</ModalWrapper>)
 		}else{
-			return (<ModalWrapper data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
+			return (<ModalWrapper data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
 				<ModalBase>
 					{this.state.content}
 				</ModalBase>
@@ -437,7 +437,7 @@ const ModalBase = styled.div`
     flex-grow: 0;
     width: 44rem;
     box-shadow: 0 3px 14px 8px #0000001f;
-    border-radius: 0.1rem;
+    border-radius: ${DesignSystem.borderRadius};
 `
 const ModalBaseMobile = styled.div`
 	background: ${DesignSystem.getStyle().modalBackground};
