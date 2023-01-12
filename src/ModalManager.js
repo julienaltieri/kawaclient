@@ -18,6 +18,7 @@ const utils = require('./utils.js')
 - ModalWithComponent is great for custom implementations that can hold a state, but require a specific treatment for the promise callback Then() to return the state of the component. See example with SingleInput
 */
 
+const animationTime = 200//on mobile, controls the speed at which the modal comes from the bottom
 
 class ModalManager{
 	presentModalIn(modalController,component){//component must implement presentModal(modal) and unmountModal(modal) methods
@@ -360,7 +361,11 @@ export class ModalController{
 	getParent(){return this.parent}
 	registerModal(modal){this.modal = modal; this.state.modalContentState = modal.state.content}
 	then(){return this.promise.then.apply(this.promise, arguments)}
-	hide(){instance.dismissModal(this)}
+	hide(){
+		this.modal.updateState({visible:false}).then(() => {
+			setTimeout(() => instance.dismissModal(this),animationTime)//leaves time to play the animation
+		})
+	}
 	setPrimaryButtonDisabled(b){
 		this.state = {...this.state, ...{primaryButtonDisabled:b}};
 		this.modal.refreshContent();
@@ -384,18 +389,27 @@ export class ModalContainer extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state = {
-			controller: props.controller
+			controller: props.controller,
+			visible:false
 		} 
 		props.controller.registerModal(this)
 	}
-	componentDidMount(){this.setState({...this.state,content:this.state.controller.getContent(this)})}
+	componentDidMount(){this.setState({...this.state,visible:true,content:this.state.controller.getContent(this)})}
 	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
 	render(){
-	return (<ModalWrapper data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
-		<ModalBase>
-			{this.state.content}
-		</ModalBase>
-	</ModalWrapper>)
+		if(Core.isMobile()){
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+				<ModalBaseMobile visible={this.state.visible}>
+					{this.state.content}
+				</ModalBaseMobile>
+			</ModalWrapper>)
+		}else{
+			return (<ModalWrapper data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
+				<ModalBase>
+					{this.state.content}
+				</ModalBase>
+			</ModalWrapper>)
+		}
 	}
 }
 
@@ -412,7 +426,9 @@ const ModalWrapper = styled.div`
     display: flex;
     align-items: center;
     justify-content: center;
-        z-index: 3;
+	z-index: 3;
+	opacity: ${props => props.visible?1:0};
+    transition: ${animationTime/1000}s opacity;
 `
 
 const ModalBase = styled.div`
@@ -423,6 +439,19 @@ const ModalBase = styled.div`
     box-shadow: 0 3px 14px 8px #0000001f;
     border-radius: 0.1rem;
 `
+const ModalBaseMobile = styled.div`
+	background: ${DesignSystem.getStyle().modalBackground};
+    position: absolute;
+    bottom:0;
+    z-index:99;
+    flex-grow: 0;
+    width: 100vw;
+    box-shadow: 0 3px 14px 8px #0000001f;
+    border-radius: ${DesignSystem.borderRadius} ${DesignSystem.borderRadius} 0 0;
+    transform: translateY(${props => props.visible?"0":"100%"});
+    transition: ${animationTime/1000}s transform;
+`
+
 
 const TopBar = styled.div`
 	width: 100%;

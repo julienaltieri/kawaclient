@@ -328,6 +328,7 @@ class Core{
 		var txns = this.globalState.queriedTransactions.transactions.filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date))
 		return txns.filter(t => t.amazonOrderDetails.orderNumber==orderNumber)
 	}
+	isMobile(){return window.innerHeight > window.innerWidth}
 	isAmazonTransaction(t){return amazonRegex.test(t.description.toLowerCase()) && !amazonExcludeRegex.test(t.description.toLowerCase())}
 	refreshAmazonTransactions(){
 		//helper functions can convenience
