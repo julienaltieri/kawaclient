@@ -119,7 +119,7 @@ export default class MiniGraph extends GenericChartView{
      		{this.state.hovering?null:<MiniToolTip scale={{ x: "time", y:"linear" }} datum={this.data.slice(this.projectionLine?-1:-2)[0]}/>}
      	</V.VictoryChart>
      	</MiniGraphContainer>
-     	{(this.state.hovering && this.hoverData[0]?.x && this.getAnnotationsAtDate(this.hoverData[0]?.x).length)?
+     	{(!Core.isMobile() && this.state.hovering && this.hoverData[0]?.x && this.getAnnotationsAtDate(this.hoverData[0]?.x).length)?
      		<AnnotationTooltip	shouldOverrideOverflow={this.props.shouldOverrideOverflow}
      							showAbove={this.hoverData[0].y>0} containerSVGWidth={this.svgClientSize.width} containerSVGHeight={this.svgClientSize.height}
      							scale={{x: u => u/this.style.chartWidth,y: u=> u/this.style.chartHeight}} 

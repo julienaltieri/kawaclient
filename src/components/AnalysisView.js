@@ -285,11 +285,20 @@ class AnnotationInput extends BaseComponent{
 		return dateformat(t,f)
 	}
 	render(){
-		return(<div>
-			<div style={{marginBottom:"1rem"}}>{this.props.stream.name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>
-			<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange.bind(this)}/>
-			</div>
-		)
+		if(this.props.viewMode){
+			console.log(this.props.annotations)
+			return(<div>
+{/*				<div style={{marginBottom:"1rem"}}>{this.props.stream.name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>
+*/}				<div>{JSON.stringify(this.props.annotations)}</div>
+				</div>
+			)
+		}else{
+			return(<div>
+				<div style={{marginBottom:"1rem"}}>{this.props.stream.name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>
+				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange.bind(this)}/>
+				</div>
+			)
+		}
 	}
 
 }
@@ -339,6 +348,13 @@ export class GenericChartView extends GenericAnalysisView{
 		if(--this.voronoiCount>-1){return}
 		else{this.voronoiCount = 0;this.onExit(d)}
 	}
+	getFormattedDate(t,periodName){
+		let p = periodName, f="mm/dd";
+		if(p == Period.quarterly.name){return "Q"+Math.ceil((new Date(t).getUTCMonth()+1)/3)}
+		else if([Period.monthly.name,Period.bimonthly.name].indexOf(p)>-1){f= "mmmm"}
+		else if(p==Period.yearly.name){f= "yyyy"}
+		return dateformat(t,f)
+	}
 	handleClick(d){
 		//TODO
 		/*If mobile, only trigger the add annotation dialog if add annotation is aready visible for that data point*/
@@ -346,8 +362,8 @@ export class GenericChartView extends GenericAnalysisView{
 		let date = d[0].x
 		let ans = this.getAnnotationsAtDate(d[0].x)
 		if(Core.isMobile()){
-			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
-				<AnnotationInput	controller={ModalManager.currentModalController} 
+			return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name +" - "+ this.getFormattedDate(new Date(date),this.props.analysis.subReportingPeriod.name),
+				<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true}
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
 									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){resolve(state?.inputValue)}}).catch(e => {})
 		}else {
@@ -547,6 +563,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		</SharedPropsWrapper>)
 	}
 	renderToolTip(){
+		if(Core.isMobile()){return}
 		const configFromChildName = x => {return {expenses:x=="expensesDots", savings:x=="savingsDots", income:x=="savingsDots"}}
 		return (<ConditionalToolTip ref={this.registerMouseMoveListener()} shouldShow={() => this.hoveredDataPoint && this.getAnnotationsAtDate(this.hoveredDataPoint.x,configFromChildName(this.hoveredDataPoint.childName)).length}
 			showAbove={() => this.hoveredDataPoint.childName=="savingsDots"} svgClientSize={() => this.svgClientSize}
