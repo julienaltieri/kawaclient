@@ -66,21 +66,25 @@ export const ModalTemplates = {
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
-	ModalWithComponent: (title,component,buttonArray) => (that)=> {
+	ModalWithComponent: (title,component,buttonArray,subtitle) => (that)=> {
 		if(!buttonArray){buttonArray = [{name:"Cancel"},{name:"Confirm",primary:true}]}
 
-		return (<BaseModalWrapper>
-				<TopBar>
-					{/*<div style={{width: "1rem"}}></div>*/}
-					<Title>{title}</Title>
-					{<TopBarButton onClick={(e) => that.state.controller.onDismiss(e)}>✕</TopBarButton>}
+		return (<BaseModalWrapper isMobile={Core.isMobile()}>
+				<TopBar isMobile={Core.isMobile()}>
+					<div style={{width:"100%"}}>
+						<div style={{"display":"flex","flexDirection":"row","justifyContent":"space-between","alignItems":"center"}}>
+							<Title isMobile={Core.isMobile()}>{title}</Title>
+							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>✕</TopBarButton>
+						</div>
+						{subtitle?<Subtitle>{subtitle}</Subtitle>:""}
+					</div>
 				</TopBar>
 				<MainContent>{component}</MainContent>
-				<ActionButtons>
+				{buttonArray.length?<ActionButtons>
 					{buttonArray.map((b,i) => {
 						return <ActionButton primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</ActionButton>
 					})}
-				</ActionButtons>
+				</ActionButtons>:<div style={{marginBottom:"1rem"}}></div>}
 			</BaseModalWrapper>
 		)
 	}	
@@ -455,29 +459,41 @@ const ModalBaseMobile = styled.div`
 
 const TopBar = styled.div`
 	width: 100%;
-	height: 3rem;
+	height: ${props => props.isMobile?"auto":"3rem"};
 	display: flex;
-	justify-content: center;
+	justify-content: ${props => props.isMobile?"flex-start":"center"};
     align-items: center;
-    margin-bottom: 2.5rem;
+    margin-top: ${props => props.isMobile?0:0}rem;
+    margin-bottom: ${props => props.isMobile?2:2.5}rem;
 `
 const Title = styled.div`
 	flex-grow:1;
-	font-size:2rem;
-	text-align: center;
-	font-weight: bold;
+	font-size: ${props => props.isMobile?1.4:2}rem;
+	text-align: ${props => props.isMobile?"left":"center"};
+	font-weight: ${props => props.isMobile?"normal":"bold"};;
+	color: ${DesignSystem.getStyle().bodyText};
+`
+const Subtitle = styled.div`
+	flex-grow:1;
+	font-size: 0.8rem;
+	text-align: "left";
+	font-weight: normal;
+	margin-top: 0.3rem;
 `
 const TopBarButton = styled.div`
 	width: 1rem;
     cursor: pointer;
-    position: absolute;
+    position:  ${props => props.isMobile?"static":"absolute"};
     top: 1.5rem;
     right: 1.5rem;
     color: #BDBDBD;
+    -webkit-user-select: none; /* Safari */
+  	-ms-user-select: none; /* IE 10 and IE 11 */
+  	user-select: none; /* Standard syntax */
 `
 
 const BaseModalWrapper = styled.div`
-	padding: 3rem;
+	padding: ${props => props.isMobile?1.5:3}rem;
     box-sizing: border-box;
     position: relative;
     height: 100%;

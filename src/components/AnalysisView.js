@@ -13,6 +13,7 @@ import dateformat from "dateformat";
 import ReactDOM from 'react-dom';
 import * as V from 'victory';
 import React from "react"
+import {StyledLink} from "./StreamAuditView"
 const _ = require('lodash');
 const utils = require('../utils.js');
 const stats = require('../processors/Statistics.js')
@@ -268,10 +269,16 @@ class SeriesDescriptor{
 class AnnotationInput extends BaseComponent{
 	constructor(props){
 		super(props)
+		let annotationBody = this.props.annotations.filter(an => an.streamId==this.props.stream.id)[0]?.body
 		this.state={
-			inputValue:this.props.annotations.filter(an => an.streamId==this.props.stream.id)[0]?.body,
-			controller: props.controller
+			inputValue: annotationBody,
+			controller: props.controller,
+			editMode: this.props.stream.isTerminal() && !annotationBody, //start in edit mode if a terminal stream doesn't have a body
+			editStream: (this.props.stream.isTerminal() && !annotationBody)?this.props.stream:undefined
 		}
+		this.handleOnChange = this.handleOnChange.bind(this)
+		this.onEdit = this.onEdit.bind(this)
+		this.onConfirm = this.onConfirm.bind(this)
 	}
 	handleOnChange(e){
 		this.updateState({inputValue:e.target.value})
@@ -284,24 +291,39 @@ class AnnotationInput extends BaseComponent{
 		else if(p==Period.yearly.name){f= "yyyy"}
 		return dateformat(t,f)
 	}
+	onEdit(stream){
+		this.updateState({editMode:true,editStream:stream,inputValue:this.props.annotations.filter(an => an.streamId == stream.id)[0]?.body})
+	}
+	onConfirm(e){
+		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.reportSchedule.reportingDate,this.state.inputValue).then(() => {
+			this.updateState({rerender:true})//must update with the latest value / regenerate the props (not possible) / maintain a stateful annotation map
+		})
+		this.updateState({editMode:false,editStream:undefined})	
+	} 
 	render(){
-		if(this.props.viewMode){
-			console.log(this.props.annotations)
-			return(<div>
-{/*				<div style={{marginBottom:"1rem"}}>{this.props.stream.name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>
-*/}				<div>{JSON.stringify(this.props.annotations)}</div>
-				</div>
-			)
+		if(this.props.viewMode && !this.state.editMode){
+			return(<div>{AnnotationTooltip.RenderContent(this.props.annotations,{enableEditOption:true,onEdit:this.onEdit,disableTitle:this.props.stream.isTerminal()})}</div>)
 		}else{
 			return(<div>
-				<div style={{marginBottom:"1rem"}}>{this.props.stream.name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>
-				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange.bind(this)}/>
+				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>}
+				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange}/>
+				{Core.isMobile()?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute","top":"1.5rem","right":"1.5rem","width":"1.5rem","fontSize":"1.2rem","height":"1.5rem",transform: "rotate(45deg)","background":DesignSystem.getStyle().modalBackground}}>⅃</div>:""}
 				</div>
 			)
 		}
 	}
 
+	static SaveAnnotation(stream,date,input){
+		if(input==""){return stream.saveAnnotation(date,"").then(refreshLiveRenderComponents)}
+		else if(!input){console.log("do nothing")}
+		else{
+			let toSave = input.split('\n').map(a => a.trim()).filter(a => a!="").join("\n")
+			return stream.saveAnnotation(date,toSave).then(refreshLiveRenderComponents)
+		}
+	}
+
 }
+
 
 //Victory charts
 export class GenericChartView extends GenericAnalysisView{
@@ -362,25 +384,18 @@ export class GenericChartView extends GenericAnalysisView{
 		let date = d[0].x
 		let ans = this.getAnnotationsAtDate(d[0].x)
 		if(Core.isMobile()){
-			return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name +" - "+ this.getFormattedDate(new Date(date),this.props.analysis.subReportingPeriod.name),
+			if(!this.props.analysis.stream.isTerminal() && !ans.length){return}
+			return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
 				<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true}
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
-									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){resolve(state?.inputValue)}}).catch(e => {})
+									stream={this.props.analysis.stream}/>,[],this.getFormattedDate(new Date(date),this.props.analysis.subReportingPeriod.name))(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 		}else {
 			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
 				<AnnotationInput 	controller={ModalManager.currentModalController} 
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
-									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){resolve(state?.inputValue)}}).catch(e => {})
+									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 		}
 
-		const resolve = (input) => {
-			if(input==""){this.props.stream.saveAnnotation(date,"").then(refreshLiveRenderComponents)}
-			else if(!input){console.log("do nothing")}
-			else{
-				let toSave = input.split('\n').map(a => a.trim()).filter(a => a!="").join("\n")
-				this.props.stream.saveAnnotation(date,toSave).then(refreshLiveRenderComponents)
-			}
-		}
 	}
 	getAnnotationsAtDate(d){
 		let s = this.props.analysis?.stream //the stream this of this graph
@@ -688,6 +703,18 @@ class CustomVoronoiContainer extends V.VictoryVoronoiContainer{
 }
 
 export class AnnotationTooltip extends BaseComponent{
+	static RenderContent(content,options){
+		return (<div>{content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start"}} key={i}> 
+			<div style={{height:options?.disableTitle?0:"auto","display":"flex","alignItems":"baseline","flexDirection":"row","justifyContent":"space-between","width":"100%"}}>
+				{options?.disableTitle?<div></div>:<div style={{fontWeight:900,marginTop: "0.4rem",marginBottom:"0.2rem"}}>{Core.getStreamById(a.streamId).name}</div>}
+				{options?.enableEditOption?<StyledLink onClick={() => options.onEdit(Core.getStreamById(a.streamId))}>edit</StyledLink>:""}
+			</div>
+			{a.body.split('\n').map((a,i) => <div key={i} style={{display:"flex",flexDirection: "row",justifyContent: "flexStart",marginBottom:"0.2rem"}}>
+				<div style={{margin: "0 0.4rem"}}>•</div>
+				<div style={{textAlign: "start"}}>{a}</div>
+			</div>)}
+		</div>)}</div>)
+	} 
 	render(){
 		return (<AnnotationTooltipContainer shouldOverrideOverflow={this.props.shouldOverrideOverflow} containerSVGWidth={this.props.containerSVGWidth} containerSVGHeight={this.props.containerSVGHeight} datum={this.props.datum} scale={this.props.scale} showAbove={this.props.showAbove}>
 			<TooltipBackdrop/>
@@ -702,10 +729,7 @@ export class AnnotationTooltip extends BaseComponent{
 							paddingBottom: "0.5rem",
 							borderBottom: "1px solid "+DesignSystem.getStyle().UIElementBackground
 			}}>{this.props.reportDate}</div>
-			{this.props.content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start"}} key={i}> 
-			<div style={{fontWeight:900,marginTop: "0.4rem",marginBottom:"0.2rem"}}>{Core.getStreamById(a.streamId).name}</div>
-			{a.body.split('\n').map((a,i) => <div key={i}>• {a}</div>)}
-		</div>)}
+			{AnnotationTooltip.RenderContent(this.props.content)}
 
 	</AnnotationTooltipContainer>)}
 }

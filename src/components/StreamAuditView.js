@@ -251,7 +251,7 @@ const AuditViewTitle = styled.div`
 	margin-bottom:0.3rem;
 	font-weight:bold;
 `
-const StyledLink = styled.a`
+export const StyledLink = styled.a`
 	height: 1rem;
     font-size: 0.8rem;
     text-decoration: underline;
