@@ -25,6 +25,7 @@ class ModalManager{
 		this.currentModalController = modalController
 		modalController.setParent(component);
 		component.presentModal(modalController);
+		modalController.willShow();
 		return modalController.then()
 	}
 
@@ -365,7 +366,9 @@ export class ModalController{
 	getParent(){return this.parent}
 	registerModal(modal){this.modal = modal; this.state.modalContentState = modal.state.content}
 	then(){return this.promise.then.apply(this.promise, arguments)}
+	willShow(){document.body.style.overflow = 'hidden';}
 	hide(){
+		document.body.style.overflow = 'unset';
 		this.modal.updateState({visible:false}).then(() => {
 			setTimeout(() => instance.dismissModal(this),animationTime)//leaves time to play the animation
 		})

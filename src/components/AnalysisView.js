@@ -269,16 +269,22 @@ class SeriesDescriptor{
 class AnnotationInput extends BaseComponent{
 	constructor(props){
 		super(props)
-		let annotationBody = this.props.annotations.filter(an => an.streamId==this.props.stream.id)[0]?.body
+		let annotationBody = this.getAnnotations()[0]?.body
 		this.state={
 			inputValue: annotationBody,
 			controller: props.controller,
 			editMode: this.props.stream.isTerminal() && !annotationBody, //start in edit mode if a terminal stream doesn't have a body
-			editStream: (this.props.stream.isTerminal() && !annotationBody)?this.props.stream:undefined
+			editStream: (this.props.stream.isTerminal() && !annotationBody)?this.props.stream:undefined,
+			annotationSnapshot: this.props.annotations
 		}
 		this.handleOnChange = this.handleOnChange.bind(this)
 		this.onEdit = this.onEdit.bind(this)
 		this.onConfirm = this.onConfirm.bind(this)
+	}
+	getAnnotations(stream){
+		if(!stream){stream = this.props.stream}
+		return (stream.getAnnotations()).filter(an => new Date(an.date).getTime() == this.props.date.getTime()
+			&& ((stream.isTerminal() && stream.id==an.streamId) || stream.hasTerminalChild(an.streamId)))
 	}
 	handleOnChange(e){
 		this.updateState({inputValue:e.target.value})
@@ -292,21 +298,24 @@ class AnnotationInput extends BaseComponent{
 		return dateformat(t,f)
 	}
 	onEdit(stream){
-		this.updateState({editMode:true,editStream:stream,inputValue:this.props.annotations.filter(an => an.streamId == stream.id)[0]?.body})
+		this.updateState({editMode:true,editStream:stream,inputValue:this.getAnnotations(stream)[0]?.body})
 	}
 	onConfirm(e){
-		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.reportSchedule.reportingDate,this.state.inputValue).then(() => {
-			this.updateState({rerender:true})//must update with the latest value / regenerate the props (not possible) / maintain a stateful annotation map
-		})
-		this.updateState({editMode:false,editStream:undefined})	
+		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.reportSchedule.reportingDate,this.state.inputValue)
+		this.updateState({editMode:false,editStream:undefined,annotationSnapshot:this.getAnnotations()})
+		if(!!this.props.shouldDismiss){
+			if(this.props.stream.isTerminal() && this.state.inputValue=="" || !this.props.stream.isTerminal() && this.getAnnotations().length==0){
+				this.props.shouldDismiss(this.state.inputValue)
+			}
+		}	
 	} 
 	render(){
 		if(this.props.viewMode && !this.state.editMode){
-			return(<div>{AnnotationTooltip.RenderContent(this.props.annotations,{enableEditOption:true,onEdit:this.onEdit,disableTitle:this.props.stream.isTerminal()})}</div>)
+			return(<div>{AnnotationTooltip.RenderContent(this.state.annotationSnapshot,{enableEditOption:true,onEdit:this.onEdit,disableTitle:this.props.stream.isTerminal()})}</div>)
 		}else{
 			return(<div>
 				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>}
-				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange}/>
+				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange} onFocus={e => {e.target.setSelectionRange(e.target.value.length,e.target.value.length)}}/>
 				{Core.isMobile()?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute","top":"1.5rem","right":"1.5rem","width":"1.5rem","fontSize":"1.2rem","height":"1.5rem",transform: "rotate(45deg)","background":DesignSystem.getStyle().modalBackground}}>⅃</div>:""}
 				</div>
 			)
@@ -378,24 +387,20 @@ export class GenericChartView extends GenericAnalysisView{
 		return dateformat(t,f)
 	}
 	handleClick(d){
-		//TODO
-		/*If mobile, only trigger the add annotation dialog if add annotation is aready visible for that data point*/
-		/*OR: implement on long press only: https://stackoverflow.com/questions/6139225/how-to-detect-a-long-touch-pressure-with-javascript-for-android-and-iphone*/
 		let date = d[0].x
 		let ans = this.getAnnotationsAtDate(d[0].x)
 		if(Core.isMobile()){
 			if(!this.props.analysis.stream.isTerminal() && !ans.length){return}
 			return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
-				<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true}
+				<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} date={this.getReportAtDate(new Date(date)).reportingDate} shouldDismiss={v => {if(v==""){ModalManager.currentModalController.hide()}}}
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
 									stream={this.props.analysis.stream}/>,[],this.getFormattedDate(new Date(date),this.props.analysis.subReportingPeriod.name))(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 		}else {
 			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
-				<AnnotationInput 	controller={ModalManager.currentModalController} 
+				<AnnotationInput 	controller={ModalManager.currentModalController} date={this.getReportAtDate(new Date(date)).reportingDate} 
 									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
 									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 		}
-
 	}
 	getAnnotationsAtDate(d){
 		let s = this.props.analysis?.stream //the stream this of this graph
