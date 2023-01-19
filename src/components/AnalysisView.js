@@ -392,19 +392,10 @@ export class GenericChartView extends GenericAnalysisView{
 		let ans = this.getAnnotationsAtDate(d[0].x)
 		let p = this.props.analysis.subReportingPeriod;
 		if(!this.props.analysis.stream.isTerminal() && !ans.length){return}//don't do anything on empty compound stream annotations
-/*
-		return (Core.isMobile()?Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
-						<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that)):
-								Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
-						<AnnotationInput 	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>)(that)))
-			.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})*/
-
 		return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
-						<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that))
-					.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
+			<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
+								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that))
+			.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 
 
 	}
