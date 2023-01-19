@@ -77,7 +77,7 @@ export const ModalTemplates = {
 							<Title isMobile={Core.isMobile()}>{title}</Title>
 							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>✕</TopBarButton>
 						</div>
-						{subtitle?<Subtitle>{subtitle}</Subtitle>:""}
+						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
 				</TopBar>
 				<MainContent>{component}</MainContent>
@@ -366,7 +366,7 @@ export class ModalController{
 	getParent(){return this.parent}
 	registerModal(modal){this.modal = modal; this.state.modalContentState = modal.state.content}
 	then(){return this.promise.then.apply(this.promise, arguments)}
-	willShow(){document.body.style.overflow = 'hidden';}
+	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
 	hide(){
 		document.body.style.overflow = 'unset';
 		this.modal.updateState({visible:false}).then(() => {
@@ -442,7 +442,7 @@ const ModalBase = styled.div`
 	background: ${DesignSystem.getStyle().modalBackground};
     position: relative;
     flex-grow: 0;
-    width: 44rem;
+    min-width: 30rem;
     box-shadow: 0 3px 14px 8px #0000001f;
     border-radius: ${DesignSystem.borderRadius};
 `
@@ -479,7 +479,7 @@ const Title = styled.div`
 const Subtitle = styled.div`
 	flex-grow:1;
 	font-size: 0.8rem;
-	text-align: "left";
+	text-align: ${props => props.isMobile?"left":"center"};
 	font-weight: normal;
 	margin-top: 0.3rem;
 `

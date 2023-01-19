@@ -271,11 +271,12 @@ class AnnotationInput extends BaseComponent{
 		super(props)
 		let annotationBody = this.getAnnotations()[0]?.body
 		this.state={
-			inputValue: annotationBody,
+			inputValue: annotationBody || "",
+			previousInputValue: annotationBody || "",
 			controller: props.controller,
 			editMode: this.props.stream.isTerminal() && !annotationBody, //start in edit mode if a terminal stream doesn't have a body
 			editStream: (this.props.stream.isTerminal() && !annotationBody)?this.props.stream:undefined,
-			annotationSnapshot: this.props.annotations
+			annotationSnapshot: this.getAnnotations()
 		}
 		this.handleOnChange = this.handleOnChange.bind(this)
 		this.onEdit = this.onEdit.bind(this)
@@ -291,17 +292,17 @@ class AnnotationInput extends BaseComponent{
 		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...{inputValue:e.target.value}}
 	}
 	getFormattedDate(t){
-		let p = this.props.reportSchedule.period.name, f="mm/dd";
+		let p = this.props.period.name, f="mm/dd";
 		if(p == Period.quarterly.name){return "Q"+Math.ceil((new Date(t).getUTCMonth()+1)/3)}
 		else if([Period.monthly.name,Period.bimonthly.name].indexOf(p)>-1){f= "mmmm"}
 		else if(p==Period.yearly.name){f= "yyyy"}
 		return dateformat(t,f)
 	}
 	onEdit(stream){
-		this.updateState({editMode:true,editStream:stream,inputValue:this.getAnnotations(stream)[0]?.body})
+		this.updateState({editMode:true,editStream:stream,inputValue:this.getAnnotations(stream)[0]?.body||"",previousInputValue:((this.getAnnotations(stream)[0]?.body)||"")})
 	}
 	onConfirm(e){
-		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.reportSchedule.reportingDate,this.state.inputValue)
+		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.date,this.state.inputValue)
 		this.updateState({editMode:false,editStream:undefined,annotationSnapshot:this.getAnnotations()})
 		if(!!this.props.shouldDismiss){
 			if(this.props.stream.isTerminal() && this.state.inputValue=="" || !this.props.stream.isTerminal() && this.getAnnotations().length==0){
@@ -314,9 +315,9 @@ class AnnotationInput extends BaseComponent{
 			return(<div>{AnnotationTooltip.RenderContent(this.state.annotationSnapshot,{enableEditOption:true,onEdit:this.onEdit,disableTitle:this.props.stream.isTerminal()})}</div>)
 		}else{
 			return(<div>
-				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.reportSchedule.reportingDate)}</div>}
+				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.date)}</div>}
 				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange} onFocus={e => {e.target.setSelectionRange(e.target.value.length,e.target.value.length)}}/>
-				{Core.isMobile()?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute","top":"1.5rem","right":"1.5rem","width":"1.5rem","fontSize":"1.2rem","height":"1.5rem",transform: "rotate(45deg)","background":DesignSystem.getStyle().modalBackground}}>⅃</div>:""}
+				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","width":"1.5rem","fontSize":"1.2rem","height":"1.5rem",transform: "rotate(45deg)","background":DesignSystem.getStyle().modalBackground}}>⅃</div>:""}
 				</div>
 			)
 		}
@@ -387,20 +388,25 @@ export class GenericChartView extends GenericAnalysisView{
 		return dateformat(t,f)
 	}
 	handleClick(d){
-		let date = d[0].x
+		let date = new Date(d[0].x)
 		let ans = this.getAnnotationsAtDate(d[0].x)
-		if(Core.isMobile()){
-			if(!this.props.analysis.stream.isTerminal() && !ans.length){return}
-			return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
-				<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} date={this.getReportAtDate(new Date(date)).reportingDate} shouldDismiss={v => {if(v==""){ModalManager.currentModalController.hide()}}}
-									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
-									stream={this.props.analysis.stream}/>,[],this.getFormattedDate(new Date(date),this.props.analysis.subReportingPeriod.name))(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
-		}else {
-			return Core.presentModal((that) => ModalTemplates.ModalWithComponent("Notes",
-				<AnnotationInput 	controller={ModalManager.currentModalController} date={this.getReportAtDate(new Date(date)).reportingDate} 
-									annotations={ans} reportSchedule={{reportingDate: new Date(date),period: this.props.analysis.subReportingPeriod}}
-									stream={this.props.analysis.stream}/>)(that)).then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
-		}
+		let p = this.props.analysis.subReportingPeriod;
+		if(!this.props.analysis.stream.isTerminal() && !ans.length){return}//don't do anything on empty compound stream annotations
+/*
+		return (Core.isMobile()?Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
+						<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
+											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that)):
+								Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
+						<AnnotationInput 	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
+											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>)(that)))
+			.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})*/
+
+		return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
+						<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
+											stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that))
+					.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
+
+
 	}
 	getAnnotationsAtDate(d){
 		let s = this.props.analysis?.stream //the stream this of this graph
