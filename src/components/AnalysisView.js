@@ -168,15 +168,38 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		}).catch(e => {})
 	}
 	render(){
+		let prevExp = 0;
+		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
+			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp}
+			prevExp = h.amount
+			return res
+		})
 		return (<div style={{width: "100%"}}>{	
 			this.props.analysis.getPeriodReports()
 			.sort(utils.sorters.desc(r => r.reportingDate))
 			.map((r,i) => (
-				<PeriodReportTransactionFeedView key={i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>)
-			)
+				<div>
+					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
+						<ExpectationChangePannel key={2*i+1+k}>
+							<div>{utils.formatDollarAmount(h.previousAmount,0,true)+" → "+utils.formatDollarAmount(h.newAmount,0,true)}</div>
+							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
+						</ExpectationChangePannel>
+					))}
+					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
+				</div>
+			))
 		}</div>)
 	}
 }
+
+const ExpectationChangePannel = styled.div`
+	font-size: 0.7rem;
+    padding: 0.7rem 0.5rem;
+    margin: 0.7rem 0;
+    background: ${DesignSystem.getStyle().warning+"55"};
+    border-radius: ${"0.3rem"};
+    color: ${DesignSystem.getStyle().bodyText};
+`
 
 //Represents a transaction feed for a given period
 class PeriodReportTransactionFeedView extends GenericPeriodReportView{

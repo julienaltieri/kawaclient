@@ -88,6 +88,8 @@ export default class MiniGraph extends GenericChartView{
 	render(){
 		this.data = undefined;// forces to recalculate data when refreshing
 		let k = this.getTickEveryK()
+		let ddd = new Date(new Date().getTime()-timeIntervals.oneDay*30).getTime()
+		let domainAxisVerticalPadding = this.svgToDomain(0,this.style.axisVerticalPadding).dy-this.svgToDomain(0,0).dy
 		return (<div style={{position:"relative",cursor:"default"}}>
 		<svg style={{position:"absolute",width:0}}><defs>
 	        <linearGradient id={"linear"+this.getMidY()} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -118,6 +120,7 @@ export default class MiniGraph extends GenericChartView{
 	          		axis:{"stroke":DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}
 	          	}}
 			 />
+			{this.props.stream.expAmountHistory?.map((h,i) => <V.VictoryLine key={1000+i} data={[{x:h.startDate.getTime(),y:-0.7*domainAxisVerticalPadding},{x:h.startDate.getTime(),y:0.7*domainAxisVerticalPadding}]} style={{data: {stroke:DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}}}/>) }
 			<V.VictoryLabel dy={-this.style.axisVerticalPadding} datum={{x:this.getMidX(),y:0}} textAnchor={"middle"} verticalAnchor={"end"} standalone={false} text={this.getTitle().toUpperCase()} style={{fill:DesignSystem.getStyle().bodyTextSecondary, fontSize: 15,fontFamily:"Inter",fontWeight:500}}/>
        		<V.VictoryLine  style={{data: {stroke: "url(#linear"+this.getMidY()+")",strokeWidth:this.style.chartStrokeWidth}}} data={this.getData()} />
        		{this.projectionLine?<V.VictoryLine style={{data: {stroke: this.getFillValue(this.data.slice(-1)[0].y),strokeWidth:this.style.chartStrokeWidth,strokeDasharray: "4, 2"}}} data={this.data.slice(-2)}/>:null}
