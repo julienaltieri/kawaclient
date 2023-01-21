@@ -101,8 +101,6 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 	getSecondaryPercentage(){
 		let date = this.props.analysis.reportingDate;
 		let period = this.props.analysis.reportingPeriod;//period being visualized in the display report - the histogram will aggregate data from other periods in the observation period
-		//let reportStartDate = period.previousDate(date);//calculates the subdivision index that corresponds to the beginning of the calendar period (1st of month, 1st day of the week, etc) - this makes the histogram exact even when aggregating data across periods of variable lenghts (ex: months)
-		//let calendarZero = (period.periodCalendarStart(date)-reportStartDate)/period.subdivision.getTimeIntervalFromDate(reportStartDate);//position of the new [0] (calendar start) in subdivision array
 		let n = Math.floor(period.getTimeSubdivisionsCount(period.previousDate(date)));//calculate subdivisions of the current period		
 		return 1-this.props.analysis.getCompletedSubdivisionsCount()/n
 	}
@@ -260,8 +258,12 @@ class SeriesDescriptor{
 	getEOYProjection(yArray){return yArray.length > this.chartContext.timeAxisBoundIndex?yArray[this.chartContext.timeAxisBoundIndex]:this.getTrend(yArray).slice(-1)[0]?.y}
 	getTimeSeries(series){return series.slice(0,this.chartContext.timeAxisBoundIndex+1).map((y,i) => {return {x:this.chartContext.xAccessor(this.chartContext.timeAxis[i]), y:y}})}
 	getTrend(yArray){
-		let fitIndex = yArray.length-1, {slope,yIntercept} = stats.trendLine(yArray.map((y,i)=> {return {x: this.chartContext.timeAxis[i].getTime(), y:y}}))
-		return this.chartContext.timeAxis.slice(fitIndex,this.chartContext.timeAxisBoundIndex+1).map(x => {return {x:this.chartContext.xAccessor(x), y: x*slope +yArray[fitIndex]-slope*this.chartContext.timeAxis[fitIndex]}})
+		let fitIndex = yArray.length-1, {slope,yIntercept} = stats.trendLine([...[0],...yArray].map((y,i)=> {return {x: this.chartContext.timeAxis[i].getTime(), y:y}}))
+		let res = this.chartContext.timeAxis.slice(fitIndex,this.chartContext.timeAxisBoundIndex+1).map(x => {return {
+			x:this.chartContext.xAccessor(x), 
+			y: x*slope +yArray[fitIndex]-slope*this.chartContext.timeAxis[fitIndex]
+		}})
+		return res
 	}
 }
 

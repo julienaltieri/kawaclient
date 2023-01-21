@@ -30,7 +30,7 @@ let analysisDate = reportingConfig.observationPeriod.nextDateFromNow(analysisRoo
 
 //if we're in the first period of the observation period, show the graph from the previous period
 let previousAnalysisDate = reportingConfig.observationPeriod.previousDate(analysisDate);
-let shouldShowContextForObservationPeriodTransition = () => ((new Date() - previousAnalysisDate)< reportingConfig.observationPeriod.subdivision.getTimeIntervalFromDate(previousAnalysisDate))
+let shouldShowContextForObservationPeriodTransition = () => ((new Date() - previousAnalysisDate)< 2*reportingConfig.observationPeriod.subdivision.getTimeIntervalFromDate(previousAnalysisDate))
 
 
 const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(analysisDate,s,txns,observationPeriod,subReportingPeriod))
