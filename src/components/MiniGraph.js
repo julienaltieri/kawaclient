@@ -14,7 +14,7 @@ export default class MiniGraph extends GenericChartView{
 
 		//data prep and projection display condition
 		this.n = this.props.analysis.getPeriodReports().length-1;
-		this.projectionLine = this.getPeriodReports()[this.n].isProjectable() || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2);
+		this.projectionLine = this.shouldDisplayProjection();
 		
 		//styling
 		this.style = {...this.style,
@@ -48,6 +48,13 @@ export default class MiniGraph extends GenericChartView{
 			this.data.push({x:this.dateToTickDate(r.reportingDate),y:delta})
 		})
 		return this.getData()
+	}
+	shouldDisplayProjection(){
+		let numberOfDayInCycle = Math.floor((new Date() - this.getPeriodReports()[this.n].reportingStartDate)/timeIntervals.oneDay)//where we are in the cycle
+		let cumsum = 0;
+		let cumulativeFrequency = this.props.analysis.getFrequencyHistogramAtDate(this.props.analysis.reportingDate).map(h => {cumsum+=h; return cumsum}).map(h => h/cumsum) //cumulative frequency throughout the cycle
+		return cumulativeFrequency[numberOfDayInCycle]>0.9 || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2)
+		//return this.getPeriodReports()[this.n].isProjectable() || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2)
 	}
 
 	//domain definition 

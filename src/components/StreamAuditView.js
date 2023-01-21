@@ -18,7 +18,7 @@ import {Period,createDate} from '../Time'
 const utils = require('../utils.js');
 
 const reportingConfig = {
-	startingDay: 21,
+	startingDay: 26,
 	startingMonth: 12, //december = 12
 	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
 }
