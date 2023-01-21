@@ -711,9 +711,9 @@ export class AnnotationTooltip extends BaseComponent{
 		return (<div>{content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start"}} key={i}> 
 			<div style={{height:options?.disableTitle?0:"auto","display":"flex","alignItems":"baseline","flexDirection":"row","justifyContent":"space-between","width":"100%"}}>
 				{options?.disableTitle?<div></div>:<div style={{fontWeight:900,marginTop: "0.4rem",marginBottom:"0.2rem"}}>{Core.getStreamById(a.streamId).name}</div>}
-				{options?.enableEditOption?<StyledLink onClick={() => options.onEdit(Core.getStreamById(a.streamId))}>edit</StyledLink>:""}
+				{options?.enableEditOption? <StyledLink style={{marginTop:options?.disableTitle?"0.2rem":0}} onClick={() => options.onEdit(Core.getStreamById(a.streamId))}>edit</StyledLink>:""}
 			</div>
-			{a.body.split('\n').map((a,i) => <div key={i} style={{display:"flex",flexDirection: "row",justifyContent: "flexStart",marginBottom:"0.2rem"}}>
+			{a.body.split('\n').map((a,i) => <div key={i} style={{display:"flex",flexDirection: "row",justifyContent: "flexStart",marginBottom:"0.2rem",marginRight:options?.enableEditOption?"3rem":0}}>
 				<div style={{margin: "0 0.4rem"}}>•</div>
 				<div style={{textAlign: "start"}}>{a}</div>
 			</div>)}
@@ -753,6 +753,7 @@ const AnnotationTooltipContainer = styled.div`
     width: max-content;
     padding: 0.75rem;
     min-width: 6rem;
+    max-width: 12rem;
     /*the formula for shouldOverrideOverflow is not fully understood. There is another dependency on the container width of TSCardContent in StreamAuditView*/
     left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*DesignSystem.barWidthRem):0) +props.scale.x(props.datum.dx)*props.containerSVGWidth||0}px;
     /**/

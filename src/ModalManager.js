@@ -443,6 +443,7 @@ const ModalBase = styled.div`
     position: relative;
     flex-grow: 0;
     min-width: 30rem;
+    max-width: 40rem;
     box-shadow: 0 3px 14px 8px #0000001f;
     border-radius: ${DesignSystem.borderRadius};
 `
