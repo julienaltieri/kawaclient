@@ -178,7 +178,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			this.props.analysis.getPeriodReports()
 			.sort(utils.sorters.desc(r => r.reportingDate))
 			.map((r,i) => (
-				<div>
+				<div key={i}>
 					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
 						<ExpectationChangePannel key={2*i+1+k}>
 							<div>{utils.formatDollarAmount(h.previousAmount,0,true)+" → "+utils.formatDollarAmount(h.newAmount,0,true)}</div>
@@ -197,7 +197,7 @@ const ExpectationChangePannel = styled.div`
     padding: 0.7rem 0.5rem;
     margin: 0.7rem 0;
     background: ${DesignSystem.getStyle().warning+"55"};
-    border-radius: ${"0.3rem"};
+    border-radius: ${DesignSystem.borderRadiusSmall};
     color: ${DesignSystem.getStyle().bodyText};
 `
 

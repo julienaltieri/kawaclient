@@ -17,7 +17,7 @@ class DesignSystem{
 		lightPurple: "#e0d6ff",
 		deepPurple: "#463e60",
 		lightGrey1: "#fefefe",
-		lightGrey2: "#f7f7f7",
+		lightGrey2: "#f3f3f7",
 		lightGrey2Trans: "#f7f7f78f",
 		lightGrey3: "#eeeeee",
 		lightGrey4: "#dddddd",
@@ -26,17 +26,19 @@ class DesignSystem{
 		darkGrey1: "#727272",
 		darkGrey2: "#525252",
 		darkGrey2Trans: "#52525233",
-		darkGrey3: "#353535",
+		darkGrey3: "#333339",
 		darkGrey4: "#1f2223",
 		black: "#000000",
 		white: "#ffffff",
 	};
 	borderRadius= "0.7rem";
+	borderRadiusSmall= "0.3rem";
 	barWidthRem=0.5;
 	styles = {
 		lightMode: {
 			bodyText: this.UIColors.darkGrey4,
 			bodyTextSecondary: this.UIColors.darkGrey2,
+			buttonDisabled: this.UIColors.lightGrey5,
 			pageBackground: this.UIColors.lightGrey1,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.vividBlue,
@@ -50,7 +52,7 @@ class DesignSystem{
 			inputFieldBackground: this.UIColors.pageBackground,
 			modalPrimaryButton: this.UIColors.brightBlue,
 			modalSecondaryButton: this.UIColors.lightGrey1,
-			modalBackground: this.UIColors.lightGrey1,
+			modalBackground: this.UIColors.lightGrey2,
 			savings: this.UIColors.vividBlue,
 			expenses: this.UIColors.redVivid,
 			ultimateBackground: this.UIColors.lightGrey2,
@@ -58,6 +60,7 @@ class DesignSystem{
 		darkMode: {
 			bodyText: this.UIColors.lightGrey4,
 			bodyTextSecondary: this.UIColors.midGrey,
+			buttonDisabled: this.UIColors.darkGrey2,
 			pageBackground: this.UIColors.darkGrey4,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.veryLightBlue,
@@ -71,7 +74,7 @@ class DesignSystem{
 			inputFieldBackground: this.UIColors.darkGrey3,
 			modalPrimaryButton: this.UIColors.blue,
 			modalSecondaryButton: this.UIColors.darkGrey1,
-			modalBackground: this.UIColors.darkGrey2,
+			modalBackground: this.UIColors.darkGrey3,
 			savings: this.UIColors.blue,
 			expenses: this.UIColors.redSoft,
 			ultimateBackground: this.UIColors.black,

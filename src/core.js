@@ -77,6 +77,7 @@ class Core{
 	}
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
+		if(!ud){return}
 		return Promise.all([ApiCaller.getPlaidLinkToken(),...ud.plaidConnections.map(co => ApiCaller.getPlaidItemStatus(co.itemId))])
 	      	.then(([linkTokenResponse,...rs]) => {
 	      		let erroredItems = rs.filter(r => r.status != 'ok')

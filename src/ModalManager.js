@@ -4,6 +4,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DesignSystem from './DesignSystem.js'
+import {TransactionView} from './components/CategorizeAction'
 const transactionGrouper = require('./processors/TransactionGrouper')
 const utils = require('./utils.js')
 
@@ -164,16 +165,8 @@ export class StreamAllocationOptionView extends BaseComponent{
 	render(){
 
 		return(<div>
-			<div style={{display:"flex", flexDirection: "row", paddingBottom: "2rem", margin: "0 3.7rem",justifyContent: "space-between"
-
-}}>
-				<div style={{textAlign: "left"}}>
-					{this.props.transaction.description}
-				</div>
-				<div style={{textAlign: "right"}}>
-					<div style={{fontWeight: "bold"}}>{utils.formatDollarAmount(this.props.transaction.amount)}</div>
-					<div>{utils.formatDateShort(this.props.transaction.getDateInDisplayTimezone())}</div>
-				</div>
+			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
+				<TransactionView style={{background:"red"}} transaction={this.props.transaction}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>

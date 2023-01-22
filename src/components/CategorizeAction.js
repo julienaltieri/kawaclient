@@ -115,12 +115,6 @@ class CategorizeActionCard extends ActionCard{
 			},checkmarkAnimationTime))
 		})
 	}
-	handleAmzItemArrowClicked(e,right){
-		var offSet = (right)?1:-1;
-		var amzItemsCnt = this.props.transaction.amazonOrderDetails.items.length;
-		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
-		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
-	}
 	onSplitClicked(){
 		Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Split",undefined,undefined,this.props.transaction,this.state.recStreams)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
@@ -140,49 +134,8 @@ class CategorizeActionCard extends ActionCard{
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 
 		return (<div>
-			<Checkmark src={checkmark} style={{opacity:this.state.checkmarkVisible?1:0,
-												transform:"scale("+(this.state.checkmarkVisible?1:0.5)+")"}}/>
-			<TransactionContainerView style={{opacity:this.state.checkmarkVisible?0:1}}>
-				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
-					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden"}}>
-						{amz.items.map((it,i) => 
-							<div  key={it.itemDescription}  style={{
-								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
-								transition:"margin-left 0.5s ease",
-								height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
-								<img style={{alignSelf: "center"}} src={it.image}></img>
-							</div>
-						)}
-					</div>
-					{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
-						<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",color:this.state.selectedItemImage>1?"#005696":"#cccccc"}}>🡠</span>
-						<span style={{color:"#666666",fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
-						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",color:this.state.selectedItemImage<amz.items.length?"#005696":"#cccccc"}}>🡢</span>
-					</div>):""}
-					</div>
-				):""}
-				<TxInfoContainer>{/*regular transaction*/}
-					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
-
-					<div style={{fontSize:"1rem",maxWidth:"8rem"}}>{
-						this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</div>
-					{amz?<div>
-						<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
-						<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
-						:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
-					}
-				</TxInfoContainer>
-				<Spacer/>
-				<div>
-					<AmountDiv positive={totalAmount>0}>{utils.formatDollarAmount(totalAmount)}</AmountDiv>
-					{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
-						<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
-							<span>{utils.formatDateShort(n.date)}</span>
-							<span>{utils.formatDollarAmount(n.amount)}</span>
-						</div>)}</div>:""}
-				</div>
-			</TransactionContainerView>
+			<Checkmark src={checkmark} style={{opacity:this.state.checkmarkVisible?1:0,transform:"scale("+(this.state.checkmarkVisible?1:0.5)+")"}}/>
+			<TransactionView checkmarkVisible={this.state.checkmarkVisible} transaction={this.props.transaction}/>
 
 			{/*stream suggestions*/}
 			{this.state.fetching?<div></div>:
@@ -210,7 +163,71 @@ class CategorizeActionCard extends ActionCard{
 	}
 }
 
+export class TransactionView extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.state = {selectedItemImage:1}
+	}
+	isAmazon(){return this.getAmazonData()}
+	getAmazonData(){return this.props.transaction.amazonOrderDetails}
+	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.date))}
+	handleAmzItemArrowClicked(e,right){
+		var offSet = (right)?1:-1;
+		var amzItemsCnt = this.props.transaction.amazonOrderDetails.items.length;
+		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
+		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
+	}
+	render(){
+		var amz = this.getAmazonData();
+		var isCompound = this.isAmazon() && amz.items.length>1;
+		var amznghbrs = this.getAmazonNeighbors();
+		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
+		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
+		return(
+		<TransactionContainerView style={{opacity:this.props.checkmarkVisible?0:1}}>
+			{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
+				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DesignSystem.borderRadiusSmall}}>
+					{amz.items.map((it,i) => 
+						<div  key={it.itemDescription}  style={{
+							marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
+							transition:"margin-left 0.5s ease",
+							filter: "brightness("+(DesignSystem.isDarkMode()?0.9:1)+")",
+							height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
+							<img style={{alignSelf: "center"}} src={it.image}></img>
+						</div>
+					)}
+				</div>
+				{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>🡠</span>
+					<span style={{color:DesignSystem.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>🡢</span>
+				</div>):""}
+				</div>
+			):""}
+			<TxInfoContainer>{/*regular transaction*/}
+				{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
+					<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
 
+				<div style={{fontSize:"1rem",maxWidth:"8rem"}}>{
+					this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</div>
+				{amz?<div>
+					<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
+					<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
+					:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
+				}
+			</TxInfoContainer>
+			<Spacer/>
+			<div>
+				<AmountDiv positive={totalAmount>0}>{utils.formatDollarAmount(totalAmount)}</AmountDiv>
+				{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
+					<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
+						<span>{utils.formatDateShort(n.date)}</span>
+						<span>{utils.formatDollarAmount(n.amount)}</span>
+					</div>)}</div>:""}
+			</div>
+		</TransactionContainerView>
+	)}
+}
 
 const fadeInAnimation = keyframes`${fadeIn}`;
 const FadeInWrap = styled.div`
