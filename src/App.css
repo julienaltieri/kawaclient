@@ -27,6 +27,12 @@
 }
 
 @font-face {
+  font-family: "MaterialSymbol";
+  src: url("./fonts/MaterialSymbol.woff2") format('woff2');
+}
+
+
+@font-face {
   font-family: "Inter";
   src: url("./fonts/Inter-Thin.ttf") format("truetype");
   font-weight: 100;

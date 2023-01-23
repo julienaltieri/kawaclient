@@ -198,9 +198,9 @@ export class TransactionView extends BaseComponent{
 					)}
 				</div>
 				{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>🡠</span>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>{DesignSystem.icon.leftArrow}</span>
 					<span style={{color:DesignSystem.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>🡢</span>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>{DesignSystem.icon.rightArrow}</span>
 				</div>):""}
 				</div>
 			):""}

@@ -1,4 +1,12 @@
 import AppConfig from "./AppConfig";
+import styled from 'styled-components';
+
+
+const Icon = styled.span`
+	font-family: "MaterialSymbol";
+	font-size: 1.3rem;
+	vertical-align: sub;
+`
 
 class DesignSystem{
 	UIColors = {
@@ -95,10 +103,19 @@ class DesignSystem{
 
 	  	return null;
 	}
+	icon = {
+		plus: <Icon>&#xE145;</Icon>,
+		leftArrow: <Icon>&#xe5c4;</Icon>,
+		rightArrow: <Icon>&#xe5c8;</Icon>,
+		done: <Icon>&#xe5ca;</Icon>
+	}
+
 }
 
 const instance = new DesignSystem();
 
 export default instance
+
+
 
 

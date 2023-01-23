@@ -195,7 +195,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 						
 						
 					</li>)}
-					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>🞢 Add line</li>
+					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DesignSystem.icon.plus} Add line</li>
 
 				</ul>
 			</div>
