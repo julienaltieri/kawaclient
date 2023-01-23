@@ -170,7 +170,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative",display: "flex", flexDirection:"row", alignItems:"center"}}>
+					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative",display: "flex", flexDirection:"row", alignItems:"center",width:"100%"}}>
 						{(i==0)?<StyledInput disabled positive={al.amount>0} value={al.amount.toFixed(2)}></StyledInput>:
 								<StyledInput positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
