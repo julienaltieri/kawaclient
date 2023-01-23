@@ -1,9 +1,9 @@
 import AppConfig from "./AppConfig";
 import styled from 'styled-components';
+import 'material-symbols';
 
 
 const Icon = styled.span`
-	font-family: "MaterialSymbol";
 	font-size: 1.3rem;
 	vertical-align: sub;
 `
@@ -104,10 +104,11 @@ class DesignSystem{
 	  	return null;
 	}
 	icon = {
-		plus: <Icon>&#xE145;</Icon>,
-		leftArrow: <Icon>&#xe5c4;</Icon>,
-		rightArrow: <Icon>&#xe5c8;</Icon>,
-		done: <Icon>&#xe5ca;</Icon>
+		leftArrow:  	<Icon className="material-symbols-rounded">arrow_back</Icon>,
+		rightArrow: 	<Icon className="material-symbols-rounded">arrow_forward</Icon>,
+		done: 			<Icon className="material-symbols-rounded">done</Icon>,
+		plus: 			<Icon className="material-symbols-rounded">add</Icon>,
+		close: 			<Icon className="material-symbols-rounded">close</Icon>,
 	}
 
 }

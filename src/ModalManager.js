@@ -76,7 +76,7 @@ export const ModalTemplates = {
 					<div style={{width:"100%"}}>
 						<div style={{"display":"flex","flexDirection":"row","justifyContent":"space-between","alignItems":"center"}}>
 							<Title isMobile={Core.isMobile()}>{title}</Title>
-							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>✕</TopBarButton>
+							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>{DesignSystem.icon.close}</TopBarButton>
 						</div>
 						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
@@ -168,9 +168,9 @@ export class StreamAllocationOptionView extends BaseComponent{
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
 				<TransactionView style={{background:"red"}} transaction={this.props.transaction}/>
 			</div>
-			<div style={{display:"flex",justifyContent: "center"}}>
+			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative"}}>
+					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative",display: "flex", flexDirection:"row", alignItems:"center"}}>
 						{(i==0)?<StyledInput disabled positive={al.amount>0} value={al.amount.toFixed(2)}></StyledInput>:
 								<StyledInput positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
@@ -178,7 +178,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
 										onFocus={e => {e.target.select()}}></StyledInput>
 									}
-						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>received as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
+						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
 						<StyledDropDown style={{marginLeft:"0.5rem"}} 
 							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
 							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
@@ -190,8 +190,8 @@ export class StreamAllocationOptionView extends BaseComponent{
 						</StyledDropDown>
 						<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}></DownArrow>
 						{(i>0 && this.state.allocations.length>1)?<span 
-							style={{fontWeight: 600, cursor:"pointer",marginLeft:"1.5rem",padding:"0 0.5rem"}} 
-							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>✕</span>:""}
+							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
+							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}
 						
 						
 					</li>)}
@@ -205,7 +205,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 const StyledInput= styled.input`
 	color:  ${(props) => props.positive?DesignSystem.getStyle().positive:"inherit"};
 	background-color: ${DesignSystem.getStyle().inputFieldBackground};
-    width: 6rem;
+    width: 4.5rem;
     height: 1.5rem;
     padding: 0.5rem;
 	margin-left: 0.2rem;
@@ -217,13 +217,15 @@ const StyledInput= styled.input`
 `
 const StyledSpendReceive = styled.span`
     display: inline-block;
-    width: 6rem;
+    width: 100%;
+    max-width: 4.5rem;
     text-align: left;
     padding-left: 0.5rem;
+    padding-right: 0.5rem;
     font-size: 1rem;
 `
 const StyledDropDown= styled.select`
-	width: 16rem;
+	width: 100%;
 	background-color: ${DesignSystem.getStyle().inputFieldBackground};
 	color: ${DesignSystem.getStyle().bodyText};
     padding: 0 1rem;
@@ -478,12 +480,11 @@ const Subtitle = styled.div`
 	margin-top: 0.3rem;
 `
 const TopBarButton = styled.div`
-	width: 1rem;
     cursor: pointer;
     position:  ${props => props.isMobile?"static":"absolute"};
     top: 1.5rem;
     right: 1.5rem;
-    color: #BDBDBD;
+    color: ${DesignSystem.getStyle.bodyTextSecondary};
     -webkit-user-select: none; /* Safari */
   	-ms-user-select: none; /* IE 10 and IE 11 */
   	user-select: none; /* Standard syntax */

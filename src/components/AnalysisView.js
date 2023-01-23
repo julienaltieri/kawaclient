@@ -342,7 +342,8 @@ class AnnotationInput extends BaseComponent{
 			return(<div>
 				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.date)}</div>}
 				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange} onFocus={e => {e.target.setSelectionRange(e.target.value.length,e.target.value.length)}}/>
-				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","width":"1.5rem","fontSize":"1.2rem","height":"1.5rem",transform: "rotate(45deg)","background":DesignSystem.getStyle().modalBackground}}>⅃</div>:""}
+				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","background":DesignSystem.getStyle().modalBackground}}>
+					{DesignSystem.icon.done}</div>:""}
 				</div>
 			)
 		}
