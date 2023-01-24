@@ -188,7 +188,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
 						</StyledDropDown>
-						<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}></DownArrow>
+						<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}>{DesignSystem.icon.caretDown}</DownArrow>
 						{(i>0 && this.state.allocations.length>1)?<span 
 							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
 							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}
@@ -236,15 +236,15 @@ const StyledDropDown= styled.select`
     border: 0.1rem solid #BDBDBD;
     cursor: pointer;
     appearance: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 2rem;
 `
 
 const DownArrow = styled.div`
     position: absolute;
-    right: ${(props) => props.shouldOffset?"4.3rem":"1rem"};
-    top: calc(50% - 0.15rem);
-    border-left: 0.3rem solid transparent;
-    border-right: 0.3rem solid transparent;
-    border-top: 0.3rem solid #bdbdbd;
+    right: ${(props) => props.shouldOffset?"3rem":"0.7rem"};
+    top: calc(50% - 0.55rem);
     cursor: pointer;
     pointer-events: none;
 `

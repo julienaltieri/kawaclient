@@ -109,6 +109,7 @@ class DesignSystem{
 		done: 			<Icon className="material-symbols-rounded">done</Icon>,
 		plus: 			<Icon className="material-symbols-rounded">add</Icon>,
 		close: 			<Icon className="material-symbols-rounded">close</Icon>,
+		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
 	}
 
 }
