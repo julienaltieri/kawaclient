@@ -47,6 +47,7 @@ class DesignSystem{
 			bodyText: this.UIColors.darkGrey4,
 			bodyTextSecondary: this.UIColors.darkGrey2,
 			buttonDisabled: this.UIColors.lightGrey5,
+			borderColor: this.UIColors.lightGrey5,
 			pageBackground: this.UIColors.lightGrey1,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.vividBlue,
@@ -70,6 +71,7 @@ class DesignSystem{
 			bodyTextSecondary: this.UIColors.midGrey,
 			buttonDisabled: this.UIColors.darkGrey2,
 			pageBackground: this.UIColors.darkGrey4,
+			borderColor: this.UIColors.darkGrey2,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.veryLightBlue,
 			alert: this.UIColors.redSoft,
@@ -110,6 +112,7 @@ class DesignSystem{
 		plus: 			<Icon className="material-symbols-rounded">add</Icon>,
 		close: 			<Icon className="material-symbols-rounded">close</Icon>,
 		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
+		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 	}
 
 }

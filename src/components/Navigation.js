@@ -4,6 +4,7 @@ import Cookies from 'js-cookie'
 import Core from '../core.js'
 import {withRouter} from 'react-router-dom'
 import SideBar from './SideBar'
+import DesignSystem from '../DesignSystem'
 
 
 
@@ -79,7 +80,7 @@ class TopNavigationBarBase extends BaseComponent{
 		var leftButton,rightButton;
 		if(this.props.loggedIn){
 			rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
-			leftButton = <HamburgerButton onClick={(e) => this.summonSideBar()}>☰</HamburgerButton>
+			leftButton = <HamburgerButton onClick={(e) => this.summonSideBar()}>{DesignSystem.icon.menu}</HamburgerButton>
 		}
 		return(
 			//TODO: while the side bar is visible, have an overlay to capture event and dismiss
@@ -110,7 +111,7 @@ export default instance;
 
 
 const StyledNavBar = styled.div`
-	border-bottom: solid 1px #cfcfcf;
+	border-bottom: solid 1px ${DesignSystem.getStyle().buttonDisabled};
     padding: 0.5em;
     height: 3rem;
     width: 100%;
@@ -121,13 +122,14 @@ const StyledNavBar = styled.div`
 `
 
 const StyledLogOutButton = styled.button`
-    color: #0087c5;
+    background: ${DesignSystem.getStyle().UIElementBackground};
+    color: ${DesignSystem.getStyle().bodyTextSecondary};
+    margin-right:0.5rem;
     border-radius: 100vw;
     height: 2.4em;
     border: none;
     width: 5rem;
     cursor: pointer;
-    margin-right: 1rem;
     font-weight: bold;
 }
 `
@@ -135,13 +137,10 @@ const StyledLogOutButton = styled.button`
 
 const HamburgerButton = styled.button`
     margin: 0;
-    padding: 0.7rem;
     color: inherit;
-    margin-left: 0.5rem;
     border: none;
     cursor: pointer;
     background: none;
-    font-size: 1rem;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
@@ -155,7 +154,12 @@ const HamburgerButton = styled.button`
 `
 
 const Logo = styled.div`
-
+	left: 0;
+    position: absolute;
+    z-index: -1;
+    width:100%;
+    text-align: center;
+    color:${DesignSystem.getStyle().bodyText}
 `
 
 const Spacer = styled.div`

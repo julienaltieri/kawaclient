@@ -1,5 +1,6 @@
 import BaseComponent from './BaseComponent';
-import styled from 'styled-components'
+import styled from 'styled-components';
+import DesignSystem from '../DesignSystem';
 
 
 export default class SideBar extends BaseComponent{
@@ -17,7 +18,7 @@ export default class SideBar extends BaseComponent{
 		var count = 0;
 		return(
 		<SideBarContainer visible={this.props.visible}>
-			<CloseButton onClick={e => this.props.onClickCloseSideBar(e)}>✕</CloseButton>
+			<CloseButton onClick={e => this.props.onClickCloseSideBar(e)}>{DesignSystem.icon.close}</CloseButton>
 			{(this.props.activeIndex>-1)?this.state.items
 				.map(i => (<NavItem item={i} key={count++} parentBar={this} active={i.name==this.getActiveItem().name}/>)):""}
 		</SideBarContainer>
@@ -25,26 +26,26 @@ export default class SideBar extends BaseComponent{
 }
 
 const CloseButton = styled.div`
-    font-size: 1.3rem;
-    padding: 0.7rem;
+    padding-top: 1rem;
     cursor: pointer;
     text-align: left;
-    margin-left: 0.5rem;
-    margin-bottom: 1rem;
+    margin-left: 0.4rem;
+    margin-bottom: 0.8rem;
 `
 
 const SideBarContainer = styled.div`
 	position: fixed;
-    height: 100%;
-    width: 20rem;
-    z-index: 1;
-    top: 0;
-    left: 0;
-    background-color: #fff;
-    box-shadow: 5px -1px 20px 0px #00000029;
-    overflow-x: hidden;
-    transition: margin-left 225ms ease-in-out 0s;
-    margin-left: ${(props) => props.visible?"0%":"-22rem"};
+  padding-left: 0.5rem;
+  height: 100%;
+  width: 15rem;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  background-color: ${DesignSystem.getStyle().modalBackground};
+  box-shadow: 5px -1px 20px 0px #00000029;
+  overflow-x: hidden;
+  transition: margin-left 225ms ease-in-out 0s;
+  margin-left: ${(props) => props.visible?"0%":"-22rem"};
 `
 
 
@@ -76,18 +77,19 @@ const StyledNavItem = styled.div`
  	box-sizing: border-box;
     display:flex;
     text-align: left;
-	font-size: 1rem;
-    font-weight: bold;
+	  font-size: 1rem;
     cursor: pointer;
     width: 100%;
     margin-bottom: 0;
-    padding: 0 1.2rem;
+    padding: 0 0.7rem;
+    padding-right: 1rem;
     height:3rem;
     align-items:center;
     overflow:visible;
-    color: ${props => props.active?"#0095ff":"black"};
+    font-weight: ${props => props.active?"bold":"normal"};
+    color: ${props => props.active?DesignSystem.getStyle().bodyText:DesignSystem.getStyle().bodyTextSecondary};
     &:hover {
-      background: #eeeeee;
+      background: ${DesignSystem.getStyle().UIElementBackground};
     }  
 
   
@@ -97,7 +99,7 @@ const Link = styled.a`
     text-decoration: none;
     width:100%;
     padding: 1rem 0 ;
-	border-bottom: 1px solid #dddddd;
+	  border-bottom: 1px solid ${DesignSystem.getStyle().borderColor};
 
 
 `
