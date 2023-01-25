@@ -189,3 +189,55 @@ background-size: contain;
 
 /*https://www.svgbackgrounds.com/*/
 
+.lds-ripple,.lds-ripple-bright {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.lds-ripple div {
+  position: absolute; 
+  border: 1px solid #babaca;
+  opacity: 1;
+  border-radius: 50%;
+  animation: lds-ripple 1s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+.lds-ripple div:nth-child(2) {
+  animation-delay: -0.5s;
+}
+.lds-ripple-bright div {
+  position: absolute;
+  border: 1px solid #424252;
+  opacity: 1;
+  border-radius: 50%;
+  animation: lds-ripple 1s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+.lds-ripple-bright div:nth-child(2) {
+  animation-delay: -0.5s;
+}
+@keyframes lds-ripple {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+  }
+  4.9% {
+    width: 0;
+    height: 0;
+    opacity: 0;
+  }
+  5% {
+    width: 0;
+    height: 0;
+    opacity: 1;
+  }
+  100% {
+    width: 72%;
+    height: 72%;
+    opacity: 0;
+  }
+}

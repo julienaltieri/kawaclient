@@ -28,13 +28,13 @@ class DesignSystem{
 		lightGrey2: "#f3f3f7",
 		lightGrey2Trans: "#f7f7f78f",
 		lightGrey3: "#eeeeee",
-		lightGrey4: "#dddddd",
-		lightGrey5: "#bababa",
-		midGrey: "#999999",
+		lightGrey4: "#dddded",
+		lightGrey5: "#babaca",
+		midGrey: "#9999a9",
 		darkGrey1: "#727272",
-		darkGrey2: "#525252",
+		darkGrey2: "#424252",
 		darkGrey2Trans: "#52525233",
-		darkGrey3: "#333339",
+		darkGrey3: "#333343",
 		darkGrey4: "#1f2223",
 		black: "#000000",
 		white: "#ffffff",
@@ -113,6 +113,7 @@ class DesignSystem{
 		close: 			<Icon className="material-symbols-rounded">close</Icon>,
 		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
+		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 	}
 
 }

@@ -277,9 +277,10 @@ const TransactionContainerView = styled.div `
     background: ${props => DesignSystem.getStyle().UIElementBackground};
 	box-shadow: 0px 6px 10px #00000023;
     box-sizing: border-box;
-	padding:2rem;
+	padding:1.5rem;
     border-radius: ${props => DesignSystem.borderRadius};
     transition: opacity ${disappearAnimationTime/1000}s ease;
+    align-items: center;
 `
 
 

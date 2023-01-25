@@ -208,7 +208,6 @@ const StyledInput= styled.input`
     width: 4.5rem;
     height: 1.5rem;
     padding: 0.5rem;
-	margin-left: 0.2rem;
     margin-right: 0.5rem;
     text-align: center;
     font-size: 1rem;

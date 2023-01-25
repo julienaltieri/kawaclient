@@ -147,7 +147,7 @@ class MissionControl extends BaseComponent{
 	}
 
 	render(){
-		if(this.state.fetching){return (<StyledHomeContainer><Spinner src={loading}></Spinner></StyledHomeContainer>)}
+		if(this.state.fetching){return (<StyledHomeContainer><Loader><div className={DesignSystem.isDarkMode()?"lds-ripple":"lds-ripple-bright"}><div></div><div></div></div></Loader></StyledHomeContainer>)}
 		else{
 			return <StyledHomeContainer>
 				<div style={{height:'20rem', marginTop: "1rem",maxWidth: "26rem",width: "100%"}}>
@@ -166,10 +166,15 @@ class MissionControl extends BaseComponent{
 
 export default React.memo(MissionControl)
 
-const Spinner = styled.img`
+const Loader = styled.div`
 	width: 5rem;
-	height: 5rem;
-    margin-top: 8rem;
+    height: 5rem;
+    display: flex;
+    margin-top:  calc(50vh - 6rem);;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
 `
 const StyledHomeContainer = styled.div `
 	width:calc(100% - 2rem);
