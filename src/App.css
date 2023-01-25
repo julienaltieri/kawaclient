@@ -201,43 +201,43 @@ background-size: contain;
 }
 .lds-ripple div {
   position: absolute; 
-  border: 1px solid #babaca;
+  border: 2px solid #dadafa;
   opacity: 1;
   border-radius: 50%;
+  width: 72%;
+  height: 72%;
   animation: lds-ripple 1s cubic-bezier(0, 0.2, 0.8, 1) infinite;
-}
-.lds-ripple div:nth-child(2) {
-  animation-delay: -0.5s;
 }
 .lds-ripple-bright div {
   position: absolute;
-  border: 1px solid #424252;
+  border: 2px solid #222262;
   opacity: 1;
   border-radius: 50%;
+  width: 72%;
+  height: 72%;
   animation: lds-ripple 1s cubic-bezier(0, 0.2, 0.8, 1) infinite;
 }
 .lds-ripple-bright div:nth-child(2) {
   animation-delay: -0.5s;
 }
+.lds-ripple div:nth-child(2) {
+  animation-delay: -0.5s;
+}
 @keyframes lds-ripple {
   0% {
-    width: 0;
-    height: 0;
     opacity: 0;
+    transform: scale(0);
   }
   4.9% {
-    width: 0;
-    height: 0;
     opacity: 0;
+    transform: scale(0);
   }
   5% {
-    width: 0;
-    height: 0;
     opacity: 1;
+    transform: scale(0.1);
   }
   100% {
-    width: 72%;
-    height: 72%;
+    transform: scale(1);
     opacity: 0;
   }
 }
