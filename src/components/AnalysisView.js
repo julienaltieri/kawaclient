@@ -171,6 +171,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 				let ptxn = txn.pairedTransferTransactionId?this.props.analysis.transactions.filter(t => t.transactionId==txn.pairedTransferTransactionId)[0]:undefined;
 				if(!!ptxn){
 					txnToUpdate.push(ptxn)
+					//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
 					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
 				}
 				console.log(txnToUpdate,allocs)
