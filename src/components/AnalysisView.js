@@ -163,8 +163,19 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
 	}
 	handleClickOnTransaction(txn){
+		console.log(txn)
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
-			if(buttonIndex==1){this.props.onCategorizationUpdate([txn],[state.allocations])}
+			if(buttonIndex==1){
+				let txnToUpdate = [txn]
+				let allocs = [state.allocations]
+				let ptxn = txn.pairedTransferTransactionId?this.props.analysis.transactions.filter(t => t.transactionId==txn.pairedTransferTransactionId)[0]:undefined;
+				if(!!ptxn){
+					txnToUpdate.push(ptxn)
+					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
+				}
+				console.log(txnToUpdate,allocs)
+				this.props.onCategorizationUpdate(txnToUpdate,allocs)
+			}
 		}).catch(e => {})
 	}
 	render(){
@@ -216,7 +227,7 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 				</TransactionFeedHeaderViewContainer>
 				{this.props.analysis.transactions.sort(utils.sorters.desc(t => t.date)).map((t,i) => (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
 					<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
-					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatDollarAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0].amount)}</div>
+					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatDollarAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount)}</div>
 				</MiniTransactionContainer>))}
 		</FlexColumn>)
 	}
