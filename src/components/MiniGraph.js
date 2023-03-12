@@ -37,7 +37,7 @@ export default class MiniGraph extends GenericChartView{
 		}
 	}
 	getAccruedPlottedValue(r){return (this.props.stream.isSavings?-1:1)*(r.getLeftOver()||0)}
-	dateToTickDate(d){return (!this.props.analysis.subReportingPeriod.name==Period.monthly.name)?(new Date(d)).setDate(1):d.getTime()}
+	dateToTickDate(d){return (this.props.analysis.subReportingPeriod.name==Period.monthly.name)?(new Date(d)).setDate(1):d.getTime()}
 	getData(includeProjection=false){
 		if(!!this.data){return includeProjection?this.data:this.data.slice(0,this.data.length-1)}
 		this.data = []
@@ -54,7 +54,6 @@ export default class MiniGraph extends GenericChartView{
 		let cumsum = 0;
 		let cumulativeFrequency = this.props.analysis.getFrequencyHistogramAtDate(this.props.analysis.reportingDate).map(h => {cumsum+=h; return cumsum}).map(h => h/cumsum) //cumulative frequency throughout the cycle
 		return cumulativeFrequency[numberOfDayInCycle]>0.9 || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2)
-		//return this.getPeriodReports()[this.n].isProjectable() || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2)
 	}
 
 	//domain definition 
