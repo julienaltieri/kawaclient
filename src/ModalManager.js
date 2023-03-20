@@ -31,7 +31,7 @@ class ModalManager{
 	}
 
 	dismissModal(modalController){
-		modalController.getParent().unmountModal(modalController)
+		return modalController.getParent().unmountModal(modalController)
 	}
 	updateState(changes){this.setState({...this.state,...changes})}		
 }
@@ -362,9 +362,14 @@ export class ModalController{
 	then(){return this.promise.then.apply(this.promise, arguments)}
 	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
 	hide(){
-		document.body.style.overflow = 'unset';
-		this.modal.updateState({visible:false}).then(() => {
-			setTimeout(() => instance.dismissModal(this),animationTime)//leaves time to play the animation
+		return new Promise((res,rej) => {
+			document.body.style.overflow = 'unset';
+			this.modal.updateState({visible:false}).then(() => {
+				setTimeout(() => {
+					let a = instance
+					return instance.dismissModal(this).then(() => res())
+				},animationTime)//leaves time to play the animation
+			})
 		})
 	}
 	setPrimaryButtonDisabled(b){
@@ -378,8 +383,8 @@ export class ModalController{
 		e.stopPropagation();
 	}
 	onConfirm(e,i){
-		this.onAnswer({state:this.state.modalContentState,buttonIndex:i});
-		this.hide();
+		
+		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
 		e.preventDefault();
 		e.stopPropagation();
 	}
