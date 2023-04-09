@@ -334,7 +334,7 @@ class Core{
 	refreshAmazonTransactions(){
 		//helper functions can convenience
 		var amz = this.getUserData().amazonOrderHistory.sort(utils.sorters.desc(am => new Date(am.date)))
-		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails && !t.streamAllocation).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
+		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
 		//quit here if no new work to be done	
 		if(!amz || getRemainingAmazonTransactions().length==0 || getRemainingAmazonTransactions().length<=this.globalState.remainingAmazonTransactionsCount)return
 		var getAttributedAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
