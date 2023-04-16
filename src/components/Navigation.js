@@ -111,7 +111,7 @@ export default instance;
 
 
 const StyledNavBar = styled.div`
-	border-bottom: solid 1px ${DesignSystem.getStyle().buttonDisabled};
+	border-bottom: solid 1px ${DesignSystem.getStyle().borderColor};
     padding: 0.5em;
     height: 3rem;
     width: 100%;

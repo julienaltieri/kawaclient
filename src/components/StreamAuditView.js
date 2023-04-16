@@ -265,7 +265,7 @@ const TopLevelHeaderContainer = styled.div`
 	align-items: center;
 	justify-content: space-between;
     border-bottom: solid 1px;
-    border-color: ${props => DesignSystem.getStyle().UIElementBackground};
+    border-color: ${DesignSystem.getStyle().borderColor};
     margin-bottom: 2rem;
     margin-top: 2rem;
     width: 100%;
