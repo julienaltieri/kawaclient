@@ -36,7 +36,7 @@ const CloseButton = styled.div`
 const SideBarContainer = styled.div`
 	position: fixed;
   padding-left: 0.5rem;
-  height: 100%;
+  height: 100vh;
   width: 15rem;
   z-index: 1;
   top: 0;
