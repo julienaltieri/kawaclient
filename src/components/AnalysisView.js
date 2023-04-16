@@ -767,7 +767,7 @@ export class AnnotationTooltip extends BaseComponent{
 							width:"100%",
 							textAlign:"center",
 							paddingBottom: "0.5rem",
-							borderBottom: "1px solid "+DesignSystem.getStyle().UIElementBackground
+							borderBottom: "1px solid "+DesignSystem.getStyle().borderColor
 			}}>{this.props.reportDate}</div>
 			{AnnotationTooltip.RenderContent(this.props.content)}
 

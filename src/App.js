@@ -47,14 +47,17 @@ export default class App extends BaseComponent{
     <Router>
         {!!this.state.modalController?<ModalContainer controller={this.state.modalController}/>:""}
         <TopNavigationBar loggedIn={this.state.loggedIn}/>
-        <Switch>
-          <Route path={Routes.streams} component={MasterStreamView} exact/>
-          <Route path={Routes.categorization} component={CategorizationRulesView} exact/>
-          <Route path={Routes.home} component={MissionControl} exact/>
-          <Route path={Routes.login} component={LoginPage}/>
-          <Route path={Routes.settings} component={SettingPage}/>
-          
-        </Switch>
+        <div style={{paddingTop:"3rem"}}>
+          <Switch>
+            <Route path={Routes.streams} component={MasterStreamView} exact/>
+            <Route path={Routes.categorization} component={CategorizationRulesView} exact/>
+            <Route path={Routes.home} component={MissionControl} exact/>
+            <Route path={Routes.login} component={LoginPage}/>
+            <Route path={Routes.settings} component={SettingPage}/>
+            
+          </Switch>
+
+        </div>
     </Router>
   )}
 }

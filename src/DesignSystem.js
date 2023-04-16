@@ -38,6 +38,8 @@ class DesignSystem{
 		darkGrey4: "#1f2223",
 		black: "#000000",
 		white: "#ffffff",
+		darkPurple: "#191829",
+		lightPurple: "#d6e5fe"
 	};
 	borderRadius= "0.7rem";
 	borderRadiusSmall= "0.3rem";
@@ -48,7 +50,7 @@ class DesignSystem{
 			bodyTextSecondary: this.UIColors.darkGrey2,
 			buttonDisabled: this.UIColors.lightGrey5,
 			borderColor: this.UIColors.lightGrey5,
-			pageBackground: this.UIColors.lightGrey1,
+			pageBackground: this.UIColors.lightPurple,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.vividBlue,
 			alert: this.UIColors.redVivid,
@@ -70,7 +72,7 @@ class DesignSystem{
 			bodyText: this.UIColors.lightGrey4,
 			bodyTextSecondary: this.UIColors.midGrey,
 			buttonDisabled: this.UIColors.darkGrey2,
-			pageBackground: this.UIColors.darkGrey4,
+			pageBackground: this.UIColors.darkPurple,
 			borderColor: this.UIColors.darkGrey2,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.veryLightBlue,

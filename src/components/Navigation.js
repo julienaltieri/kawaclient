@@ -119,6 +119,10 @@ const StyledNavBar = styled.div`
     align-items: center;
     justify-content: flex-end;
     box-sizing: border-box;
+    position:fixed;
+    z-index:100;
+    background-color: ${DesignSystem.getStyle().pageBackground+"60"};
+    backdrop-filter: blur(1rem);
 `
 
 const StyledLogOutButton = styled.button`
