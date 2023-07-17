@@ -8,6 +8,7 @@
     "@testing-library/user-event": "^12.8.3",
     "@types/react-transition-group": "^4.4.5",
     "animated-number-react": "0.0.1",
+    "caniuse-lite": "^1.0.30001516",
     "currency.js": "^2.0.4",
     "dateformat": "^5.0.3",
     "history": "^4.10.1",
@@ -31,7 +32,7 @@
     "web-vitals": "^0.2.4"
   },
   "scripts": {
-    "start": "react-scripts start",
+    "start": "set HTTPS=true&&set SSL_CRT_FILE=.cert/cert.pem&&set SSL_KEY_FILE=.cert/key.pem&&react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
@@ -54,5 +55,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:4001"
+  "proxy": "https://localhost:4001"
 }
