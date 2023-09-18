@@ -2,6 +2,25 @@ import Cookies from 'js-cookie'
 import AppConfig from './AppConfig'
 import TransactionTypes from './TransactionTypes'
 
+const APISpec = {
+	login: 										AppConfig.serverURL + "/login",
+	validateToken: 								AppConfig.serverURL + "/validateToken",
+	getUserData: 								AppConfig.serverURL + "/api" + "/getUserData",
+	saveAmazonOrderHistory: 					AppConfig.serverURL + "/api" + "/saveAmazonOrderHistory",
+	updateMasterStream: 						AppConfig.serverURL + "/api" + "/updateMasterStream",
+	getTransactionsBetweenDates: 				AppConfig.serverURL + "/api" + "/getTransactionsBetweenDates",
+	refreshCategorizationBetweenDates: 			AppConfig.serverURL + "/api" + "/refreshCategorizationBetweenDates",
+	updateCategorizationRules: 					AppConfig.serverURL + "/api" + "/updateCategorizationRules",
+	excludeStringFromCategorizationRules: 		AppConfig.serverURL + "/api" + "/excludeStringFromCategorizationRules",
+	categorizeTransactionsAllocationsTupples: 	AppConfig.serverURL + "/api" + "/categorizeTransactionsAllocationsTupples",
+	plaidCreateLinkToken: 						AppConfig.serverURL + "/api" + "/plaidCreateLinkToken",
+	plaidExchangeLinkTokenAndSaveConnection: 	AppConfig.serverURL + "/api" + "/plaidExchangeLinkTokenAndSaveConnection",
+	plaidUpdateLinkToken: 						AppConfig.serverURL + "/api" + "/plaidUpdateLinkToken",
+	plaidGetItemStatus: 						AppConfig.serverURL + "/api" + "/plaidGetItemStatus",
+	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
+	undoCategorizations: 						AppConfig.serverURL + "/api" + "/undoCategorizations",
+}
+
 
 class ApiCaller{
 
@@ -12,7 +31,7 @@ class ApiCaller{
 	setToken(token){this.token = token}
 
 	authenticate(username,password){
-		const request = new Request("/login",{
+		const request = new Request(APISpec.login,{
 			method:"post",headers:{"Content-Type":"application/json"},
 			body:JSON.stringify({username:username,password:password})
 		})
@@ -24,7 +43,7 @@ class ApiCaller{
 
 
 	getUserData(){
-		const request = new Request("/api/getUserData",{
+		const request = new Request(APISpec.getUserData,{
 			method:"post",headers:{"Content-Type":"application/json",accesstoken:Cookies.get('token')},
 		})
 		return fetch(request).then(res => {
@@ -34,7 +53,7 @@ class ApiCaller{
 	}
 
 	saveAmazonOrderHistory(history){
-		const request = new Request("/api/saveAmazonOrderHistory",{
+		const request = new Request(APISpec.saveAmazonOrderHistory,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({
 				history: history //valid json representation of all stream (will be saved in userData)
@@ -48,7 +67,7 @@ class ApiCaller{
 
 	//Saves new master stream to this user data
 	updateMasterStream(jsonMasterStream){
-		const request = new Request("/api/updateMasterStream",{
+		const request = new Request(APISpec.updateMasterStream,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({
 				jsonMasterStream: jsonMasterStream //valid json representation of all stream (will be saved in userData)
@@ -63,7 +82,7 @@ class ApiCaller{
 
 	//return both categorized and uncategorized transactions between specified dates.
 	getTransactionsBetweenDates(startDate,endDate){
-		const request = new Request("/api/getTransactionsBetweenDates",{
+		const request = new Request(APISpec.getTransactionsBetweenDates,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({
 				startDate: 	startDate, 		//valid json parsable date string
@@ -78,7 +97,7 @@ class ApiCaller{
 
 	//rerun categorizer, mostly to handle new rules
 	refreshCategorizationBetweenDates(startDate,endDate){
-		const request = new Request("/api/refreshCategorizationBetweenDates",{
+		const request = new Request(APISpec.refreshCategorizationBetweenDates,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({
 				startDate: 	startDate, 		//valid json parsable date string
@@ -97,7 +116,7 @@ class ApiCaller{
 			ruleUpdates: ruleUpdates			//[{"allocations":[{"streamId": "...","type": "value","amount":1.0}],"matchingString": "...", "priority": 0}]
 		}
 		if(!AppConfig.featureFlags.apiCategorizationOfflineMode){
-			const request = new Request("/api/updateCategorizationRules",{
+			const request = new Request(APISpec.updateCategorizationRules,{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
@@ -106,7 +125,7 @@ class ApiCaller{
 				else return res.json()
 			})
 		}else{
-			console.log("Simulated request to /api/updateCategorizationRules:")
+			console.log("Simulated request APISpec.toupdateCategorizationRules")
 			console.log(payload);
 			return Promise.resolve()
 		}
@@ -119,7 +138,7 @@ class ApiCaller{
 		}
 
 		if(!AppConfig.featureFlags.apiCategorizationOfflineMode){
-			const request = new Request("/api/excludeStringFromCategorizationRules",{
+			const request = new Request(APISpec.excludeStringFromCategorizationRules,{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
@@ -128,7 +147,7 @@ class ApiCaller{
 				else return res.json()
 			})
 		}else{
-			console.log("Simulated request to /api/excludeStringFromCategorizationRules:")
+			console.log("Simulated request APISpec.toexcludeStringFromCategorizationRules")
 			console.log(payload);
 			return Promise.resolve()
 		}
@@ -142,7 +161,7 @@ class ApiCaller{
 //		payload.tupples[0].streamAllocation[0].userDefinedTransactionType = TransactionTypes.ambiguous.name
 
 		if(!AppConfig.featureFlags.apiCategorizationOfflineMode){
-			const request = new Request("/api/categorizeTransactionsAllocationsTupples",{
+			const request = new Request(APISpec.categorizeTransactionsAllocationsTupples,{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
@@ -151,7 +170,7 @@ class ApiCaller{
 				else return res.json()
 			})
 		}else{//emulation
-			console.log("Simulated request to /api/categorizeTransactionsAllocationsTupples:")
+			console.log("Simulated request APISpec.tocategorizeTransactionsAllocationsTupples")
 			console.log(payload);
 			return Promise.resolve(tupples.map(t => {
 				t.transaction.streamAllocation = transform(t.streamAllocation,t.transaction.amount);
@@ -170,7 +189,7 @@ class ApiCaller{
 
 	//get a PlaidLinkToken to initiate the Link experience
 	getPlaidLinkToken(){
-		const request = new Request("/api/plaidCreateLinkToken",{
+		const request = new Request(APISpec.plaidCreateLinkToken,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({})
 		})
@@ -183,7 +202,7 @@ class ApiCaller{
 	//exchange a public token returned from a successful link against a long-term access token
 	exchangePlaidLinkTokenAndSaveConnection(publicToken,friendlyName){
 		console.log(friendlyName)
-		const request = new Request("/api/plaidExchangeLinkTokenAndSaveConnection",{
+		const request = new Request(APISpec.plaidExchangeLinkTokenAndSaveConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({publicToken: publicToken,friendlyName: friendlyName})
 		})
@@ -195,7 +214,7 @@ class ApiCaller{
 
 	//save a new connection to userdata
 	saveNewPlaidConnectionToUserData(co){
-		const request = new Request("/api/plaidSaveNewConnectionToUserData",{
+		const request = new Request(APISpec.plaidSaveNewConnectionToUserData,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify(co)
 		})
@@ -206,7 +225,7 @@ class ApiCaller{
 	}
 
 	getPlaidLinkTokenUpdateMode(itemId){
-		const request = new Request("/api/plaidUpdateLinkToken",{
+		const request = new Request(APISpec.plaidUpdateLinkToken,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
@@ -217,7 +236,7 @@ class ApiCaller{
 	}
 
 	getPlaidItemStatus(itemId){
-		const request = new Request("/api/plaidGetItemStatus",{
+		const request = new Request(APISpec.plaidGetItemStatus,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
@@ -228,7 +247,7 @@ class ApiCaller{
 	}
 
 	forceRefreshItemTransactions(itemId){
-		const request = new Request("/api/forceRefreshItemTransactions",{
+		const request = new Request(APISpec.forceRefreshItemTransactions,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
@@ -243,7 +262,7 @@ class ApiCaller{
 			dates: dates // [...javascript dates objects]
 		}
 		if(!AppConfig.featureFlags.apiUncategorizationOfflineMode){
-			const request = new Request("/api/undoCategorizations",{
+			const request = new Request(APISpec.undoCategorizations,{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
@@ -252,7 +271,7 @@ class ApiCaller{
 				else return res.json()
 			})
 		}else{
-			console.log("Simulated request to /api/undoCategorizations:")
+			console.log("Simulated request APISpec.toundoCategorizations")
 			console.log(payload);
 			return Promise.resolve()
 		}
