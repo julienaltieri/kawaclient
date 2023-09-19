@@ -1,5 +1,5 @@
 import Cookies from 'js-cookie'
-import ApiCaller from './ApiCaller'
+import ApiCaller, {API} from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream} from './model'
 import ModalManager, {ModalController} from './ModalManager.js'
 import Navigation, {Routes} from './components/Navigation'
@@ -179,11 +179,7 @@ class Core{
 	  if(!authToken || authToken===""){
 	  	if(failureCallback)failureCallback("no token passed")
 	  }else{
-	  	const request = new Request("/validateToken",{method:"post",body:JSON.stringify({"token": authToken}),headers:{"Content-Type":"application/json"}})
-		fetch(request).then(res => {
-			if(res.ok)return res.json()
-			else return Promise.reject(new Error('auth failed'))
-		}).then(res => {if(successCallback)successCallback()})
+	  	return ApiCaller.validateToken(authToken).then(res => {if(successCallback)successCallback()})
 		.catch(err=> {if(failureCallback)failureCallback(err)})
 	  }
 	}
