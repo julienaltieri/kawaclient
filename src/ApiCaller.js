@@ -22,22 +22,22 @@ const API = {
 }
 
 class ApiCaller{
-
-	constructor(){
-		this.token = Cookies.get('token')
-	}
-
+	constructor(){this.token = Cookies.get('token')}
 	setToken(token){this.token = token}
+	sendRequest(request){
+		return fetch(request).then(res => {
+			if(res.status==401){throw new Error("Login required")}
+			else if(!res.ok){throw new Error(res.statusText)}
+			else return res.json()
+		})
+	}
 
 	authenticate(username,password){
 		const request = new Request(API.login,{
 			method:"post",headers:{"Content-Type":"application/json"},
 			body:JSON.stringify({username:username,password:password})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	validateToken(authToken){
@@ -45,22 +45,14 @@ class ApiCaller{
 			method:"post",headers:{"Content-Type":"application/json"},
 			body:JSON.stringify({token:authToken})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
-
-
 
 	getUserData(){
 		const request = new Request(API.getUserData,{
 			method:"post",headers:{"Content-Type":"application/json",accesstoken:Cookies.get('token')},
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	saveAmazonOrderHistory(history){
@@ -70,10 +62,7 @@ class ApiCaller{
 				history: history //valid json representation of all stream (will be saved in userData)
 			})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//Saves new master stream to this user data
@@ -85,10 +74,7 @@ class ApiCaller{
 			})
 		})
 
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//return both categorized and uncategorized transactions between specified dates.
@@ -100,10 +86,7 @@ class ApiCaller{
 				endDate: 	endDate 		//valid json parsable date string
 			})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//rerun categorizer, mostly to handle new rules
@@ -115,10 +98,7 @@ class ApiCaller{
 				endDate: 	endDate 		//valid json parsable date string
 			})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//Updates categorization rules
@@ -131,10 +111,7 @@ class ApiCaller{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
-			return fetch(request).then(res => {
-				if(!res.ok)throw new Error(res.statusText)
-				else return res.json()
-			})
+			return this.sendRequest(request)
 		}else{
 			console.log("Simulated request API.toupdateCategorizationRules")
 			console.log(payload);
@@ -153,10 +130,7 @@ class ApiCaller{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
-			return fetch(request).then(res => {
-				if(!res.ok)throw new Error(res.statusText)
-				else return res.json()
-			})
+			return this.sendRequest(request)
 		}else{
 			console.log("Simulated request API.toexcludeStringFromCategorizationRules")
 			console.log(payload);
@@ -176,10 +150,7 @@ class ApiCaller{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
-			return fetch(request).then(res => {
-				if(!res.ok)throw new Error(res.statusText)
-				else return res.json()
-			})
+			return this.sendRequest(request)
 		}else{//emulation
 			console.log("Simulated request API.tocategorizeTransactionsAllocationsTupples")
 			console.log(payload);
@@ -204,10 +175,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//exchange a public token returned from a successful link against a long-term access token
@@ -217,10 +185,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({publicToken: publicToken,friendlyName: friendlyName})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	//save a new connection to userdata
@@ -229,10 +194,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify(co)
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	getPlaidLinkTokenUpdateMode(itemId){
@@ -240,10 +202,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	getPlaidItemStatus(itemId){
@@ -251,10 +210,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 
 	forceRefreshItemTransactions(itemId){
@@ -262,10 +218,7 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
-		return fetch(request).then(res => {
-			if(!res.ok)throw new Error(res.statusText)
-			else return res.json()
-		})
+		return this.sendRequest(request)
 	}
 	undoCategorizations(catIds,dates){
 		const payload =  {
@@ -277,10 +230,7 @@ class ApiCaller{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify(payload)
 			})
-			return fetch(request).then(res => {
-				if(!res.ok)throw new Error(res.statusText)
-				else return res.json()
-			})
+			return this.sendRequest(request)
 		}else{
 			console.log("Simulated request API.toundoCategorizations")
 			console.log(payload);

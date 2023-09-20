@@ -59,11 +59,15 @@ class Core{
 				this.setLoggedIn(true)
 				.then(res).catch(e => {rej(e)})
 			},() => {//user is not authenticated
-				console.log("User is not authenticated")
-				if(Navigation.state.currentRoute!=Routes.login)this.routeOrder = Navigation.state.currentRoute//remember requested route
-				this.setLoggedIn(false).then(res).catch(e => {rej(e)})
+				return this.handleNotLoggedIn().then(res).catch(e => {rej(e)})
 			})
 		})
+	}
+	handleNotLoggedIn(){
+		console.log("User is not authenticated")
+		//remember requested route
+		if(Navigation.state.currentRoute!=Routes.login)this.routeOrder = Navigation.state.currentRoute
+		return this.setLoggedIn(false)
 	}
 	refreshTheme(){
 		document.getElementById('root').style.color = DesignSystem.getStyle().bodyTextSecondary;
@@ -204,6 +208,7 @@ class Core{
 			}
 		})
 	}
+	isUserLoggedIn(){return this.globalState.loggedIn}
 	saveCategorizationRules(updatedList){
 		return ApiCaller.updateCategorizationRules(updatedList).then(()=> {
 			this.getUserData().categorizationRules = updatedList;
