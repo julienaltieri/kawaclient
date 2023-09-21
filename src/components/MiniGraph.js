@@ -6,7 +6,7 @@ import {format,GenericChartView, AnnotationTooltip} from './AnalysisView';
 import {timeIntervals,Period} from '../Time';
 import dateformat from "dateformat";
 import * as V from 'victory';
-const utils = require('../utils.js');
+import utils from '../utils'
  
 export default class MiniGraph extends GenericChartView{
 	constructor(props){

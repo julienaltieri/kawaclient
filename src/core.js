@@ -1,3 +1,4 @@
+import utils from './utils'
 import Cookies from 'js-cookie'
 import ApiCaller, {API} from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream} from './model'
@@ -7,7 +8,6 @@ import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
-const utils = require('./utils.js')
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}

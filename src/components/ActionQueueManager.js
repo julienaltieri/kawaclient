@@ -1,6 +1,6 @@
 import {EmptyStateAction,ActionStyles,BankReconnectAction} from './Action'
 import styled from 'styled-components';
-const utils = require('../utils.js')
+import utils from '../utils'
 
 const outOfFocusOpacity = 0.5;
 const disappearAnimationTime = 300;

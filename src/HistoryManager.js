@@ -1,4 +1,4 @@
-const utils = require('./utils.js')
+import utils from './utils'
 
 export const ActionTypes = {
 	TransactionUpdate: "TransactionUpdate"

@@ -6,7 +6,7 @@ import { fadeIn } from 'react-animations'
 import {Action, ActionCard, ActionsContainerBox, ActionStyles} from './Action'
 import DesignSystem from '../DesignSystem.js'
 
-const utils = require('../utils.js');
+import utils from '../utils'
 const Grouper = require('../processors/TransactionGrouper');
 const Statistics = require('../processors/Statistics');
 const checkmark = require('../assets/checkmark.svg').default;

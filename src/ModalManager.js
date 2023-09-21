@@ -5,8 +5,8 @@ import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DesignSystem from './DesignSystem.js'
 import {TransactionView} from './components/CategorizeAction'
+import utils from './utils'
 const transactionGrouper = require('./processors/TransactionGrouper')
-const utils = require('./utils.js')
 
 /* A quick manual because this modal management is super complicated - One day, let's refactor it
 - Modals are promises that return once the modal is responded (cancel, confirm etc)

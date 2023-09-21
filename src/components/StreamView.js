@@ -4,7 +4,7 @@ import styled from 'styled-components'
 import ApiCaller from '../ApiCaller'
 import {ModalController, ModalTemplates} from '../ModalManager.js'
 import {Period} from '../Time'
-const utils = require('../utils.js')
+import utils from '../utils'
 
 var streamNodeMap = {}
 var isInEditMode = false

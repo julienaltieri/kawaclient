@@ -10,8 +10,8 @@ import {ActionTypes} from '../HistoryManager.js'
 import DesignSystem from '../DesignSystem.js'
 import {BankReconnectAction,TransactionTypeClarificationAction} from './Action'
 import {refreshLiveRenderComponents} from './AnalysisView'
+import utils from '../utils'
 
-const utils = require('../utils.js')
 const loading = require('../assets/blue_loading.gif');
 const Grouper = require('../processors/TransactionGrouper')
 const undoIcon = require('../assets/undo.svg').default;

@@ -1,6 +1,8 @@
 const {v4:uuidv4}  = require('uuid');
 const currency = require('currency.js');
 
+let exports = {}
+
 exports.errors = {
 	abstractMethodCalled : "Trying to call an abstract method. It must be overriden from a subsclass",
 	terminalStreamMissingMendatoryAmountHistory : "Trying to instanciate a terminal stream that is missing a expected amount history. This isn't allowed."
@@ -38,12 +40,12 @@ exports.reducers = {
 
 exports.or = (array,f= x=>x) => array.some(f)
 exports.and = (array,f= x=>x) => array.every(f)
-exports.min = (array,f) => array.reduce(this.reducers.min(f),Number.MAX_VALUE)
-exports.max = (array,f) => array.reduce(this.reducers.max(f),Number.MIN_VALUE)
-exports.sum = (array,f) => Math.round(1000*array.reduce(this.reducers.sum(f),0))/1000
-exports.groupBy = (array,f) => array.reduce(this.reducers.groupBy(f),[])
-exports.flatGroupBy = (array,f) => {var a = this.groupBy(array,f);return Object.keys(a).map(k => a[k])}
-exports.stringConcat = (array,f) => array.reduce(this.reducers.stringConcat(f),"")
+exports.min = (array,f) => array.reduce(exports.reducers.min(f),Number.MAX_VALUE)
+exports.max = (array,f) => array.reduce(exports.reducers.max(f),Number.MIN_VALUE)
+exports.sum = (array,f) => Math.round(1000*array.reduce(exports.reducers.sum(f),0))/1000
+exports.groupBy = (array,f) => array.reduce(exports.reducers.groupBy(f),[])
+exports.flatGroupBy = (array,f) => {var a = exports.groupBy(array,f);return Object.keys(a).map(k => a[k])}
+exports.stringConcat = (array,f) => array.reduce(exports.reducers.stringConcat(f),"")
 
 //sorters
 exports.sorters = {
@@ -57,7 +59,7 @@ exports.flatten = node => {
 		return node.reduce(exports.reducers.concat(),[])
 	}else return Object.keys(node).reduce((ac, va) => [...ac,...exports.flatten(node[va])],[])
 }
-exports.isArrayAIncludedInB = (a,b) => this.and(a.map(aa => b.indexOf(aa)>-1)) 
+exports.isArrayAIncludedInB = (a,b) => exports.and(a.map(aa => b.indexOf(aa)>-1)) 
 exports.rotateRight = function(arr, n) {
   arr.unshift.apply(arr,arr.splice(n,arr.length));
   return arr;
@@ -101,12 +103,12 @@ exports.morphObjectAIntoB = function(a,b){
     Object.keys(b).forEach(key => a[key] = b[key])
 }
 
-exports.getSavableClone = function(obj){return this.convertDatesToString(JSON.parse(JSON.stringify(obj)))}
-exports.getObjectClone = function(obj){return this.convertStringsToDates(JSON.parse(JSON.stringify(obj)))}
+exports.getSavableClone = function(obj){return exports.convertDatesToString(JSON.parse(JSON.stringify(obj)))}
+exports.getObjectClone = function(obj){return exports.convertStringsToDates(JSON.parse(JSON.stringify(obj)))}
 
 
 exports.stringMerge = function(array,delimitor){//merges an array of strings
-	return array.reduce(this.reducers.stringConcat(undefined,delimitor),"")
+	return array.reduce(exports.reducers.stringConcat(undefined,delimitor),"")
 }
 
 exports.formatDollarAmount = function(n,fixed = 2,noMinusSign = false, noPlusSign = true){
@@ -151,7 +153,7 @@ exports.dedup = (array,hash,isDuplicate) => { //either use hash function or isDu
 
 //merge arrays with associated scores driven by weights
 exports.weightedMerge = (sets,weights,accessor) => {
-	var max = sets.reduce(this.reducers.max(s => s.length),0)
+	var max = sets.reduce(exports.reducers.max(s => s.length),0)
 	var res = {}
 	for (var i = max - 1; i >= 0; i--) {
 		sets.forEach((s,j) => {
@@ -220,3 +222,7 @@ exports.searchInsertDesc = function(array, value, accessor = a => a) {
     }else return i;
 };
 //searchInsertDesc([5,5,4],5)
+
+
+const utils = exports
+export default utils

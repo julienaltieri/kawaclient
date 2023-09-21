@@ -1,6 +1,6 @@
 import Core from './core.js';
 import TransactionTypes from './TransactionTypes'
-const utils = require('./utils.js')
+import utils from './utils'
 
 
 class TransactionEvaluator {

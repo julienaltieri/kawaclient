@@ -2,7 +2,7 @@ import Core from '../core.js';
 import {Period,dateIterator,timeIntervals} from '../Time'
 import dateformat from "dateformat";
 //import memoize from "memoize-one";
-const utils = require('../utils.js')
+import utils from '../utils'
 
 
 //note: it is expected that txns are categorized transactions. 

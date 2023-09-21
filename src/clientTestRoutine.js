@@ -3,7 +3,7 @@ import Core from './core'
 import {ModalTemplates} from './ModalManager.js'
 
 
-const utils = require('./utils.js')
+import utils from './utils'
 const reporter = require('./processors/ReportingCore')
 
 class TestRoutine{

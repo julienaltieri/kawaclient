@@ -1,7 +1,7 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DesignSystem from '../DesignSystem.js'
-const utils = require('../utils.js');
+import utils from '../utils'
 
 export class FrequencyRing extends BaseComponent{
 	getScaleFactor(){return 1.0}

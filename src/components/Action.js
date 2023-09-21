@@ -6,8 +6,8 @@ import {relativeDates} from '../Time'
 import { fadeIn } from 'react-animations' 
 import TransactionTypes from '../TransactionTypes'
 import Core from '../core.js';
+import utils from '../utils'
 
-const utils = require('../utils.js')
 
 
 export const ActionStyles = {

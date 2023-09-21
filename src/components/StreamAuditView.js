@@ -14,8 +14,8 @@ import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
 import ProgressRing from './ProgressRing';
 import {Period,createDate} from '../Time'
+import utils from '../utils'
 
-const utils = require('../utils.js');
 
 const reportingConfig = {
 	startingDay: 21,

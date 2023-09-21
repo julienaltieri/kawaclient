@@ -5,7 +5,7 @@ import Core from '../core'
 import {ModalTemplates} from '../ModalManager.js'
 //import PlaidLinkComponent from './PlaidLink';
 import {PlaidLink} from "react-plaid-link";
-const utils = require('../utils.js')
+import utils from '../utils'
 
 const PlaidStatuses = {
   ok:'ok',

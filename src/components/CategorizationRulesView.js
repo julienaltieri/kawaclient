@@ -4,8 +4,8 @@ import AppConfig from '../AppConfig'
 import Core from '../core.js'
 import { DragDropContext,Droppable,Draggable } from 'react-beautiful-dnd';
 import {ModalTemplates} from '../ModalManager.js'
+import utils from '../utils'
 const transactionGrouper = require('../processors/TransactionGrouper.js') 
-const utils = require('../utils.js')
 
 
 /*TODO

@@ -14,8 +14,8 @@ import ReactDOM from 'react-dom';
 import * as V from 'victory';
 import React from "react"
 import {StyledLink} from "./StreamAuditView"
+import utils from '../utils'
 const _ = require('lodash');
-const utils = require('../utils.js');
 const stats = require('../processors/Statistics.js')
 export function format(x,noMinusSign,noPlusSign){
 	if(x==0){return "$0"}

@@ -1,7 +1,7 @@
 import {Period,timeIntervals} from './Time'
 import getEvaluator from './TransactionEvaluator'
 import Core from './core'
-const utils = require('./utils.js')
+import utils from './utils'
 
 export default class UserData {
   constructor(json){

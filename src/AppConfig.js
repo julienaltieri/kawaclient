@@ -1,5 +1,5 @@
 import {relativeDates} from './Time'
-const utils = require('./utils.js');
+import utils from './utils'
 
 const AppConfig = {
 	serverURL: "https://8nwhu27f2l.execute-api.us-west-2.amazonaws.com/dev",
