@@ -2,7 +2,7 @@ import Cookies from 'js-cookie'
 import ApiCaller, {API} from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream} from './model'
 import ModalManager, {ModalController} from './ModalManager.js'
-import Navigation, {Routes} from './components/Navigation'
+import Navigation, {NavRoutes} from './components/Navigation'
 import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
@@ -66,7 +66,7 @@ class Core{
 	handleNotLoggedIn(){
 		console.log("User is not authenticated")
 		//remember requested route
-		if(Navigation.state.currentRoute!=Routes.login)this.routeOrder = Navigation.state.currentRoute
+		if(Navigation.state.currentRoute!=NavRoutes.login)this.routeOrder = Navigation.state.currentRoute
 		return this.setLoggedIn(false)
 	}
 	refreshTheme(){
@@ -193,7 +193,7 @@ class Core{
 			if(b){//transitioning to logged in state
 				this.loadData().then(() => {//load or reload the data
 					if(this.app)this.app.updateState({loggedIn:true});
-					if(Navigation.state.currentRoute == Routes.login){Navigation.navigateToRoute(Routes.home)}//if current page is login
+					if(Navigation.state.currentRoute == NavRoutes.login){Navigation.navigateToRoute(NavRoutes.home)}//if current page is login
 					if(!!this.routeOrder){//if there was a remnant route order (pre-login) navigate back
 						Navigation.navigateToRoute(this.routeOrder)
 						this.routeOrder = undefined
@@ -203,7 +203,7 @@ class Core{
 				})
 			}else{
 				if(this.app)this.app.updateState({loggedIn:false});
-				Navigation.navigateToRoute(Routes.login);
+				Navigation.navigateToRoute(NavRoutes.login);
 				res()
 			}
 		})

@@ -1,6 +1,6 @@
 import './App.css'
 import BaseComponent from './components/BaseComponent'
-import {BrowserRouter as Router, Route, Switch} from 'react-router-dom';
+import {BrowserRouter as Router, Route, Outlet, Routes} from 'react-router-dom';
 import LoginPage from './components/loginPage'
 import CategorizationRulesView from './components/CategorizationRulesView'
 import ApiCaller from './ApiCaller'
@@ -9,7 +9,7 @@ import UserData, { Stream } from './model'
 import Core from './core.js'
 import MasterStreamView from './components/StreamView'
 import {ModalContainer} from './ModalManager.js'
-import Navigation, {TopNavigationBar,Routes} from './components/Navigation'
+import Navigation, {TopNavigationBar,NavRoutes} from './components/Navigation'
 import MissionControl from './components/MissionControl'
 import SettingPage from './components/SettingPage'
 
@@ -34,10 +34,10 @@ export default class App extends BaseComponent{
 
   componentDidMount(){
     //populate side navigation bar
-    Navigation.addView("Home",Routes.home);
-    Navigation.addView("Streams",Routes.streams);
-    Navigation.addView("Categorization",Routes.categorization);
-    Navigation.addView("Settings",Routes.settings);
+    Navigation.addView("Home",NavRoutes.home);
+    Navigation.addView("Streams",NavRoutes.streams);
+    Navigation.addView("Categorization",NavRoutes.categorization);
+    Navigation.addView("Settings",NavRoutes.settings);
 
   }
 
@@ -48,15 +48,13 @@ export default class App extends BaseComponent{
         {!!this.state.modalController?<ModalContainer controller={this.state.modalController}/>:""}
         <TopNavigationBar loggedIn={this.state.loggedIn}/>
         <div style={{paddingTop:"3rem"}}>
-          <Switch>
-            <Route path={Routes.streams} component={MasterStreamView} exact/>
-            <Route path={Routes.categorization} component={CategorizationRulesView} exact/>
-            <Route path={Routes.home} component={MissionControl} exact/>
-            <Route path={Routes.login} component={LoginPage}/>
-            <Route path={Routes.settings} component={SettingPage}/>
-            
-          </Switch>
-
+          <Routes>
+            <Route path={NavRoutes.streams} element={<MasterStreamView/>} exact/>
+            <Route path={NavRoutes.categorization} element={<CategorizationRulesView/>} exact/>
+            <Route path={NavRoutes.home} element={<MissionControl/>} exact/>
+            <Route path={NavRoutes.login} element={<LoginPage/>}/>
+            <Route path={NavRoutes.settings} element={<SettingPage/>}/>
+          </Routes>
         </div>
     </Router>
   )}

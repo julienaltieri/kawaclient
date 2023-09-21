@@ -2,47 +2,43 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
 import Cookies from 'js-cookie'
 import Core from '../core.js'
-import {withRouter} from 'react-router-dom'
+import {useNavigate} from 'react-router-dom'
 import SideBar from './SideBar'
 import DesignSystem from '../DesignSystem'
 
 
 
-const Routes = {
+const NavRoutes = {
 	home:'/',
 	login: '/login',
 	categorization: '/categorization',
 	streams: '/streams',
 	settings: '/settings'
 }
-const isValidRoute = (path)=> Object.keys(Routes).map(k => Routes[k]).indexOf(path)>-1
+const isValidRoute = (path)=> Object.keys(NavRoutes).map(k => NavRoutes[k]).indexOf(path)>-1
 
 class NavigationController{
 	constructor(){
 		this.state = {
-			currentRoute:window.location.pathname,
 			sideBarVisible:false,
 			registeredViews: []
 		}
-		if(!isValidRoute(this.state.currentRoute))this.navigateToRoute(Routes.home)
+		if(!isValidRoute(this.getCurrentRoute()))this.navigateToRoute(NavRoutes.home)
 	}
 
-	getCurrentRoute(){return this.state.currentRoute}
-	getCurrentRouteIndex(){
-		return this.getHamburgerMenuItems().map(a => a.path).indexOf(this.state.currentRoute)
-	}
+	getCurrentRoute(){return window.location.pathname}
+	getCurrentRouteIndex(){return this.getHamburgerMenuItems().map(a => a.path).indexOf(this.getCurrentRoute())}
 	addView(name,path){if(this.state.registeredViews.map(a => a.name).indexOf(name)==-1)this.state.registeredViews.push({name:name,path:path})}
 	getHamburgerMenuItems(){return this.state.registeredViews}
 	registerNavBar(navBar){
 		this.state.navBar = navBar;
-		this.state.navBar.props.history.push(this.state.currentRoute)
+		this.state.navBar.props.navigate(this.getCurrentRoute())
 	}
 	navigateToRoute(route){
-		if(route == this.state.currentRoute)return;
+		if(route == this.getCurrentRoute())return;
 		else{
-			this.state.currentRoute=route
 			if(this.state.navBar){
-				this.state.navBar.props.history.push(route)
+				this.state.navBar.props.navigate(route)
 				this.state.navBar.refreshSideBarState()
 			}
 		}
@@ -88,7 +84,7 @@ class TopNavigationBarBase extends BaseComponent{
 		  	<SideBar 	
 		  		visible={this.state.sideBarVisible} items={instance.state.registeredViews} 
 		  		onClickCloseSideBar={e => this.updateState({sideBarVisible:false})}
-		  		activeIndex={this.state.currentRouteIndex}
+		  		activeIndex={instance.getCurrentRouteIndex()}
 		  		onClickRoute={(route) => {
 		  			instance.navigateToRoute(route);
 		  			this.updateState({sideBarVisible:false,currentRouteIndex:instance.state.registeredViews.map(v => v.path).indexOf(route)})
@@ -105,8 +101,11 @@ class TopNavigationBarBase extends BaseComponent{
 }
 
 const instance = new NavigationController();
-const TopNavigationBarWithRouter = withRouter(TopNavigationBarBase)
-export {TopNavigationBarWithRouter as TopNavigationBar, Routes}
+const TopNavigationBar = (props) => { 
+	const navigate = useNavigate() 
+	return <TopNavigationBarBase loggedIn={props.loggedIn} navigate={navigate}/>
+}
+export {TopNavigationBar, NavRoutes}
 export default instance;
 
 
