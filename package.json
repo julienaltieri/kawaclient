@@ -22,7 +22,6 @@
     "react-plaid-link": "^3.3.2",
     "react-router": "^5.3.4",
     "react-scripts": "^5.0.1",
-    "react-sortable-tree": "^2.7.1",
     "sentence-similarity": "^3.0.2",
     "similarity-score": "^1.0.0",
     "string-similarity": "^4.0.4",
