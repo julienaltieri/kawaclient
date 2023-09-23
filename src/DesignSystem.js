@@ -1,12 +1,16 @@
 import AppConfig from "./AppConfig";
 import styled from 'styled-components';
 import 'material-symbols';
+const logo_light = require('./assets/logo_light.svg').default;
+const logo_dark = require('./assets/logo_dark.svg').default;
 
 const Icon = styled.span`
 	font-size: 1.3rem;
 	vertical-align: sub;
 `
-
+const Logo = styled.img`
+    width:6rem;
+`
 class DesignSystem{
 	UIColors = {
 		green:"#27AE60",
@@ -97,8 +101,9 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return false || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
-	getStyle(){return this.styles[this.isDarkMode()?"darkMode":"lightMode"]}
+	isDarkMode(){return true && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	getMode(){return this.isDarkMode()?"darkMode":"lightMode"}
+	getStyle(){return this.styles[this.getMode()]}
 	rgbToHex(red, green, blue) {
 	  	const rgb = (red << 16) | (green << 8) | (blue << 0);
 	  	return '#' + (0x1000000 + rgb).toString(16).slice(1);
@@ -121,6 +126,10 @@ class DesignSystem{
 		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
+		logo: {
+			lightMode: <Logo src={logo_light}/>,
+			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>
+		}
 	}
 
 }

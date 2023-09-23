@@ -7,7 +7,6 @@ import SideBar from './SideBar'
 import DesignSystem from '../DesignSystem'
 
 
-
 const NavRoutes = {
 	home:'/',
 	login: '/login',
@@ -74,9 +73,9 @@ class TopNavigationBarBase extends BaseComponent{
 
 	render(){
 		var leftButton,rightButton;
+		leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{DesignSystem.icon.logo[DesignSystem.getMode()]}</HamburgerButton>
 		if(this.props.loggedIn){
 			rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
-			leftButton = <HamburgerButton onClick={(e) => this.summonSideBar()}>{DesignSystem.icon.menu}</HamburgerButton>
 		}
 		return(
 			//TODO: while the side bar is visible, have an overlay to capture event and dismiss
@@ -92,7 +91,6 @@ class TopNavigationBarBase extends BaseComponent{
 		  	/>
 		  	{leftButton}
 		  	<Spacer/>
-		  	<Logo>KAWA</Logo>
 		  	<Spacer/>
 		  	{rightButton}
 		  </StyledNavBar>
@@ -156,14 +154,7 @@ const HamburgerButton = styled.button`
 }
 `
 
-const Logo = styled.div`
-	left: 0;
-    position: absolute;
-    z-index: -1;
-    width:100%;
-    text-align: center;
-    color:${DesignSystem.getStyle().bodyText}
-`
+
 
 const Spacer = styled.div`
 flex-grow:1
