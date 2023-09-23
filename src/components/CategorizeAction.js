@@ -5,10 +5,10 @@ import Core, {amazonConfig} from '../core.js'
 import { fadeIn } from 'react-animations'
 import {Action, ActionCard, ActionsContainerBox, ActionStyles} from './Action'
 import DesignSystem from '../DesignSystem.js'
-
 import utils from '../utils'
-const Grouper = require('../processors/TransactionGrouper');
-const Statistics = require('../processors/Statistics');
+import TransactionGrouper from '../processors/TransactionGrouper'
+import Statistics from '../processors/Statistics';
+
 const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
 
@@ -42,7 +42,7 @@ class CategorizeActionCard extends ActionCard{
 
 		//suggestions by similar categorization
 		var recNeighbors = [];
-		var {key,branch} = Grouper.getRelevantBranchInTree(this.props.transaction,Grouper.clusterTransactions(txns))
+		var {key,branch} = TransactionGrouper.getRelevantBranchInTree(this.props.transaction,TransactionGrouper.clusterTransactions(txns))
 		var sids = Core.getUserData().getAllTerminalStreams().map(s => s.id);
 		if(branch.length>0){
 			var categorizedTxns = branch.filter(t => t.categorized)
@@ -81,7 +81,7 @@ class CategorizeActionCard extends ActionCard{
 		//prep work
 		var amz = this.props.transaction.amazonOrderDetails;
 		var amzNeighbors = amz?Core.getTransactionsForOrderNumber(amz.orderNumber):undefined;
-		var {key,branch} = Grouper.getRelevantBranchInTree(this.props.transaction,Grouper.clusterTransactions(this.props.appContext.getTransactionsInQueue()))
+		var {key,branch} = TransactionGrouper.getRelevantBranchInTree(this.props.transaction,TransactionGrouper.clusterTransactions(this.props.appContext.getTransactionsInQueue()))
 		var categorizeOtherTransactions, createRule, refusedCreateRule;
 		var firstMatchingRule = Core.getUserData().getCategorizationRules().filter(r => key.indexOf(r.matchingString)>-1)[0];
 		var adequateRuleAlreadyExists = (!!firstMatchingRule && firstMatchingRule.allocations[0].streamId==s.id);

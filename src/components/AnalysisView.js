@@ -15,8 +15,9 @@ import * as V from 'victory';
 import React from "react"
 import {StyledLink} from "./StreamAuditView"
 import utils from '../utils'
+import Statistics from '../processors/Statistics';
+
 const _ = require('lodash');
-const stats = require('../processors/Statistics.js')
 export function format(x,noMinusSign,noPlusSign){
 	if(x==0){return "$0"}
 	else {return utils.formatDollarAmount(x,(Math.abs(x)>=100 || (Math.floor(x)==x))?0:2,noMinusSign,noPlusSign)}
@@ -293,7 +294,7 @@ class SeriesDescriptor{
 	getEOYProjection(yArray){return yArray.length > this.chartContext.timeAxisBoundIndex?yArray[this.chartContext.timeAxisBoundIndex]:this.getTrend(yArray).slice(-1)[0]?.y}
 	getTimeSeries(series){return series.slice(0,this.chartContext.timeAxisBoundIndex+1).map((y,i) => {return {x:this.chartContext.xAccessor(this.chartContext.timeAxis[i]), y:y}})}
 	getTrend(yArray){
-		let fitIndex = yArray.length-1, {slope,yIntercept} = stats.trendLine([...[0],...yArray].map((y,i)=> {return {x: this.chartContext.timeAxis[i].getTime(), y:y}}))
+		let fitIndex = yArray.length-1, {slope,yIntercept} = Statistics.trendLine([...[0],...yArray].map((y,i)=> {return {x: this.chartContext.timeAxis[i].getTime(), y:y}}))
 		let res = this.chartContext.timeAxis.slice(fitIndex,this.chartContext.timeAxisBoundIndex+1).map(x => {return {
 			x:this.chartContext.xAccessor(x), 
 			y: x*slope +yArray[fitIndex]-slope*this.chartContext.timeAxis[fitIndex]

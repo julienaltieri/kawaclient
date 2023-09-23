@@ -1,6 +1,6 @@
-const utils = require('../utils.js')
+import utils from '../utils'
 
-
+let exports = {}
 
 exports.frequencies = function(data, accessor){
 	var res = {}
@@ -33,11 +33,11 @@ exports.median = (arr,f) => {
 exports.variance = (arr,f) => {
 	if(!f)f = x => x
 	if(arr.length == 0)return NaN
-	var avg = this.avg(arr,f)
+	var avg = exports.avg(arr,f)
 	return arr.map(f).reduce((ac,va) => ac + Math.pow(va-avg,2),0)/arr.length
 }
 
-exports.stddev = (arr,f) => Math.sqrt(this.variance(arr,f))
+exports.stddev = (arr,f) => Math.sqrt(exports.variance(arr,f))
 
 
 
@@ -55,3 +55,6 @@ exports.trendLine = (data) => { //expects [{x:..., y:...},...]
 
 	return {slope: slope,yIntercept: yIntercept}
 }
+
+const Statistics = exports
+export default Statistics

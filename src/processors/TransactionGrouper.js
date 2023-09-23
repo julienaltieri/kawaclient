@@ -1,5 +1,5 @@
-const utils = require('../utils.js')
-
+import utils from '../utils'
+let exports = {}
 
 
 exports.clusterTransactions = (transactionArray) => processTree(affinityTree(transactionArray,0))
@@ -69,3 +69,7 @@ function processTree(node){
 	}
 	return res
 }
+
+
+const TransactionGrouper = exports
+export default TransactionGrouper
