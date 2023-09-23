@@ -12,6 +12,7 @@ import {ModalContainer} from './ModalManager.js'
 import Navigation, {TopNavigationBar,NavRoutes} from './components/Navigation'
 import MissionControl from './components/MissionControl'
 import SettingPage from './components/SettingPage'
+import PageLoader from './components/PageLoader'
 
 
 
@@ -54,8 +55,8 @@ export default class App extends BaseComponent{
             <Route path={NavRoutes.home}            element={<MissionControl refresh={this.state.refresh}/>}/>
             <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.state.refresh}/>}/>
           </Routes>:<Routes>
-            <Route path={NavRoutes.home}            element={<MissionControl refresh={this.state.refresh}/>}/>
             <Route path={NavRoutes.login}           element={<LoginPage refresh={this.state.refresh}/>}/>
+            <Route path={"*"}                       element={<PageLoader/>}/>
           </Routes>}
         </div>
     </Router>

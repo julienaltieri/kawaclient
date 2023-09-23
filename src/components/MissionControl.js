@@ -11,6 +11,7 @@ import DesignSystem from '../DesignSystem.js'
 import {BankReconnectAction,TransactionTypeClarificationAction} from './Action'
 import {refreshLiveRenderComponents} from './AnalysisView'
 import utils from '../utils'
+import PageLoader from './PageLoader'
 
 const loading = require('../assets/blue_loading.gif');
 const Grouper = require('../processors/TransactionGrouper')
@@ -35,7 +36,7 @@ class MissionControl extends BaseComponent{
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
 	}
-	componentDidMount(){if(Core.isUserLoggedIn()){this.loadData()}}
+	componentDidMount(){this.loadData()}
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {
@@ -147,7 +148,7 @@ class MissionControl extends BaseComponent{
 	}
 
 	render(){
-		if(this.state.fetching){return (<StyledHomeContainer><Loader><div className={DesignSystem.isDarkMode()?"lds-ripple":"lds-ripple-bright"}><div></div><div></div></div></Loader></StyledHomeContainer>)}
+		if(this.state.fetching){return (<PageLoader/>)}
 		else{
 			return <StyledHomeContainer>
 				<div style={{height:'20rem', marginTop: "1rem",maxWidth: "26rem",width: "100%"}}>
@@ -165,7 +166,7 @@ class MissionControl extends BaseComponent{
 }
 
 export default React.memo(MissionControl)
-
+/*
 const Loader = styled.div`
 	width: 5rem;
     height: 5rem;
@@ -175,7 +176,7 @@ const Loader = styled.div`
     justify-content: center;
     align-items: center;
 
-`
+`*/
 const StyledHomeContainer = styled.div `
 	width:calc(100% - 2rem);
 	padding: 1rem;

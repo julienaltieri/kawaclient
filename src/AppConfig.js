@@ -7,7 +7,7 @@ const AppConfig = {
 		apiCategorizationOfflineMode: false,
 		apiUncategorizationOfflineMode: false
 	},
-	transactionFetchMinDate: relativeDates.threeYearsAgo(),
+	transactionFetchMinDate: relativeDates.oneYearAgo(),
 }
 
 
