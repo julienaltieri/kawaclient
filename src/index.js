@@ -7,8 +7,8 @@ import AppConfig from "./AppConfig";
 
 
 function start(){
+	ReactDOM.render(<App/>,document.getElementById('root'));
 	Core.init().then(() => {
-		ReactDOM.render(<App/>,document.getElementById('root'));
 		TestRoutine.start();
 	}).catch(e => console.error(e));
 }

@@ -48,13 +48,15 @@ export default class App extends BaseComponent{
         {!!this.state.modalController?<ModalContainer controller={this.state.modalController}/>:""}
         <TopNavigationBar loggedIn={this.state.loggedIn}/>
         <div style={{paddingTop:"3rem"}}>
-          <Routes>
-            <Route path={NavRoutes.streams} element={<MasterStreamView/>} exact/>
-            <Route path={NavRoutes.categorization} element={<CategorizationRulesView/>} exact/>
-            <Route path={NavRoutes.home} element={<MissionControl/>} exact/>
-            <Route path={NavRoutes.login} element={<LoginPage/>}/>
-            <Route path={NavRoutes.settings} element={<SettingPage/>}/>
-          </Routes>
+          {Core.isUserLoggedIn()?<Routes>
+            <Route path={NavRoutes.streams}         element={<MasterStreamView refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.home}            element={<MissionControl refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.state.refresh}/>}/>
+          </Routes>:<Routes>
+            <Route path={NavRoutes.home}            element={<MissionControl refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.login}           element={<LoginPage refresh={this.state.refresh}/>}/>
+          </Routes>}
         </div>
     </Router>
   )}

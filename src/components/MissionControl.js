@@ -35,7 +35,7 @@ class MissionControl extends BaseComponent{
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
 	}
-	componentDidMount(){if(Core.isUserLoggedIn())this.loadData()}
+	componentDidMount(){if(Core.isUserLoggedIn()){this.loadData()}}
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {

@@ -3,7 +3,6 @@ import styled from 'styled-components'
 import Cookies from 'js-cookie'
 import Core from '../core.js'
 import ApiCaller from '../ApiCaller'
-import Navigation, {Routes} from './Navigation'
 
 export default class LoginPage extends BaseComponent{
 

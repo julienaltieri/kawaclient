@@ -52,33 +52,16 @@ class Core{
 		window.matchMedia('(prefers-color-scheme: dark)').addListener((e) => {
 			instance.app.updateState({refresh:new Date()})
 		});
-
-		return new Promise((res,rej) => {
-			this.checkAuthentication(() => {//user is authenticated
-				console.log("User is authenticated")
-				this.setLoggedIn(true)
-				.then(res).catch(e => {rej(e)})
-			},() => {//user is not authenticated
-				return this.handleNotLoggedIn().then(res).catch(e => {rej(e)})
-			})
-		})
-	}
-	handleNotLoggedIn(){
-		console.log("User is not authenticated")
-		//remember requested route
-		if(Navigation.state.currentRoute!=NavRoutes.login)this.routeOrder = Navigation.state.currentRoute
-		return this.setLoggedIn(false)
+				
+		return this.checkAuthentication().then(() => this.setLoggedIn(true)).then(() => console.log("User is authenticated"))
+		.catch((e) => this.setLoggedIn(false).then(() => Navigation.navigateToRoute(NavRoutes.login)).then(() => console.log("User is authenticated")))
 	}
 	refreshTheme(){
 		document.getElementById('root').style.color = DesignSystem.getStyle().bodyTextSecondary;
 		document.getElementsByTagName('html')[0].className = '';
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
-	loadData(){
-		return ApiCaller.getUserData()
-			.then(ud => {this.globalState.userData = new UserData(ud)})
-			
-	}
+	loadData(){return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
 		if(!ud){return}
@@ -180,33 +163,24 @@ class Core{
 	refreshCategorizationBetweenDates(start,end){return ApiCaller.refreshCategorizationBetweenDates(start,end)}
 	checkAuthentication(successCallback,failureCallback){
 	  var authToken = Cookies.get('token');
-	  if(!authToken || authToken===""){
-	  	if(failureCallback)failureCallback("no token passed")
-	  }else{
-	  	return ApiCaller.validateToken(authToken).then(res => {if(successCallback)successCallback()})
-		.catch(err=> {if(failureCallback)failureCallback(err)})
-	  }
+	  if(!authToken || authToken===""){return Promise.reject(new Error("no token passed"))}
+	  else{return ApiCaller.validateToken(authToken)}
 	}
 	setLoggedIn(b){
 		this.globalState.loggedIn = b;
-		return new Promise((res,rej) => {		
-			if(b){//transitioning to logged in state
-				this.loadData().then(() => {//load or reload the data
-					if(this.app)this.app.updateState({loggedIn:true});
-					if(Navigation.state.currentRoute == NavRoutes.login){Navigation.navigateToRoute(NavRoutes.home)}//if current page is login
-					if(!!this.routeOrder){//if there was a remnant route order (pre-login) navigate back
-						Navigation.navigateToRoute(this.routeOrder)
-						this.routeOrder = undefined
-					}
-					if(this.app)this.app.render();
-					res()
-				})
-			}else{
-				if(this.app)this.app.updateState({loggedIn:false});
-				Navigation.navigateToRoute(NavRoutes.login);
-				res()
-			}
-		})
+		//transitioning to logged in state
+		if(b){
+			return this.loadData().then(() => {//load or reload the data
+				if(!!this.routeOrder){//if there was a remnant route order (pre-login) navigate back
+					Navigation.navigateToRoute(this.routeOrder)
+					this.routeOrder = undefined
+				}else { Navigation.navigateToRoute(NavRoutes.home) }
+				return this.app?.updateState({loggedIn:true,refresh:new Date()}) || Promise.resolve()
+			})
+		}else{
+			Navigation.navigateToRoute(NavRoutes.login);
+			return this.app?.updateState({loggedIn:false,refresh:new Date()}) || Promise.resolve()
+		}
 	}
 	isUserLoggedIn(){return this.globalState.loggedIn}
 	saveCategorizationRules(updatedList){
