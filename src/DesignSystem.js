@@ -38,6 +38,7 @@ class DesignSystem{
 		black: "#000000",
 		white: "#ffffff",
 		darkPurple: "#191829",
+		midPurple: "#19182930",
 		lightPurple: "#d6e5fe"
 	};
 	borderRadius= "0.7rem";
@@ -53,7 +54,7 @@ class DesignSystem{
 			bodyText: this.UIColors.darkGrey4,
 			bodyTextSecondary: this.UIColors.darkGrey2,
 			buttonDisabled: this.UIColors.lightGrey5,
-			borderColor: this.UIColors.lightGrey5,
+			borderColor: this.UIColors.midPurple,
 			pageBackground: this.UIColors.lightPurple,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.vividBlue,
@@ -96,7 +97,7 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	isDarkMode(){return false&&(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
 	getStyle(){return this.styles[this.isDarkMode()?"darkMode":"lightMode"]}
 	rgbToHex(red, green, blue) {
 	  	const rgb = (red << 16) | (green << 8) | (blue << 0);

@@ -174,7 +174,7 @@ const StyledHomeContainer = styled.div `
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-top: ${(props) => Core.isMobile()?0:DesignSystem.verticalSpacing.m};
+    margin-top: ${(props) => Core.isMobile()?DesignSystem.verticalSpacing.s:DesignSystem.verticalSpacing.m};
 `   
 
 const UndoButton = styled.img`
