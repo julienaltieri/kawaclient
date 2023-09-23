@@ -97,7 +97,7 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return false&&(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	isDarkMode(){return false || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
 	getStyle(){return this.styles[this.isDarkMode()?"darkMode":"lightMode"]}
 	rgbToHex(red, green, blue) {
 	  	const rgb = (red << 16) | (green << 8) | (blue << 0);
