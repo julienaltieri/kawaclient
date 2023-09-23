@@ -2,7 +2,6 @@ import AppConfig from "./AppConfig";
 import styled from 'styled-components';
 import 'material-symbols';
 
-
 const Icon = styled.span`
 	font-size: 1.3rem;
 	vertical-align: sub;
@@ -44,6 +43,11 @@ class DesignSystem{
 	borderRadius= "0.7rem";
 	borderRadiusSmall= "0.3rem";
 	barWidthRem=0.5;
+	verticalSpacing={
+		s:"1rem",
+		m:"2rem",
+		l:"3rem"
+	}
 	styles = {
 		lightMode: {
 			bodyText: this.UIColors.darkGrey4,

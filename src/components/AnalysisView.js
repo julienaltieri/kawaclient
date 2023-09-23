@@ -636,7 +636,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners.map(l => l.current.invalidate = true)
 		this.mouseMoveListeners=[];
 
-		return (<div style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",display:"flex",background:DesignSystem.getStyle().UIElementBackground,borderRadius:DesignSystem.borderRadius,padding:"1rem",marginBottom:"2rem"}}>
+		return (<div style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",display:"flex",background:DesignSystem.getStyle().UIElementBackground,borderRadius:DesignSystem.borderRadius,padding:"1rem",marginBottom:DesignSystem.verticalSpacing[Core.isMobile()?"s":"l"]}}>
 			<div style={{position:"relative",width:"100%",height:"100%"}}>
 		       	<svg style={{position:"absolute",width:0}}><defs>
 			        <radialGradient id="alertHighlight">

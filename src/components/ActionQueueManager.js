@@ -16,6 +16,7 @@ export default class ActionQueueManager{
 		this.queue = [new EmptyStateAction(0,this)]
 	}
 	getQueue(){return this.queue}
+	hasActions(){return this.getQueue().length>1}
 	getNextAvailableId(){return this.queue.map(a => a.id).sort(utils.sorters.desc())[0]+1}
 	insertActions(actions){
 		var sortedActionSortingValues = this.queue.map(a => a.getSortValue()).sort(utils.sorters.asc());

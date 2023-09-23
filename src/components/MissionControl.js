@@ -151,10 +151,10 @@ class MissionControl extends BaseComponent{
 		if(this.state.fetching){return (<PageLoader/>)}
 		else{
 			return <StyledHomeContainer>
-				<div style={{height:'20rem', marginTop: "1rem",maxWidth: "26rem",width: "100%"}}>
+				{this.state.actionQueueManager.hasActions()?<div style={{height:'20rem',maxWidth: "26rem",width: "100%"}}>
 					<UndoButtonContainer><UndoButton src={undoIcon} onClick={this.onClickUndoButton}></UndoButton></UndoButtonContainer>
 					{this.state.actionQueueManager.renderComponent()}
-				</div>
+				</div>:<div></div>}
 				<div style={{width:"100%",display: "flex",flexDirection: "column",alignItems: "stretch"}}>
 					<AuditView  auditedTransactions={this.state.availableTransactions} stream={this.state.streamTree} 
 								onCategorizationUpdate={this.onCategorizationUpdate} 
@@ -166,17 +166,7 @@ class MissionControl extends BaseComponent{
 }
 
 export default React.memo(MissionControl)
-/*
-const Loader = styled.div`
-	width: 5rem;
-    height: 5rem;
-    display: flex;
-    margin-top:  calc(50vh - 6rem);;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
 
-`*/
 const StyledHomeContainer = styled.div `
 	width:calc(100% - 2rem);
 	padding: 1rem;
@@ -184,6 +174,7 @@ const StyledHomeContainer = styled.div `
     display: flex;
     flex-direction: column;
     align-items: center;
+    margin-top: ${(props) => Core.isMobile()?0:DesignSystem.verticalSpacing.m};
 `   
 
 const UndoButton = styled.img`

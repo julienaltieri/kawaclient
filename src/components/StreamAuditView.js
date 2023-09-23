@@ -266,8 +266,8 @@ const TopLevelHeaderContainer = styled.div`
 	justify-content: space-between;
     border-bottom: solid 1px;
     border-color: ${DesignSystem.getStyle().borderColor};
-    margin-bottom: 2rem;
-    margin-top: 2rem;
+    margin-bottom: ${DesignSystem.verticalSpacing[Core.isMobile()?"s":"m"]};
+    margin-top: ${DesignSystem.verticalSpacing[Core.isMobile()?"s":"m"]};
     width: 100%;
 `
 
