@@ -54,5 +54,8 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "https://8nwhu27f2l.execute-api.us-west-2.amazonaws.com/dev:4001"
+  "proxy": "https://8nwhu27f2l.execute-api.us-west-2.amazonaws.com/dev:4001",
+  "_proxy": "https://localhost:4001"
+
 }
+  

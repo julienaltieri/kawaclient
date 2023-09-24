@@ -149,8 +149,8 @@ class MissionControl extends BaseComponent{
 
 	render(){
 		if(this.state.fetching){return (<PageLoader/>)}
-		else{
-			return <StyledHomeContainer>
+		else if(this.state.availableTransactions.length==0){return (<div></div>)}
+		else{return <StyledHomeContainer>
 				{this.state.actionQueueManager.hasActions()?<div style={{height:'20rem',maxWidth: "26rem",width: "100%"}}>
 					<UndoButtonContainer><UndoButton src={undoIcon} onClick={this.onClickUndoButton}></UndoButton></UndoButtonContainer>
 					{this.state.actionQueueManager.renderComponent()}
