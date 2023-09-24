@@ -158,7 +158,7 @@ export class CompoundStream extends Stream{
   isTerminal(){return false}
 
   //operations
-  refreshValues(){this.period = this.setPeriod || Period.longestPeriod(this.children.map(c => c.period))}
+  refreshValues(){this.period = this.setPeriod || Period.longestPeriod(this.children.map(c => Period[c.period])).name}
   insertChildAt(child,index){this.children.splice(index||0,0,child)}
   removeChild(stream){
     var index = this.children.map(c => c.id).indexOf(stream.id);
