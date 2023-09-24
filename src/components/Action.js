@@ -215,7 +215,7 @@ class TransactionTypeClarificationActionCard extends ActionCard{
 							<div style={{marginTop:"0.2rem",fontSize:"0.7rem",textAlign:"left"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
 						</div>
 						<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
-							<span>{utils.formatDollarAmount(this.props.transaction.evaluator.getAllocationForStream(this.props.allocatedStream)?.amount)}</span>
+							<span>{utils.formatCurrencyAmount(this.props.transaction.evaluator.getAllocationForStream(this.props.allocatedStream)?.amount,null,null,null,Core.getPreferredCurrency())}</span>
 							<StreamTag>{this.props.allocatedStream.name}</StreamTag>					
 						</div>
 					</div>

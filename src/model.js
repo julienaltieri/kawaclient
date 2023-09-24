@@ -3,6 +3,11 @@ import getEvaluator from './TransactionEvaluator'
 import Core from './core'
 import utils from './utils'
 
+export const currencies = {
+  USD: "USD",
+  EUR: "EUR"
+}
+
 export default class UserData {
   constructor(json){
     this.categorizationRules = json.categorizationRules || [];
@@ -15,6 +20,7 @@ export default class UserData {
     this.amazonOrderHistory = json.amazonOrderHistory;
     this.plaidConnections = json.plaidConnections;
     this.savingAccounts = json.savingAccounts;
+    this.preferredCurrency = json.preferredCurrency || currencies.USD;
   }
 
   //convenience
@@ -102,7 +108,7 @@ class Stream{
 
   //convenience
   convertAmountInAmountForPeriod(amount,period,date){return amount/this.getNumberOfSubdivisionInPreferredPeriod(period,date)}
-  formatedString(name,period,amount){return (amount!=undefined)?`${name} (${period}): ${utils.formatDollarAmount(amount)} `:""}
+  formatedString(name,period,amount){return (amount!=undefined)?`${name} (${period}): ${utils.formatCurrencyAmount(amount,null,null,null,Core.getPreferredCurrency())} `:""}
   toString(prefix){return this.toStringAtDate(new Date(),prefix)}
   /*[abstract]*/toStringAtDate(date,prefix){throw new Error(utils.errors.abstractMethodCalled)}
   
@@ -296,7 +302,7 @@ export class GenericTransaction{
   unsavedForStream(s){              return -this.savedForStream(s)}
 
   //convenience
-  toString(){return `[${this.date.toDateString()}] ${utils.formatDollarAmount(this.amount)} [${this.categorized?this.streamAllocation[0].streamName:"---------"}] ${this.description.substring(0,40)}...`}
+  toString(){return `[${this.date.toDateString()}] ${utils.formatCurrencyAmount(this.amount,null,null,null,Core.getPreferredCurrency())} [${this.categorized?this.streamAllocation[0].streamName:"---------"}] ${this.description.substring(0,40)}...`}
   isAllocatedToStream(s){
     if(!s.children){return !!this.evaluator.getAllocationForStream(s)?.amount}
     else {return (utils.or(s.getAllTerminalStreams(),ss => this.isAllocatedToStream(ss)))}

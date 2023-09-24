@@ -62,6 +62,7 @@ class Core{
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
 	loadData(){return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
+	getPreferredCurrency(){return this.getUserData().preferredCurrency}
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
 		if(!ud){return}

@@ -268,7 +268,7 @@ export class TransactionsModalView extends BaseComponent{
 						{this.props.transactions.slice(0,5).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
 								<div>{t.description.substring(0,20)}...</div><Spacer/>
 								<div>{t.getDateInDisplayTimezone().toDateString()}</div><Spacer/>
-								<div>{utils.formatDollarAmount(t.amount)}</div>
+								<div>{utils.formatCurrencyAmount(t.amount,null,null,null, Core.getPreferredCurrency())}</div>
 						</div>)}
 						{(this.props.transactions.length>5)?<div style={{textAlign: "right",fontWeith:"100"}}>...and {this.props.transactions.length-5} other(s)</div>:""}
 					</ul>

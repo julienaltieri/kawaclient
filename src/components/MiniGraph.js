@@ -147,7 +147,7 @@ export class CompactMiniGraph extends MiniGraph{
 }
 
 const MiniToolTip = (props) => {
-	let text = utils.formatDollarAmount(props.datum.y,0,false,false)
+	let text = utils.formatCurrencyAmount(props.datum.y,0,false,false,Core.getPreferredCurrency())
 	return (<g>
 		<defs>
 			<filter id="shadow" x="0" y="0" width="100%" height="100%">

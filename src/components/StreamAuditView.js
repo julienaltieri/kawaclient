@@ -118,7 +118,7 @@ class CompoundStreamAuditView extends StreamAuditView{
  				</div>
  				<div style={{padding:"1rem",flexGrow: 1}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
- 					<div>{utils.formatDollarAmount(this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),0,true)} per {Period[this.props.stream.period].unitName}</div>
+ 					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
  				<MiniGraph analysis={this.getStreamAnalysis(Period.monthly)} stream={this.props.stream}/>
  			</StreamGroupHeader>
@@ -147,11 +147,7 @@ class TerminalStreamCard extends StreamAuditView{
 		this.handleClick = this.handleClick.bind(this)
 	}
 	getTitle(){return this.props.stream.name}
-	handleClick(){
-		//console.log("Average this year - "+this.props.stream.name+": " + utils.formatDollarAmount(this.getStreamAnalysis().stats.avgByPeriods,2,true,false)+" per "+Period[this.props.stream.period].unitName)
-		//console.log("Total this year - "+this.props.stream.name+": " + utils.formatDollarAmount(this.getStreamAnalysis().stats.total,2,true,false))
-		//console.log(this.getStreamAnalysis())
-		this.updateState({detailView:!this.state.detailView})}
+	handleClick(){this.updateState({detailView:!this.state.detailView})}
 	render(){
 /*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}
 */		

@@ -189,7 +189,7 @@ export class CategorizationModalView extends BaseComponent{
 						{this.state.categorizedMatchList.slice(0,2).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
 									<div>{t.description.substring(0,20)}...</div>
 									<Spacer/>
-									<div>{utils.formatDollarAmount(t.amount)}</div>
+									<div>{utils.formatCurrencyAmount(t.amount,null,null,null,Core.getPreferredCurrency())}</div>
 							</div>)}
 						{(this.state.categorizedMatchList.length>2)?<div style={{textAlign: "right"}}>...and {this.state.categorizedMatchList.length-2} other(s)</div>:""}
 						 
@@ -198,7 +198,7 @@ export class CategorizationModalView extends BaseComponent{
 							{this.state.uncategorizedMatchList.slice(0,5).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
 									<div>{t.description.substring(0,20)}...</div>
 									<Spacer/>
-									<div>{utils.formatDollarAmount(t.amount)}</div>
+									<div>{utils.formatCurrencyAmount(t.amount,null,null,null,Core.getPreferredCurrency())}</div>
 								</div>)}
 							{(this.state.uncategorizedMatchList.length>5)?<div style={{textAlign: "right",fontWeith:"100"}}>...and {this.state.uncategorizedMatchList.length-5} other(s)</div>:""}
 						</ul>

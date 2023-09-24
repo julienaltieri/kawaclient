@@ -218,11 +218,11 @@ export class TransactionView extends BaseComponent{
 			</TxInfoContainer>
 			<Spacer/>
 			<div>
-				<AmountDiv positive={totalAmount>0}>{utils.formatDollarAmount(totalAmount)}</AmountDiv>
+				<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,null,null,null,Core.getPreferredCurrency())}</AmountDiv>
 				{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
 					<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
 						<span>{utils.formatDateShort(n.date)}</span>
-						<span>{utils.formatDollarAmount(n.amount)}</span>
+						<span>{utils.formatCurrencyAmount(n.amount,null,null,null,Core.getPreferredCurrency())}</span>
 					</div>)}</div>:""}
 			</div>
 		</TransactionContainerView>
