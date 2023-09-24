@@ -7,17 +7,17 @@ export default class SideBar extends BaseComponent{
 	constructor(props) {
 		super(props);
 		this.state = {
-			items: props.items
+			items: props.items,
+      visible: false
 		}  
 	}
 
 	getActiveItem(){return this.state.items[this.props.activeIndex]}
-	onClickItem(i){return this.props.onClickRoute(i.path)}
-
+	onClickItem(e,i){return this.props.onClickRoute(e,i.path)}
 	render(){
 		var count = 0;
 		return(
-		<SideBarContainer visible={this.props.visible}>
+		<SideBarContainer>
 			<CloseButton onClick={e => this.props.onClickCloseSideBar(e)}>{DesignSystem.icon.close}</CloseButton>
 			{(this.props.activeIndex>-1)?this.state.items
 				.map(i => (<NavItem item={i} key={count++} parentBar={this} active={i.name==this.getActiveItem().name}/>)):""}
@@ -37,15 +37,13 @@ const SideBarContainer = styled.div`
 	position: fixed;
   padding-left: 0.5rem;
   height: 100vh;
-  width: 15rem;
+  width: 100%;
   z-index: 1;
   top: 0;
   left: 0;
   background-color: ${DesignSystem.getStyle().modalBackground};
   box-shadow: 5px -1px 20px 0px #00000029;
   overflow-x: hidden;
-  transition: margin-left 225ms ease-in-out 0s;
-  margin-left: ${(props) => props.visible?"0%":"-22rem"};
 `
 
 
@@ -59,7 +57,7 @@ class NavItem extends BaseComponent {
   		}
   	}
 
-	handleClick(e){this.props.parentBar.onClickItem(this.props.item)}
+	handleClick(e){this.props.parentBar.onClickItem(e,this.props.item)}
 
   	render() {
 	  	return (

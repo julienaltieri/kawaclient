@@ -293,7 +293,7 @@ class Core{
 
 	//modal management
 	//return a promise that resolves based on the user action
-	presentModal(template){return ModalManager.presentModalIn(new ModalController(template),this.modalManagement)}
+	presentModal(template,fromSide){return ModalManager.presentModalIn(new ModalController(template,fromSide),this.modalManagement)}
 	registerModalManagement(present,unmount){
 		this.modalManagement={presentModal:present,unmountModal:unmount}
 	}

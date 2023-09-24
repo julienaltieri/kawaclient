@@ -6,6 +6,10 @@ import {CategorizationModalView} from './components/CategorizationRulesView'
 import DesignSystem from './DesignSystem.js'
 import {TransactionView} from './components/CategorizeAction'
 import utils from './utils'
+import SideBar from './components/SideBar'
+import Navigation from './components/Navigation'
+
+
 const transactionGrouper = require('./processors/TransactionGrouper')
 
 /* A quick manual because this modal management is super complicated - One day, let's refactor it
@@ -89,7 +93,14 @@ export const ModalTemplates = {
 				</ActionButtons>:<div style={{marginBottom:"1rem"}}></div>}
 			</BaseModalWrapper>
 		)
-	}	
+	},
+	SideNavigation: () => (that) => {
+		return (<BaseModalWrapper><SideBar items={Navigation.state.registeredViews}
+	  		onClickCloseSideBar={e => that.state.controller.onDismiss(e)}
+	  		activeIndex={Navigation.getCurrentRouteIndex()}
+	  		onClickRoute={(e,route) => that.state.controller.onConfirm(e,route)}
+		/></BaseModalWrapper>)
+	}
 }
 
 
@@ -351,23 +362,29 @@ const TransactionListViewItem= styled.li`
 `
 
 export class ModalController{
-	constructor(getContent){
+	constructor(getContent,fromSide){
 		this.promise = new Promise((res,rej)=> {this.onAnswer = res;this.onCancel = rej})
 		this.getContent = getContent;
 		this.state = {modalContentState:{}};
+		this.appearFromSide = fromSide;
 	}
 	setParent(parent){this.parent = parent}
 	getParent(){return this.parent}
-	registerModal(modal){this.modal = modal; this.state.modalContentState = modal.state.content}
+	registerModal(modal){
+		this.modal = modal;
+		this.state.modalContentState = modal.state.content;
+		this.modal.appearFromSide = this.appearFromSide;
+	}
 	then(){return this.promise.then.apply(this.promise, arguments)}
 	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
 	hide(){
 		return new Promise((res,rej) => {
 			document.body.style.overflow = 'unset';
 			this.modal.updateState({visible:false}).then(() => {
+				res()
 				setTimeout(() => {
 					let a = instance
-					return instance.dismissModal(this).then(() => res())
+					return instance.dismissModal(this)/*.then(() => res())*/
 				},animationTime)//leaves time to play the animation
 			})
 		})
@@ -383,7 +400,6 @@ export class ModalController{
 		e.stopPropagation();
 	}
 	onConfirm(e,i){
-		
 		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
 		e.preventDefault();
 		e.stopPropagation();
@@ -400,10 +416,16 @@ export class ModalContainer extends BaseComponent{
 		} 
 		props.controller.registerModal(this)
 	}
-	componentDidMount(){this.setState({...this.state,visible:true,content:this.state.controller.getContent(this)})}
+	componentDidMount(){setTimeout(() => this.setState({...this.state,visible:true,content:this.state.controller.getContent(this)}),5)}
 	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
 	render(){
-		if(Core.isMobile()){
+		if(this.appearFromSide){
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+				<ModalBaseSide visible={this.state.visible}>
+					{this.state.content}
+				</ModalBaseSide>
+			</ModalWrapper>)
+		}else if(Core.isMobile()){
 			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
 				<ModalBaseMobile visible={this.state.visible}>
 					{this.state.content}
@@ -432,7 +454,7 @@ const ModalWrapper = styled.div`
     display: flex;
     align-items: center;
     justify-content: center;
-	z-index: 3;
+	z-index: 300;
 	opacity: ${props => props.visible?1:0};
     transition: ${animationTime/1000}s opacity;
 `
@@ -458,7 +480,17 @@ const ModalBaseMobile = styled.div`
     transform: translateY(${props => props.visible?"0":"100%"});
     transition: ${animationTime/1000}s transform;
 `
-
+const ModalBaseSide = styled.div`
+    position: absolute;
+    top:0;
+    left:0;
+    z-index:99;
+    flex-grow: 0;
+    width: 16rem;
+    height: 100vh;
+    transform: translateX(${props => props.visible?"0":"-16rem"});
+    transition: ${animationTime/1000}s transform;
+`
 
 const TopBar = styled.div`
 	width: 100%;

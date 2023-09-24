@@ -5,6 +5,8 @@ import Core from '../core.js'
 import {useNavigate} from 'react-router-dom'
 import SideBar from './SideBar'
 import DesignSystem from '../DesignSystem'
+import {ModalTemplates} from '../ModalManager.js'
+
 
 
 const NavRoutes = {
@@ -66,9 +68,11 @@ class TopNavigationBarBase extends BaseComponent{
 	refreshSideBarState(){this.updateState({currentRouteIndex:instance.getCurrentRouteIndex()})}
 
 	summonSideBar(){
-		if(this.state.sideBarVisible)return;//don't do anything if the side bar is already up
-		this.refreshSideBarState()
-		this.updateState({sideBarVisible:true})
+		Core.presentModal(ModalTemplates.SideNavigation(),true).then((o) => {
+			let route = o.buttonIndex
+			instance.navigateToRoute(route);
+  			this.updateState({sideBarVisible:false,currentRouteIndex:instance.state.registeredViews.map(v => v.path).indexOf(route)})
+		}).catch(e => {return})
 	}
 
 	render(){
@@ -78,17 +82,7 @@ class TopNavigationBarBase extends BaseComponent{
 			rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
 		}
 		return(
-			//TODO: while the side bar is visible, have an overlay to capture event and dismiss
 		  <StyledNavBar>
-		  	<SideBar 	
-		  		visible={this.state.sideBarVisible} items={instance.state.registeredViews} 
-		  		onClickCloseSideBar={e => this.updateState({sideBarVisible:false})}
-		  		activeIndex={instance.getCurrentRouteIndex()}
-		  		onClickRoute={(route) => {
-		  			instance.navigateToRoute(route);
-		  			this.updateState({sideBarVisible:false,currentRouteIndex:instance.state.registeredViews.map(v => v.path).indexOf(route)})
-		  		}}
-		  	/>
 		  	{leftButton}
 		  	<Spacer/>
 		  	<Spacer/>
