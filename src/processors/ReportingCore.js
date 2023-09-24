@@ -207,7 +207,6 @@ class MultiStreamAnalysis extends Analysis{
 	getExpectedAmountAtDateForPeriod(d,period){		return this.getAggregateSum(this.analyses, a => a.stream.getExpectedAmountAtDateByPeriod(d,period.name))}
 	getPeriodAggregates(matureOnly=true){//PeriodAnalysis are specific to streams so in this situation, we need to create virtual reports instead
 		let acc = {netToDate:0,savedToDate:0}
-		if(!this.analyses[0])return;
 		let res = this.analyses[0].getPeriodReports(matureOnly).map((r,i) => {
 			acc.netToDate += r.getNetAmount()
 			acc.savedToDate += r.getMovedToSavings()
