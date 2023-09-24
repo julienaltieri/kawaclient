@@ -10,11 +10,11 @@ import {ModalTemplates} from '../ModalManager.js'
 
 
 const NavRoutes = {
-	home:'/',
-	login: '/login',
+	home: 			'/',
+	login:  		'/login',
 	categorization: '/categorization',
-	streams: '/streams',
-	settings: '/settings'
+	streams: 		'/streams',
+	settings: 		'/settings'
 }
 const isValidRoute = (path)=> Object.keys(NavRoutes).map(k => NavRoutes[k]).indexOf(path)>-1
 

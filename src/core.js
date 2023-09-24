@@ -163,6 +163,7 @@ class Core{
 	refreshCategorizationBetweenDates(start,end){return ApiCaller.refreshCategorizationBetweenDates(start,end)}
 	checkAuthentication(successCallback,failureCallback){
 	  var authToken = Cookies.get('token');
+	  this.routeOrder = Navigation.getCurrentRoute();
 	  if(!authToken || authToken===""){return Promise.reject(new Error("no token passed"))}
 	  else{return ApiCaller.validateToken(authToken)}
 	}
