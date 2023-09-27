@@ -16,7 +16,6 @@ class Core{
 	constructor(){
 		this.globalState = {
 			userData:undefined,
-			loggedIn:false,
 			queriedTransactions:{
 				transactions:[],
 				mustRefresh:false,
@@ -179,7 +178,11 @@ class Core{
 				}else { Navigation.navigateToRoute(NavRoutes.home) }
 				return this.app?.updateState({loggedIn:true,refresh:new Date()}) || Promise.resolve()
 			})
-		}else{
+		}else{//logging out
+			this.globalState = {...this.globalState, userData:undefined,
+			queriedTransactions:{ transactions:[],mustRefresh:false,minDate: undefined,maxDate: undefined},
+			transactionUpdateListeners: [],erroredBankConnections: [],history: HistoryManager
+		}
 			Navigation.navigateToRoute(NavRoutes.login);
 			return this.app?.updateState({loggedIn:false,refresh:new Date()}) || Promise.resolve()
 		}
