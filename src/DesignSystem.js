@@ -165,7 +165,7 @@ const StyledListItem = styled.div`
  	box-sizing: border-box;
     display:flex;
     text-align: left;
-	font-size: 1rem;
+	font-size: {instance.fontSize.body}rem;
     cursor: pointer;
     width: 100%;
     margin-bottom: 0;
