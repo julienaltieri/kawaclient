@@ -151,10 +151,10 @@ class MissionControl extends BaseComponent{
 		if(this.state.fetching){return (<PageLoader/>)}
 		else if(this.state.availableTransactions.length==0){return (<div></div>)}
 		else{return <StyledHomeContainer>
-				{this.state.actionQueueManager.hasActions()?<div style={{height:'20rem',maxWidth: "26rem",width: "100%"}}>
+				<ActionZoneContainer style={this.state.actionQueueManager.hasActions()?{height:'20rem',opacity:1}:{height:0,opacity:0}}>
 					<UndoButtonContainer><UndoButton src={undoIcon} onClick={this.onClickUndoButton}></UndoButton></UndoButtonContainer>
 					{this.state.actionQueueManager.renderComponent()}
-				</div>:<div></div>}
+				</ActionZoneContainer>
 				<div style={{width:"100%",display: "flex",flexDirection: "column",alignItems: "stretch"}}>
 					<AuditView  auditedTransactions={this.state.availableTransactions} stream={this.state.streamTree} 
 								onCategorizationUpdate={this.onCategorizationUpdate} 
@@ -166,6 +166,14 @@ class MissionControl extends BaseComponent{
 }
 
 export default React.memo(MissionControl)
+
+
+const ActionZoneContainer = styled.div`
+    transition: all 0.5s;
+    max-width: 26rem;
+    width: 100%;
+    overflow: hidden;
+`
 
 const StyledHomeContainer = styled.div `
 	width:calc(100% - 2rem);

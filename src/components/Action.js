@@ -136,8 +136,8 @@ export class EmptyStateAction extends Action{
 class EmptyStateCard extends ActionCard{
 	getNoLeftMargin(){return true}
 	renderContent(inFocus){
-		return <ActionsContainerBox style={{opacity: (inFocus?1:0),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DesignSystem.getStyle().UIElementBackground,borderRadius: DesignSystem.borderRadius,"marginTop":"0"}}>
-			All caught up!<br/>Well done sunshine :)
+		return <ActionsContainerBox style={{opacity: 0,height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DesignSystem.getStyle().UIElementBackground,borderRadius: DesignSystem.borderRadius,"marginTop":"0"}}>
+			All done!
 		</ActionsContainerBox>
 	}
 }
