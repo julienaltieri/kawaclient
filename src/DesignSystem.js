@@ -48,6 +48,7 @@ class DesignSystem{
 	borderRadius= "0.7rem";
 	borderRadiusSmall= "0.3rem";
 	barWidthRem=0.5;
+	applicationMaxWidth=36;
 	verticalSpacing={
 		s:"1rem",
 		m:"2rem",
@@ -134,7 +135,8 @@ class DesignSystem{
 	component = {
 		ListItem: (props) => <StyledListItemContainer><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
-		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>
+		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
+		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,	
 	}
 	spacing = {
 		xs:1,
@@ -169,7 +171,6 @@ const StyledListItem = styled.div`
     cursor: pointer;
     width: 100%;
     margin-bottom: 0;
-    padding-right: ${instance.spacing.xs}rem;
     height:${instance.spacing.xs*2+instance.fontSize.body}rem;
     align-items:center;
     overflow:visible;
@@ -178,12 +179,27 @@ const StyledListItem = styled.div`
 `
 
 const StyledListItemContainer = styled.div`
+	width: calc(100% - ${2*instance.spacing.s}rem);
 	padding: 0 ${instance.spacing.s}rem;
     &:hover {
       background: ${instance.getStyle().UIElementBackground};
     }  
 `
 
+const StyledStreamTag = styled.div`
+	background-color: ${props => props.highlight?instance.getStyle().commonTag:instance.getStyle().specialTag};
+	padding: 0.2rem 0.4rem ;
+	margin:0.2rem;
+	border-radius: 100vw;
+	opacity:0.8;
+	&:hover{
+		cursor:pointer;
+		opacity:1;
+	};
+	text-overflow: ellipsis;
+    text-wrap: nowrap;
+    overflow-x: clip;
+`
 
 
 export default instance

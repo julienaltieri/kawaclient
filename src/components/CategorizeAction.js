@@ -152,10 +152,10 @@ class CategorizeActionCard extends ActionCard{
 			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.checkmarkVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
 					{(this.state.recStreams.length)?this.state.recStreams
 					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
-					.map((a,i) => <StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</StreamTag>):""}
-					<StreamTag onClick={(e)=> this.onSplitClicked()}>Split</StreamTag>
-					<StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
-							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</StreamTag>
+					.map((a,i) => <DesignSystem.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DesignSystem.component.StreamTag>):""}
+					<DesignSystem.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DesignSystem.component.StreamTag>
+					<DesignSystem.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
+							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</DesignSystem.component.StreamTag>
 					{this.state.streamListVisible?<div><FullScreenCapturer onClick={(e) => this.setMoreStreamPopupVisible(false)}></FullScreenCapturer>
 						<MoreStreamContainer style={{
 								top:this.state.streamListClickEvent.target.clientHeight+this.state.streamListClickEvent.target.offsetTop,

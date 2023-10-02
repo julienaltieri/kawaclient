@@ -4,6 +4,7 @@ import AppConfig from '../AppConfig'
 import Core from '../core.js'
 import { DragDropContext,Droppable,Draggable } from 'react-beautiful-dnd';
 import {ModalTemplates} from '../ModalManager.js'
+import DesignSystem from '../DesignSystem'
 import utils from '../utils'
 const transactionGrouper = require('../processors/TransactionGrouper.js') 
 
@@ -61,8 +62,10 @@ export default class CategorizationRulesView extends BaseComponent{
 			<Droppable droppableId="categorizationViewDroppable">
 			{(provided) => (
 				<StyledCategorizationRulesView ref={provided.innerRef} {...provided.doppableProps}>
-					{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
-					{provided.placeholder}
+					<DesignSystem.component.ScrollableList>
+						{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
+						{provided.placeholder}
+					</DesignSystem.component.ScrollableList>
 				</StyledCategorizationRulesView>
 
 			)}</Droppable>
@@ -72,7 +75,7 @@ export default class CategorizationRulesView extends BaseComponent{
 
 
 const StyledCategorizationRulesView = styled.ul`
-	width: 30rem;
+	max-width: ${DesignSystem.applicationMaxWidth}rem;
 	margin: auto;
 	margin-top:3rem;
 `
@@ -116,18 +119,20 @@ class RuleView extends BaseComponent{
 			<StyledRuleView {...provided.draggableProps} {...provided.dragHandleProps} ref={provided.innerRef}
 					onMouseEnter={(e)=> this.updateState({toolVisible:true})}
 					onMouseLeave={(e)=> this.updateState({toolVisible:false})}>
-				<div style={{marginRight:"1rem"}}>{this.props.rule.priority}</div>
-				<div>{this.props.rule.matchingString}</div>
-				<Spacer/>
-				<StreamTagContainer style={{textAlign:"right"}}>{this.props.rule.allocations
-					.sort((a,b) => (!!a.amount)?-1:1)
-					.map(a => <StreamTag onClick={()=> this.onClickedStreamTag(this.props.id,a.streamId)} key={a.streamId}>
-						{Core.getStreamById(a.streamId).name}
-					</StreamTag>)}</StreamTagContainer>
-				<ToolBox visible={this.state.toolVisible}>
-					<StyledButton onClick={(e)=>this.onEnterEditMode(e)}>✎</StyledButton>
-					<StyledButton onClick={(e)=>this.onClickDelete(e,this.props)}>✕</StyledButton>
-				</ToolBox>
+				<DesignSystem.component.ListItem>
+					<div style={{marginRight:"1rem"}}>{this.props.rule.priority}</div>
+					<div style={{textOverflow: "ellipsis",textWrap: "nowrap",overflowX: "clip",paddingRight:"0.5rem"}} >{this.props.rule.matchingString}</div>
+					<Spacer/>
+					<StreamTagContainer style={{textAlign:"right"}}>{this.props.rule.allocations
+						.sort((a,b) => (!!a.amount)?-1:1)
+						.map(a => <DesignSystem.component.StreamTag highlight={true} onClick={()=> this.onClickedStreamTag(this.props.id,a.streamId)} key={a.streamId}>
+							{Core.getStreamById(a.streamId).name}
+						</DesignSystem.component.StreamTag>)}</StreamTagContainer>
+					<ToolBox visible={this.state.toolVisible}>
+						<StyledButton onClick={(e)=>this.onEnterEditMode(e)}>✎</StyledButton>
+						<StyledButton onClick={(e)=>this.onClickDelete(e,this.props)}>✕</StyledButton>
+					</ToolBox>
+				</DesignSystem.component.ListItem>
 			</StyledRuleView>
 		)}
 		</Draggable>
@@ -242,23 +247,8 @@ const StreamTagContainer = styled.div`
     align-items: flex-end;
 `
 
-const StreamTag = styled.div`
-	background-color: #d6e9ff;
-	padding: 0.2rem 0.4rem ;
-	margin:0.2rem;
-	border-radius: 100vw;
-	&:hover{
-		cursor:pointer;
-		background-color:#d6d8ff;
-	}
-`
-
 const StyledRuleView = styled.div`
 	display:flex;
-	padding:0.2rem;
-	background-color: white;
-	border-top: 1px solid #eeeeee;
-	border-bottom: 1px solid #eeeeee;
 	align-items: center;
 `
 
