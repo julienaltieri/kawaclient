@@ -61,37 +61,14 @@ class NavItem extends BaseComponent {
 
   	render() {
 	  	return (
-	   		<StyledNavItem active={this.props.active}>
+	   		<DesignSystem.component.ListItem bolded={this.props.active}>
 				<Link to={this.state.item.path} onClick={e => this.handleClick(e)}>
 					{this.state.item.name}
 				</Link>
-			</StyledNavItem>
+			</DesignSystem.component.ListItem>
 	   	)
   	}
 }
-
-
-const StyledNavItem = styled.div`
- 	box-sizing: border-box;
-    display:flex;
-    text-align: left;
-	  font-size: 1rem;
-    cursor: pointer;
-    width: 100%;
-    margin-bottom: 0;
-    padding: 0 0.7rem;
-    padding-right: 1rem;
-    height:3rem;
-    align-items:center;
-    overflow:visible;
-    font-weight: ${props => props.active?"bold":"normal"};
-    color: ${props => props.active?DesignSystem.getStyle().bodyText:DesignSystem.getStyle().bodyTextSecondary};
-    &:hover {
-      background: ${DesignSystem.getStyle().UIElementBackground};
-    }  
-
-  
-`
 
 const Link = styled.a`
     text-decoration: none;

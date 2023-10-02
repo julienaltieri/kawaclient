@@ -131,10 +131,35 @@ class DesignSystem{
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>
 		}
 	}
-
+	component = {
+		ListItem: (props) => <StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem>
+	}
 }
 
 const instance = new DesignSystem();
+
+const StyledListItem = styled.div`
+ 	box-sizing: border-box;
+    display:flex;
+    text-align: left;
+	font-size: 1rem;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 0;
+    padding: 0 0.7rem;
+    padding-right: 1rem;
+    height:3rem;
+    align-items:center;
+    overflow:visible;
+    color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
+    &:hover {
+      background: ${instance.getStyle().UIElementBackground};
+    }  
+ 	border-bottom: 1px solid ${instance.getStyle().borderColor};  
+`
+
+
+
 
 export default instance
 
