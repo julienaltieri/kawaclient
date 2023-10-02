@@ -18,18 +18,20 @@ export default class SideBar extends BaseComponent{
 		var count = 0;
 		return(
 		<SideBarContainer>
-			<CloseButton onClick={e => this.props.onClickCloseSideBar(e)}>{DesignSystem.icon.close}</CloseButton>
-			{(this.props.activeIndex>-1)?this.state.items
-				.map(i => (<NavItem item={i} key={count++} parentBar={this} active={i.name==this.getActiveItem().name}/>)):""}
-		</SideBarContainer>
+      <DesignSystem.component.ScrollableList>
+  			<CloseButton onClick={e => this.props.onClickCloseSideBar(e)}>{DesignSystem.icon.close}</CloseButton>
+  			{(this.props.activeIndex>-1)?this.state.items
+  				.map(i => (<NavItem item={i} key={count++} parentBar={this} active={i.name==this.getActiveItem().name}/>)):""}
+		  </DesignSystem.component.ScrollableList>
+    </SideBarContainer>
 	)}
 }
 
 const CloseButton = styled.div`
-    padding-top: 1rem;
+    padding-top: 1.3rem;
     cursor: pointer;
-    text-align: left;
-    margin-left: 0.8rem;
+    text-align: right;
+    margin-right: 1.3rem;
     margin-bottom: 0.8rem;
 `
 
@@ -60,7 +62,7 @@ class NavItem extends BaseComponent {
 
   	render() {
 	  	return (
-	   		<DesignSystem.component.ListItem style={{paddingLeft:"1rem"}} bolded={this.props.active}>
+	   		<DesignSystem.component.ListItem bolded={this.props.active}>
 				<Link to={this.state.item.path} onClick={e => this.handleClick(e)}>
 					{this.state.item.name}
 				</Link>

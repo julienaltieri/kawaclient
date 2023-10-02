@@ -132,8 +132,9 @@ class DesignSystem{
 		}
 	}
 	component = {
-		ListItem: (props) => <StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem>,
-		ScrollableListWithItems: (props) => <StyledScrollableListContainer {...props}>{props.children}</StyledScrollableListContainer>
+		ListItem: (props) => <StyledListItemContainer><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
+		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>
 	}
 	spacing = {
 		xs:1,
@@ -149,9 +150,15 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
-const StyledScrollableListContainer = styled.div`
-	max-height: calc(80vh - ${instance.spacing.s*2+instance.fontSize.header+instance.spacing.m}rem);
-	overflow-y: scroll;
+const StyledScrollableBottomSheet = styled.div`
+	max-height: calc(100vh - ${23}rem);
+	overflow-y: auto;
+	width: 100vw;
+    margin-left: -1.5rem;
+`
+
+const StyledScrollableList = styled.div`
+	
 `
 
 const StyledListItem = styled.div`
@@ -167,12 +174,15 @@ const StyledListItem = styled.div`
     align-items:center;
     overflow:visible;
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
-    &:hover {
-      background: ${instance.getStyle().UIElementBackground};
-    }  
  	border-bottom: 1px solid ${instance.getStyle().borderColor};  
 `
 
+const StyledListItemContainer = styled.div`
+	padding: 0 ${instance.spacing.s}rem;
+    &:hover {
+      background: ${instance.getStyle().UIElementBackground};
+    }  
+`
 
 
 

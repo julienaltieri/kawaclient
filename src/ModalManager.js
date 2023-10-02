@@ -73,11 +73,11 @@ export const ModalTemplates = {
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered) => (that) => {
-		return ModalTemplates.ModalWithComponent(title,<DesignSystem.component.ScrollableListWithItems>
+		return ModalTemplates.ModalWithComponent(title,<DesignSystem.component.ScrollableBottomSheet>
 			{items.map((s,i) => <DesignSystem.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
 				{itemRendered(s)}
 			</DesignSystem.component.ListItem>)}
-		</DesignSystem.component.ScrollableListWithItems>,[])(that)
+		</DesignSystem.component.ScrollableBottomSheet>,[])(that)
 	},
 	ModalWithComponent: (title,component,buttonArray,subtitle) => (that)=> {
 		if(!buttonArray){buttonArray = [{name:"Cancel"},{name:"Confirm",primary:true}]}
