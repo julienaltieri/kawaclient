@@ -132,11 +132,27 @@ class DesignSystem{
 		}
 	}
 	component = {
-		ListItem: (props) => <StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem>
+		ListItem: (props) => <StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem>,
+		ScrollableListWithItems: (props) => <StyledScrollableListContainer {...props}>{props.children}</StyledScrollableListContainer>
+	}
+	spacing = {
+		xs:1,
+		s:1.5,
+		m:2,
+		l:3
+	}
+	fontSize = {
+		body: 	1,
+		header: 1.4 
 	}
 }
 
 const instance = new DesignSystem();
+
+const StyledScrollableListContainer = styled.div`
+	max-height: calc(80vh - ${instance.spacing.s*2+instance.fontSize.header+instance.spacing.m}rem);
+	overflow-y: scroll;
+`
 
 const StyledListItem = styled.div`
  	box-sizing: border-box;
@@ -146,9 +162,8 @@ const StyledListItem = styled.div`
     cursor: pointer;
     width: 100%;
     margin-bottom: 0;
-    padding: 0 0.7rem;
-    padding-right: 1rem;
-    height:3rem;
+    padding-right: ${instance.spacing.xs}rem;
+    height:${instance.spacing.xs*2+instance.fontSize.body}rem;
     align-items:center;
     overflow:visible;
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
