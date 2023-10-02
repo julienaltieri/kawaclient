@@ -122,10 +122,20 @@ class CategorizeActionCard extends ActionCard{
 			}
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
-	setMoreStreamPopupVisible(visible,event){this.updateState({streamListVisible:visible,streamListClickEvent:event})}
+	setMoreStreamPopupVisible(visible,event){
+		if(Core.isMobile()){
+			Core.presentModal(ModalTemplates.ModalWithListItems("Select",this.getAvailableStreams(),this.getStreamString)).then(({state,buttonIndex}) => {
+				this.onClickStreamTag(state.selectedItem);
+			}).catch(e => {})
+		}else{
+			this.updateState({streamListVisible:visible,streamListClickEvent:event})
+		}
+	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return this.props.transaction.amazonOrderDetails}
 	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.date))}
+	getAvailableStreams(){return Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date())).sort(utils.sorters.asc(s => s.name.charCodeAt()))}
+	getStreamString(s){return s.name+(!s.isActiveNow()?" (old)":"")}
 	renderContent(){
 		var amz = this.getAmazonData();
 		var isCompound = this.isAmazon() && amz.items.length>1;
@@ -151,10 +161,7 @@ class CategorizeActionCard extends ActionCard{
 								top:this.state.streamListClickEvent.target.clientHeight+this.state.streamListClickEvent.target.offsetTop,
 								left:this.state.streamListClickEvent.target.clientWidth+this.state.streamListClickEvent.target.offsetLeft}}>
 								<StreamLineOption key={-2} style={{borderBottom:"1px solid #ccc",padding:"0.5rem 0.4rem",backgroundColor:"#a4ebcc"}} onClick={(e)=> this.onSplitClicked()}>Split</StreamLineOption>{
-							Core.getMasterStream().getAllTerminalStreams()
-							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
-							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
-							.map((a,i) => <StreamLineOption key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name+(!a.isActiveNow()?" (old)":"")}</StreamLineOption>)
+							this.getAvailableStreams().map((a,i) => <StreamLineOption key={i} onClick={(e)=> this.onClickStreamTag(a)}>{this.getStreamString(a)}</StreamLineOption>)
 						}</MoreStreamContainer></div>:""
 					}
 			</ActionsContainerBox></FadeInWrap>}

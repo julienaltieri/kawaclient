@@ -72,10 +72,17 @@ export const ModalTemplates = {
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
+	ModalWithListItems: (title,items,itemRendered) => (that) => {
+		return ModalTemplates.ModalWithComponent(title,<DesignSystem.component.ScrollableListWithItems>
+			{items.map((s,i) => <DesignSystem.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
+				{itemRendered(s)}
+			</DesignSystem.component.ListItem>)}
+		</DesignSystem.component.ScrollableListWithItems>,[])(that)
+	},
 	ModalWithComponent: (title,component,buttonArray,subtitle) => (that)=> {
 		if(!buttonArray){buttonArray = [{name:"Cancel"},{name:"Confirm",primary:true}]}
 
-		return (<BaseModalWrapper isMobile={Core.isMobile()}>
+		return (<BaseModalWrapper isMobile={Core.isMobile()} bottomBleed={buttonArray.length==0}>
 				<TopBar isMobile={Core.isMobile()}>
 					<div style={{width:"100%"}}>
 						<div style={{"display":"flex","flexDirection":"row","justifyContent":"space-between","alignItems":"center"}}>
@@ -90,7 +97,7 @@ export const ModalTemplates = {
 					{buttonArray.map((b,i) => {
 						return <ActionButton primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</ActionButton>
 					})}
-				</ActionButtons>:<div style={{marginBottom:"1rem"}}></div>}
+				</ActionButtons>:<div></div>}
 			</BaseModalWrapper>
 		)
 	},
@@ -102,7 +109,6 @@ export const ModalTemplates = {
 		/></BaseModalWrapper>)
 	}
 }
-
 
 export class StreamAllocationOptionView extends BaseComponent{
 	constructor(props){
@@ -375,6 +381,10 @@ export class ModalController{
 		this.state.modalContentState = modal.state.content;
 		this.modal.appearFromSide = this.appearFromSide;
 	}
+	updateContentState(s){
+		this.state.modalContentState = {...this.state.modalContentState,...s}
+		return Promise.resolve()
+	}
 	then(){return this.promise.then.apply(this.promise, arguments)}
 	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
 	hide(){
@@ -528,6 +538,7 @@ const TopBarButton = styled.div`
 
 const BaseModalWrapper = styled.div`
 	padding: ${props => props.isMobile?1.5:3}rem;
+	padding-bottom: ${props => props.bottomBleed?"0rem":"auto"};
     box-sizing: border-box;
     position: relative;
     height: 100%;
@@ -550,6 +561,7 @@ const ActionButtons = styled.div`
 const MainContent = styled.div`
 	text-align: center;
 	flex-grow:1;
+	
 `
 const ActionButton = styled.div`
 	background: ${(props) => props.primary?DesignSystem.getStyle().modalPrimaryButton:DesignSystem.getStyle().modalSecondaryButton};
