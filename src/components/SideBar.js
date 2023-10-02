@@ -29,13 +29,12 @@ const CloseButton = styled.div`
     padding-top: 1rem;
     cursor: pointer;
     text-align: left;
-    margin-left: 0.4rem;
+    margin-left: 0.8rem;
     margin-bottom: 0.8rem;
 `
 
 const SideBarContainer = styled.div`
 	position: fixed;
-  padding-left: 0.5rem;
   height: 100vh;
   width: 100%;
   z-index: 1;
@@ -61,7 +60,7 @@ class NavItem extends BaseComponent {
 
   	render() {
 	  	return (
-	   		<DesignSystem.component.ListItem bolded={this.props.active}>
+	   		<DesignSystem.component.ListItem style={{paddingLeft:"1rem"}} bolded={this.props.active}>
 				<Link to={this.state.item.path} onClick={e => this.handleClick(e)}>
 					{this.state.item.name}
 				</Link>
