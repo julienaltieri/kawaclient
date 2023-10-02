@@ -75,6 +75,7 @@ class DesignSystem{
 			modalSecondaryButton: this.UIColors.lightGrey1,
 			modalBackground: this.UIColors.lightGrey2,
 			savings: this.UIColors.vividBlue,
+			income: this.UIColors.vividGreen,
 			expenses: this.UIColors.redVivid,
 			ultimateBackground: this.UIColors.lightGrey2,
 		}, 
@@ -98,6 +99,7 @@ class DesignSystem{
 			modalSecondaryButton: this.UIColors.darkGrey1,
 			modalBackground: this.UIColors.darkGrey3,
 			savings: this.UIColors.blue,
+			income: this.UIColors.green,
 			expenses: this.UIColors.redSoft,
 			ultimateBackground: this.UIColors.black,
 		}
