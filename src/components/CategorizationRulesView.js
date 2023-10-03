@@ -6,6 +6,7 @@ import { DragDropContext,Droppable,Draggable } from 'react-beautiful-dnd';
 import {ModalTemplates} from '../ModalManager.js'
 import DesignSystem from '../DesignSystem'
 import utils from '../utils'
+import {relativeDates} from '../Time'
 import transactionGrouper from '../processors/TransactionGrouper.js'
 
 
@@ -89,9 +90,10 @@ class RuleView extends BaseComponent{
 
 	onClickedStreamTag(id,streamId){
 		var s = Core.getStreamById(streamId)
-		var a = utils.relativeDates.fourWeeksAgo()
+		var a = relativeDates.fourWeeksAgo()
 		Core.getTransactionsBetweenDates(a,new Date())
-		.then(txns => txns.filter(t => t.categorized && t.isAllocatedToStream(s) && doesRuleMatchTransaction(this.props.rule.matchingString,t) ))
+		.then(txns => txns.filter(t => t.categorized && t.isAllocatedToStream(s)))
+		.then(txns => txns.filter(t => doesRuleMatchTransaction(this.props.rule.matchingString,t)))
 		.then(txns => console.log(txns))
 
 	}
