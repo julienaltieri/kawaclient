@@ -6,7 +6,7 @@ import { DragDropContext,Droppable,Draggable } from 'react-beautiful-dnd';
 import {ModalTemplates} from '../ModalManager.js'
 import DesignSystem from '../DesignSystem'
 import utils from '../utils'
-const transactionGrouper = require('../processors/TransactionGrouper.js') 
+import transactionGrouper from '../processors/TransactionGrouper.js'
 
 
 /*TODO
