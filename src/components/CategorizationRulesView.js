@@ -106,7 +106,9 @@ class RuleView extends BaseComponent{
 				console.log(state.uncategorizedMatchList)
 				Promise.all([
 					Core.saveCategorizationRules(updatedList),
-					Core.categorizeMultipleTransactions(state.uncategorizedMatchList,stream)
+					Core.categorizeTransactionsAllocationsTupples(state.uncategorizedMatchList.map(t => {
+						return {transaction: t, streamAllocation: this.props.rule.allocations}
+					}))
 				]).then(() => this.props.masterView.reload())
 			}
 		}).catch(e => console.log(e));
