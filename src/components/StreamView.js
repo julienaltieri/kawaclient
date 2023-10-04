@@ -165,7 +165,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 	isInEditMode(){return isInEditMode}
 	getStreamAmountString(){
 		var amt = this.state.stream.getCurrentExpectedAmount();
-		return utils.formatCurrencyAmount(amt,null,null,null,Core.getPreferredCurrency())+" /"+Period[this.state.stream.period].unitName
+		return utils.formatCurrencyAmount(amt,undefined,undefined,undefined,Core.getPreferredCurrency())+" /"+Period[this.state.stream.period].unitName
 	}
 
 	//operations

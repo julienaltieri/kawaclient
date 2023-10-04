@@ -177,7 +177,8 @@ const StyledLabel = styled.div`
 	text-overflow: ellipsis;
     text-wrap: nowrap;
     overflow-x: clip;
-
+    color: ${(props) => props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
+    font-size: ${(props) => props.size?instance.fontSize[props.size]:instance.fontSize.body}rem;
 `
 
 const StyledRowContainer = styled.div`

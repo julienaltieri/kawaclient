@@ -4,7 +4,7 @@ import {ModalTemplates} from '../ModalManager.js'
 import Core, {amazonConfig} from '../core.js'
 import { fadeIn } from 'react-animations'
 import {Action, ActionCard, ActionsContainerBox, ActionStyles} from './Action'
-import DesignSystem from '../DesignSystem.js'
+import DS from '../DesignSystem.js'
 import utils from '../utils'
 import TransactionGrouper from '../processors/TransactionGrouper'
 import Statistics from '../processors/Statistics';
@@ -152,10 +152,10 @@ class CategorizeActionCard extends ActionCard{
 			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.checkmarkVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
 					{(this.state.recStreams.length)?this.state.recStreams
 					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
-					.map((a,i) => <DesignSystem.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DesignSystem.component.StreamTag>):""}
-					<DesignSystem.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DesignSystem.component.StreamTag>
-					<DesignSystem.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
-							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</DesignSystem.component.StreamTag>
+					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
+					<DS.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DS.component.StreamTag>
+					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
+							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</DS.component.StreamTag>
 					{this.state.streamListVisible?<div><FullScreenCapturer onClick={(e) => this.setMoreStreamPopupVisible(false)}></FullScreenCapturer>
 						<MoreStreamContainer style={{
 								top:this.state.streamListClickEvent.target.clientHeight+this.state.streamListClickEvent.target.offsetTop,
@@ -193,21 +193,21 @@ export class TransactionView extends BaseComponent{
 		return(
 		<TransactionContainerView style={{opacity:this.props.checkmarkVisible?0:1}}>
 			{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
-				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DesignSystem.borderRadiusSmall}}>
+				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
 					{amz.items.map((it,i) => 
 						<div  key={it.itemDescription}  style={{
 							marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
 							transition:"margin-left 0.5s ease",
-							filter: "brightness("+(DesignSystem.isDarkMode()?0.9:1)+")",
+							filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
 							height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
 							<img style={{alignSelf: "center"}} src={it.image}></img>
 						</div>
 					)}
 				</div>
 				{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>{DesignSystem.icon.leftArrow}</span>
-					<span style={{color:DesignSystem.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DesignSystem.getStyle().bodyTextSecondary:DesignSystem.getStyle().buttonDisabled}}>{DesignSystem.icon.rightArrow}</span>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
+					<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
+					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
 				</div>):""}
 				</div>
 			):""}
@@ -215,8 +215,8 @@ export class TransactionView extends BaseComponent{
 				{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
 					<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
 
-				<div style={{fontSize:"1rem",maxWidth:"8rem"}}>{
-					this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</div>
+				<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
+					this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
 				{amz?<div>
 					<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
 					<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
@@ -225,11 +225,11 @@ export class TransactionView extends BaseComponent{
 			</TxInfoContainer>
 			<Spacer/>
 			<div>
-				<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,null,null,null,Core.getPreferredCurrency())}</AmountDiv>
+				<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 				{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
 					<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
 						<span>{utils.formatDateShort(n.date)}</span>
-						<span>{utils.formatCurrencyAmount(n.amount,null,null,null,Core.getPreferredCurrency())}</span>
+						<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
 					</div>)}</div>:""}
 			</div>
 		</TransactionContainerView>
@@ -281,18 +281,18 @@ const Checkmark = styled.img`
 const TransactionContainerView = styled.div `
 	text-align: center;
 	display: flex;
-    background: ${props => DesignSystem.getStyle().UIElementBackground};
+    background: ${props => DS.getStyle().UIElementBackground};
 	box-shadow: 0px 6px 10px #00000023;
     box-sizing: border-box;
 	padding:1.5rem;
-    border-radius: ${props => DesignSystem.borderRadius};
+    border-radius: ${props => DS.borderRadius};
     transition: opacity ${disappearAnimationTime/1000}s ease;
     align-items: center;
 `
 
 
 const StreamTag = styled.div`
-	background-color: ${props => props.highlight?DesignSystem.getStyle().commonTag:DesignSystem.getStyle().specialTag};
+	background-color: ${props => props.highlight?DS.getStyle().commonTag:DS.getStyle().specialTag};
 	padding: 0.2rem 0.4rem ;
 	margin:0.2rem;
 	border-radius: 100vw;
@@ -317,7 +317,7 @@ const AmountDiv = styled.div `
 	font-weight: 500;
 	justify-content: center;
 	font-family: Barlow;
-	color: ${props => props.positive?DesignSystem.getStyle().positive:DesignSystem.getStyle().bodyText}
+	color: ${props => props.positive?DS.getStyle().positive:DS.getStyle().bodyText}
 `
 
 const Spacer = styled.div`

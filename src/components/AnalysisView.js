@@ -194,7 +194,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 				<div key={i}>
 					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
 						<ExpectationChangePannel key={2*i+1+k}>
-							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,null,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,null,Core.getPreferredCurrency())}</div>
+							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
 						</ExpectationChangePannel>
 					))}
@@ -225,11 +225,11 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 		return (<FlexColumn style={{alignItems:"stretch",height:"auto", marginBottom:"0.5rem"}}>
 				<TransactionFeedHeaderViewContainer>
 					<EllipsisText style={{width: "6rem"}}>{this.getReportDateString()}</EllipsisText>
-					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,null,null,Core.getPreferredCurrency())}</div>
+					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,undefined,undefined,Core.getPreferredCurrency())}</div>
 				</TransactionFeedHeaderViewContainer>
 				{this.props.analysis.transactions.sort(utils.sorters.desc(t => t.date)).map((t,i) => (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
 					<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
-					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,null,null,null,Core.getPreferredCurrency())}</div>
+					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</div>
 				</MiniTransactionContainer>))}
 		</FlexColumn>)
 	}
@@ -583,7 +583,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		let getPosition = (fr,ser) => {let sign = series.projected>=0?1:-1; return {x:x0,y:sign*Math.max(sign*getYValue(fr,ser),this.svgToDomain(0,0).dy - this.svgToDomain(0,labelHeight+0.75*b).dy)}}
 		let labelMutator = (valueAccessor) => (fr)=> {return {"datum": getPosition(fr,series),"text": valueAccessor(fr)}}	
 		let getTitle = (fr,ser) => ser.config.barStrings[fr?"toDate":"projected"]	
-		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount(fr?ser.accessor(fr):series.projected,0,true,null,Core.getPreferredCurrency())}		//bar $$ value
+		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount(fr?ser.accessor(fr):series.projected,0,true,undefined,Core.getPreferredCurrency())}		//bar $$ value
 		let	getRatio = (fr,ser) => formatPercent(Math.abs(fr?ser.accessor(fr):ser.projected)/savingExpenseSum(r => fr?r.accessor(fr):r.projected))
 		
 		return (<SharedPropsWrapper style={{fill: c,fontSize:b, fontFamily:"Inter"}} dx={this.style.summaryBarLabelXOffset} dy={0} textAnchor={"start"} verticalAnchor={"start"}>
@@ -607,8 +607,8 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			if(!this.hovering){return dateformat(this.props.expenseAnalysis.reportingDate,"yyyy")}
 			else {return fr?dateformat(fr.reportingDate,"mmmm"):dateformat(this.props.expenseAnalysis.reportingDate,"yyyy")+" Projected"}
 		}
-		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,true,null,Core.getPreferredCurrency()):""}
-		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(getIncrement("expenses",fr),0,true,null,Core.getPreferredCurrency()):""}
+		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,true,undefined,Core.getPreferredCurrency()):""}
+		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(getIncrement("expenses",fr),0,true,undefined,Core.getPreferredCurrency()):""}
 
 		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:this.getDomainBounds().My}}>
         	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
