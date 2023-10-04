@@ -100,19 +100,17 @@ class RuleView extends BaseComponent{
 
 	onEnterEditMode(e){
 		Core.presentModal(ModalTemplates.ModalWithCategorizationRule("Edit rule","",this.props.rule)).then(({state,buttonIndex}) => {
-			console.log(buttonIndex,state)
 			if(buttonIndex == 1){//user asked to save changes
-				/*var updatedList = JSON.parse(JSON.stringify(Core.getUserData().categorizationRules))//snapshot
+				var updatedList = JSON.parse(JSON.stringify(Core.getUserData().categorizationRules))//snapshot
 				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].matchingString = state.matchingString//update this rule in the snapshot
+				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].allocations = [{streamId: state.allocatedStream.id, type: 'percent', amount: 1}];
 				this.props.masterView.updateState({loading:true})
-				var stream = Core.getStreamById(this.props.rule.allocations[0].streamId);
-				console.log(state.uncategorizedMatchList)
 				Promise.all([
 					Core.saveCategorizationRules(updatedList),
 					Core.categorizeTransactionsAllocationsTupples(state.uncategorizedMatchList.map(t => {
 						return {transaction: t, streamAllocation: this.props.rule.allocations}
 					}))
-				]).then(() => this.props.masterView.reload())*/
+				]).then(() => this.props.masterView.reload())
 			}
 		}).catch(e => console.log(e));
 	}
@@ -155,8 +153,12 @@ export class CategorizationModalView extends BaseComponent{
 			categorizedMatchList: [],
 			summonDate: new Date(),
 			matchingString: props.rule.matchingString,
+			allocatedStream: Core.getStreamById(props.rule.allocations[0].streamId)
 		}
-		props.controller.state.modalContentState = {...props.controller.state.modalContentState,...{matchingString:props.rule.matchingString}}
+		props.controller.state.modalContentState = {...props.controller.state.modalContentState,...{
+			matchingString: props.rule.matchingString,
+			allocatedStream: this.state.allocatedStream
+		}}
 		this.queryMatchesForString(this.props.rule.matchingString)
 		this.handleStreamSelected = this.handleStreamSelected.bind(this)
 	}
@@ -183,11 +185,13 @@ export class CategorizationModalView extends BaseComponent{
 			this.props.controller.state.modalContentState = {...this.props.controller.state.modalContentState,...{uncategorizedMatchList:matches.filter(t => !t.categorized)}}
 		})
 	}
-	handleStreamSelected(e,i){console.log(i)}
+	handleStreamSelected(e){
+		var s = Core.getStreamById(e.target.selectedOptions[0].getAttribute("sid"))
+		this.props.controller.state.modalContentState = {...this.props.controller.state.modalContentState,...{allocatedStream:s}};
+		this.updateState({allocatedStream:s});	
+	}
 
 	render(){
-			
-
 		return(
 			<div>
 				<DesignSystem.component.Row>
@@ -198,8 +202,8 @@ export class CategorizationModalView extends BaseComponent{
 				<DesignSystem.component.Row>
 					<StyledWord>will be categorized as</StyledWord>
 					<DesignSystem.component.DropDown
-							value={(this.props.rule.allocations[0]?.streamId)?Core.getStreamById(this.props.rule.allocations[0].streamId).name:'DEFAULT'} 
-							onChange={(e,i) => this.handleStreamSelected(e,i)}>
+							value={this.state.allocatedStream.name?this.state.allocatedStream.name:'DEFAULT'} 
+							onChange={this.handleStreamSelected}>
 							<option value='DEFAULT' disabled hidden> </option>
 							{Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(new Date()))
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
