@@ -139,7 +139,8 @@ class DesignSystem{
 		}
 	}
 	component = {
-		ListItem: (props) => <StyledListItemContainer><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
+		ListItem: (props) => <StyledListItemContainer noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
@@ -155,6 +156,7 @@ class DesignSystem{
 		l:3
 	}
 	fontSize = {
+		little: 0.8,
 		body: 	1,
 		header: 1.4 
 	}
@@ -169,6 +171,13 @@ const DownArrow = styled.div`
     top: calc(50% - 0.55rem);
     cursor: pointer;
     pointer-events: none;
+`
+
+const StyledLabel = styled.div`
+	text-overflow: ellipsis;
+    text-wrap: nowrap;
+    overflow-x: clip;
+
 `
 
 const StyledRowContainer = styled.div`
@@ -229,10 +238,10 @@ const StyledListItem = styled.div`
     display:flex;
     text-align: left;
 	font-size: {instance.fontSize.body}rem;
-    cursor: pointer;
+    cursor: ${(props) => props.noHover?"default":"pointer"};
     width: 100%;
     margin-bottom: 0;
-    height:${instance.spacing.xs*2+instance.fontSize.body}rem;
+    height:${(props) => props.size=="xs"?(instance.spacing.xxs*2+instance.fontSize.little):(instance.spacing.xs*2+instance.fontSize.body)}rem;
     align-items:center;
     overflow:visible;
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
@@ -240,10 +249,10 @@ const StyledListItem = styled.div`
 `
 
 const StyledListItemContainer = styled.div`
-	width: calc(100% - ${2*instance.spacing.s}rem);
-	padding: 0 ${instance.spacing.s}rem;
+	width: calc(100% - ${(props) => props.fullBleed?0:2*instance.spacing.s}rem);
+	padding: 0 ${(props) => props.fullBleed?0:instance.spacing.s}rem;
     &:hover {
-      background: ${instance.getStyle().UIElementBackground};
+      background: ${(props) => props.noHover?"":instance.getStyle().UIElementBackground};
     }  
 `
 
@@ -254,12 +263,13 @@ const StyledStreamTag = styled.div`
 	border-radius: 100vw;
 	opacity:0.8;
 	&:hover{
-		cursor:pointer;
-		opacity:1;
+		cursor: ${(props) => props.noHover?"default":"pointer"};
+		opacity: ${(props) => props.noHover?0.8:1};
 	};
 	text-overflow: ellipsis;
     text-wrap: nowrap;
     overflow-x: clip;
+    flex-shrink: 0;
 `
 
 

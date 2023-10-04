@@ -89,12 +89,12 @@ class RuleView extends BaseComponent{
 	}
 
 	onClickedStreamTag(id,streamId){
-		var s = Core.getStreamById(streamId)
+/*		var s = Core.getStreamById(streamId)
 		var a = relativeDates.fourWeeksAgo()
 		Core.getTransactionsBetweenDates(a,new Date())
 		.then(txns => txns.filter(t => t.categorized && t.isAllocatedToStream(s)))
 		.then(txns => txns.filter(t => doesRuleMatchTransaction(this.props.rule.matchingString,t)))
-		.then(txns => console.log(txns))
+		.then(txns => console.log(txns))*/
 
 	}
 
@@ -122,19 +122,19 @@ class RuleView extends BaseComponent{
 			<StyledRuleView {...provided.draggableProps} {...provided.dragHandleProps} ref={provided.innerRef}
 					onMouseEnter={(e)=> this.updateState({toolVisible:true})}
 					onMouseLeave={(e)=> this.updateState({toolVisible:false})}>
-				<DesignSystem.component.ListItem>
-					<div style={{marginRight:"1rem"}}>{this.props.rule.priority}</div>
+				<DesignSystem.component.ListItem onClick={(e)=>this.onEnterEditMode(e)} fullBleed>
+					<div style={{margin:"0 1rem"}}>{this.props.rule.priority}</div>
 					<div style={{textOverflow: "ellipsis",textWrap: "nowrap",overflowX: "clip",paddingRight:"0.5rem"}} >{this.props.rule.matchingString}</div>
 					<Spacer/>
-					<StreamTagContainer style={{textAlign:"right"}}>{this.props.rule.allocations
+					<StreamTagContainer style={{textAlign:"right",margin:"0 1rem"}}>{this.props.rule.allocations
 						.sort((a,b) => (!!a.amount)?-1:1)
-						.map(a => <DesignSystem.component.StreamTag highlight={true} onClick={()=> this.onClickedStreamTag(this.props.id,a.streamId)} key={a.streamId}>
+						.map(a => <DesignSystem.component.StreamTag noHover highlight={true} onClick={()=> this.onClickedStreamTag(this.props.id,a.streamId)} key={a.streamId}>
 							{Core.getStreamById(a.streamId).name}
 						</DesignSystem.component.StreamTag>)}</StreamTagContainer>
-					<ToolBox visible={this.state.toolVisible}>
+					{/*<ToolBox visible={this.state.toolVisible}>
 						<StyledButton onClick={(e)=>this.onEnterEditMode(e)}>✎</StyledButton>
 						<StyledButton onClick={(e)=>this.onClickDelete(e,this.props)}>✕</StyledButton>
-					</ToolBox>
+					</ToolBox>*/}
 				</DesignSystem.component.ListItem>
 			</StyledRuleView>
 		)}
@@ -211,25 +211,19 @@ export class CategorizationModalView extends BaseComponent{
 
 					></DesignSystem.component.DropDown>
 				</DesignSystem.component.Row>
-				<div style={{width:"20rem", margin:"auto", minHeight:"5rem", 
-				marginTop:"2rem",fontSize:"0.8rem","textAlign":"left", backgroundColor:"white"}}>
+				<div style={{margin:"auto", minHeight:"5rem", 
+				marginTop:"3rem",fontSize:"0.8rem","textAlign":"left"}}>
 					{this.state.fetching?(<div>loading....</div>):<div>
-						<ul><div style={{fontWeight:"bold",marginBottom:"0.3rem"}}>Categorized already: {this.state.categorizedMatchList.length} transaction(s)</div>
-						{this.state.categorizedMatchList.slice(0,2).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
-									<div>{t.description.substring(0,20)}...</div>
-									<Spacer/>
-									<div>{utils.formatCurrencyAmount(t.amount,null,null,null,Core.getPreferredCurrency())}</div>
-							</div>)}
-						{(this.state.categorizedMatchList.length>2)?<div style={{textAlign: "right"}}>...and {this.state.categorizedMatchList.length-2} other(s)</div>:""}
+						<ul><div style={{fontWeight:"bold",marginBottom:"1rem"}}></div>
+						{[...this.state.uncategorizedMatchList,...this.state.categorizedMatchList].slice(0,4).map((t,i) => 
+							<DesignSystem.component.ListItem noHover fullBleed size="xs" key={i}>
+									<DesignSystem.component.Label style={{width:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DesignSystem.component.Label>
+									<DesignSystem.component.Label>{t.description}</DesignSystem.component.Label><Spacer/>
+									<DesignSystem.component.StreamTag noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DesignSystem.component.StreamTag>
+									<div style={{width:"4rem",textAlign:"right",marginLeft:"0.2rem",flexShrink:0}}>{utils.formatCurrencyAmount(t.amount,undefined,null,null,Core.getPreferredCurrency())}</div>
+							</DesignSystem.component.ListItem>)}
+						{(this.state.categorizedMatchList.length>4)?<DesignSystem.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.categorizedMatchList.length-2} other(s)</DesignSystem.component.ListItem>:""}
 						 
-						</ul>
-						<ul style={{marginTop:"1rem",fontWeight:"bold"}}>Uncategorized matched: {this.state.uncategorizedMatchList.length} transaction(s)
-							{this.state.uncategorizedMatchList.slice(0,5).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
-									<div>{t.description.substring(0,20)}...</div>
-									<Spacer/>
-									<div>{utils.formatCurrencyAmount(t.amount,null,null,null,Core.getPreferredCurrency())}</div>
-								</div>)}
-							{(this.state.uncategorizedMatchList.length>5)?<div style={{textAlign: "right",fontWeith:"100"}}>...and {this.state.uncategorizedMatchList.length-5} other(s)</div>:""}
 						</ul>
 					</div>
 				}
