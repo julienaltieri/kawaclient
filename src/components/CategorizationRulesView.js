@@ -217,10 +217,10 @@ export class CategorizationModalView extends BaseComponent{
 						<ul><div style={{fontWeight:"bold",marginBottom:"1rem"}}></div>
 						{[...this.state.uncategorizedMatchList,...this.state.categorizedMatchList].slice(0,4).map((t,i) => 
 							<DesignSystem.component.ListItem noHover fullBleed size="xs" key={i}>
-									<DesignSystem.component.Label style={{width:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DesignSystem.component.Label>
-									<DesignSystem.component.Label>{t.description}</DesignSystem.component.Label><Spacer/>
-									<DesignSystem.component.StreamTag noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DesignSystem.component.StreamTag>
-									<div style={{width:"4rem",textAlign:"right",marginLeft:"0.2rem",flexShrink:0}}>{utils.formatCurrencyAmount(t.amount,undefined,null,null,Core.getPreferredCurrency())}</div>
+									<DesignSystem.component.Label style={{minWidth:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DesignSystem.component.Label>
+									<DesignSystem.component.Label style={{marginRight:"0.5rem"}}>{t.description}</DesignSystem.component.Label><Spacer/>
+									<DesignSystem.component.StreamTag style={{maxWidth:"30vw"}} noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DesignSystem.component.StreamTag>
+									<div style={{maxWidth:"3rem",textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(t.amount,0,null,null,Core.getPreferredCurrency())}</div>
 							</DesignSystem.component.ListItem>)}
 						{(this.state.categorizedMatchList.length>4)?<DesignSystem.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.categorizedMatchList.length-2} other(s)</DesignSystem.component.ListItem>:""}
 						 

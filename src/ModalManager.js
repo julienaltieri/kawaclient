@@ -53,7 +53,7 @@ export const ModalTemplates = {
 			<div>{message}</div>
 			<StreamTransactionView controller={instance.currentModalController} stream={stream} key={stream.id}/>
 		</div>)(that)
-	},
+		},
 	ModalWithCategorizationRule: (title,message,rule) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div>{message}</div>
@@ -188,8 +188,8 @@ export class StreamAllocationOptionView extends BaseComponent{
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.allocations.map((al,i) => <DesignSystem.component.Row key={al.nodeId}>
-						{(i==0)?<DesignSystem.component.Input style={{width:"4rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
-								<DesignSystem.component.Input style={{width:"4rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+						{(i==0)?<DesignSystem.component.Input style={{width:"3rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
+								<DesignSystem.component.Input style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
 										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
 										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
@@ -225,10 +225,10 @@ const StyledSpendReceive = styled.span`
     width: 100%;
     max-width: 4.5rem;
     text-align: left;
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
     font-size: 1rem;
-    text-align: left;
+    text-align: center;
 `
 const DownArrow = styled.div`
     position: absolute;
