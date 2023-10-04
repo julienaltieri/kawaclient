@@ -185,37 +185,6 @@ export class StreamAllocationOptionView extends BaseComponent{
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
 				<TransactionView style={{background:"red"}} transaction={this.props.transaction}/>
 			</div>
-			{/*<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
-				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative",display: "flex", flexDirection:"row", alignItems:"center",width:"100%"}}>
-						{(i==0)?<DesignSystem.component.Input style={{width:"4rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
-								<DesignSystem.component.Input style={{width:"4rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
-										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
-										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
-										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
-										onFocus={e => {e.target.select()}}></DesignSystem.component.Input>
-									}
-						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
-						<DesignSystem.component.DropDown
-							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
-							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
-							<option value='DEFAULT' disabled hidden> </option>
-							{Core.getMasterStream().getAllTerminalStreams()
-							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
-							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
-							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
-						</DesignSystem.component.DropDown>
-						<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}>{DesignSystem.icon.caretDown}</DownArrow>
-						{(i>0 && this.state.allocations.length>1)?<span 
-							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
-							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}
-						
-						
-					</li>)}
-					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DesignSystem.icon.plus} Add line</li>
-
-				</ul>
-			</div>*/}
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.allocations.map((al,i) => <DesignSystem.component.Row key={al.nodeId}>
@@ -236,7 +205,6 @@ export class StreamAllocationOptionView extends BaseComponent{
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
 						</DesignSystem.component.DropDown>
-						{/*<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}>{DesignSystem.icon.caretDown}</DownArrow>*/}
 						{(i>0 && this.state.allocations.length>1)?<span 
 							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
 							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}

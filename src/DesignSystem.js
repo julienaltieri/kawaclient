@@ -205,7 +205,7 @@ const StyledInput = styled.input`
 const StyledDropDown= styled.select`
 	width: 100%;
 	background-color: ${instance.getStyle().inputFieldBackground};
-	color: ${instance.getStyle().bodyText};
+	color: ${instance.getStyle().bodyTextSecondary};
     padding: 0 ${instance.spacing.xs}rem;
     padding-right: 2rem;
     height: ${instance.inputHeight}rem;
