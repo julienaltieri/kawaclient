@@ -38,7 +38,8 @@ class DesignSystem{
 		darkGrey2: "#424252",
 		darkGrey2Trans: "#52525233",
 		darkGrey3: "#333343",
-		darkGrey4: "#1f2223",
+		darkGrey4: "#29293a",
+		darkGrey5: "#1f2223",
 		black: "#000000",
 		white: "#ffffff",
 		darkPurple: "#191829",
@@ -49,6 +50,9 @@ class DesignSystem{
 	borderRadiusSmall= "0.3rem";
 	barWidthRem=0.5;
 	applicationMaxWidth=36;
+	backgroundOpacity=0.15;
+	inputHeight=3;
+	borderThickness = 0.15;
 	verticalSpacing={
 		s:"1rem",
 		m:"2rem",
@@ -56,7 +60,7 @@ class DesignSystem{
 	}
 	styles = {
 		lightMode: {
-			bodyText: this.UIColors.darkGrey4,
+			bodyText: this.UIColors.darkGrey5,
 			bodyTextSecondary: this.UIColors.darkGrey2,
 			buttonDisabled: this.UIColors.lightGrey5,
 			borderColor: this.UIColors.midPurple,
@@ -94,7 +98,7 @@ class DesignSystem{
 			UIElementBackground: this.UIColors.darkGrey2Trans,
 			commonTag: this.UIColors.deepPurple,
 			specialTag: this.UIColors.teal,
-			inputFieldBackground: this.UIColors.darkGrey3,
+			inputFieldBackground: this.UIColors.darkGrey4,
 			modalPrimaryButton: this.UIColors.blue,
 			modalSecondaryButton: this.UIColors.darkGrey1,
 			modalBackground: this.UIColors.darkGrey3,
@@ -138,9 +142,13 @@ class DesignSystem{
 		ListItem: (props) => <StyledListItemContainer><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
-		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,	
+		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
+		Input: (props) => <StyledInput {...props}>{props.children}</StyledInput>,
+		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
+		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
 	}
 	spacing = {
+		xxs:0.5,
 		xs:1,
 		s:1.5,
 		m:2,
@@ -154,6 +162,23 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
+
+const DownArrow = styled.div`
+    position: absolute;
+    right: 0.7rem;
+    top: calc(50% - 0.55rem);
+    cursor: pointer;
+    pointer-events: none;
+`
+
+const StyledRowContainer = styled.div`
+	display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: ${instance.spacing.xxs}rem;
+    width:100%;
+`
+
 const StyledScrollableBottomSheet = styled.div`
 	max-height: calc(100vh - ${23}rem);
 	overflow-y: auto;
@@ -164,6 +189,40 @@ const StyledScrollableBottomSheet = styled.div`
 const StyledScrollableList = styled.div`
 	
 `
+
+const StyledInput = styled.input`
+    width: calc(100% - ${instance.spacing.xs*2+instance.borderThickness}rem);
+	background-color: ${(props) => props.disabled?"transparent":instance.getStyle().inputFieldBackground};
+	color:  ${(props) => props.positive?instance.getStyle().positive:"inherit"};
+    padding: 0 ${instance.spacing.xs}rem;
+    height: ${instance.inputHeight - 2*instance.borderThickness}rem;
+    border-radius: ${instance.borderRadiusSmall};
+    text-align: ${(props) => props.textAlign || "center"};
+    font-size: ${instance.fontSize.body}rem;
+    border: ${instance.borderThickness}rem solid ${instance.getStyle().borderColor};
+`
+
+const StyledDropDown= styled.select`
+	width: 100%;
+	background-color: ${instance.getStyle().inputFieldBackground};
+	color: ${instance.getStyle().bodyText};
+    padding: 0 ${instance.spacing.xs}rem;
+    padding-right: 2rem;
+    height: ${instance.inputHeight}rem;
+    border-radius: ${instance.borderRadiusSmall};
+    text-align: left;
+    font-size: ${instance.fontSize.body}rem;
+    border: ${instance.borderThickness}rem solid ${instance.getStyle().borderColor};
+    cursor: pointer;
+    appearance: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+`
+const StyledDropDownContainer = styled.div`
+	position: relative;
+	flex-grow: 1;
+`
+
 
 const StyledListItem = styled.div`
  	box-sizing: border-box;

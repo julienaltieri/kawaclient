@@ -362,7 +362,7 @@ const StreamInfoContainerTerminal = styled.div`
     justify-content: flex-end;
     align-items: center;
     color: ${DesignSystem.getStyle().bodyTextSecondary};
-    background: ${props => props.isSavings?DesignSystem.getStyle().savings:(props.isIncome?DesignSystem.getStyle().income:DesignSystem.getStyle().expenses)}33;
+    background: ${props => props.isSavings?DesignSystem.getStyle().savings:(props.isIncome?DesignSystem.getStyle().income:DesignSystem.getStyle().expenses)}${Math.floor(DesignSystem.backgroundOpacity*255).toString(16)};
     padding: 0 3vw;
     height:2.3rem;
     border-radius: 100vw;

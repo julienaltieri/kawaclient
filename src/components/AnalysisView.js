@@ -383,7 +383,7 @@ export class GenericChartView extends GenericAnalysisView{
 			chartWidth: 450,
 			chartPadding: {top:20,bottom:10,left:10,right:60},
 			midgroundOpacity: 0.5, 									//opacity of middle ground items (trends and projections)
-			backgroundOpacity: 0.15, 								//opacity of background items (area charts)
+			backgroundOpacity: DesignSystem.backgroundOpacity, 		//opacity of background items (area charts)
 			fontSizeTitle:20,										//Chart title
 			fontSizeHeader:14,										//Big numbers
 			fontSizeBody:7,											//Everthing else

@@ -100,8 +100,9 @@ class RuleView extends BaseComponent{
 
 	onEnterEditMode(e){
 		Core.presentModal(ModalTemplates.ModalWithCategorizationRule("Edit rule","",this.props.rule)).then(({state,buttonIndex}) => {
+			console.log(buttonIndex,state)
 			if(buttonIndex == 1){//user asked to save changes
-				var updatedList = JSON.parse(JSON.stringify(Core.getUserData().categorizationRules))//snapshot
+				/*var updatedList = JSON.parse(JSON.stringify(Core.getUserData().categorizationRules))//snapshot
 				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].matchingString = state.matchingString//update this rule in the snapshot
 				this.props.masterView.updateState({loading:true})
 				var stream = Core.getStreamById(this.props.rule.allocations[0].streamId);
@@ -111,7 +112,7 @@ class RuleView extends BaseComponent{
 					Core.categorizeTransactionsAllocationsTupples(state.uncategorizedMatchList.map(t => {
 						return {transaction: t, streamAllocation: this.props.rule.allocations}
 					}))
-				]).then(() => this.props.masterView.reload())
+				]).then(() => this.props.masterView.reload())*/
 			}
 		}).catch(e => console.log(e));
 	}
@@ -153,10 +154,11 @@ export class CategorizationModalView extends BaseComponent{
 			uncategorizedMatchList: [],
 			categorizedMatchList: [],
 			summonDate: new Date(),
-			matchingString: props.rule.matchingString
+			matchingString: props.rule.matchingString,
 		}
 		props.controller.state.modalContentState = {...props.controller.state.modalContentState,...{matchingString:props.rule.matchingString}}
 		this.queryMatchesForString(this.props.rule.matchingString)
+		this.handleStreamSelected = this.handleStreamSelected.bind(this)
 	}
 
 	onChangedText(e){
@@ -181,18 +183,32 @@ export class CategorizationModalView extends BaseComponent{
 			this.props.controller.state.modalContentState = {...this.props.controller.state.modalContentState,...{uncategorizedMatchList:matches.filter(t => !t.categorized)}}
 		})
 	}
+	handleStreamSelected(e,i){console.log(i)}
 
 	render(){
 			
 
 		return(
 			<div>
-				<label htmlFor="">Matching text</label>
-				<input type="text" defaultValue={this.props.rule.matchingString} onChange={this.onChangedText.bind(this)}/>
-				<div style={{width:"20rem", 
-				minHeight:"5rem", 
-				margin:"auto", 
-				marginTop:"1rem",fontSize:"0.8rem","textAlign":"left", backgroundColor:"white"}}>
+				<DesignSystem.component.Row>
+					<StyledWord>Transactions like</StyledWord>
+					<DesignSystem.component.Input type="text" 
+						textAlign="left" defaultValue={this.props.rule.matchingString} onChange={this.onChangedText.bind(this)}/>
+				</DesignSystem.component.Row>
+				<DesignSystem.component.Row>
+					<StyledWord>will be categorized as</StyledWord>
+					<DesignSystem.component.DropDown
+							value={(this.props.rule.allocations[0]?.streamId)?Core.getStreamById(this.props.rule.allocations[0].streamId).name:'DEFAULT'} 
+							onChange={(e,i) => this.handleStreamSelected(e,i)}>
+							<option value='DEFAULT' disabled hidden> </option>
+							{Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(new Date()))
+							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
+							.map((a,j) => <option key={j} sid={a.id}>{Core.getStreamById(a.id).name}</option>)}
+
+					></DesignSystem.component.DropDown>
+				</DesignSystem.component.Row>
+				<div style={{width:"20rem", margin:"auto", minHeight:"5rem", 
+				marginTop:"2rem",fontSize:"0.8rem","textAlign":"left", backgroundColor:"white"}}>
 					{this.state.fetching?(<div>loading....</div>):<div>
 						<ul><div style={{fontWeight:"bold",marginBottom:"0.3rem"}}>Categorized already: {this.state.categorizedMatchList.length} transaction(s)</div>
 						{this.state.categorizedMatchList.slice(0,2).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
@@ -218,6 +234,14 @@ export class CategorizationModalView extends BaseComponent{
 		)
 	}
 }
+
+
+const StyledWord = styled.div`
+	margin-right: 1rem;
+	text-align: left;
+	flex-shrink: 0;
+	flex-grow: 0;
+`
 
 
 function doesRuleMatchTransaction(matchingString, transaction){

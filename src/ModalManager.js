@@ -185,18 +185,18 @@ export class StreamAllocationOptionView extends BaseComponent{
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
 				<TransactionView style={{background:"red"}} transaction={this.props.transaction}/>
 			</div>
-			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
+			{/*<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.allocations.map((al,i) => <li key={al.nodeId} style={{margin: "0.5rem 0rem", position: "relative",display: "flex", flexDirection:"row", alignItems:"center",width:"100%"}}>
-						{(i==0)?<StyledInput disabled positive={al.amount>0} value={al.amount.toFixed(2)}></StyledInput>:
-								<StyledInput positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+						{(i==0)?<DesignSystem.component.Input style={{width:"4rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
+								<DesignSystem.component.Input style={{width:"4rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
 										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
 										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
-										onFocus={e => {e.target.select()}}></StyledInput>
+										onFocus={e => {e.target.select()}}></DesignSystem.component.Input>
 									}
 						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
-						<StyledDropDown style={{marginLeft:"0.5rem"}} 
+						<DesignSystem.component.DropDown
 							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
 							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
 							<option value='DEFAULT' disabled hidden> </option>
@@ -204,7 +204,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
-						</StyledDropDown>
+						</DesignSystem.component.DropDown>
 						<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}>{DesignSystem.icon.caretDown}</DownArrow>
 						{(i>0 && this.state.allocations.length>1)?<span 
 							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
@@ -215,48 +215,53 @@ export class StreamAllocationOptionView extends BaseComponent{
 					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DesignSystem.icon.plus} Add line</li>
 
 				</ul>
+			</div>*/}
+			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
+				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
+					{this.state.allocations.map((al,i) => <DesignSystem.component.Row key={al.nodeId}>
+						{(i==0)?<DesignSystem.component.Input style={{width:"4rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
+								<DesignSystem.component.Input style={{width:"4rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
+										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
+										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
+										onFocus={e => {e.target.select()}}></DesignSystem.component.Input>
+									}
+						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
+						<DesignSystem.component.DropDown
+							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
+							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
+							<option value='DEFAULT' disabled hidden> </option>
+							{Core.getMasterStream().getAllTerminalStreams()
+							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
+							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
+							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
+						</DesignSystem.component.DropDown>
+						{/*<DownArrow shouldOffset={(i>0 && this.state.allocations.length>1)}>{DesignSystem.icon.caretDown}</DownArrow>*/}
+						{(i>0 && this.state.allocations.length>1)?<span 
+							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
+							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}
+						
+						
+					</DesignSystem.component.Row>)}
+					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DesignSystem.icon.plus} Add line</li>
+
+				</ul>
 			</div>
+
 		</div>)
 	}
 }
-const StyledInput= styled.input`
-	color:  ${(props) => props.positive?DesignSystem.getStyle().positive:"inherit"};
-	background-color: ${DesignSystem.getStyle().inputFieldBackground};
-    width: 4.5rem;
-    height: 1.5rem;
-    padding: 0.5rem;
-    margin-right: 0.5rem;
-    text-align: center;
-    font-size: 1rem;
-    border-radius: 0.2rem;
-    border: 0.1rem solid #BDBDBD;
-`
+
 const StyledSpendReceive = styled.span`
     display: inline-block;
     width: 100%;
     max-width: 4.5rem;
     text-align: left;
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
     font-size: 1rem;
-`
-const StyledDropDown= styled.select`
-	width: 100%;
-	background-color: ${DesignSystem.getStyle().inputFieldBackground};
-	color: ${DesignSystem.getStyle().bodyText};
-    padding: 0 1rem;
-    height: 2.5rem;
-    border-radius: 0.2rem;
     text-align: left;
-    font-size: 1rem;
-    border: 0.1rem solid #BDBDBD;
-    cursor: pointer;
-    appearance: none;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding-right: 2rem;
 `
-
 const DownArrow = styled.div`
     position: absolute;
     right: ${(props) => props.shouldOffset?"3rem":"0.7rem"};
@@ -513,9 +518,8 @@ const TopBar = styled.div`
 `
 const Title = styled.div`
 	flex-grow:1;
-	font-size: ${props => props.isMobile?1.4:2}rem;
+	font-size: ${DesignSystem.fontSize.header}rem;
 	text-align: ${props => props.isMobile?"left":"center"};
-	font-weight: ${props => props.isMobile?"normal":"bold"};;
 	color: ${DesignSystem.getStyle().bodyText};
 `
 const Subtitle = styled.div`
