@@ -172,7 +172,6 @@ const ActionZoneContainer = styled.div`
     transition: all 0.5s;
     max-width: 26rem;
     width: 100%;
-    overflow: hidden;
 `
 
 const StyledHomeContainer = styled.div `
