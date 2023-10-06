@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
-import DesignSystem from './DesignSystem.js'
+import DS from './DesignSystem.js'
 import {TransactionView} from './components/CategorizeAction'
 import utils from './utils'
 import SideBar from './components/SideBar'
@@ -73,11 +73,11 @@ export const ModalTemplates = {
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered) => (that) => {
-		return ModalTemplates.ModalWithComponent(title,<DesignSystem.component.ScrollableBottomSheet>
-			{items.map((s,i) => <DesignSystem.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
+		return ModalTemplates.ModalWithComponent(title,<DS.component.ScrollableBottomSheet>
+			{items.map((s,i) => <DS.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
 				{itemRendered(s)}
-			</DesignSystem.component.ListItem>)}
-		</DesignSystem.component.ScrollableBottomSheet>,[])(that)
+			</DS.component.ListItem>)}
+		</DS.component.ScrollableBottomSheet>,[])(that)
 	},
 	ModalWithComponent: (title,component,buttonArray,subtitle) => (that)=> {
 		if(!buttonArray){buttonArray = [{name:"Cancel"},{name:"Confirm",primary:true}]}
@@ -87,7 +87,7 @@ export const ModalTemplates = {
 					<div style={{width:"100%"}}>
 						<div style={{"display":"flex","flexDirection":"row","justifyContent":"space-between","alignItems":"center"}}>
 							<Title isMobile={Core.isMobile()}>{title}</Title>
-							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>{DesignSystem.icon.close}</TopBarButton>
+							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>{DS.icon.close}</TopBarButton>
 						</div>
 						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
@@ -183,20 +183,20 @@ export class StreamAllocationOptionView extends BaseComponent{
 
 		return(<div>
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView style={{background:"red"}} transaction={this.props.transaction}/>
+				<TransactionView transaction={this.props.transaction}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.allocations.map((al,i) => <DesignSystem.component.Row key={al.nodeId}>
-						{(i==0)?<DesignSystem.component.Input style={{width:"3rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DesignSystem.component.Input>:
-								<DesignSystem.component.Input style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+					{this.state.allocations.map((al,i) => <DS.component.Row key={al.nodeId}>
+						{(i==0)?<DS.component.Input style={{width:"3rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DS.component.Input>:
+								<DS.component.Input style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
 										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
 										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
-										onFocus={e => {e.target.select()}}></DesignSystem.component.Input>
+										onFocus={e => {e.target.select()}}></DS.component.Input>
 									}
-						{al.amount>0?<StyledSpendReceive style={{color:DesignSystem.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
-						<DesignSystem.component.DropDown
+						{al.amount>0?<StyledSpendReceive style={{color:DS.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
+						<DS.component.DropDown
 							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
 							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
 							<option value='DEFAULT' disabled hidden> </option>
@@ -204,14 +204,14 @@ export class StreamAllocationOptionView extends BaseComponent{
 							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
-						</DesignSystem.component.DropDown>
+						</DS.component.DropDown>
 						{(i>0 && this.state.allocations.length>1)?<span 
 							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
-							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DesignSystem.icon.close}</span>:""}
+							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DS.icon.close}</span>:""}
 						
 						
-					</DesignSystem.component.Row>)}
-					<li style={{color:DesignSystem.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DesignSystem.icon.plus} Add line</li>
+					</DS.component.Row>)}
+					<li style={{color:DS.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DS.icon.plus} Add line</li>
 
 				</ul>
 			</div>
@@ -329,7 +329,7 @@ const TransactionListView= styled.ul`
     max-width: 20rem;
     margin: auto;
     margin-top: 1rem;
-    background: ${DesignSystem.getStyle().inputFieldBackground};
+    background: ${DS.getStyle().inputFieldBackground};
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -443,23 +443,23 @@ const ModalWrapper = styled.div`
 `
 
 const ModalBase = styled.div`
-	background: ${DesignSystem.getStyle().modalBackground};
+	background: ${DS.getStyle().modalBackground};
     position: relative;
     flex-grow: 0;
     min-width: 30rem;
     max-width: 40rem;
     box-shadow: 0 3px 14px 8px #0000001f;
-    border-radius: ${DesignSystem.borderRadius};
+    border-radius: ${DS.borderRadius};
 `
 const ModalBaseMobile = styled.div`
-	background: ${DesignSystem.getStyle().modalBackground};
+	background: ${DS.getStyle().modalBackground};
     position: absolute;
     bottom:0;
     z-index:99;
     flex-grow: 0;
     width: 100vw;
     box-shadow: 0 3px 14px 8px #0000001f;
-    border-radius: ${DesignSystem.borderRadius} ${DesignSystem.borderRadius} 0 0;
+    border-radius: ${DS.borderRadius} ${DS.borderRadius} 0 0;
     transform: translateY(${props => props.visible?"0":"100%"});
     transition: ${animationTime/1000}s transform;
 `
@@ -486,9 +486,9 @@ const TopBar = styled.div`
 `
 const Title = styled.div`
 	flex-grow:1;
-	font-size: ${DesignSystem.fontSize.header}rem;
+	font-size: ${DS.fontSize.header}rem;
 	text-align: ${props => props.isMobile?"left":"center"};
-	color: ${DesignSystem.getStyle().bodyText};
+	color: ${DS.getStyle().bodyText};
 `
 const Subtitle = styled.div`
 	flex-grow:1;
@@ -502,7 +502,7 @@ const TopBarButton = styled.div`
     position:  ${props => props.isMobile?"static":"absolute"};
     top: 1.5rem;
     right: 1.5rem;
-    color: ${DesignSystem.getStyle.bodyTextSecondary};
+    color: ${DS.getStyle.bodyTextSecondary};
     -webkit-user-select: none; /* Safari */
   	-ms-user-select: none; /* IE 10 and IE 11 */
   	user-select: none; /* Standard syntax */
@@ -536,11 +536,11 @@ const MainContent = styled.div`
 	
 `
 const ActionButton = styled.div`
-	background: ${(props) => props.primary?DesignSystem.getStyle().modalPrimaryButton:DesignSystem.getStyle().modalSecondaryButton};
+	background: ${(props) => props.primary?DS.getStyle().modalPrimaryButton:DS.getStyle().modalSecondaryButton};
     color: ${(props) => props.primary?"white":"default"};
     border: ${(props) => props.primary?"solid 1px #2f80ed":"solid 1px #BDBDBD"};
     padding: 1rem;
-    border-radius: 0.2rem;
+    border-radius: ${DS.borderRadiusSmall};
     width: 8rem;
     text-align: center;
     cursor: ${(props) => props.disabled?"default":"pointer"};
@@ -551,7 +551,7 @@ const ActionButton = styled.div`
     vertical-align: middle;
     height:1rem;	
     &:hover {
-	    background: ${(props) => props.disabled?props.primary?DesignSystem.getStyle().modalPrimaryButton:"white":props.primary?"#157eff":"#f9f9f9"};
+	    background: ${(props) => props.disabled?props.primary?DS.getStyle().modalPrimaryButton:"white":props.primary?"#157eff":"#f9f9f9"};
 	}
 `
 

@@ -28,7 +28,7 @@ class DesignSystem{
 		lightPurple: "#e0d6ff",
 		deepPurple: "#463e60",
 		lightGrey1: "#fefefe",
-		lightGrey2: "#f3f3f7",
+		lightGrey2: "#dfdfeb",
 		lightGrey2Trans: "#f7f7f78f",
 		lightGrey3: "#eeeeee",
 		lightGrey4: "#dddded",
@@ -36,7 +36,7 @@ class DesignSystem{
 		midGrey: "#9999a9",
 		darkGrey1: "#727272",
 		darkGrey2: "#424252",
-		darkGrey2Trans: "#52525233",
+		darkGrey2Trans: "#52527233",
 		darkGrey3: "#333343",
 		darkGrey4: "#29293a",
 		darkGrey5: "#1f2223",
@@ -74,9 +74,9 @@ class DesignSystem{
 			UIElementBackground: this.UIColors.lightGrey2Trans,
 			commonTag: this.UIColors.lightGrey2Trans,
 			specialTag: this.UIColors.lightGreenTrans,
-			inputFieldBackground: this.UIColors.pageBackground,
+			inputFieldBackground: this.UIColors.lightGrey2Trans,
 			modalPrimaryButton: this.UIColors.brightBlue,
-			modalSecondaryButton: this.UIColors.lightGrey1,
+			modalSecondaryButton: this.UIColors.lightGrey2Trans,
 			modalBackground: this.UIColors.lightGrey2,
 			savings: this.UIColors.vividBlue,
 			income: this.UIColors.vividGreen,
@@ -108,7 +108,7 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return true && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	isDarkMode(){return false && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
 	getMode(){return this.isDarkMode()?"darkMode":"lightMode"}
 	getStyle(){return this.styles[this.getMode()]}
 	rgbToHex(red, green, blue) {
