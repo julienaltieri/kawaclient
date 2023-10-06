@@ -108,7 +108,7 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return false && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	isDarkMode(){return true && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
 	getMode(){return this.isDarkMode()?"darkMode":"lightMode"}
 	getStyle(){return this.styles[this.getMode()]}
 	rgbToHex(red, green, blue) {
@@ -238,13 +238,14 @@ const StyledListItem = styled.div`
  	box-sizing: border-box;
     display:flex;
     text-align: left;
-	font-size: {instance.fontSize.body}rem;
+	font-size: ${instance.fontSize.body}rem;
     cursor: ${(props) => props.noHover?"default":"pointer"};
     width: 100%;
     margin-bottom: 0;
     height:${(props) => props.size=="xs"?(instance.spacing.xxs*2+instance.fontSize.little):(instance.spacing.xs*2+instance.fontSize.body)}rem;
     align-items:center;
     overflow:visible;
+    font-weight: ${props => props.bolded?600:"normal"};
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
  	border-bottom: 1px solid ${instance.getStyle().borderColor};  
 `
