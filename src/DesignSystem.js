@@ -64,6 +64,7 @@ class DesignSystem{
 			bodyTextSecondary: this.UIColors.darkGrey2,
 			buttonDisabled: this.UIColors.lightGrey5,
 			borderColor: this.UIColors.midPurple,
+			borderColorHighlight: this.UIColors.midGrey,
 			pageBackground: this.UIColors.lightPurple,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.vividBlue,
@@ -89,6 +90,7 @@ class DesignSystem{
 			buttonDisabled: this.UIColors.darkGrey2,
 			pageBackground: this.UIColors.darkPurple,
 			borderColor: this.UIColors.darkGrey2,
+			borderColorHighlight: this.UIColors.midGrey,
 			timePeriod:this.UIColors.blue,
 			timePeriodHighlight:this.UIColors.veryLightBlue,
 			alert: this.UIColors.redSoft,
@@ -140,6 +142,7 @@ class DesignSystem{
 	}
 	component = {
 		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
+		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		ListItem: (props) => <StyledListItemContainer noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
@@ -178,7 +181,7 @@ const StyledLabel = styled.div`
     text-wrap: nowrap;
     overflow-x: clip;
     color: ${(props) => props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
-    font-size: ${(props) => props.size=="xs"?instance.fontSize.little+"rem":"inherit"};
+    font-size: ${(props) => props.header?instance.fontSize.header:props.size=="xs"?instance.fontSize.little:"caboose"}rem;
 `
 
 const StyledRowContainer = styled.div`

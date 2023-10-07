@@ -4,7 +4,7 @@ import AppConfig from '../AppConfig'
 import Core from '../core.js'
 import { DragDropContext,Droppable,Draggable } from 'react-beautiful-dnd';
 import {ModalTemplates} from '../ModalManager.js'
-import DesignSystem from '../DesignSystem'
+import DS from '../DesignSystem'
 import utils from '../utils'
 import {relativeDates} from '../Time'
 import transactionGrouper from '../processors/TransactionGrouper.js'
@@ -28,30 +28,40 @@ export default class CategorizationRulesView extends BaseComponent{
 			ruleList:Core.getCategorizationRules(),
 			ddContext:{
 				draggingStreamNode:undefined,
-				dragHoveredStream:{},//stream being overed right now and need to make space
-				dropTarget:{}//stream it will be dropped into
+				dragHoveredStream:{},
+				dropTarget:{}
 			},
-			loading:false
+			loading:false,
+			dragging:false
 		}
 		this.onDragEnd = this.onDragEnd.bind(this)
+		this.onDragStart = this.onDragStart.bind(this)
 	}
 
 	onDragEnd(result){
 		var destination = result.destination
 		var source = result.source
-		if(!destination || destination.index == source.index)return;
+		if(!destination || destination.index == source.index)return this.updateState({dragging:false});
 		var dragStartRule = this.state.ruleList[source.index];
-		const newList = Array.from(this.state.ruleList)
-		newList.splice(source.index,1);
-		newList.splice(destination.index,0,dragStartRule);
-		newList.forEach((a,i) => a.priority=i)
+		if(destination.droppableId = "trash"){
+			Core.deleteCategorizationRule(dragStartRule).then(() => this.reload())
+		}else{
+			const newList = Array.from(this.state.ruleList)
+			newList.splice(source.index,1);
+			newList.splice(destination.index,0,dragStartRule);
+			newList.forEach((a,i) => a.priority=i)
 
-		this.updateState({ruleList:newList.sort(utils.sorters.asc(a => a.priority))})
-		Core.saveCategorizationRules(newList)
+			this.updateState({ruleList:newList.sort(utils.sorters.asc(a => a.priority)),dragging:false})
+			Core.saveCategorizationRules(newList)
+		}
+	}
+
+	onDragStart(e){
+		this.updateState({dragging:true})
 	}
 
 	reload(){
-		this.updateState({ruleList:Core.getCategorizationRules(),loading:false})
+		this.updateState({ruleList:Core.getCategorizationRules(),loading:false,dragging:false})
 	}
 
 	render(){
@@ -59,26 +69,74 @@ export default class CategorizationRulesView extends BaseComponent{
 		else if(this.state.loading) return (<div style={{'textAlign':'center','marginTop':'3rem'}}>loading...</div>)
 		var count=0;
 		return(
-		<DragDropContext onDragEnd={this.onDragEnd}>
-			<Droppable droppableId="categorizationViewDroppable">
-			{(provided) => (
-				<StyledCategorizationRulesView ref={provided.innerRef} {...provided.doppableProps}>
-					<DesignSystem.component.ScrollableList>
+		<DragDropContext onDragEnd={this.onDragEnd} onDragStart={this.onDragStart}>
+			<Droppable droppableId="trash" key={0}>
+			{(provided,snapshot) => (
+				<StyledTopArea  >
+					<StyledDeleteZone ref={provided.innerRef} style={getTrashDropStyle(snapshot.isDraggingOver)}  {...provided.droppableProps} visible={this.state.dragging}><DS.component.Label highlight>Drag here to remove</DS.component.Label></StyledDeleteZone>
+					<div style={{display:"none"}}>{provided.placeholder}</div>
+				</StyledTopArea>
+			)}</Droppable>
+
+			<Droppable droppableId="categorizationViewDroppable" key={1}>
+			{(provided,snapshot) => (
+			<div>
+				<StyledHeader><DS.component.Header>Categorization rules</DS.component.Header></StyledHeader>
+				<StyledCategorizationRulesView  ref={provided.innerRef} {...provided.doppableProps}>
+					<DS.component.ScrollableList>
 						{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
 						{provided.placeholder}
-					</DesignSystem.component.ScrollableList>
+					</DS.component.ScrollableList>
 				</StyledCategorizationRulesView>
-
+			</div>
 			)}</Droppable>
 		</DragDropContext>
 	)}
 }
 
+const getTrashDropStyle = isDraggingOver => ({
+  	border: isDraggingOver ? DS.borderThickness + "rem solid "+ DS.getStyle().borderColorHighlight : "none",
+});
+
+const getTrashingDropStyle = isDraggingOver => ({
+  	width: isDraggingOver ? "3rem" : "auto",
+});
+
+const StyledHeader = styled.div`
+	height: 5rem;
+	display: flex;
+    flex-direction: row;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
+`
+
+const StyledTopArea = styled.div`
+	height: 5rem;
+    position: fixed;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
+    z-index:99;
+`
+
+const StyledDeleteZone = styled.div`
+	padding: 1rem 2rem;
+	border-radius: ${DS.borderRadius};
+	opacity: ${(props) => props.visible?1:0};
+    background: ${DS.getStyle().alert};
+    transition: opacity 0.3s ease-in-out;
+    &:hover{
+    	border: ;
+    }
+`
 
 const StyledCategorizationRulesView = styled.ul`
-	max-width: ${DesignSystem.applicationMaxWidth}rem;
+	max-width: ${DS.applicationMaxWidth}rem;
 	margin: auto;
-	margin-top:3rem;
 `
 
 
@@ -88,22 +146,12 @@ class RuleView extends BaseComponent{
 		this.state={toolVisible:false}
 	}
 
-	onClickedStreamTag(id,streamId){
-/*		var s = Core.getStreamById(streamId)
-		var a = relativeDates.fourWeeksAgo()
-		Core.getTransactionsBetweenDates(a,new Date())
-		.then(txns => txns.filter(t => t.categorized && t.isAllocatedToStream(s)))
-		.then(txns => txns.filter(t => doesRuleMatchTransaction(this.props.rule.matchingString,t)))
-		.then(txns => console.log(txns))*/
-
-	}
-
 	onEnterEditMode(e){
 		Core.presentModal(ModalTemplates.ModalWithCategorizationRule("Edit rule","",this.props.rule)).then(({state,buttonIndex}) => {
 			if(buttonIndex == 1){//user asked to save changes
 				var updatedList = JSON.parse(JSON.stringify(Core.getUserData().categorizationRules))//snapshot
-				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].matchingString = state.matchingString//update this rule in the snapshot
 				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].allocations = [{streamId: state.allocatedStream.id, type: 'percent', amount: 1}];
+				updatedList.filter(r => r.matchingString == this.props.rule.matchingString)[0].matchingString = state.matchingString//update this rule in the snapshot
 				this.props.masterView.updateState({loading:true})
 				Promise.all([
 					Core.saveCategorizationRules(updatedList),
@@ -114,28 +162,22 @@ class RuleView extends BaseComponent{
 			}
 		}).catch(e => console.log(e));
 	}
-	onClickDelete(e,props){Core.deleteCategorizationRule(props.rule).then(() => this.props.masterView.reload())}
+	//onClickDelete(e,props){Core.deleteCategorizationRule(props.rule).then(() => this.props.masterView.reload())}
 	render(){
 		return(
 		<Draggable draggableId={"dr-"+this.props.id} index={this.props.id}>
 		{(provided) => (
-			<StyledRuleView {...provided.draggableProps} {...provided.dragHandleProps} ref={provided.innerRef}
-					onMouseEnter={(e)=> this.updateState({toolVisible:true})}
-					onMouseLeave={(e)=> this.updateState({toolVisible:false})}>
-				<DesignSystem.component.ListItem onClick={(e)=>this.onEnterEditMode(e)} fullBleed>
+			<StyledRuleView {...provided.draggableProps} {...provided.dragHandleProps} ref={provided.innerRef}>
+				<DS.component.ListItem onClick={(e)=>this.onEnterEditMode(e)} fullBleed>
 					<div style={{margin:"0 1rem"}}>{this.props.rule.priority}</div>
 					<div style={{textOverflow: "ellipsis",textWrap: "nowrap",overflowX: "clip",paddingRight:"0.5rem"}} >{this.props.rule.matchingString}</div>
 					<Spacer/>
 					<StreamTagContainer style={{textAlign:"right",margin:"0 1rem"}}>{this.props.rule.allocations
 						.sort((a,b) => (!!a.amount)?-1:1)
-						.map(a => <DesignSystem.component.StreamTag noHover highlight={true} onClick={()=> this.onClickedStreamTag(this.props.id,a.streamId)} key={a.streamId}>
+						.map(a => <DS.component.StreamTag noHover highlight={true} key={a.streamId}>
 							{Core.getStreamById(a.streamId).name}
-						</DesignSystem.component.StreamTag>)}</StreamTagContainer>
-					{/*<ToolBox visible={this.state.toolVisible}>
-						<StyledButton onClick={(e)=>this.onEnterEditMode(e)}>✎</StyledButton>
-						<StyledButton onClick={(e)=>this.onClickDelete(e,this.props)}>✕</StyledButton>
-					</ToolBox>*/}
-				</DesignSystem.component.ListItem>
+						</DS.component.StreamTag>)}</StreamTagContainer>
+				</DS.component.ListItem>
 			</StyledRuleView>
 		)}
 		</Draggable>
@@ -147,11 +189,13 @@ class RuleView extends BaseComponent{
 export class CategorizationModalView extends BaseComponent{
 	constructor(props){
 		super(props)
+		let d = new Date();
+		d.setHours(0, 0, 0, 0);
 		this.state = {
 			fetching: true,
 			uncategorizedMatchList: [],
 			categorizedMatchList: [],
-			summonDate: new Date(),
+			summonDate: d,
 			matchingString: props.rule.matchingString,
 			allocatedStream: Core.getStreamById(props.rule.allocations[0].streamId)
 		}
@@ -175,8 +219,8 @@ export class CategorizationModalView extends BaseComponent{
 		Core.getTransactionsBetweenDates(AppConfig.transactionFetchMinDate, this.state.summonDate).then(data => {
 			var ruleMatchedAlready = data.filter(t => t.categorized)
 					.filter(t => utils.or(ruleStreams.map(st => t.isAllocatedToStream(st))))
-					.filter(t => doesRuleMatchTransaction(s,t))
-			var matches = data.filter(t => doesRuleMatchTransaction(s,t))
+					.filter(t => doesStringMatchTransaction(s,t))
+			var matches = data.filter(t => doesStringMatchTransaction(s,t))
 			this.updateState({
 				uncategorizedMatchList: matches.filter(t => !t.categorized),
 				categorizedMatchList: matches.filter(t => t.categorized).filter(t => utils.or(ruleStreams.map(st => t.isAllocatedToStream(st)))),	
@@ -194,14 +238,14 @@ export class CategorizationModalView extends BaseComponent{
 	render(){
 		return(
 			<div>
-				<DesignSystem.component.Row>
+				<DS.component.Row>
 					<StyledWord>Transactions like</StyledWord>
-					<DesignSystem.component.Input type="text" 
+					<DS.component.Input type="text" 
 						textAlign="left" defaultValue={this.props.rule.matchingString} onChange={this.onChangedText.bind(this)}/>
-				</DesignSystem.component.Row>
-				<DesignSystem.component.Row>
+				</DS.component.Row>
+				<DS.component.Row>
 					<StyledWord>will be categorized as</StyledWord>
-					<DesignSystem.component.DropDown
+					<DS.component.DropDown
 							value={this.state.allocatedStream.name?this.state.allocatedStream.name:'DEFAULT'} 
 							onChange={this.handleStreamSelected}>
 							<option value='DEFAULT' disabled hidden> </option>
@@ -209,20 +253,20 @@ export class CategorizationModalView extends BaseComponent{
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{Core.getStreamById(a.id).name}</option>)}
 
-					></DesignSystem.component.DropDown>
-				</DesignSystem.component.Row>
+					></DS.component.DropDown>
+				</DS.component.Row>
 				<div style={{margin:"auto", minHeight:"5rem", 
 				marginTop:"3rem",fontSize:"0.8rem","textAlign":"left"}}>
 					{this.state.fetching?(<div>loading....</div>):<div>
 						<ul><div style={{fontWeight:"bold",marginBottom:"1rem"}}></div>
 						{[...this.state.uncategorizedMatchList,...this.state.categorizedMatchList].slice(0,4).map((t,i) => 
-							<DesignSystem.component.ListItem noHover fullBleed size="xs" key={i}>
-									<DesignSystem.component.Label style={{minWidth:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DesignSystem.component.Label>
-									<DesignSystem.component.Label style={{marginRight:"0.5rem"}}>{t.description}</DesignSystem.component.Label><Spacer/>
-									<DesignSystem.component.StreamTag style={{maxWidth:"30vw"}} noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DesignSystem.component.StreamTag>
+							<DS.component.ListItem noHover fullBleed size="xs" key={i}>
+									<DS.component.Label style={{minWidth:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DS.component.Label>
+									<DS.component.Label style={{marginRight:"0.5rem"}}>{t.description}</DS.component.Label><Spacer/>
+									<DS.component.StreamTag style={{maxWidth:"30vw"}} noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DS.component.StreamTag>
 									<div style={{maxWidth:"3rem",textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(t.amount,0,null,null,Core.getPreferredCurrency())}</div>
-							</DesignSystem.component.ListItem>)}
-						{(this.state.categorizedMatchList.length>4)?<DesignSystem.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.categorizedMatchList.length-2} other(s)</DesignSystem.component.ListItem>:""}
+							</DS.component.ListItem>)}
+						{(this.state.categorizedMatchList.length>4)?<DS.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.categorizedMatchList.length-2} other(s)</DS.component.ListItem>:""}
 						 
 						</ul>
 					</div>
@@ -242,7 +286,7 @@ const StyledWord = styled.div`
 `
 
 
-function doesRuleMatchTransaction(matchingString, transaction){
+function doesStringMatchTransaction(matchingString, transaction){
 	return transactionGrouper.doesTransactionContainStringByWords(transaction,matchingString)
 }
 
