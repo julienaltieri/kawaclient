@@ -178,7 +178,7 @@ const StyledLabel = styled.div`
     text-wrap: nowrap;
     overflow-x: clip;
     color: ${(props) => props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
-    font-size: ${(props) => props.size?instance.fontSize[props.size]:instance.fontSize.body}rem;
+    font-size: ${(props) => props.size=="xs"?instance.fontSize.little+"rem":"inherit"};
 `
 
 const StyledRowContainer = styled.div`
@@ -238,7 +238,7 @@ const StyledListItem = styled.div`
  	box-sizing: border-box;
     display:flex;
     text-align: left;
-	font-size: ${instance.fontSize.body}rem;
+	font-size: ${(props) => props.size=="xs"?instance.fontSize.little:instance.fontSize.body}rem;
     cursor: ${(props) => props.noHover?"default":"pointer"};
     width: 100%;
     margin-bottom: 0;
