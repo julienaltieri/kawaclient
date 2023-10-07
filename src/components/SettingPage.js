@@ -6,6 +6,8 @@ import {ModalTemplates} from '../ModalManager.js'
 //import PlaidLinkComponent from './PlaidLink';
 import {PlaidLink} from "react-plaid-link";
 import utils from '../utils'
+import DS from '../DesignSystem'
+
 
 const PlaidStatuses = {
   ok:'ok',
@@ -49,10 +51,11 @@ export default class SettingPage extends BaseComponent{
 	render(){
 		return(
 		<PageContainer>
+      <DS.component.PageHeader>Bank connections</DS.component.PageHeader>
+
       {this.state.fetching?<div style={{textAlign:"center",marginTop:"5rem"}}>loading...</div>:
       <div>
         <Title style={{display: "flex", justifyContent: "space-between", alignItems: "flex-end"}}>
-          <div>Bank Connections</div>
           <PlusButton><div style={{"flexGrow":1,flexDirection: "column"}}><PlaidLink style={{outline: "none",display: "block",background: "none",border: "none",padding: "0",width: "100%",flexGrow: "1",margin: "0",cursor: "pointer",fontSize: "1.2rem"}}
               clientName="React Plaid Setup"
               env="development"
@@ -86,7 +89,6 @@ const Title = styled.div`
 const PageContainer = styled.div`
   max-width: 600px;
     margin: auto;
-    margin-top: 6vh;
 `
 const List = styled.ul`
   
