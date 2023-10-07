@@ -81,7 +81,7 @@ export default class CategorizationRulesView extends BaseComponent{
 			<Droppable droppableId="categorizationViewDroppable" key={1}>
 			{(provided,snapshot) => (
 			<div>
-				<StyledHeader><DS.component.Header>Categorization rules</DS.component.Header></StyledHeader>
+				<DS.component.PageHeader>Categorization rules</DS.component.PageHeader>
 				<StyledCategorizationRulesView  ref={provided.innerRef} {...provided.doppableProps}>
 					<DS.component.ScrollableList>
 						{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
@@ -101,15 +101,6 @@ const getTrashDropStyle = isDraggingOver => ({
 const getTrashingDropStyle = isDraggingOver => ({
   	width: isDraggingOver ? "3rem" : "auto",
 });
-
-const StyledHeader = styled.div`
-	height: 5rem;
-	display: flex;
-    flex-direction: row;
-    align-content: center;
-    justify-content: center;
-    align-items: center;
-`
 
 const StyledTopArea = styled.div`
 	height: 5rem;

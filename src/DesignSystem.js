@@ -143,6 +143,7 @@ class DesignSystem{
 	component = {
 		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
+		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
 		ListItem: (props) => <StyledListItemContainer noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
@@ -167,6 +168,14 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
+const StyledPageHeader = styled.div`
+	height: 5rem;
+	display: flex;
+    flex-direction: row;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
+`
 
 const DownArrow = styled.div`
     position: absolute;

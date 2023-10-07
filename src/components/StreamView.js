@@ -4,7 +4,7 @@ import styled from 'styled-components'
 import ApiCaller from '../ApiCaller'
 import {ModalController, ModalTemplates} from '../ModalManager.js'
 import {Period} from '../Time'
-import DesignSystem from '../DesignSystem'
+import DS from '../DesignSystem'
 import utils from '../utils'
 
 var streamNodeMap = {}
@@ -24,10 +24,12 @@ export default class MasterStreamView extends BaseComponent{
 	}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
-		return(
+		return(<div>
+		<DS.component.PageHeader>Streams</DS.component.PageHeader>
 		<StyledMasterStreamView>
 			<DraggableStreamViewContainer ddContext={this.state.ddContext} streamId={this.state.masterStream.id} masterStreamNode={this} />
 		</StyledMasterStreamView>
+		</div>
 	)}
 }
 
@@ -299,10 +301,10 @@ class TerminalStreamView extends GenericEditableStreamView{
 		//terminal view that supports edit mode
 		var editMode = 
 		<NewStreamContainer style={{paddingRight: "0.6rem",height: "1rem"}}	onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}>
-			<NameInput 	name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" style={{border:this.state.newStreamNameErrorState?"1px solid "+DesignSystem.getStyle().alert:""}}></NameInput>
+			<NameInput 	name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" style={{border:this.state.newStreamNameErrorState?"1px solid "+DS.getStyle().alert:""}}></NameInput>
 			<Spacer/>
 			<AmountInput  name="value" placeholder="0.00"  defaultValue={this.getStream().isFactory?"":this.getStream().getCurrentExpectedAmount()}
-					style={{border:this.state.newStreamAmountErrorState?"1px solid "+DesignSystem.getStyle().alert:""}}></AmountInput>
+					style={{border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></AmountInput>
 			<div style={{"height":"1rem",marginLeft:"0.2rem"}}>/</div>
 			<StreamPeriodInput 	name="period" id="period" defaultValue={this.getStream().period} onChange={(e)=>{}}>
 				{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
@@ -353,7 +355,7 @@ function endDragNDropInteraction(ctx){
 const StyledMasterStreamView = styled.div`
 	max-width: 600px;
     margin: auto;
-    margin-top: 6vh;
+    margin-top: 0rem;
 `
 
 const StreamInfoContainerTerminal = styled.div`
@@ -361,8 +363,8 @@ const StreamInfoContainerTerminal = styled.div`
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    color: ${DesignSystem.getStyle().bodyTextSecondary};
-    background: ${props => props.isSavings?DesignSystem.getStyle().savings:(props.isIncome?DesignSystem.getStyle().income:DesignSystem.getStyle().expenses)}${Math.floor(DesignSystem.backgroundOpacity*255).toString(16)};
+    color: ${DS.getStyle().bodyTextSecondary};
+    background: ${props => props.isSavings?DS.getStyle().savings:(props.isIncome?DS.getStyle().income:DS.getStyle().expenses)}${Math.floor(DS.backgroundOpacity*255).toString(16)};
     padding: 0 3vw;
     height:2.3rem;
     border-radius: 100vw;
@@ -376,8 +378,8 @@ const StreamInfoContainer = styled.div`
     padding: 0 3vw;
     height:2.3rem;
     border-radius: 100vw;
- 	color: ${DesignSystem.getStyle().bodyTextSecondary}; 
- 	border-top: 1px solid ${DesignSystem.getStyle().borderColor};
+ 	color: ${DS.getStyle().bodyTextSecondary}; 
+ 	border-top: 1px solid ${DS.getStyle().borderColor};
 `
 
 const NewStreamContainer = styled.div`
@@ -388,7 +390,7 @@ const NewStreamContainer = styled.div`
     align-items: center;
     padding: 1vw 3vw;
     border-radius: 100vw;
-    background: ${DesignSystem.getStyle().modalBackground};
+    background: ${DS.getStyle().modalBackground};
 `
 const GridButtonContainer = styled.div`
 	display: flex;
@@ -403,12 +405,12 @@ const GridButtonContainer = styled.div`
 const NameInput = styled.input`
 	height: 	1rem;
 	width: 		6rem;
-	background: 	${DesignSystem.getStyle().inputFieldBackground};
-	color: 			${DesignSystem.getStyle().bodyTextSecondary};
-	border: solid 1px ${DesignSystem.getStyle().UIPlaceholder};
+	background: 	${DS.getStyle().inputFieldBackground};
+	color: 			${DS.getStyle().bodyTextSecondary};
+	border: solid 1px ${DS.getStyle().UIPlaceholder};
     padding: 0.3rem;
     appearance: none;
-    border-radius: ${DesignSystem.borderRadiusSmall};
+    border-radius: ${DS.borderRadiusSmall};
 
 `
 
@@ -418,10 +420,10 @@ const AmountInput = styled.input`
 	text-align: right;
     appearance: none;
     padding: 0.3rem;
-	background: 	${DesignSystem.getStyle().inputFieldBackground};
-	border: solid 1px ${DesignSystem.getStyle().UIPlaceholder};
-	color: ${DesignSystem.getStyle().bodyTextSecondary};
-    border-radius: ${DesignSystem.borderRadiusSmall};
+	background: 	${DS.getStyle().inputFieldBackground};
+	border: solid 1px ${DS.getStyle().UIPlaceholder};
+	color: ${DS.getStyle().bodyTextSecondary};
+    border-radius: ${DS.borderRadiusSmall};
 
 `
 
@@ -433,10 +435,10 @@ const StreamPeriodInput = styled.select`
 	width: 			4.2rem;
 	margin-right: 	1rem;
     padding: 0.3rem;
-	background: 	${DesignSystem.getStyle().inputFieldBackground};
-	color: ${DesignSystem.getStyle().bodyTextSecondary};
-	border: solid 1px ${DesignSystem.getStyle().UIPlaceholder};
-    border-radius: ${DesignSystem.borderRadiusSmall};	
+	background: 	${DS.getStyle().inputFieldBackground};
+	color: ${DS.getStyle().bodyTextSecondary};
+	border: solid 1px ${DS.getStyle().UIPlaceholder};
+    border-radius: ${DS.borderRadiusSmall};	
 `
 
 const Spacer = styled.div`
