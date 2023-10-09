@@ -154,15 +154,16 @@ class CategorizeActionCard extends ActionCard{
 					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
 					<DS.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DS.component.StreamTag>
-					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
+					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem", zIndex:100}} highlight={true} key="more" 
 							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</DS.component.StreamTag>
-					{this.state.streamListVisible?<div><FullScreenCapturer onClick={(e) => this.setMoreStreamPopupVisible(false)}></FullScreenCapturer>
-						<MoreStreamContainer style={{
-								top:this.state.streamListClickEvent.target.clientHeight+this.state.streamListClickEvent.target.offsetTop,
-								left:this.state.streamListClickEvent.target.clientWidth+this.state.streamListClickEvent.target.offsetLeft}}>
-								<StreamLineOption key={-2} style={{borderBottom:"1px solid #ccc",padding:"0.5rem 0.4rem",backgroundColor:"#a4ebcc"}} onClick={(e)=> this.onSplitClicked()}>Split</StreamLineOption>{
-							this.getAvailableStreams().map((a,i) => <StreamLineOption key={i} onClick={(e)=> this.onClickStreamTag(a)}>{this.getStreamString(a)}</StreamLineOption>)
-						}</MoreStreamContainer></div>:""
+					{this.state.streamListVisible?<div ><FullScreenCapturer onClick={(e) => this.setMoreStreamPopupVisible(false)}></FullScreenCapturer>
+							<DS.component.Tooltip style={{paddingLeft:0}} x={this.state.streamListClickEvent.target.offsetLeft+this.state.streamListClickEvent.target.clientWidth/2} y={this.state.streamListClickEvent.target.offsetTop+this.state.streamListClickEvent.target.clientHeight*3/4}>
+								<DS.component.ScrollableList style={{maxHeight:"15rem"}}>{
+									this.getAvailableStreams().map((a,i) => 
+									<DS.component.ListItem size="xs" key={i} onClick={(e)=> this.onClickStreamTag(a)}>{this.getStreamString(a)}</DS.component.ListItem>)}
+								</DS.component.ScrollableList>
+							</DS.component.Tooltip>
+						</div>:""
 					}
 			</ActionsContainerBox></FadeInWrap>}
 		</div>)
@@ -242,32 +243,14 @@ const FadeInWrap = styled.div`
 `
 
 const FullScreenCapturer = styled.div`
-	width: 100vh;
+	width: 100vw;
     height: 100vh;
     position: fixed;
     top: 0;
     left: 0;
+    z-index: 98;
 `
 
-const MoreStreamContainer = styled.div`
-	position:absolute;
-	height:15rem;
-	overflow-y:scroll;
-	width:14rem;
-	box-shadow: 1px 4px 9px 0px #00000052;
-	z-index:99;
-`
-
-const StreamLineOption = styled.div`
-	background-color: ${props => props.highlight?"#e0d6ff":"#d6e9ff"};
-	padding: 0.25rem 0.4rem ;
-	text-align:left;
-	margin:0rem;
-	&:hover{
-		cursor:pointer;
-		background-color:#d6d8ff;
-	}
-`
 
 const Checkmark = styled.img`
     width: 7rem;

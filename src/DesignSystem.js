@@ -144,13 +144,14 @@ class DesignSystem{
 		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
-		ListItem: (props) => <StyledListItemContainer noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		ListItem: (props) => <StyledListItemContainer size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
 		Input: (props) => <StyledInput {...props}>{props.children}</StyledInput>,
 		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
+		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>
 	}
 	spacing = {
 		xxs:0.5,
@@ -167,6 +168,60 @@ class DesignSystem{
 }
 
 const instance = new DesignSystem();
+
+
+const StyledArrow = styled.div`
+	position: absolute;
+	width:0rem;
+	height:0rem;
+	top: ${props =>  props.showAbove?"auto":"-1rem"};
+	bottom: ${props =>  !props.showAbove?"auto":"-1rem"};
+	left: 50%;
+	transform:translate(-50%);
+	border-left: 0.5rem solid transparent;
+ 	border-right: 0.5rem solid transparent;
+  	border-bottom: 0.5rem solid ${props => !props.showAbove?instance.getStyle().ultimateBackground+"60":"transparent"};
+  	border-top: 0.5rem solid ${props => props.showAbove?instance.getStyle().ultimateBackground+"60":"transparent"};
+  	z-index:100;
+ 	pointer-events: none;
+`
+
+const StyledTooltipBackdrop = styled.div`
+	background: ${props => instance.getStyle().ultimateBackground+"60"};
+    border-radius: ${props => instance.borderRadius};
+    box-shadow: 0 0 0.5rem #00000030;
+    backdrop-filter: blur(1rem);
+    position:absolute;
+    z-index: -1;
+    left: 0rem;
+    width:100%;
+    height:100%;
+    pointer-events: none;
+
+`
+
+const StyledToolTipContainer = styled.div`
+	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"};
+    display: flex;
+    width: max-content;
+    padding: 0.75rem;
+    min-width: 6rem;
+    max-width: 12rem;
+    /*the formula for shouldOverrideOverflow is not fully understood. There is another dependency on the container width of TSCardContent in StreamAuditView*/
+    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*instance.barWidthRem):0) +props.x||0}px;
+    /**/
+    top: ${props => props.y||0}px;
+    transform:translate(-50% , ${props => props.showAbove?"-100%":0}) translateY(${props => (props.showAbove?-1:1)*1.25}rem);
+    border-radius: ${props => instance.borderRadius};
+    text-align: center;
+    justify-content: center;
+    flex-direction: column;
+    align-items: flex-start;
+    align-content: flex-start;
+    font-size: 0.8rem;
+    z-index:99;
+`
+
 
 const StyledPageHeader = styled.div`
 	height: 5rem;
@@ -209,7 +264,22 @@ const StyledScrollableBottomSheet = styled.div`
 `
 
 const StyledScrollableList = styled.div`
-	
+	overflow-y: scroll;
+	overflow-x: hidden;
+	padding-right: ${props => (instance.barWidthRem+"rem")};
+	::-webkit-scrollbar {
+    	width: ${props => (instance.barWidthRem+"rem")}
+    }
+	::-webkit-scrollbar-track {
+		box-shadow: inset 0 0 0.5rem rgba(0, 0, 0, 0.3);
+		border-radius: 1rem;
+	}
+	::-webkit-scrollbar-thumb {
+	  	background-color: ${props => instance.getStyle().bodyTextSecondary};
+	 	outline: none;
+ 		border-radius: 1rem;
+	}
+	::-webkit-scrollbar-corner {background: rgba(0,0,0,0.5)}
 `
 
 const StyledInput = styled.input`
@@ -263,8 +333,8 @@ const StyledListItem = styled.div`
 `
 
 const StyledListItemContainer = styled.div`
-	width: calc(100% - ${(props) => props.fullBleed?0:2*instance.spacing.s}rem);
-	padding: 0 ${(props) => props.fullBleed?0:instance.spacing.s}rem;
+	width: calc(100% - ${(props) => props.fullBleed?0:props.size=="xs"?1.5*instance.spacing.xxs:2*instance.spacing.s}rem);
+	padding: 0 ${(props) => props.fullBleed?0:props.size=="xs"?1.5*instance.spacing.xxs:instance.spacing.s}rem;
     &:hover {
       background: ${(props) => props.noHover?"":instance.getStyle().UIElementBackground};
     }  
