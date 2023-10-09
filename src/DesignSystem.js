@@ -217,6 +217,7 @@ const StyledToolTipContainer = styled.div`
     align-items: flex-start;
     align-content: flex-start;
     z-index:99;
+    font-size:${instance.fontSize.little};
 `
 
 

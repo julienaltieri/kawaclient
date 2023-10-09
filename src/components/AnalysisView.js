@@ -5,7 +5,7 @@ import {GenericTransaction} from '../model';
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
 import ModalManager, {ModalTemplates} from '../ModalManager.js'
-import DesignSystem from '../DesignSystem.js'
+import DS from '../DesignSystem.js'
 import getReportFromDateForTerminalStream from '../processors/ReportingCore.js';
 import ProgressRing, {FrequencyRing} from './ProgressRing';
 import {Period,timeIntervals} from '../Time';
@@ -56,8 +56,8 @@ class GenericAnalysisView extends BaseComponent{
 		else {return (this.props.analysis.getNetAmount()/this.props.analysis.getExpected())>1}
 	}
 	getMainColor(){
-		if(this.isAlert()){return (this.isIncome() || this.isSavings())?DesignSystem.getStyle().warning:DesignSystem.getStyle().alert}
-		else{return DesignSystem.getStyle().positive}
+		if(this.isAlert()){return (this.isIncome() || this.isSavings())?DS.getStyle().warning:DS.getStyle().alert}
+		else{return DS.getStyle().positive}
 	}
 	render(){return(<div>I am a GenericAnalysisView</div>)}
 }
@@ -110,8 +110,8 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 			<div style={{marginTop:"100%"}}></div>
 			{this.props.hovering?<FrequencyRing  subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} frequencies={this.props.analysis.parentStreamAnalysis.getFrequencyHistogramAtDate(this.props.analysis.reportingDate)} />:""}
 			<ProgressRing 	radius={this.getViewConfig().moneyRadius} thickness={this.getViewConfig().moneyThickness} ccw={this.isCCW()}  progress={this.getPrimaryPercentage()} 		color={this.getMainColor()}/>
-			<ProgressRing 	radius={this.getViewConfig().timeRadius}  thickness={this.getViewConfig().timeThickness}  ccw={true}			progress={this.getSecondaryPercentage()}  	color={DesignSystem.getStyle().timePeriod}
-							subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} 	subdivGapAngles={this.getViewConfig().subdivGapAngles}	highlightLastSubdivision={true} 			highlighColor={DesignSystem.getStyle().timePeriodHighlight}/>
+			<ProgressRing 	radius={this.getViewConfig().timeRadius}  thickness={this.getViewConfig().timeThickness}  ccw={true}			progress={this.getSecondaryPercentage()}  	color={DS.getStyle().timePeriod}
+							subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} 	subdivGapAngles={this.getViewConfig().subdivGapAngles}	highlightLastSubdivision={true} 			highlighColor={DS.getStyle().timePeriodHighlight}/>
 		</FlexColumn>)
 	}
 }
@@ -209,9 +209,9 @@ const ExpectationChangePannel = styled.div`
 	font-size: 0.7rem;
     padding: 0.7rem 0.5rem;
     margin: 0.7rem 0;
-    background: ${DesignSystem.getStyle().warning+"55"};
-    border-radius: ${DesignSystem.borderRadiusSmall};
-    color: ${DesignSystem.getStyle().bodyText};
+    background: ${DS.getStyle().warning+"55"};
+    border-radius: ${DS.borderRadiusSmall};
+    color: ${DS.getStyle().bodyText};
 `
 
 //Represents a transaction feed for a given period
@@ -247,7 +247,7 @@ const TransactionFeedHeaderViewContainer = styled.div`
 	flex-direction: row;
 	justify-content: space-between;
 	border-bottom: solid 1px;
-	border-color: ${props => DesignSystem.getStyle().bodyTextSecondary};
+	border-color: ${props => DS.getStyle().bodyTextSecondary};
 	height: inherit;
 	font-variant: all-petite-caps;
     font-weight: bold;
@@ -355,8 +355,8 @@ class AnnotationInput extends BaseComponent{
 			return(<div>
 				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.date)}</div>}
 				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange} onFocus={e => {e.target.setSelectionRange(e.target.value.length,e.target.value.length)}}/>
-				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","background":DesignSystem.getStyle().modalBackground}}>
-					{DesignSystem.icon.done}</div>:""}
+				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","background":DS.getStyle().modalBackground}}>
+					{DS.icon.done}</div>:""}
 				</div>
 			)
 		}
@@ -383,7 +383,7 @@ export class GenericChartView extends GenericAnalysisView{
 			chartWidth: 450,
 			chartPadding: {top:20,bottom:10,left:10,right:60},
 			midgroundOpacity: 0.5, 									//opacity of middle ground items (trends and projections)
-			backgroundOpacity: DesignSystem.backgroundOpacity, 		//opacity of background items (area charts)
+			backgroundOpacity: DS.backgroundOpacity, 		//opacity of background items (area charts)
 			fontSizeTitle:20,										//Chart title
 			fontSizeHeader:14,										//Big numbers
 			fontSizeBody:7,											//Everthing else
@@ -501,17 +501,17 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		let res = {
 			plotList: [
 				new SeriesDescriptor({ name:"savings", chartContext:chartContext,
-					config:{render:true,color:DesignSystem.getStyle().savings,barStrings: {toDate:"Saved to date",value:"Saved",projected:"Annual savings"}},
+					config:{render:true,color:DS.getStyle().savings,barStrings: {toDate:"Saved to date",value:"Saved",projected:"Annual savings"}},
 					target: this.timeAxis.map((d,i) => -(i+1)*this.props.savingsAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.previousDate(d),Period.monthly)),
 					toDate: savingsAnalysis.map((r,i) => r.stats.savedToDate + incomeAnalysis[i].stats.savedToDate)
 				}),
 				new SeriesDescriptor({ name:"expenses", chartContext:chartContext,
-					config:{render:true,color:DesignSystem.getStyle().expenses,barStrings: {toDate:"Spent to date",value:"Spent",projected:"Annual expenses"}},
+					config:{render:true,color:DS.getStyle().expenses,barStrings: {toDate:"Spent to date",value:"Spent",projected:"Annual expenses"}},
 					target: this.timeAxis.map((d,i) => (i+1)*this.props.expenseAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.previousDate(d),Period.monthly)),
 					toDate: expenseAnalysis.map(r => r.stats.netToDate)
 				}),
 				new SeriesDescriptor({ name:"income", chartContext:chartContext,
-					config:{render:false,noTarget:true,noBar:true,color:DesignSystem.getStyle().warning,barStrings: {toDate:"Earnt to date",value:"Earnt",projected:"Annual income"},barOffset: {dx:-this.style.summaryBarLabelXOffset,dy:0}},
+					config:{render:false,noTarget:true,noBar:true,color:DS.getStyle().warning,barStrings: {toDate:"Earnt to date",value:"Earnt",projected:"Annual income"},barOffset: {dx:-this.style.summaryBarLabelXOffset,dy:0}},
 					target: this.timeAxis.map((d,i) => (i+1)*(this.props.incomeAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.previousDate(d),Period.monthly)+this.props.expenseAnalysis.getExpectedAmountAtDateForPeriod(d,Period.monthly))),
 					toDate: incomeAnalysis.map((r,i) => r.stats.netToDate+expenseAnalysis[i].stats.netToDate),
 				}) //optional - not rendered
@@ -612,10 +612,10 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 
 		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:this.getDomainBounds().My}}>
         	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
-			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DesignSystem.getStyle().bodyText}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DesignSystem.getStyle().bodyText}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+1*this.style.fontSizeBody+6*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getExpensesInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DesignSystem.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+2*this.style.fontSizeBody+8*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getSavedInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DesignSystem.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
+			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
+			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
+			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+1*this.style.fontSizeBody+6*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getExpensesInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
+			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+2*this.style.fontSizeBody+8*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getSavedInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
 		</SharedPropsWrapper>)
 	}
 	renderToolTip(){
@@ -636,16 +636,16 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners.map(l => l.current.invalidate = true)
 		this.mouseMoveListeners=[];
 
-		return (<div style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",display:"flex",background:DesignSystem.getStyle().UIElementBackground,borderRadius:DesignSystem.borderRadius,padding:"1rem",marginBottom:DesignSystem.verticalSpacing[Core.isMobile()?"s":"l"]}}>
+		return (<div style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",display:"flex",background:DS.getStyle().UIElementBackground,borderRadius:DS.borderRadius,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"l"]}}>
 			<div style={{position:"relative",width:"100%",height:"100%"}}>
 		       	<svg style={{position:"absolute",width:0}}><defs>
 			        <radialGradient id="alertHighlight">
-			            <stop offset="30%" stopColor={DesignSystem.UIColors.white}/>
-			            <stop offset="70%" stopColor={DesignSystem.getStyle().alert}/>
+			            <stop offset="30%" stopColor={DS.UIColors.white}/>
+			            <stop offset="70%" stopColor={DS.getStyle().alert}/>
 			        </radialGradient>
 			        <radialGradient id="savingsHighlight">
-			            <stop offset="30%" stopColor={DesignSystem.UIColors.white}/>
-			            <stop offset="70%" stopColor={DesignSystem.getStyle().savings}/>
+			            <stop offset="30%" stopColor={DS.UIColors.white}/>
+			            <stop offset="70%" stopColor={DS.getStyle().savings}/>
 			        </radialGradient>
 				</defs></svg>
 		        <V.VictoryChart height={this.style.chartHeight}  width={this.style.chartWidth} padding={this.style.chartPadding} scale={{ x: "time", y:"linear" }} domain={{x:[this.getDomainBounds().mx,this.getDomainBounds().Mx],y:[this.getDomainBounds().my,this.getDomainBounds().My]}} 
@@ -656,9 +656,9 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		          	tickComponent={<BoundedTick maxX={this.timeAxis[this.timeAxisBoundIndex]}/>} 
 		          	tickFormat={(t) => (t>this.timeAxis[this.timeAxisBoundIndex])?"":`${t.toLocaleString('en-US', {month: 'short'}).toUpperCase()}`} 
 		          	style={{
-		          		ticks: {stroke: DesignSystem.getStyle().bodyTextSecondary, size: 0, strokeWidth:3.5, strokeLinecap:"round"},
-		          		tickLabels: {padding:-10,fill:DesignSystem.getStyle().bodyTextSecondary,fontSize: 7,fontFamily:"Inter",fontWeight:500},
-		          		axis:{"stroke":DesignSystem.getStyle().bodyTextSecondary,strokeWidth:0}
+		          		ticks: {stroke: DS.getStyle().bodyTextSecondary, size: 0, strokeWidth:3.5, strokeLinecap:"round"},
+		          		tickLabels: {padding:-10,fill:DS.getStyle().bodyTextSecondary,fontSize: 7,fontFamily:"Inter",fontWeight:500},
+		          		axis:{"stroke":DS.getStyle().bodyTextSecondary,strokeWidth:0}
 		          	}} />
 		        	
 		        	{this.renderChartTitle() /*Period Title*/}
@@ -745,7 +745,7 @@ class CustomVoronoiContainer extends V.VictoryVoronoiContainer{
 
 export class AnnotationTooltip extends BaseComponent{
 	static RenderContent(content,options){
-		return (<div>{content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start"}} key={i}> 
+		return (<div>{content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start",fontSize:DS.fontSize.little+"rem"}} key={i}> 
 			<div style={{height:options?.disableTitle?0:"auto","display":"flex","alignItems":"baseline","flexDirection":"row","justifyContent":"space-between","width":"100%"}}>
 				{options?.disableTitle?<div></div>:<div style={{fontWeight:900,marginTop: "0.4rem",marginBottom:"0.2rem"}}>{Core.getStreamById(a.streamId).name}</div>}
 				{options?.enableEditOption? <StyledLink style={{marginTop:options?.disableTitle?"0.2rem":0}} onClick={() => options.onEdit(Core.getStreamById(a.streamId))}>edit</StyledLink>:""}
@@ -757,22 +757,23 @@ export class AnnotationTooltip extends BaseComponent{
 		</div>)}</div>)
 	} 
 	render(){
-		return (<AnnotationTooltipContainer shouldOverrideOverflow={this.props.shouldOverrideOverflow} containerSVGWidth={this.props.containerSVGWidth} containerSVGHeight={this.props.containerSVGHeight} datum={this.props.datum} scale={this.props.scale} showAbove={this.props.showAbove}>
-			<TooltipBackdrop/>
-			<Arrow showAbove={this.props.showAbove}/>
+		return (<DS.component.Tooltip showAbove={this.props.showAbove}
+			x={this.props.scale.x(this.props.datum.dx)*this.props.containerSVGWidth} 
+			y={this.props.scale.y(this.props.datum.dy)*this.props.containerSVGHeight}>
+			
 			<div style={{	fontVariant:"all-petite-caps",
-							color:DesignSystem.getStyle().bodyText,
+							color:DS.getStyle().bodyText,
 							marginBottom:"0.3rem",
 							marginTop:"-0.4rem",
 							fontSize:"1rem",
 							width:"100%",
 							textAlign:"center",
 							paddingBottom: "0.5rem",
-							borderBottom: "1px solid "+DesignSystem.getStyle().borderColor
+							borderBottom: "1px solid "+DS.getStyle().borderColor
 			}}>{this.props.reportDate}</div>
 			{AnnotationTooltip.RenderContent(this.props.content)}
-
-	</AnnotationTooltipContainer>)}
+		</DS.component.Tooltip>)
+	}
 }
 
 class ConditionalToolTip extends BaseComponent{
@@ -788,15 +789,15 @@ const AnnotationTooltipContainer = styled.div`
 	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"};
     display: flex;
     width: max-content;
-    padding: 0.75rem;
+    padding: 1rem;
     min-width: 6rem;
     max-width: 12rem;
     /*the formula for shouldOverrideOverflow is not fully understood. There is another dependency on the container width of TSCardContent in StreamAuditView*/
-    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*DesignSystem.barWidthRem):0) +props.scale.x(props.datum.dx)*props.containerSVGWidth||0}px;
+    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*DS.barWidthRem):0) +props.scale.x(props.datum.dx)*props.containerSVGWidth||0}px;
     /**/
     top: ${props => props.scale.y(props.datum.dy)*props.containerSVGHeight||0}px;
     transform:translate(-50% , ${props => props.showAbove?"-100%":0}) translateY(${props => (props.showAbove?-1:1)*1.25}rem);
-    border-radius: ${props => DesignSystem.borderRadius};
+    border-radius: ${props => DS.borderRadius};
     text-align: center;
     justify-content: center;
     flex-direction: column;
@@ -816,15 +817,15 @@ const Arrow = styled.div`
 	transform:translate(-50%);
 	border-left: 0.5rem solid transparent;
  	border-right: 0.5rem solid transparent;
-  	border-bottom: 0.5rem solid ${props => !props.showAbove?DesignSystem.getStyle().ultimateBackground+"60":"transparent"};
-  	border-top: 0.5rem solid ${props => props.showAbove?DesignSystem.getStyle().ultimateBackground+"60":"transparent"};
+  	border-bottom: 0.5rem solid ${props => !props.showAbove?DS.getStyle().ultimateBackground+"60":"transparent"};
+  	border-top: 0.5rem solid ${props => props.showAbove?DS.getStyle().ultimateBackground+"60":"transparent"};
   	z-index:100;
  pointer-events: none;
 `
 
 const TooltipBackdrop = styled.div`
-	background: ${props => DesignSystem.getStyle().ultimateBackground+"60"};
-    border-radius: ${props => DesignSystem.borderRadius};
+	background: ${props => DS.getStyle().ultimateBackground+"60"};
+    border-radius: ${props => DS.borderRadius};
     box-shadow: 0 0 0.5rem #00000030;
     backdrop-filter: blur(1rem);
     position:absolute;
