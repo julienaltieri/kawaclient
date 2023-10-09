@@ -262,7 +262,7 @@ const StyledScrollableBottomSheet = styled.div`
 `
 
 const StyledScrollableList = styled.div`
-	overflow-y: scroll;
+	overflow-y: auto;
 	overflow-x: hidden;
 	::-webkit-scrollbar {
     	width: ${props => (instance.barWidthRem+"rem")}
