@@ -204,12 +204,10 @@ const StyledToolTipContainer = styled.div`
 	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"};
     display: flex;
     width: max-content;
-    padding: 0.75rem;
+    padding: ${instance.spacing.xs}rem;
     min-width: 6rem;
     max-width: 12rem;
-    /*the formula for shouldOverrideOverflow is not fully understood. There is another dependency on the container width of TSCardContent in StreamAuditView*/
-    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*instance.barWidthRem):0) +props.x||0}px;
-    /**/
+    left: ${props => props.x||0}px;
     top: ${props => props.y||0}px;
     transform:translate(-50% , ${props => props.showAbove?"-100%":0}) translateY(${props => (props.showAbove?-1:1)*1.25}rem);
     border-radius: ${props => instance.borderRadius};
@@ -218,7 +216,6 @@ const StyledToolTipContainer = styled.div`
     flex-direction: column;
     align-items: flex-start;
     align-content: flex-start;
-    font-size: 0.8rem;
     z-index:99;
 `
 
@@ -266,7 +263,6 @@ const StyledScrollableBottomSheet = styled.div`
 const StyledScrollableList = styled.div`
 	overflow-y: scroll;
 	overflow-x: hidden;
-	padding-right: ${props => (instance.barWidthRem+"rem")};
 	::-webkit-scrollbar {
     	width: ${props => (instance.barWidthRem+"rem")}
     }
@@ -333,8 +329,8 @@ const StyledListItem = styled.div`
 `
 
 const StyledListItemContainer = styled.div`
-	width: calc(100% - ${(props) => props.fullBleed?0:props.size=="xs"?1.5*instance.spacing.xxs:2*instance.spacing.s}rem);
-	padding: 0 ${(props) => props.fullBleed?0:props.size=="xs"?1.5*instance.spacing.xxs:instance.spacing.s}rem;
+	width: calc(100% - ${(props) => props.fullBleed?0:2*(props.size=="xs"?instance.spacing.xs:instance.spacing.s)}rem);
+	padding: 0 ${(props) => props.fullBleed?0:props.size=="xs"?instance.spacing.xs:instance.spacing.s}rem;
     &:hover {
       background: ${(props) => props.noHover?"":instance.getStyle().UIElementBackground};
     }  

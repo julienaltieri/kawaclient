@@ -83,10 +83,8 @@ export default class CategorizationRulesView extends BaseComponent{
 			<div>
 				<DS.component.PageHeader>Categorization rules</DS.component.PageHeader>
 				<StyledCategorizationRulesView  ref={provided.innerRef} {...provided.doppableProps}>
-					<DS.component.ScrollableList>
-						{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
-						{provided.placeholder}
-					</DS.component.ScrollableList>
+					{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
+					{provided.placeholder}
 				</StyledCategorizationRulesView>
 			</div>
 			)}</Droppable>
