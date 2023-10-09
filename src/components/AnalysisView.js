@@ -432,8 +432,9 @@ export class GenericChartView extends GenericAnalysisView{
 		let p = this.props.analysis.subReportingPeriod;
 		if(!this.props.analysis.stream.isTerminal() && !ans.length){return}//don't do anything on empty compound stream annotations
 		return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
+			<div style={{marginBottom:DS.spacing[Core.isMobile()?"s":"l"]+"rem"}}>
 			<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/>,[],this.getFormattedDate(date,p.name))(that))
+								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/></div>,[],this.getFormattedDate(date,p.name))(that))
 			.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
 
 
@@ -784,55 +785,3 @@ class ConditionalToolTip extends BaseComponent{
 	}
 }
 
-
-const AnnotationTooltipContainer = styled.div`
-	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"};
-    display: flex;
-    width: max-content;
-    padding: 1rem;
-    min-width: 6rem;
-    max-width: 12rem;
-    /*the formula for shouldOverrideOverflow is not fully understood. There is another dependency on the container width of TSCardContent in StreamAuditView*/
-    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*DS.barWidthRem):0) +props.scale.x(props.datum.dx)*props.containerSVGWidth||0}px;
-    /**/
-    top: ${props => props.scale.y(props.datum.dy)*props.containerSVGHeight||0}px;
-    transform:translate(-50% , ${props => props.showAbove?"-100%":0}) translateY(${props => (props.showAbove?-1:1)*1.25}rem);
-    border-radius: ${props => DS.borderRadius};
-    text-align: center;
-    justify-content: center;
-    flex-direction: column;
-    align-items: flex-start;
-    align-content: flex-start;
-    font-size: 0.8rem;
-    z-index:99;
-    pointer-events: none;
-`
-const Arrow = styled.div`
-	position: absolute;
-	width:0rem;
-	height:0rem;
-	top: ${props =>  props.showAbove?"auto":"-1rem"};
-	bottom: ${props =>  !props.showAbove?"auto":"-1rem"};
-	left: 50%;
-	transform:translate(-50%);
-	border-left: 0.5rem solid transparent;
- 	border-right: 0.5rem solid transparent;
-  	border-bottom: 0.5rem solid ${props => !props.showAbove?DS.getStyle().ultimateBackground+"60":"transparent"};
-  	border-top: 0.5rem solid ${props => props.showAbove?DS.getStyle().ultimateBackground+"60":"transparent"};
-  	z-index:100;
- pointer-events: none;
-`
-
-const TooltipBackdrop = styled.div`
-	background: ${props => DS.getStyle().ultimateBackground+"60"};
-    border-radius: ${props => DS.borderRadius};
-    box-shadow: 0 0 0.5rem #00000030;
-    backdrop-filter: blur(1rem);
-    position:absolute;
-    z-index: -1;
-    left: 0rem;
-    width:100%;
-    height:100%;
-     pointer-events: none;
-
-`
