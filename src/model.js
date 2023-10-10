@@ -87,7 +87,12 @@ class Stream{
   }
   getAnnotationsAtDate(date){
     if(!(date instanceof Date)){date = new Date(date)}
-    return this.getAnnotations().filter(a => new Date(a.date).getTime() <= date.getTime() && new Date(a.date).getTime() > Period[this.period].subdivision.previousDate(date))
+    return this.getAnnotations().filter(an => {
+      let a = new Date(an.date), d = new Date(date), period = this.isTerminal()? Period[this.period] : Period[this.period].subdivision
+      let p = (a.getTime() <= d.getTime()) //is the annotation before the date?
+      let q = (a.getTime() > period.previousDate(d).getTime()) //is the annotation after the last period date?
+      return p && q
+    })
   }
   getAnnotationsForReport(r){return this.getAnnotationsAtDate(r.reportingDate)}
   saveAnnotation(date,body){
