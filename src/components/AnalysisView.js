@@ -630,7 +630,8 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners.map(l => l.current.invalidate = true)
 		this.mouseMoveListeners=[];
 
-		return (<div style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",display:"flex",background:DS.getStyle().UIElementBackground,borderRadius:DS.borderRadius,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"l"]}}>
+		return (<DS.component.ContentTile 
+			style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",margin:0,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"l"]}}>
 			<div style={{position:"relative",width:"100%",height:"100%"}}>
 		       	<svg style={{position:"absolute",width:0}}><defs>
 			        <radialGradient id="alertHighlight">
@@ -665,7 +666,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		        </V.VictoryChart>
 		        {this.renderToolTip()}
 	        </div>
-		</div>)
+		</DS.component.ContentTile>)
 	}
 }
 const BoundedTick = (props) => (props.datum < props.maxX)?<V.LineSegment {...props}/>:""

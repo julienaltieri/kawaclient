@@ -66,8 +66,8 @@ export default class SettingPage extends BaseComponent{
               className="test"
             >+</PlaidLink></div></PlusButton>
         </Title>
-        <List>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
-        </List>
+        <DS.component.ScrollableList>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
+        </DS.component.ScrollableList>
       </div>
     }
     </PageContainer>
@@ -112,18 +112,6 @@ const PlusButton = styled.div`
     }
 `
 
-const BCListItem = styled.li`
-  background: #fafafa;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    min-height: 3rem;
-    border: 1px solid #dfdfdf;
-    border-radius: 3px;
-    display: flex;
-    justify-content: center;
-    flex-direction: column;
-`
-
 
 class BCSettingItem extends BaseComponent{
   constructor(props) {
@@ -153,18 +141,13 @@ class BCSettingItem extends BaseComponent{
   }
 
   render(){
-    return <BCListItem>
-      <Row>
-        <LeftColumn>
-          <div style={{"fontSize":"1.2rem","fontWeight":"bold"}}>{this.props.data.name}</div>
-          <Subtitle>{this.props.data.itemId}</Subtitle>
-        </LeftColumn>
-        <div>
+    return <DS.component.ContentTile style={{margin:"1rem",padding:"1rem",width:"auto",flexDirection:"row",justifyContent: "space-between"}}>
+        <div style={{"fontSize":"1.2rem","fontWeight":"bold"}}>{this.props.data.name}</div>
+        <div style={{textAlign:"right"}}>
           <div><span>Status:</span> <Status good={this.props.data.status==PlaidStatuses.ok}>{this.props.data.status}</Status></div>
           <Subtitle>Last updated: {utils.formatDateShort(new Date(this.props.data.lastUpdated))}</Subtitle> 
         </div>
-        
-        </Row>
+
         {this.state.updateModeLinkToken?<Row style={{"marginTop":"1rem",background:"#ffe2e2","padding":"1rem"}}>
           <span style={{"fontSize":"0.8rem"}}>
             {this.props.data.error.error_message}
@@ -182,7 +165,7 @@ class BCSettingItem extends BaseComponent{
             Resolve
             </PlaidLink></span>
         </Row>:""}
-    </BCListItem>
+    </DS.component.ContentTile>
   }
 }
 

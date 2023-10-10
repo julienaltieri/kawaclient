@@ -151,7 +151,8 @@ class DesignSystem{
 		Input: (props) => <StyledInput {...props}>{props.children}</StyledInput>,
 		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
-		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>
+		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
+		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
 	}
 	spacing = {
 		xxs:0.5,
@@ -168,6 +169,26 @@ class DesignSystem{
 }
 
 const instance = new DesignSystem();
+
+const FlexColumn = styled.div`
+	position:relative;
+    display: flex;
+    flex-direction: column;
+    align-content: stretch;
+    justify-content: flex-start;
+    align-items: center;
+    height: 100%;
+    width:100%;
+`
+const StyledContentTile = styled(FlexColumn)`
+	background: ${props => instance.getStyle().UIElementBackground};
+	position:inherit;
+    justify-content: space-between;
+    flex-grow: 0;
+    padding: ${props => instance.spacing.xs/2}rem;
+    border-radius: ${props => instance.borderRadius};
+    margin: ${props => instance.spacing.xs/2}rem;
+`
 
 
 const StyledArrow = styled.div`

@@ -6,7 +6,7 @@ import {GenericTransaction} from '../model';
 import dateformat from "dateformat";
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
-import DesignSystem from '../DesignSystem.js'
+import DS from '../DesignSystem.js'
 import {getStreamAnalysis,getMultiStreamAnalysis} from '../processors/ReportingCore.js';
 import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,EndOfPeriodProjectionSummary,EndOfPeriodProjectionGraph} from './AnalysisView'
 import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView'
@@ -112,16 +112,16 @@ class CompoundStreamAuditView extends StreamAuditView{
 	render(){
 		/*if(this.props.stream.name == "Food"){console.log(this.getStreamAnalysis(Period.monthly))}*/
  		return (<CompountStreamAuditViewContainer >
- 			<StreamGroupHeader>
+ 			<DS.component.ContentTile style={{flexDirection: "row",justifyContent: "space-between",width: "calc(100% - 1rem)", margin:0,marginBottom: "1rem"}}>
  				<div style={{width:"3rem",marginLeft:"1rem"}}>
 					<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>
  				</div>
- 				<div style={{padding:"1rem",flexGrow: 1}}>
+ 				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
  					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
  				<MiniGraph analysis={this.getStreamAnalysis(Period.monthly)} stream={this.props.stream}/>
- 			</StreamGroupHeader>
+ 			</DS.component.ContentTile>
  			<RowLayout>
  				<RowLayout>
  				{this.props.stream.children?.filter(c =>{
@@ -151,10 +151,10 @@ class TerminalStreamCard extends StreamAuditView{
 	render(){
 /*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}
 */		
-		return (<BaseStreamAuditViewContainer>
+		return (<DS.component.ContentTile style={{height:"14rem",maxWidth: "10.5rem",width: "calc(50% - 2rem)"}}>
 			<TSCardHeader>{/*Title*/}
 				<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
-				<div style={{fontSize:"0.8rem",color:DesignSystem.getStyle().bodyTextSecondary}}>{
+				<div style={{fontSize:"0.8rem",color:DS.getStyle().bodyTextSecondary}}>{
 					format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
 					} per {Period[this.props.stream.period].unitName}</div>
 			</TSCardHeader>
@@ -166,7 +166,7 @@ class TerminalStreamCard extends StreamAuditView{
 			<TSFooter>{/*Switch link*/}
 				<StyledLink onClick={this.handleClick}>{this.state.detailView?"Hide":"See"} details</StyledLink>
 			</TSFooter>
-		</BaseStreamAuditViewContainer>) 
+		</DS.component.ContentTile>) 
 	}
 }  
 
@@ -181,6 +181,22 @@ const FlexColumn = styled.div`
     height: 100%;
     width:100%;
 `
+
+/*const StreamGroupHeader = styled.div`
+	margin-bottom: 1rem;
+	height:5rem;
+    text-align: left;
+    padding:0;
+
+    background-color: ${props => DS.getStyle().UIElementBackground};
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    border-radius:  ${props => DS.borderRadius};
+    align-items: center;
+    position: relative;
+`*/
+
 const ColumnLayout = styled.div`
 	display:flex;
 	justify-content:space-evenly;
@@ -213,19 +229,19 @@ const TopLevelStreamAuditViewContainer = styled(FlexColumn)`
 `
 
 
-const BaseStreamAuditViewContainer = styled(FlexColumn)`
-	background: ${props => DesignSystem.getStyle().UIElementBackground};
+/*const BaseStreamAuditViewContainer = styled(FlexColumn)`
+	background: ${props => DS.getStyle().UIElementBackground};
 	position:inherit;
     justify-content: space-between;
     flex-grow: 0;
     padding: 0.5rem;
-    border-radius: ${props => DesignSystem.borderRadius};
+    border-radius: ${props => DS.borderRadius};
     margin: 0.5rem;
     margin-bottom: 0.5rem;
     height:14rem;
     max-width: 10.5rem;
     width: calc(50% - 2rem);
-`
+`*/
 
 const TSCardHeader = styled.div`
 	flex-grow: 1;
@@ -244,7 +260,7 @@ const TSFooter = styled.div`
 `
 const AuditViewTitle = styled.div`
 	font-size:0.8rem;
-	color: ${props => DesignSystem.getStyle().bodyTextSecondary};
+	color: ${props => DS.getStyle().bodyTextSecondary};
 	margin-bottom:0.3rem;
 	font-weight:bold;
 `
@@ -253,7 +269,7 @@ export const StyledLink = styled.a`
     font-size: 0.8rem;
     text-decoration: underline;
     cursor: pointer;
-    color: ${props => DesignSystem.getStyle().bodyTextSecondary}
+    color: ${props => DS.getStyle().bodyTextSecondary}
 `
 
 const TopLevelHeaderContainer = styled.div`
@@ -262,9 +278,9 @@ const TopLevelHeaderContainer = styled.div`
 	align-items: center;
 	justify-content: space-between;
     border-bottom: solid 1px;
-    border-color: ${DesignSystem.getStyle().borderColor};
-    margin-bottom: ${DesignSystem.verticalSpacing[Core.isMobile()?"s":"m"]};
-    margin-top: ${DesignSystem.verticalSpacing[Core.isMobile()?"s":"m"]};
+    border-color: ${DS.getStyle().borderColor};
+    margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
+    margin-top: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
     width: 100%;
 `
 
@@ -282,20 +298,7 @@ const StreamGroupHeaderTitle = styled.div`
     font-weight: bold;
 `
 
-const StreamGroupHeader = styled.div`
-	margin-bottom: 1rem;
-	height:5rem;
-    text-align: left;
-    padding:0;
 
-    background-color: ${props => DesignSystem.getStyle().UIElementBackground};
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    border-radius:  ${props => DesignSystem.borderRadius};
-    align-items: center;
-    position: relative;
-`
 
 const StreamAuditCellContainer = styled.div`
 	display:flex;
