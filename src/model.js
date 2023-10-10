@@ -49,7 +49,7 @@ class Stream{
   constructor(json){
     this.name = json.name;
     this.id = json.id;
-    this.period = json.period;
+    this.period = json.period;//string
     this.endDate = (!isNaN(new Date(json.endDate)))?new Date(json.endDate):undefined;
     this.isSavings = json.isSavings;
     this.isInterestIncome = json.isInterestIncome;
@@ -87,7 +87,7 @@ class Stream{
   }
   getAnnotationsAtDate(date){
     if(!(date instanceof Date)){date = new Date(date)}
-    return this.getAnnotations().filter(a => a.date.getTime() == date.getTime())
+    return this.getAnnotations().filter(a => new Date(a.date).getTime() <= date.getTime() && new Date(a.date).getTime() > Period[this.period].subdivision.previousDate(date))
   }
   getAnnotationsForReport(r){
     let s = r.reportingStartDate?.getTime()

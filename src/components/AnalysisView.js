@@ -322,8 +322,7 @@ class AnnotationInput extends BaseComponent{
 	}
 	getAnnotations(stream){
 		if(!stream){stream = this.props.stream}
-		return (stream.getAnnotations()).filter(an => new Date(an.date).getTime() == this.props.date.getTime()
-			&& ((stream.isTerminal() && stream.id==an.streamId) || stream.hasTerminalChild(an.streamId)))
+		return stream.getAnnotationsAtDate(this.props.date).filter(an => ((stream.isTerminal() && stream.id==an.streamId) || stream.hasTerminalChild(an.streamId)))
 	}
 	handleOnChange(e){
 		this.updateState({inputValue:e.target.value})
@@ -336,11 +335,12 @@ class AnnotationInput extends BaseComponent{
 		else if(p==Period.yearly.name){f= "yyyy"}
 		return dateformat(t,f)
 	}
-	onEdit(stream){
-		this.updateState({editMode:true,editStream:stream,inputValue:this.getAnnotations(stream)[0]?.body||"",previousInputValue:((this.getAnnotations(stream)[0]?.body)||"")})
+	onEdit(a){
+		let stream = Core.getStreamById(a.streamId);
+		this.updateState({editMode:true,editStream:stream,editedAnnotationDate:a.date,inputValue:this.getAnnotations(stream)[0]?.body||"",previousInputValue:((this.getAnnotations(stream)[0]?.body)||"")})
 	}
-	onConfirm(e){
-		AnnotationInput.SaveAnnotation(this.state.editStream,this.props.date,this.state.inputValue)
+	onConfirm(e,s){
+		AnnotationInput.SaveAnnotation(this.state.editStream,this.state.editedAnnotationDate,this.state.inputValue)
 		this.updateState({editMode:false,editStream:undefined,annotationSnapshot:this.getAnnotations()})
 		if(!!this.props.shouldDismiss){
 			if(this.props.stream.isTerminal() && this.state.inputValue=="" || !this.props.stream.isTerminal() && this.getAnnotations().length==0){
@@ -355,7 +355,7 @@ class AnnotationInput extends BaseComponent{
 			return(<div>
 				{this.props.stream.isTerminal()?"":<div style={{marginBottom:"1rem"}}>{(this.state.editStream || this.props.stream).name} - {this.getFormattedDate(this.props.date)}</div>}
 				<textarea rows="5" autoFocus value={this.state.inputValue} onChange={this.handleOnChange} onFocus={e => {e.target.setSelectionRange(e.target.value.length,e.target.value.length)}}/>
-				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","background":DS.getStyle().modalBackground}}>
+				{(this.state.inputValue!=this.state.previousInputValue)?<div onClick={(e) => this.onConfirm(e,this.state.editStream)} style={{"position":"absolute",cursor:"pointer","top":"1.5rem","right":"1.5rem","background":DS.getStyle().modalBackground}}>
 					{DS.icon.done}</div>:""}
 				</div>
 			)
@@ -434,9 +434,7 @@ export class GenericChartView extends GenericAnalysisView{
 		return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
 			<div style={{marginBottom:DS.spacing[Core.isMobile()?"s":"l"]+"rem"}}>
 			<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/></div>,[],this.getFormattedDate(date,p.name))(that))
-			.then(({state,buttonIndex}) => {if(buttonIndex==1){AnnotationInput.SaveAnnotation(this.props.stream,date,state?.inputValue)}}).catch(e => {})
-
+								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/></div>,[],this.getFormattedDate(date,p.name))(that)).catch(e => {})
 
 	}
 	getAnnotationsAtDate(d){
@@ -749,7 +747,7 @@ export class AnnotationTooltip extends BaseComponent{
 		return (<div>{content.map((a,i) => <div style={{display: "flex",flexDirection: "column",alignContent: "flex-start",alignItems: "flex-start",fontSize:DS.fontSize.little+"rem"}} key={i}> 
 			<div style={{height:options?.disableTitle?0:"auto","display":"flex","alignItems":"baseline","flexDirection":"row","justifyContent":"space-between","width":"100%"}}>
 				{options?.disableTitle?<div></div>:<div style={{fontWeight:900,marginTop: "0.4rem",marginBottom:"0.2rem"}}>{Core.getStreamById(a.streamId).name}</div>}
-				{options?.enableEditOption? <StyledLink style={{marginTop:options?.disableTitle?"0.2rem":0}} onClick={() => options.onEdit(Core.getStreamById(a.streamId))}>edit</StyledLink>:""}
+				{options?.enableEditOption? <StyledLink style={{marginTop:options?.disableTitle?"0.2rem":0}} onClick={() => options.onEdit(a)}>edit</StyledLink>:""}
 			</div>
 			{a.body.split('\n').map((a,i) => <div key={i} style={{display:"flex",flexDirection: "row",justifyContent: "flexStart",marginBottom:"0.2rem",marginRight:options?.enableEditOption?"3rem":0}}>
 				<div style={{margin: "0 0.4rem"}}>•</div>
