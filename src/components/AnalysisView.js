@@ -164,7 +164,6 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
 	}
 	handleClickOnTransaction(txn){
-		console.log(txn)
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
 				let txnToUpdate = [txn]
@@ -175,7 +174,6 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 					//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
 					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
 				}
-				console.log(txnToUpdate,allocs)
 				this.props.onCategorizationUpdate(txnToUpdate,allocs)
 			}
 		}).catch(e => {})
@@ -434,13 +432,10 @@ export class GenericChartView extends GenericAnalysisView{
 		return Core.presentModal((that) => ModalTemplates.ModalWithComponent(this.props.analysis.stream.name,
 			<div style={{marginBottom:DS.spacing[Core.isMobile()?"s":"l"]+"rem"}}>
 			<AnnotationInput	controller={ModalManager.currentModalController} viewMode={true} shouldDismiss={() => ModalManager.currentModalController.hide()}
-								stream={this.props.analysis.stream} date={this.getReportAtDate(date).reportingDate} period={p}/></div>,[],this.getFormattedDate(date,p.name))(that)).catch(e => {})
+								stream={this.props.analysis.stream} date={this.getReportForDate(date).reportingDate} period={p}/></div>,[],this.getFormattedDate(date,p.name))(that)).catch(e => {})
 
 	}
-	getAnnotationsAtDate(d){
-		let s = this.props.analysis?.stream //the stream this of this graph
-		return s?.getAnnotationsForReport(this.getReportAtDate(new Date(d))) || []
-	}
+	getAnnotationsAtDate(d){return this.props.analysis?.stream?.getAnnotationsAtDate(this.getReportForDate(d).reportingDate) || []}
 	getData(){if(!!this.data){return this.data} else {return [{x:0,y:0}]}}//to override - data getter
 
 	//domain definitions
@@ -460,7 +455,7 @@ export class GenericChartView extends GenericAnalysisView{
 		dy:this.style.chartPadding.top+(b.My-dy)/(b.My-b.my)*(this.style.chartHeight-this.style.chartPadding.top-this.style.chartPadding.bottom)		
 	}}
 	getDomain(){let b = this.getDomainBounds(); return {x:[b.mx,b.Mx],y:[b.my,b.My]}}
-	getReportAtDate(date){return {reportingDate:this.getReportSchedule().filter(d => date<=d)[0],
+	getReportForDate(date){return {reportingDate:this.getReportSchedule().filter(d => date<=d)[0],
 		reportingStartDate: this.getReportSchedule().filter(d => d<date).slice(-1)[0]}}
 
 	//render to override
@@ -536,7 +531,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		if(config.expenses){ans.push(this.props.expenseAnalysis)}
 		if(config.savings) {ans.push(this.props.savingsAnalysis)}
 		if(config.income)  {ans.push(this.props.incomeAnalysis)}
- 		return utils.flatten(ans.map(ana => utils.flatten(ana.analyses?.map(a => a.stream.getAnnotationsForReport(this.getReportAtDate(date))))))
+ 		return utils.flatten(ans.map(ana => utils.flatten(ana.analyses?.map(a => a.stream.getAnnotationsAtDate(this.getReportForDate(date).reportingDate)))))
 	}
 
 	//eventing

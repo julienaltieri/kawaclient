@@ -89,11 +89,7 @@ class Stream{
     if(!(date instanceof Date)){date = new Date(date)}
     return this.getAnnotations().filter(a => new Date(a.date).getTime() <= date.getTime() && new Date(a.date).getTime() > Period[this.period].subdivision.previousDate(date))
   }
-  getAnnotationsForReport(r){
-    let s = r.reportingStartDate?.getTime()
-    let e = r.reportingDate?.getTime()
-    return this.getAnnotations().filter(({date}) => new Date(date).getTime()<=e && new Date(date).getTime()>s)
-  }
+  getAnnotationsForReport(r){return this.getAnnotationsAtDate(r.reportingDate)}
   saveAnnotation(date,body){
     if(!(date instanceof Date)){date = new Date(date)}
     let existing = this.annotations.filter(a => new Date(a.date).getTime() == date.getTime());
