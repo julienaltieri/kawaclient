@@ -756,7 +756,7 @@ export class AnnotationTooltip extends BaseComponent{
 		</div>)}</div>)
 	} 
 	render(){
-		return (<DS.component.Tooltip showAbove={this.props.showAbove}
+		return (<DS.component.Tooltip showAbove={this.props.showAbove} shouldOverrideOverflow={this.props.shouldOverrideOverflow}
 			x={this.props.scale.x(this.props.datum.dx)*this.props.containerSVGWidth} 
 			y={this.props.scale.y(this.props.datum.dy)*this.props.containerSVGHeight}>
 			

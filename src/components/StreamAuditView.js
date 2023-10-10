@@ -215,6 +215,7 @@ const TopLevelStreamAuditViewContainer = styled(FlexColumn)`
 
 const BaseStreamAuditViewContainer = styled(FlexColumn)`
 	background: ${props => DesignSystem.getStyle().UIElementBackground};
+	position:inherit;
     justify-content: space-between;
     flex-grow: 0;
     padding: 0.5rem;

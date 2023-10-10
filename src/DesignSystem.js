@@ -200,14 +200,15 @@ const StyledTooltipBackdrop = styled.div`
 
 `
 
+//shouldOverrideOverflow should be used for situations where the tooltip is contained in an element that needs to be overflow hidden/scroll/clip (terminalStreamCard)
 const StyledToolTipContainer = styled.div`
-	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"};
+	position: ${props => props.shouldOverrideOverflow?"fixed":"absolute"}; 
     display: flex;
     width: max-content;
     padding: ${instance.spacing.xs}rem;
     min-width: 6rem;
     max-width: 12rem;
-    left: ${props => props.x||0}px;
+    left: ${props => (props.shouldOverrideOverflow?-16*(1.25+0.5*instance.barWidthRem):0) + props.x||0}px;
     top: ${props => props.y||0}px;
     transform:translate(-50% , ${props => props.showAbove?"-100%":0}) translateY(${props => (props.showAbove?-1:1)*1.25}rem);
     border-radius: ${props => instance.borderRadius};
@@ -217,7 +218,7 @@ const StyledToolTipContainer = styled.div`
     align-items: flex-start;
     align-content: flex-start;
     z-index:99;
-    font-size:${instance.fontSize.little};
+    font-size:${instance.fontSize.little}rem;
 `
 
 
