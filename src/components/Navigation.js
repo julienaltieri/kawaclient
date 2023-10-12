@@ -4,7 +4,7 @@ import Cookies from 'js-cookie'
 import Core from '../core.js'
 import {useNavigate} from 'react-router-dom'
 import SideBar from './SideBar'
-import DesignSystem from '../DesignSystem'
+import DS from '../DesignSystem'
 import {ModalTemplates} from '../ModalManager.js'
 
 
@@ -77,7 +77,7 @@ class TopNavigationBarBase extends BaseComponent{
 
 	render(){
 		var leftButton,rightButton;
-		leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{DesignSystem.icon.logo[DesignSystem.getMode()]}</HamburgerButton>
+		leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{DS.icon.logo[DS.getMode()]}</HamburgerButton>
 		if(this.props.loggedIn){
 			rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
 		}
@@ -102,7 +102,7 @@ export default instance;
 
 
 const StyledNavBar = styled.div`
-	border-bottom: solid 1px ${DesignSystem.getStyle().borderColor};
+	border-bottom: solid ${DS.borderThickness.s}rem ${DS.getStyle().borderColor};
     padding: 0.5em;
     height: 3rem;
     width: 100%;
@@ -112,13 +112,13 @@ const StyledNavBar = styled.div`
     box-sizing: border-box;
     position:fixed;
     z-index:100;
-    background-color: ${DesignSystem.getStyle().pageBackground+"60"};
+    background-color: ${DS.getStyle().pageBackground+"60"};
     backdrop-filter: blur(1rem);
 `
 
 const StyledLogOutButton = styled.button`
-    background: ${DesignSystem.getStyle().UIElementBackground};
-    color: ${DesignSystem.getStyle().bodyTextSecondary};
+    background: ${DS.getStyle().UIElementBackground};
+    color: ${DS.getStyle().bodyTextSecondary};
     margin-right:0.5rem;
     border-radius: 100vw;
     height: 2.4em;

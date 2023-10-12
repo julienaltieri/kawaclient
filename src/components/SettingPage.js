@@ -7,6 +7,7 @@ import {ModalTemplates} from '../ModalManager.js'
 import {PlaidLink} from "react-plaid-link";
 import utils from '../utils'
 import DS from '../DesignSystem'
+import PageLoader from './PageLoader'
 
 
 const PlaidStatuses = {
@@ -52,22 +53,14 @@ export default class SettingPage extends BaseComponent{
 		return(
 		<PageContainer>
       <DS.component.PageHeader>Bank connections</DS.component.PageHeader>
-
-      {this.state.fetching?<div style={{textAlign:"center",marginTop:"5rem"}}>loading...</div>:
-      <div>
-        <Title style={{display: "flex", justifyContent: "space-between", alignItems: "flex-end"}}>
-          <PlusButton><div style={{"flexGrow":1,flexDirection: "column"}}><PlaidLink style={{outline: "none",display: "block",background: "none",border: "none",padding: "0",width: "100%",flexGrow: "1",margin: "0",cursor: "pointer",fontSize: "1.2rem"}}
-              clientName="React Plaid Setup"
-              env="development"
-              product={["auth", "transactions"]}
-              token={this.state.newConnectionLinkToken}
-              onExit={this.handleOnExit}
-              onSuccess={this.handleOnSuccess.bind(this)}
-              className="test"
-            >+</PlaidLink></div></PlusButton>
-        </Title>
-        <DS.component.ScrollableList>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
-        </DS.component.ScrollableList>
+      {this.state.fetching?<div style={{textAlign:"center",marginTop:"-6rem"}}><PageLoader/></div>:
+      <div style={{margin:DS.spacing.s+"rem", marginTop:"-1rem"}}>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
+        <div style={{"flexGrow":1,flexDirection: "column"}}>
+          <PlaidLink style={{outline: "none",display: "block",background: "none",border: "none",padding: "0",flexGrow: "1",margin: "0",cursor: "pointer",width: "100%"}}
+            clientName="React Plaid Setup" env="development" product={["auth", "transactions"]} token={this.state.newConnectionLinkToken}
+            onExit={this.handleOnExit} onSuccess={this.handleOnSuccess.bind(this)} className="test"
+          ><DS.component.Button.Placeholder iconName="plus"></DS.component.Button.Placeholder></PlaidLink>
+        </div>
       </div>
     }
     </PageContainer>
@@ -79,7 +72,7 @@ export default class SettingPage extends BaseComponent{
 
 const Title = styled.div`
     font-size: 2rem;
-    border-bottom: solid 1px #cccccc;
+    border-bottom: solid 1px ${DS.getStyle().borderColor};
     padding-bottom: 1rem;
     font-weight: 500;
     color: #333333;
@@ -141,11 +134,11 @@ class BCSettingItem extends BaseComponent{
   }
 
   render(){
-    return <DS.component.ContentTile style={{margin:"1rem",padding:"1rem",width:"auto",flexDirection:"row",justifyContent: "space-between"}}>
-        <div style={{"fontSize":"1.2rem","fontWeight":"bold"}}>{this.props.data.name}</div>
+    return <DS.component.ContentTile style={{margin:DS.spacing.xs+"rem 0",padding:DS.spacing.xs+"rem",width:"auto",flexDirection:"row",justifyContent: "space-between"}}>
+        <DS.component.Label highlight>{this.props.data.name}</DS.component.Label>
         <div style={{textAlign:"right"}}>
-          <div><span>Status:</span> <Status good={this.props.data.status==PlaidStatuses.ok}>{this.props.data.status}</Status></div>
-          <Subtitle>Last updated: {utils.formatDateShort(new Date(this.props.data.lastUpdated))}</Subtitle> 
+          <div style={{marginBottom:DS.spacing.xxs+"rem"}}><Status good={this.props.data.status==PlaidStatuses.ok}>{this.props.data.status==PlaidStatuses.ok?"Connected":"Needs action"}</Status></div>
+          <DS.component.Label size="xs">Last updated: {utils.formatDateShort(new Date(this.props.data.lastUpdated))}</DS.component.Label> 
         </div>
 
         {this.state.updateModeLinkToken?<Row style={{"marginTop":"1rem",background:"#ffe2e2","padding":"1rem"}}>
@@ -170,19 +163,10 @@ class BCSettingItem extends BaseComponent{
 }
 
 
-const Subtitle = styled.div`
-    color: #999999;
-    font-size: 0.8rem;
-    margin-top: 0.5rem;
-`
-const LeftColumn = styled.div`
-    margin-right: 2rem;
-`
+
 const Status = styled.span`
     font-weight: bold;
-    color: ${props => props.good ? "#1acb1a" : "#f40000"};
-    font-size: 0.8rem;
-    text-transform: uppercase;
+    color: ${props => props.good ? DS.getStyle().positive : DS.getStyle().alert};
 `
 
 const Row = styled.div`

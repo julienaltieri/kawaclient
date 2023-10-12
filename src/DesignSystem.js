@@ -52,7 +52,10 @@ class DesignSystem{
 	applicationMaxWidth=36;
 	backgroundOpacity=0.15;
 	inputHeight=3;
-	borderThickness = 0.15;
+	borderThickness = {
+		s:0.1,
+		m:0.15,
+	};
 	verticalSpacing={
 		s:"1rem",
 		m:"2rem",
@@ -153,6 +156,11 @@ class DesignSystem{
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
 		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
 		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
+		Button: {
+			Icon: (props) => <StyledIcon><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
+			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
+			Primary: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} primary={true}>{props.children}</StyledButton></StyledButtonWrapper>,
+		}
 	}
 	spacing = {
 		xxs:0.5,
@@ -169,6 +177,34 @@ class DesignSystem{
 }
 
 const instance = new DesignSystem();
+
+const StyledPlaceholderButton = styled.div`
+	border-radius:  ${props => instance.borderRadius};
+	height: 4rem;
+	display: flex;
+    flex-direction: column;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
+    border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+    &:hover{
+    	background-color: ${instance.getStyle().UIElementBackground};
+    }
+
+`
+
+const StyledButton = styled.div`
+	background-color: ${(props) => props.primary?instance.getStyle().modalPrimaryButton:instance.getStyle().modalSecondaryButton};
+	border-radius:  ${props => instance.borderRadius};
+`
+const StyledIcon = styled.div`
+	width: ${(props) => instance.spacing.s}rem;
+`
+
+const StyledButtonWrapper = styled.div`
+	cursor: ${(props) => props.disabled?"default":"pointer"};
+	color: ${(props) => instance.getStyle().bodyTextSecondary}
+`
 
 const FlexColumn = styled.div`
 	position:relative;
@@ -302,15 +338,15 @@ const StyledScrollableList = styled.div`
 `
 
 const StyledInput = styled.input`
-    width: calc(100% - ${instance.spacing.xs*2+instance.borderThickness}rem);
+    width: calc(100% - ${instance.spacing.xs*2+instance.borderThickness.m}rem);
 	background-color: ${(props) => props.disabled?"transparent":instance.getStyle().inputFieldBackground};
 	color:  ${(props) => props.positive?instance.getStyle().positive:"inherit"};
     padding: 0 ${instance.spacing.xs}rem;
-    height: ${instance.inputHeight - 2*instance.borderThickness}rem;
+    height: ${instance.inputHeight - 2*instance.borderThickness.m}rem;
     border-radius: ${instance.borderRadiusSmall};
     text-align: ${(props) => props.textAlign || "center"};
     font-size: ${instance.fontSize.body}rem;
-    border: ${instance.borderThickness}rem solid ${instance.getStyle().borderColor};
+    border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
 `
 
 const StyledDropDown= styled.select`
@@ -323,7 +359,7 @@ const StyledDropDown= styled.select`
     border-radius: ${instance.borderRadiusSmall};
     text-align: left;
     font-size: ${instance.fontSize.body}rem;
-    border: ${instance.borderThickness}rem solid ${instance.getStyle().borderColor};
+    border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
     cursor: pointer;
     appearance: none;
     text-overflow: ellipsis;
@@ -348,7 +384,7 @@ const StyledListItem = styled.div`
     overflow:visible;
     font-weight: ${props => props.bolded?600:"normal"};
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
- 	border-bottom: 1px solid ${instance.getStyle().borderColor};  
+ 	border-bottom: ${instance.borderThickness.s}rem solid ${instance.getStyle().borderColor};  
 `
 
 const StyledListItemContainer = styled.div`
