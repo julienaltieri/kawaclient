@@ -3,28 +3,38 @@ import styled from 'styled-components'
 import Cookies from 'js-cookie'
 import Core from '../core.js'
 import ApiCaller from '../ApiCaller'
+import DS from '../DesignSystem'
+import PageLoader from './PageLoader'
 
 export default class LoginPage extends BaseComponent{
-
 	constructor(props){
 		super(props);
-		this.state={username:{value:"julioo.altieri@gmail.com"},password:{value:"az12AZ!!"}}
+		this.state={loading:false} 
 		this.submitCredentials = this.submitCredentials.bind(this);
 	}
 
 	render(){
-	return(
-	  <LoginForm onSubmit={this.submitCredentials}><Title>Sign In</Title>
-	  	<InputFieldWithLabel label="email" data={this.state.username}/>
-	  	<InputFieldWithLabel label="password" data={this.state.password} isPassword="true"/>
-	  	<Button onClick={this.submitCredentials} text="Log in"/>
-	  </LoginForm>
-	);
+		return(this.state.loading?<PageLoader/>:<TitlePage>
+		  <DS.component.Logo style={{width:"10rem"}}/>
+		  <LoginForm onSubmit={this.submitCredentials}>
+		  	<div style={{padding:"1rem"}}>
+		  		<div style={{marginTop:"2rem",marginBottom:"3rem"}} >
+				  	<DS.component.InputWithLabel formId={"username"} style={{textAlign:"left"}} label="email"/>
+				  	<DS.component.InputWithLabel formId={"password"} style={{textAlign:"left"}} label="password" type="password"/>
+			  	</div>
+			  	<DS.component.Button.Action type="submit" primary onClick={this.submitCredentials}>Log In</DS.component.Button.Action>
+		  	</div>
+		  </LoginForm>
+		  </TitlePage>
+		)
 	}
 
 	submitCredentials(e){
 		e.preventDefault();
-		ApiCaller.authenticate(this.state.username.value,this.state.password.value).then(res => {
+		this.updateState({loading:true});
+		let username = document.getElementById("username").value;
+		let password = document.getElementById("password").value;
+		ApiCaller.authenticate(username,password).then(res => {
 			if(res===undefined){
 				console.log("error: empty response from /login")
 				Core.setLoggedIn(false);
@@ -34,7 +44,7 @@ export default class LoginPage extends BaseComponent{
 			}else{
 				Cookies.set("token",res);
 				ApiCaller.setToken(res);
-				Cookies.set("username",this.state.username.value);
+				Cookies.set("username",username);
 				Core.setLoggedIn(true);
 			}
 		}).catch(err => {
@@ -44,65 +54,26 @@ export default class LoginPage extends BaseComponent{
 	}
 }
 
-class Button extends BaseComponent{
-	render(){
-		return(
-			<StyledButton type="submit" onClick={this.props.onClick}>{this.props.text}</StyledButton>
-		)
-	}
-}
 
-class InputFieldWithLabel extends BaseComponent{
-	constructor(props){
-		super(props);
-		this.inputValue = this.props.data
-		this.handleChange = this.handleChange.bind(this);
-	}
-	handleChange(event){
-		this.inputValue.value=event.target.value;
-	}
-	render(){
-		return(
-			<InputContainer>
-				<Label>{this.props.label}</Label>
-				<Input autocomplete={this.props.label} onChange={this.handleChange} type={this.props.isPassword?"password":""}/>
-			</InputContainer>
-		)
-	}
-}
-
-
-const LoginForm = styled.form`
+const LoginForm = styled.form` 
     background: transparent;
-    border-radius: 7px;
-    border: 1px solid #00afff;
     margin: auto;
-    padding: 3em 1em;
+    padding: 0rem 1rem;
+    padding-bottom: 1rem;
     max-width: 20rem;
-    margin-top: calc(50vh - 18rem);
+    width: 80vw;
+    margin-top: 2rem;
     text-align: center;
 `
 
-const Title = styled.div`
-margin-bottom: 2rem;
-font-weight: bold;
+const TitlePage = styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 4rem;
 `
 
 
-
-const StyledButton = styled.button`
-display: block;
-margin: auto;
-padding: 1rem;
-margin-top: 2rem;
-width: 80%;
-border-radius: 5px;
-border: none;
-color: white;
-background: #00afff;
-cursor: pointer;
-font-weight: bold;
-`
 
 
 const Input = styled.input`
@@ -124,10 +95,4 @@ padding: 1rem;
 margin-top: 0rem;
 width: 80%;
 position: relative;
-`
-
-const Label = styled.div`
-    text-align: left;
-    font-variant: all-petite-caps;
-    color: grey;
 `

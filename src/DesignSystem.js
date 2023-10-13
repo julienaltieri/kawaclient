@@ -3,6 +3,8 @@ import styled from 'styled-components';
 import 'material-symbols';
 const logo_light = require('./assets/logo_light.svg').default;
 const logo_dark = require('./assets/logo_dark.svg').default;
+const logo_standalone_light = require('./assets/logo_standalone_light.svg').default;
+const logo_standalone_dark = require('./assets/logo_standalone_dark.svg').default;
 
 const Icon = styled.span`
 	font-size: 1.3rem;
@@ -25,7 +27,6 @@ class DesignSystem{
 		blue: "#89a1f0",
 		brightBlue: "#2f80ed",
 		vividBlue: "#577bf2",
-		lightPurple: "#e0d6ff",
 		deepPurple: "#463e60",
 		lightGrey1: "#fefefe",
 		lightGrey2: "#dfdfeb",
@@ -42,9 +43,10 @@ class DesignSystem{
 		darkGrey5: "#1f2223",
 		black: "#000000",
 		white: "#ffffff",
-		darkPurple: "#191829",
+		veryDarkPurple: "#191829",
+		darkPurple: "#4b4b7f",
 		midPurple: "#19182930",
-		lightPurple: "#d6e5fe"
+		lightPurple: "#d6d8fe",
 	};
 	borderRadius= "0.7rem";
 	borderRadiusSmall= "0.3rem";
@@ -79,8 +81,10 @@ class DesignSystem{
 			commonTag: this.UIColors.lightGrey2Trans,
 			specialTag: this.UIColors.lightGreenTrans,
 			inputFieldBackground: this.UIColors.lightGrey2Trans,
-			modalPrimaryButton: this.UIColors.brightBlue,
-			modalSecondaryButton: this.UIColors.lightGrey2Trans,
+			modalPrimaryButton: this.UIColors.darkPurple,
+			primaryButtonTextColor: this.UIColors.lightGrey4, 
+			modalSecondaryButton: "none",
+			secondaryButtonTextColor: this.UIColors.darkPurple, 
 			modalBackground: this.UIColors.lightGrey2,
 			savings: this.UIColors.vividBlue,
 			income: this.UIColors.vividGreen,
@@ -91,7 +95,7 @@ class DesignSystem{
 			bodyText: this.UIColors.lightGrey4,
 			bodyTextSecondary: this.UIColors.midGrey,
 			buttonDisabled: this.UIColors.darkGrey2,
-			pageBackground: this.UIColors.darkPurple,
+			pageBackground: this.UIColors.veryDarkPurple,
 			borderColor: this.UIColors.darkGrey2,
 			borderColorHighlight: this.UIColors.midGrey,
 			timePeriod:this.UIColors.blue,
@@ -104,8 +108,10 @@ class DesignSystem{
 			commonTag: this.UIColors.deepPurple,
 			specialTag: this.UIColors.teal,
 			inputFieldBackground: this.UIColors.darkGrey4,
-			modalPrimaryButton: this.UIColors.blue,
-			modalSecondaryButton: this.UIColors.darkGrey1,
+			modalPrimaryButton: this.UIColors.lightPurple,
+			primaryButtonTextColor: this.UIColors.darkGrey5, 
+			modalSecondaryButton: "none",
+			secondaryButtonTextColor: this.UIColors.lightGrey4, 
 			modalBackground: this.UIColors.darkGrey3,
 			savings: this.UIColors.blue,
 			income: this.UIColors.green,
@@ -140,8 +146,12 @@ class DesignSystem{
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
-			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>
-		}
+			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
+			badge: {
+				lightMode: <Logo src={logo_standalone_light}/>,
+				darkMode: <Logo src={logo_standalone_dark} style={{opacity: 0.8}}/>
+			}
+		},
 	}
 	component = {
 		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
@@ -151,15 +161,18 @@ class DesignSystem{
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
-		Input: (props) => <StyledInput {...props}>{props.children}</StyledInput>,
+		Input: (props) => <StyledInput id={props.formId} {...props}>{props.children}</StyledInput>,
+		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledInput id={props.formId} {...props}>{props.children}</StyledInput></StyledFieldWithLabel>,
 		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
 		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
 		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
+		Image: (props) => <StyledImage {...props}>{props.children}</StyledImage>,
+		Logo: (props) => <instance.component.Image src={!instance.isDarkMode()?logo_standalone_dark:logo_standalone_light} {...props}></instance.component.Image>,
 		Button: {
 			Icon: (props) => <StyledIcon><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
-			Primary: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} primary={true}>{props.children}</StyledButton></StyledButtonWrapper>,
+			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props}  disabled={props.disabled} primary={props.primary}>{props.children}</StyledButton></StyledButtonWrapper>,
 		}
 	}
 	spacing = {
@@ -172,11 +185,25 @@ class DesignSystem{
 	fontSize = {
 		little: 0.8,
 		body: 	1,
+		title: 	1.2,
 		header: 1.4 
 	}
 }
 
 const instance = new DesignSystem();
+
+const StyledImage = styled.img`
+	
+
+`
+
+const StyledFieldWithLabel = styled.div`
+	display: flex;
+    flex-direction: column;
+    align-content: flex-start;
+    align-items: flex-start;
+    margin-bottom: ${instance.spacing.xs}rem;
+`
 
 const StyledPlaceholderButton = styled.div`
 	border-radius:  ${props => instance.borderRadius};
@@ -186,16 +213,34 @@ const StyledPlaceholderButton = styled.div`
     align-content: center;
     justify-content: center;
     align-items: center;
-    border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+    opacity: 0.8;
+    border: ${instance.borderThickness.s}rem solid ${instance.getStyle().modalPrimaryButton};
     &:hover{
     	background-color: ${instance.getStyle().UIElementBackground};
     }
 
 `
 
+
 const StyledButton = styled.div`
 	background-color: ${(props) => props.primary?instance.getStyle().modalPrimaryButton:instance.getStyle().modalSecondaryButton};
-	border-radius:  ${props => instance.borderRadius};
+	color: ${(props) => props.primary?instance.getStyle().primaryButtonTextColor:instance.getStyle().secondaryButtonTextColor};
+	border-radius:  ${props => 100}rem;
+	border: solid ${instance.borderThickness.s}rem ${(props) =>instance.getStyle().modalPrimaryButton};
+	min-height: ${instance.inputHeight}rem;
+	font-size:${instance.fontSize.title}rem;
+	opacity: ${(props) => props.disabled?0.5:0.9};
+	display: flex;
+	margin: 0 ${instance.spacing.xxs}rem;
+	flex-grow: 1;
+    flex-direction: column;
+    justify-content: center;
+    align-content: center;
+    align-items: center;
+    padding: 0 ${instance.spacing.xs}rem;
+    &:hover {
+	    opacity: ${(props) => props.disabled?"0.5":1};
+	}
 `
 const StyledIcon = styled.div`
 	width: ${(props) => instance.spacing.s}rem;
@@ -203,7 +248,10 @@ const StyledIcon = styled.div`
 
 const StyledButtonWrapper = styled.div`
 	cursor: ${(props) => props.disabled?"default":"pointer"};
-	color: ${(props) => instance.getStyle().bodyTextSecondary}
+	color: ${(props) => instance.getStyle().bodyTextSecondary};
+	display: flex;
+    flex-grow: 1;
+    align-items: center;
 `
 
 const FlexColumn = styled.div`
@@ -301,7 +349,8 @@ const StyledLabel = styled.div`
     text-wrap: nowrap;
     overflow-x: clip;
     color: ${(props) => props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
-    font-size: ${(props) => props.header?instance.fontSize.header:props.size=="xs"?instance.fontSize.little:"caboose"}rem;
+    font-size: ${(props) => props.smallcaps?instance.fontSize.body:props.header?instance.fontSize.header:props.size=="xs"?instance.fontSize.little:"caboose"}rem;
+    font-variant: ${(props) => props.smallcaps?"all-petite-caps":""};
 `
 
 const StyledRowContainer = styled.div`
@@ -347,6 +396,13 @@ const StyledInput = styled.input`
     text-align: ${(props) => props.textAlign || "center"};
     font-size: ${instance.fontSize.body}rem;
     border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+    &:-webkit-autofill {
+		box-shadow: 0 0 0 100px ${instance.getStyle().inputFieldBackground} inset;
+		-webkit-text-fill-color: ${(props) => props.positive?instance.getStyle().positive:instance.getStyle().bodyText};
+    }
+    
+    
+
 `
 
 const StyledDropDown= styled.select`

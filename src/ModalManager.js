@@ -95,7 +95,7 @@ export const ModalTemplates = {
 				<MainContent>{component}</MainContent>
 				{buttonArray.length?<ActionButtons>
 					{buttonArray.map((b,i) => {
-						return <ActionButton primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</ActionButton>
+						return <DS.component.Button.Action primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
 					})}
 				</ActionButtons>:<div></div>}
 			</BaseModalWrapper>
@@ -524,7 +524,7 @@ const ActionButtons = styled.div`
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: center;
+    justify-content: ${props => Core.isMobile()?"space-around":"center"};
     margin-top: 3.5rem;
     flex-direction: row;
  
@@ -535,25 +535,7 @@ const MainContent = styled.div`
 	flex-grow:1;
 	
 `
-const ActionButton = styled.div`
-	background: ${(props) => props.primary?DS.getStyle().modalPrimaryButton:DS.getStyle().modalSecondaryButton};
-    color: ${(props) => props.primary?"white":"default"};
-    border: ${(props) => props.primary?"solid 1px #2f80ed":"solid 1px #BDBDBD"};
-    padding: 1rem;
-    border-radius: ${DS.borderRadiusSmall};
-    width: 8rem;
-    text-align: center;
-    cursor: ${(props) => props.disabled?"default":"pointer"};
-   	margin: 0 1rem;
-   	font-size:1.3rem;
-   	opacity: ${(props) => props.disabled?"0.5":"1"};
-   	line-height: 1rem;
-    vertical-align: middle;
-    height:1rem;	
-    &:hover {
-	    background: ${(props) => props.disabled?props.primary?DS.getStyle().modalPrimaryButton:"white":props.primary?"#157eff":"#f9f9f9"};
-	}
-`
+
 
 
 

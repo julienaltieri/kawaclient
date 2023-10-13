@@ -46,7 +46,7 @@ class NavigationController{
 	}
 }
 
-
+let logo = DS.icon.logo[DS.getMode()]
 
 class TopNavigationBarBase extends BaseComponent{
 	constructor(props){
@@ -76,13 +76,10 @@ class TopNavigationBarBase extends BaseComponent{
 	}
 
 	render(){
-		var leftButton,rightButton;
-		leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{DS.icon.logo[DS.getMode()]}</HamburgerButton>
-		if(this.props.loggedIn){
-			rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
-		}
+		let leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{logo}</HamburgerButton>
+		let rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
 		return(
-		  <StyledNavBar>
+		  <StyledNavBar loggedIn={this.props.loggedIn}>
 		  	{leftButton}
 		  	<Spacer/>
 		  	<Spacer/>
@@ -102,6 +99,7 @@ export default instance;
 
 
 const StyledNavBar = styled.div`
+	opacity: ${(props) => props.loggedIn?1:0};
 	border-bottom: solid ${DS.borderThickness.s}rem ${DS.getStyle().borderColor};
     padding: 0.5em;
     height: 3rem;
@@ -114,6 +112,7 @@ const StyledNavBar = styled.div`
     z-index:100;
     background-color: ${DS.getStyle().pageBackground+"60"};
     backdrop-filter: blur(1rem);
+    transition: all 0.5s ease-in;
 `
 
 const StyledLogOutButton = styled.button`
