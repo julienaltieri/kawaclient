@@ -7,7 +7,7 @@ import AuditView from './StreamAuditView'
 import AppConfig from '../AppConfig'
 import ActionQueueManager from './ActionQueueManager'
 import {ActionTypes} from '../HistoryManager.js'
-import DesignSystem from '../DesignSystem.js'
+import DS from '../DesignSystem.js'
 import {BankReconnectAction,TransactionTypeClarificationAction} from './Action'
 import {refreshLiveRenderComponents} from './AnalysisView'
 import utils from '../utils'
@@ -168,6 +168,7 @@ class MissionControl extends BaseComponent{
 export default React.memo(MissionControl)
 
 
+
 const ActionZoneContainer = styled.div`
     transition: all 0.5s;
     max-width: 26rem;
@@ -181,7 +182,7 @@ const StyledHomeContainer = styled.div `
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-top: ${(props) => Core.isMobile()?DesignSystem.verticalSpacing.s:DesignSystem.verticalSpacing.m};
+    margin-top: ${(props) => Core.isMobile()?DS.verticalSpacing.s:DS.verticalSpacing.m};
 `   
 
 const UndoButton = styled.img`
@@ -189,7 +190,7 @@ const UndoButton = styled.img`
     height: 2.5rem;
     opacity: 0.3;
     cursor: pointer;
-    filter: ${"brightness("+(DesignSystem.isDarkMode()?9:1)+")"};
+    filter: ${"brightness("+(DS.isDarkMode()?9:1)+")"};
     
     &:hover{
     	opacity:0.5;

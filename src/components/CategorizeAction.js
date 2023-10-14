@@ -9,7 +9,7 @@ import utils from '../utils'
 import TransactionGrouper from '../processors/TransactionGrouper'
 import Statistics from '../processors/Statistics';
 
-const checkmark = require('../assets/checkmark.svg').default;
+//const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
 
 //exist scene animation
@@ -144,7 +144,9 @@ class CategorizeActionCard extends ActionCard{
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 
 		return (<div>
-			<Checkmark src={checkmark} style={{opacity:this.state.checkmarkVisible?1:0,transform:"scale("+(this.state.checkmarkVisible?1:0.5)+")"}}/>
+			<CheckMarkContainer style={{opacity:this.state.checkmarkVisible?1:0,transform:"scale("+(this.state.checkmarkVisible?1:0.5)+")"}}>
+				<Checkmark><Check></Check></Checkmark>
+			</CheckMarkContainer>
 			<TransactionView checkmarkVisible={this.state.checkmarkVisible} transaction={this.props.transaction}/>
 
 			{/*stream suggestions*/}
@@ -251,15 +253,38 @@ const FullScreenCapturer = styled.div`
     z-index: 98;
 `
 
-
-const Checkmark = styled.img`
+const CheckMarkContainer = styled.div`
     width: 7rem;
     position: absolute;
-    margin-left: -3.3rem;
-    margin-top: 0.7rem;
+    margin-left: calc(50% - 3rem);
+    margin-top: 1.5rem;
     transition: opacity ${disappearAnimationTime/1000}s ease, transform ${checkmarkGrowAnimation/1000}s cubic-bezier(0.49, 1.62, 0.58, 0.93);
     opacity: 0;
 `
+
+const Check = styled.div`
+	border-top: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
+	border-right: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
+    width:50%;
+    height:30%;
+    border-radius: 0px;
+    transform: rotate(135deg);
+    margin-bottom: 9%;
+    margin-right: 2%;
+`
+
+const Checkmark = styled.div`
+    width: 5rem;
+    height: 5rem;
+    border: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
+    opacity:0.8;
+    border-radius: 100rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+`
+
 /*
 const TransactionContainerView = styled.div `
 	text-align: center;
