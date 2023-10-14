@@ -49,7 +49,7 @@ export default class ActionQueueManager{
 
 		return (<div style={{width:"100%"}}>
 			<TitleBox><Title >{title}</Title></TitleBox>
-			<div>
+			<div style={{marginRight:-ActionStyles.cardRemSpacing+"rem"}}>
 				<ActionQueueViewContainer>{this.queue.slice(0,5).map((a,i) => <ActionCardContainer key={a.id} dimmed={!this.isInFocus(a)}>{a.renderComponent(this.isInFocus(a))}</ActionCardContainer>)}</ActionQueueViewContainer>			
 			</div>
 		</div>)

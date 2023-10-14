@@ -254,12 +254,13 @@ const FullScreenCapturer = styled.div`
 `
 
 const CheckMarkContainer = styled.div`
-    width: 7rem;
+    width: ${ActionStyles.cardContentWidth-1 - 2*ActionStyles.sideRemMargins-ActionStyles.cardRemSpacing}rem;
     position: absolute;
-    margin-left: calc(50% - 3rem);
     margin-top: 1.5rem;
     transition: opacity ${disappearAnimationTime/1000}s ease, transform ${checkmarkGrowAnimation/1000}s cubic-bezier(0.49, 1.62, 0.58, 0.93);
     opacity: 0;
+    display: flex;
+    justify-content: center;
 `
 
 const Check = styled.div`
