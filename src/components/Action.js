@@ -13,7 +13,7 @@ import utils from '../utils'
 export const ActionStyles = {
 	moveOutOfTheWayAnimationTime : 500,
 	cardRemPadding : 0,
-	cardRemSpacing : 1,
+	cardRemSpacing : 0.1,
 	cardContentWidth : 26
 }
 
@@ -59,7 +59,7 @@ export class ActionCard extends BaseComponent{
 	render(){return (
 		<ActionViewContainer noMargin={this.getNoLeftMargin()} style={{display:this.state.shouldHide?"none":"inherit",opacity: (this.state.visible&&!this.state.moveOutOfTheWay?1:0),
 			marginRight: (this.state.moveOutOfTheWay?-(ActionStyles.cardRemPadding*2+ActionStyles.cardRemSpacing+ActionStyles.cardContentWidth)+"rem":"0")}}>
-			<ActionViewContentContainer style={{width:"calc(100vw - "+(this.getNoLeftMargin()?2:3)+"rem)",opacity: (this.state.visible?1:0)}}>
+			<ActionViewContentContainer style={{width:"calc(100vw - "+(2+(this.getNoLeftMargin()?0:ActionStyles.cardRemSpacing))+"rem)",opacity: (this.state.visible?1:0)}}>
 				{this.renderContent(this.props.inFocus)}
 			</ActionViewContentContainer>
 		</ActionViewContainer>
@@ -76,7 +76,7 @@ const ActionViewContainer = styled.div `
 	padding:${props => ActionStyles.cardRemPadding}rem;
     margin-left: ${props => props.noMargin?0:ActionStyles.cardRemSpacing}rem;
     border-radius: ${props => DesignSystem.borderRadius};
-    transition: margin-right ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out, opacity ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out 0.2s;
+    transition: margin-left 0.2s, margin-right ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out, opacity ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out 0.2s;
 `
 
 

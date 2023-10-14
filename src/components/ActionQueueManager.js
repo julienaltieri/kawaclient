@@ -73,7 +73,7 @@ const TitleBox = styled.div`
 	display:flex;
 	margin: auto;
 	margin-top: -3rem;
-	max-width: 26rem;
+	max-width: 24rem;
     justify-content: space-between;
 `
 
