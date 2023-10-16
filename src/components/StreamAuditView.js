@@ -160,7 +160,7 @@ class TerminalStreamCard extends StreamAuditView{
 			</TSCardHeader>
 			<TSCardContent style={{transform:"scale(1)"}}>{/*Main content*/}
 				{this.state.detailView?
-					<StreamObservationPeriodView analysis={this.getStreamAnalysis(Period.shortestPeriod([Period[this.props.stream.getPreferredPeriod()],Period.monthly]))} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+					<StreamObservationPeriodView analysis={this.getStreamAnalysis(this.props.stream.getReportingPeriod())} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
 					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()}/>}
 			</TSCardContent>
 			<TSFooter>{/*Switch link*/}

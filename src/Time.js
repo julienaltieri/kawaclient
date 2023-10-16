@@ -153,15 +153,15 @@ export class Period {
 		yearly: 	"yearly",
 		biyearly: 	"biyearly"
 	}
-	static daily = 			new Period(Period.periodName.daily,			"day",  		timeIntervals.oneDay,	Period.daily, 	{"daily":1,"weekly":1/7,"biweekly":1/14})
-	static weekly = 		new Period(Period.periodName.weekly,		"week",   		timeIntervals.oneWeek,	Period.daily, 	{"daily":7,"weekly":1,"biweekly":1/2})
-	static biweekly = 		new Period(Period.periodName.biweekly,		"2 weeks",  	timeIntervals.oneWeek*2,Period.daily, 	{"daily":14,"weekly":2,"biweekly":1})
+	static daily = 			new Period(Period.periodName.daily,			"day",  		timeIntervals.oneDay,	 		Period.daily, 	{"daily":1,"weekly":1/7,"biweekly":1/14})
+	static weekly = 		new Period(Period.periodName.weekly,		"week",   		timeIntervals.oneWeek,	 		Period.daily, 	{"daily":7,"weekly":1,"biweekly":1/2})
+	static biweekly = 		new Period(Period.periodName.biweekly,		"2 weeks",  	timeIntervals.oneWeek*2, 		Period.daily, 	{"daily":14,"weekly":2,"biweekly":1})
 	static semimonthly = 	new Period(Period.periodName.semimonthly,	"half-month",	undefined,						Period.daily, 	{"semimonthly":1, "monthly":1/2,"bimonthly":1/4,"quarterly":1/6,"yearly":1/24})
 	static monthly = 	 	new Period(Period.periodName.monthly,		"month"	,		undefined,						Period.daily, 	{"semimonthly":2, "monthly":1,  "bimonthly":1/2,"quarterly":1/3,"yearly":1/12})
-	static bimonthly = 		new Period(Period.periodName.bimonthly,		"2 months",		undefined,						Period.monthly,{"semimonthly":4, "monthly":2,  "bimonthly":1,  "quarterly":2/3,"yearly":1/6})
-	static quarterly = 		new Period(Period.periodName.quarterly,		"quarter",		undefined,						Period.monthly,{"semimonthly":6, "monthly":3,  "bimonthly":3/2,"quarterly":1,	"yearly":1/4})
-	static yearly = 	 	new Period(Period.periodName.yearly,		"year"	,		undefined,						Period.monthly,{"semimonthly":24,"monthly":12, "bimonthly":6,  "quarterly":4,	"yearly":1})
-	static biyearly = 	 	new Period(Period.periodName.biyearly,		"2 years",		undefined,						Period.monthly,{"semimonthly":48,"monthly":24, "bimonthly":12,  "quarterly":8,	"yearly":2})
+	static bimonthly = 		new Period(Period.periodName.bimonthly,		"2 months",		undefined,						Period.monthly, {"semimonthly":4, "monthly":2,  "bimonthly":1,  "quarterly":2/3,"yearly":1/6})
+	static quarterly = 		new Period(Period.periodName.quarterly,		"quarter",		undefined,						Period.monthly, {"semimonthly":6, "monthly":3,  "bimonthly":3/2,"quarterly":1,	"yearly":1/4})
+	static yearly = 	 	new Period(Period.periodName.yearly,		"year"	,		undefined,						Period.monthly, {"semimonthly":24,"monthly":12, "bimonthly":6,  "quarterly":4,	"yearly":1})
+	static biyearly = 	 	new Period(Period.periodName.biyearly,		"2 years",		undefined,						Period.monthly, {"semimonthly":48,"monthly":24, "bimonthly":12,  "quarterly":8,	"yearly":2})
 
 
 	static longestPeriod = arr => arr.sort(utils.sorters.desc(p => p.getTimeIntervalFromDate(new Date())))[0]
