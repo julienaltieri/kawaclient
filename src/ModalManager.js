@@ -42,7 +42,9 @@ class ModalManager{
 
 export const ModalTemplates = {
 	BaseModal: (title,message,buttonArray) => (that)=> {
-		return ModalTemplates.ModalWithComponent(title,<div>{message}</div>,buttonArray)(that)
+		return ModalTemplates.ModalWithComponent(title,
+			<div style={{textAlign:"left"}}>{message}</div>
+		,buttonArray)(that)
 	},
 	ModalWithSingleInput: (title,buttonArray) => (that)=> {
 		if(!buttonArray)buttonArray = [{name:"Confirm",primary:true}]
@@ -50,13 +52,13 @@ export const ModalTemplates = {
 	},
 	ModalWithStreamTransactions: (title,message,stream) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
-			<div>{message}</div>
+			<div style={{textAlign:"left"}}>{message}</div>
 			<StreamTransactionView controller={instance.currentModalController} stream={stream} key={stream.id}/>
 		</div>)(that)
 		},
 	ModalWithCategorizationRule: (title,message,rule) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
-			<div>{message}</div>
+			<div style={{textAlign:"left"}}>{message}</div>
 			<CategorizationModalView controller={instance.currentModalController} rule={rule} />
 		</div>,[{name:"Cancel"},{name:"Save",primary:true}])(that)
 	},
@@ -68,7 +70,7 @@ export const ModalTemplates = {
 	},
 	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
-			<div>{message}</div>
+			<div style={{textAlign:"left"}}>{message}</div>
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
@@ -354,10 +356,10 @@ export class ModalController{
 		return new Promise((res,rej) => {
 			document.body.style.overflow = 'unset';
 			this.modal.updateState({visible:false}).then(() => {
-				res()
+				//res()
 				setTimeout(() => {
 					let a = instance
-					return instance.dismissModal(this)/*.then(() => res())*/
+					return instance.dismissModal(this).then(() => res())
 				},animationTime)//leaves time to play the animation
 			})
 		})

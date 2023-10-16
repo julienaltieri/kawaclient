@@ -35,6 +35,7 @@ class CategorizeActionCard extends ActionCard{
 		super(props)
 		this.state = {...this.state,checkmarkVisible:false,isSaving:false,recStreams:[],selectedItemImage: 1,fetching:true}
 		this.props.parentAction.actionCard = this;
+		this.onChangeRuleMatchingString = this.onChangeRuleMatchingString.bind(this); 
 	}
 	componentDidMount(){super.componentDidMount();this.refreshSuggestedStreams();}
 	refreshSuggestedStreams(){//calculate recommended streams
@@ -91,22 +92,37 @@ class CategorizeActionCard extends ActionCard{
 			&& !this.props.transaction.amazonOrderDetails && !amazonConfig.include.test(this.props.transaction.description) //is not an amazon order
 			&& key.toLowerCase() != "the")? //words like "the" are too generic and don't represent a true group typically
 			Core.presentModal(ModalTemplates.ModalWithTransactions(
-				"Let's make it easier",<DS.component.Label highlight style={{display:"flex",alignItems:"baseline",flexWrap: "wrap"}}>Categorize all of these as <DS.component.StreamTag highlight>{s.name}</DS.component.StreamTag>?</DS.component.Label>,branch,
+				"Let's make it easier",<DS.component.Label highlight style={{display:"flex",alignItems:"baseline",flexWrap: "wrap"}}>Categorize all of these as <DS.component.StreamTag highlight noHover>{s.name}</DS.component.StreamTag>?</DS.component.Label>,branch,
 				[{name:"No, first only"},{name:"Yes, all",primary:true}]))
 				.then(({state,buttonIndex})=>categorizeOtherTransactions = (buttonIndex==1))
 			:Promise.resolve())
 		.then(() => {//ask if we should create a rule
 			if(!adequateRuleAlreadyExists && categorizeOtherTransactions && Core.getUserData().categorizationRulesExclusionList.indexOf(key)==-1){
-				return Core.presentModal(ModalTemplates.BaseModal("One last question", "Should all future transactions containing "+key+" be categorized as "+s.name+" as well?",[{name:"No, don't automate"},{name:"Yes, automate",primary:true}]))
+				return Core.presentModal(ModalTemplates.BaseModal("One last question", 
+					<div>
+						<DS.component.Row>
+							<StyledWord>Should transactions like</StyledWord>
+							<DS.component.Input type="text" textAlign="left" formId="matchingString" onChange={this.onChangeRuleMatchingString} defaultValue={key} />
+						</DS.component.Row>
+						<DS.component.Row>
+							<DS.component.Label highlight>always be categorized as</DS.component.Label>
+							<DS.component.StreamTag style={{color:DS.getStyle().bodyText}} highlight noHover>{s.name}</DS.component.StreamTag>?
+						</DS.component.Row>
+					</div>,[{name:"No, don't automate"},{name:"Yes, automate",primary:true}]))
 					.then(({state,buttonIndex}) => {createRule = buttonIndex==1; refusedCreateRule = buttonIndex==0})
-			} else {Promise.resolve()}
+			} else {return Promise.resolve()}
 		}).then(() => {//manage categorization rule creation & finalize
-			if(createRule){Core.createCategorizationRule({matchingString:key, allocations:[{streamId:s.id,type:"percent",amount:1.0}]})} 
+			console.log(this.inputMatchingString,key)
+			if(createRule){Core.createCategorizationRule({matchingString:this.inputMatchingString||key, allocations:[{streamId:s.id,type:"percent",amount:1.0}]})} 
 			else if(categorizeOtherTransactions && refusedCreateRule) {Core.addMatchingStringToCategorizationExclusionList(key)}
 
 			var txnsToCategorize = (categorizeOtherTransactions?branch:(amzNeighbors||[this.props.transaction])).sort(utils.sorters.asc(t => t.date))
 			this.props.parentAction.onActionConcluded(this.props.parentAction,txnsToCategorize,[{streamId: s.id,"type":"percent","amount":1.0}]) 
 		}).catch(e => {this.updateState({isSaving:false})})
+	}
+	onChangeRuleMatchingString(e){	
+		let s = document.getElementById("matchingString").value;
+		this.inputMatchingString = s;
 	}
 
 	preExitAnimation(){//card will start exiting after this promise returns
@@ -173,7 +189,13 @@ class CategorizeActionCard extends ActionCard{
 		
 	}
 }
-
+const StyledWord = styled.div`
+	margin-right: 1rem;
+	text-align: left;
+	flex-shrink: 0;
+	flex-grow: 0;
+	color: ${DS.getStyle().bodyText};
+`
 export class TransactionView extends BaseComponent{
 	constructor(props){
 		super(props)
