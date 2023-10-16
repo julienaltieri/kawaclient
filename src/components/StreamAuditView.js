@@ -113,7 +113,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 		/*if(this.props.stream.name == "Food"){console.log(this.getStreamAnalysis(Period.monthly))}*/
  		return (<CompountStreamAuditViewContainer >
  			<DS.component.ContentTile style={{flexDirection: "row",justifyContent: "space-between",width: "calc(100% - 1rem)", margin:0,marginBottom: "1rem"}}>
- 				<div style={{width:"3rem",marginLeft:"1rem"}}>
+ 				<div style={{width:"3rem",marginLeft:"1rem",flexShrink:0}}>
 					<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>
  				</div>
  				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
