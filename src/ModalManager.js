@@ -62,7 +62,7 @@ export const ModalTemplates = {
 	},
 	ModalWithTransactions: (title,message,transactions,buttonArray) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
-			<div>{message}</div>
+			<div style={{textAlign:"left"}}>{message}</div>
 			<TransactionsModalView controller={instance.currentModalController} transactions={transactions} />
 		</div>,buttonArray)(that)
 	},
@@ -95,7 +95,7 @@ export const ModalTemplates = {
 				<MainContent>{component}</MainContent>
 				{buttonArray.length?<ActionButtons>
 					{buttonArray.map((b,i) => {
-						return <DS.component.Button.Action primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
+						return <DS.component.Button.Action style={{marginTop:DS.spacing.xs+"rem"}} primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
 					})}
 				</ActionButtons>:<div></div>}
 			</BaseModalWrapper>
@@ -240,20 +240,10 @@ const DownArrow = styled.div`
 
 export class TransactionsModalView extends BaseComponent{
 	render(){
-		return(
-			<div>
-				<div style={{width:"20rem", minHeight:"5rem",margin:"auto",marginTop:"1rem",fontSize:"0.8rem","textAlign":"left", backgroundColor:"white"}}>
-					<ul style={{marginTop:"1rem",fontWeight:"bold"}}>{this.props.transactions.length} transaction(s)
-						{this.props.transactions.slice(0,5).map((t,i) => <div key={i} style={{fontWeight:"normal",display:"flex",borderBottom:"1px solid #eeeeee"}}>
-								<div>{t.description.substring(0,20)}...</div><Spacer/>
-								<div>{t.getDateInDisplayTimezone().toDateString()}</div><Spacer/>
-								<div>{utils.formatCurrencyAmount(t.amount,undefined,undefined,undefined, Core.getPreferredCurrency())}</div>
-						</div>)}
-						{(this.props.transactions.length>5)?<div style={{textAlign: "right",fontWeith:"100"}}>...and {this.props.transactions.length-5} other(s)</div>:""}
-					</ul>
-				</div>
-			</div>
-		)
+		return(<div style={{marginTop:DS.spacing.xxs+"rem"}}>
+			{this.props.transactions.slice(0,5).map((t,i) => <DS.component.TransactionListItem key={i} transaction={t}/>)}
+			{(this.props.transactions.length>5)?<div style={{textAlign: "right",fontWeith:"100"}}>...and {this.props.transactions.length-5} other(s)</div>:""}
+		</div>)
 	}
 }
 
@@ -525,8 +515,9 @@ const ActionButtons = styled.div`
     flex-direction: row;
     align-items: center;
     justify-content: ${props => Core.isMobile()?"space-around":"center"};
-    margin-top: 3.5rem;
+    margin-top: ${DS.spacing.s}rem;
     flex-direction: row;
+    flex-wrap: wrap-reverse;
  
 `
 

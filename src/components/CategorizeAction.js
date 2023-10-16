@@ -91,7 +91,8 @@ class CategorizeActionCard extends ActionCard{
 			&& !this.props.transaction.amazonOrderDetails && !amazonConfig.include.test(this.props.transaction.description) //is not an amazon order
 			&& key.toLowerCase() != "the")? //words like "the" are too generic and don't represent a true group typically
 			Core.presentModal(ModalTemplates.ModalWithTransactions(
-				"What about these?","Are these transactions also in "+s.name+"?",branch,[{name:"No, just the original one"},{name:"Yes, all "+branch.length,primary:true}]))
+				"Let's make it easier",<DS.component.Label highlight style={{display:"flex",alignItems:"baseline",flexWrap: "wrap"}}>Categorize all of these as <DS.component.StreamTag highlight>{s.name}</DS.component.StreamTag>?</DS.component.Label>,branch,
+				[{name:"No, first only"},{name:"Yes, all",primary:true}]))
 				.then(({state,buttonIndex})=>categorizeOtherTransactions = (buttonIndex==1))
 			:Promise.resolve())
 		.then(() => {//ask if we should create a rule

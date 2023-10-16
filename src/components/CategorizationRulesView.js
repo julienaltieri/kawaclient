@@ -249,12 +249,9 @@ export class CategorizationModalView extends BaseComponent{
 					{this.state.fetching?(<div>loading....</div>):<div>
 						<ul><div style={{fontWeight:"bold",marginBottom:"1rem"}}></div>
 						{[...this.state.uncategorizedMatchList,...this.state.categorizedMatchList].slice(0,4).map((t,i) => 
-							<DS.component.ListItem noHover fullBleed size="xs" key={i}>
-									<DS.component.Label style={{minWidth:"3rem"}}>{t.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</DS.component.Label>
-									<DS.component.Label style={{marginRight:"0.5rem"}}>{t.description}</DS.component.Label><Spacer/>
-									<DS.component.StreamTag style={{maxWidth:"30vw"}} noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DS.component.StreamTag>
-									<div style={{maxWidth:"3rem",textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(t.amount,0,null,null,Core.getPreferredCurrency())}</div>
-							</DS.component.ListItem>)}
+							<DS.component.TransactionListItem key={i} transaction={t} infoSlotComponent={
+								<DS.component.StreamTag style={{maxWidth:"30vw"}} noHover highlight={t.categorized}>{t.categorized?Core.getStreamById(t.streamAllocation[0].streamId).name:"new"}</DS.component.StreamTag>
+							}/>)}
 						{(this.state.categorizedMatchList.length>4)?<DS.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.categorizedMatchList.length-2} other(s)</DS.component.ListItem>:""}
 						 
 						</ul>
@@ -272,6 +269,7 @@ const StyledWord = styled.div`
 	text-align: left;
 	flex-shrink: 0;
 	flex-grow: 0;
+	color: ${DS.getStyle().bodyText};
 `
 
 

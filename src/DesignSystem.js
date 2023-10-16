@@ -1,5 +1,7 @@
 import AppConfig from "./AppConfig";
 import styled from 'styled-components';
+import Core from './core';
+import utils from './utils';
 import 'material-symbols';
 const logo_light = require('./assets/logo_light.svg').default;
 const logo_dark = require('./assets/logo_dark.svg').default;
@@ -158,6 +160,12 @@ class DesignSystem{
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
 		ListItem: (props) => <StyledListItemContainer size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		TransactionListItem: (props) => <instance.component.ListItem noHover fullBleed size="xs" {...props}>
+			<instance.component.Label style={{minWidth:"3rem"}}>{props.transaction.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</instance.component.Label>
+			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><Spacer/>
+			<div>{props.infoSlotComponent}</div>
+			<div style={{maxWidth:"3rem",textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(props.transaction.amount,0,null,null,Core.getPreferredCurrency())}</div>
+		</instance.component.ListItem>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
@@ -192,10 +200,11 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
-const StyledImage = styled.img`
-	
-
+const Spacer = styled.div`
+	flex-grow:1;
 `
+
+const StyledImage = styled.img``
 
 const StyledFieldWithLabel = styled.div`
 	display: flex;
