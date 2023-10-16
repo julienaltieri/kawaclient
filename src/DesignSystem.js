@@ -261,6 +261,7 @@ const StyledButtonWrapper = styled.div`
 	display: flex;
     flex-grow: 1;
     align-items: center;
+    min-width: 50%; 
 `
 
 const FlexColumn = styled.div`
