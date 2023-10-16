@@ -41,9 +41,9 @@ export default class CategorizationRulesView extends BaseComponent{
 	onDragEnd(result){
 		var destination = result.destination
 		var source = result.source
-		if(!destination || destination.index == source.index)return this.updateState({dragging:false});
+		if(!destination || destination.droppableId!="trash" && destination.index == source.index)return this.updateState({dragging:false});
 		var dragStartRule = this.state.ruleList[source.index];
-		if(destination.droppableId = "trash"){
+		if(destination.droppableId == "trash"){
 			Core.deleteCategorizationRule(dragStartRule).then(() => this.reload())
 		}else{
 			const newList = Array.from(this.state.ruleList)
@@ -56,13 +56,9 @@ export default class CategorizationRulesView extends BaseComponent{
 		}
 	}
 
-	onDragStart(e){
-		this.updateState({dragging:true})
-	}
+	onDragStart(e){this.updateState({dragging:true})}
 
-	reload(){
-		this.updateState({ruleList:Core.getCategorizationRules(),loading:false,dragging:false})
-	}
+	reload(){this.updateState({ruleList:Core.getCategorizationRules(),loading:false,dragging:false})}
 
 	render(){
 		if(!this.state.ruleList)return(<div/>)
@@ -93,12 +89,9 @@ export default class CategorizationRulesView extends BaseComponent{
 }
 
 const getTrashDropStyle = isDraggingOver => ({
-  	border: isDraggingOver ? DS.borderThickness + "rem solid "+ DS.getStyle().borderColorHighlight : "none",
+  	border: isDraggingOver ? DS.borderThickness.m + "rem solid "+ DS.getStyle().borderColorHighlight : "none",
 });
 
-const getTrashingDropStyle = isDraggingOver => ({
-  	width: isDraggingOver ? "3rem" : "auto",
-});
 
 const StyledTopArea = styled.div`
 	height: 5rem;
