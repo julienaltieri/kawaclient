@@ -116,7 +116,7 @@ class CompoundStreamAuditView extends StreamAuditView{
  				<div style={{width:"3rem",marginLeft:"1rem"}}>
 					<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>
  				</div>
- 				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto"}}>
+ 				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
  					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
