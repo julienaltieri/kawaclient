@@ -169,7 +169,7 @@ class DesignSystem{
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
-		Input: (props) => <StyledInput id={props.formId} {...props}>{props.children}</StyledInput>,
+		Input: (props) => <StyledInput type={props.numerical?"number":"text"} id={props.formId} {...props}>{props.children}</StyledInput>,
 		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledInput id={props.formId} {...props}>{props.children}</StyledInput></StyledFieldWithLabel>,
 		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,

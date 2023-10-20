@@ -191,7 +191,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.allocations.map((al,i) => <DS.component.Row key={al.nodeId}>
 						{(i==0)?<DS.component.Input style={{width:"3rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DS.component.Input>:
-								<DS.component.Input style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+								<DS.component.Input numerical style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
 										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
 										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
 										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
