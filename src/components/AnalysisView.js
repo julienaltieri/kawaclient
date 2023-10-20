@@ -377,14 +377,14 @@ export class GenericChartView extends GenericAnalysisView{
 	constructor(props){
 		super(props)
 		this.style = {
-			chartHeight: 170, 
+			chartHeight: Core.isMobile()?200:170, 
 			chartWidth: 450,
-			chartPadding: {top:20,bottom:10,left:10,right:60},
+			chartPadding: {top:Core.isMobile()?60:20,bottom:Core.isMobile()?20:10,left:10,right:Core.isMobile()?120:60},
 			midgroundOpacity: 0.5, 									//opacity of middle ground items (trends and projections)
-			backgroundOpacity: DS.backgroundOpacity, 		//opacity of background items (area charts)
-			fontSizeTitle:20,										//Chart title
-			fontSizeHeader:14,										//Big numbers
-			fontSizeBody:7,											//Everthing else
+			backgroundOpacity: DS.backgroundOpacity, 				//opacity of background items (area charts)
+			fontSizeTitle:Core.isMobile()?40:20,										//Chart title
+			fontSizeHeader:Core.isMobile()?28:14,										//Big numbers
+			fontSizeBody:Core.isMobile()?14:7,											//Everthing else
 		}
 
 		//eventing
@@ -444,7 +444,8 @@ export class GenericChartView extends GenericAnalysisView{
 	getDomainBounds(){return {//must override
 		mx:this.dateToTickDate(this.timeAxis[0]),
 		Mx:this.dateToTickDate(this.timeAxis[this.timeAxis.length-1]),
-		my:-100,My:100
+		my:-100,
+		My:100
 	}}
 	svgToDomain(dx=0,dy=0){ let b = this.getDomainBounds();	return {
 		dx:b.mx + (dx-this.style.chartPadding.left)*(b.Mx-b.mx)/(this.style.chartWidth-this.style.chartPadding.left-this.style.chartPadding.right),
@@ -468,13 +469,15 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	constructor(props){
 		super(props)
 		this.style = {...this.style,
-			chartBarWidth:4, 										//bar width for the bar chart
-			summaryBarOffset: -timeIntervals.oneDay*3,				//placement of the bar in x-domain coordinates
-			summaryBarLabelXOffset: 7, 								//horizontal space between the bar and the labels
+			chartBarWidth:Core.isMobile()?8:4, 										//bar width for the bar chart
+			summaryBarOffset: -timeIntervals.oneDay*(Core.isMobile()?-6:3),				//placement of the bar in x-domain coordinates
+			summaryBarLabelXOffset: Core.isMobile()?21:7, 								//horizontal space between the bar and the labels
 			summaryBarLabelYOffset: 0,								//not implemented
 			statLabelSpacing:1, 									//space between text for projected savings/expenses and percentage
-			scatterDotSize: 2,
-			annotationTooltipHitRadius: 15,
+			scatterDotSize: Core.isMobile()?4:2,
+			annotationTooltipHitRadius: Core.isMobile()?30:15,
+			secondaryLabelsOffset: Core.isMobile()?100:0,
+			chartYScaleFactor: Core.isMobile()?1.1:1,
 		}
 		//since the graph is expensive to render, we use internal eventing to update it instead of state
 		this.listeners = []
@@ -556,7 +559,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	getReportSchedule(){return this.props.savingsAnalysis.getFullSchedule()}
 	getDomainBounds(){
 		let acc = (g,f) =>  g(this.getData().plotList.filter(o=>o.config.render).map(p => f(p.target[p.target.length-1].y,p.projected)))
-		return {...super.getDomainBounds(),my:acc(utils.min,Math.min),My:acc(utils.max,Math.max)}
+		return {...super.getDomainBounds(),my:this.style.chartYScaleFactor*acc(utils.min,Math.min),My:this.style.chartYScaleFactor*acc(utils.max,Math.max)}
 	}
 
 	//render functions
@@ -564,7 +567,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		return(<V.VictoryChart>
 			<V.VictoryAxis style={{axis:{opacity:0}}} tickFormat={() => ''}/>
 			<V.VictoryLine 		data={series.getTrend(series.toDate.map(p => p.y))} style={{data:{stroke:series.config.color,strokeWidth:0.9,opacity:this.style.midgroundOpacity,strokeDasharray: "1, 2"}}}/>
-			<V.VictoryLine 		name={series.name+"Line"} data={series.toDate} style={{data:{stroke:series.config.color,strokeWidth:1}}}/>
+			<V.VictoryLine 		name={series.name+"Line"} data={series.toDate} style={{data:{stroke:series.config.color,strokeWidth:Core.isMobile()?3:1}}}/>
 			<V.VictoryScatter 	name={series.name+"Dots"} data={series.toDate} size={this.style.scatterDotSize} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x,{expenses: series.name=="expenses",savings: series.name=="savings", income: series.name =="savings"}).length?"url(#"+(datum.y<0?"alertHighlight":"savingsHighlight")+")":series.config.color}}}/>
 		</V.VictoryChart>)
 	}
@@ -604,12 +607,12 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,true,undefined,Core.getPreferredCurrency()):""}
 		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(getIncrement("expenses",fr),0,true,undefined,Core.getPreferredCurrency()):""}
 
-		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:this.getDomainBounds().My}}>
+		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:this.getDomainBounds().My*(Core.isMobile()?1.5:1)}}>
         	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
 			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
 			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+1*this.style.fontSizeBody+6*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getExpensesInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+2*this.style.fontSizeBody+8*this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getSavedInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
+			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+1*this.style.fontSizeBody+6*this.style.statLabelSpacing+this.style.secondaryLabelsOffset} ref={this.registerListener()} mutations={(fr)=> {return {"text":getExpensesInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
+			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+2*this.style.fontSizeBody+8*this.style.statLabelSpacing+this.style.secondaryLabelsOffset} ref={this.registerListener()} mutations={(fr)=> {return {"text":getSavedInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
 		</SharedPropsWrapper>)
 	}
 	renderToolTip(){
@@ -649,10 +652,10 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		        	labels={(d) => " "}/>}>
 		          <V.VictoryAxis tickCount={this.getData().reportSchedule.length-1}  
 		          	tickComponent={<BoundedTick maxX={this.timeAxis[this.timeAxisBoundIndex]}/>} 
-		          	tickFormat={(t) => (t>this.timeAxis[this.timeAxisBoundIndex])?"":`${t.toLocaleString('en-US', {month: 'short'}).toUpperCase()}`} 
+		          	tickFormat={(t) => (t>this.timeAxis[this.timeAxisBoundIndex])?"":`${t.toLocaleString('en-US', {month: Core.isMobile()?'narrow':'short'}).toUpperCase()}`} 
 		          	style={{
-		          		ticks: {stroke: DS.getStyle().bodyTextSecondary, size: 0, strokeWidth:3.5, strokeLinecap:"round"},
-		          		tickLabels: {padding:-10,fill:DS.getStyle().bodyTextSecondary,fontSize: 7,fontFamily:"Inter",fontWeight:500},
+		          		ticks: {stroke: DS.getStyle().bodyTextSecondary, size: 0, strokeWidth:Core.isMobile()?4:3.5, strokeLinecap:"round"},
+		          		tickLabels: {padding:Core.isMobile()?-20:-10,fill:DS.getStyle().bodyTextSecondary,fontSize: this.style.fontSizeBody,fontFamily:"Inter",fontWeight:500},
 		          		axis:{"stroke":DS.getStyle().bodyTextSecondary,strokeWidth:0}
 		          	}} />
 		        	
