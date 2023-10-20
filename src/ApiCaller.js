@@ -27,7 +27,7 @@ class ApiCaller{
 	sendRequest(request){
 		return fetch(request).then(res => {
 			if(res.status==401){throw new Error("Login required")}
-			else if(!res.ok){throw new Error(res.statusText)}
+			else if(!res.ok){console.log(res);throw new Error(res.statusText)}
 			else return res.json()
 		})
 	}

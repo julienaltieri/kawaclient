@@ -172,7 +172,7 @@ class Core{
 		//transitioning to logged in state
 		if(b){
 			return this.loadData().then(() => {//load or reload the data
-				if(!!this.routeOrder){//if there was a remnant route order (pre-login) navigate back
+				if(!!this.routeOrder && this.routeOrder != NavRoutes.login){//if there was a remnant route order (pre-login) navigate back
 					Navigation.navigateToRoute(this.routeOrder)
 					this.routeOrder = undefined
 				}else { Navigation.navigateToRoute(NavRoutes.home) }
