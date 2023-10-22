@@ -177,6 +177,7 @@ class DesignSystem{
 		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
 		Image: (props) => <StyledImage {...props}>{props.children}</StyledImage>,
 		Logo: (props) => <instance.component.Image src={!instance.isDarkMode()?logo_standalone_dark:logo_standalone_light} {...props}></instance.component.Image>,
+		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{props.children.map(c => (typeof c == 'string')?c.split(" ").map(w => <instance.component.Label style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
 		Button: {
 			Icon: (props) => <StyledIcon><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
@@ -199,6 +200,14 @@ class DesignSystem{
 }
 
 const instance = new DesignSystem();
+
+
+
+const StyledSentenceWrapper = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+    align-items: center;
+`
 
 const Spacer = styled.div`
 	flex-grow:1;

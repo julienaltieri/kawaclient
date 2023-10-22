@@ -1,7 +1,9 @@
 import ApiCaller from './ApiCaller'
 import Core from './core'
 import {ModalTemplates} from './ModalManager.js'
-
+import BaseComponent from './components/BaseComponent';
+import DS from './DesignSystem'
+import styled from 'styled-components'
 
 import utils from './utils'
 const reporter = require('./processors/ReportingCore')
@@ -57,7 +59,22 @@ class TestRoutine{
 //doesn't work for compound stream
 
 
-export default TestRoutine
+export default class TestRoutineView extends BaseComponent{
+
+	render(){return (
+		<div>
+		<DS.component.SentenceWrapper>
+			I want all my 
+			<DS.component.StreamTag>Groceries and hygiene</DS.component.StreamTag>
+			transactions to be labeled as
+			<DS.component.Input style={{maxWidth:"8rem"}}></DS.component.Input>
+		</DS.component.SentenceWrapper>
+		</div>
+	)}
+}
+
+
+//export default TestRoutine
 
 
 
