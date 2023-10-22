@@ -64,11 +64,11 @@ export default class CategorizationRulesView extends BaseComponent{
 		if(!this.state.ruleList)return(<div/>)
 		else if(this.state.loading) return (<div style={{'textAlign':'center','marginTop':'3rem'}}>loading...</div>)
 		var count=0;
-		return(
+		return(<DS.Layout.PageWithTitle title="Categorization rules">
 		<DragDropContext onDragEnd={this.onDragEnd} onDragStart={this.onDragStart}>
 			<Droppable droppableId="trash" key={0}>
 			{(provided,snapshot) => (
-				<StyledTopArea  >
+				<StyledTopArea>
 					<StyledDeleteZone ref={provided.innerRef} style={getTrashDropStyle(snapshot.isDraggingOver)}  {...provided.droppableProps} visible={this.state.dragging}><DS.component.Label highlight>Drag here to remove</DS.component.Label></StyledDeleteZone>
 					<div style={{display:"none"}}>{provided.placeholder}</div>
 				</StyledTopArea>
@@ -77,7 +77,6 @@ export default class CategorizationRulesView extends BaseComponent{
 			<Droppable droppableId="categorizationViewDroppable" key={1}>
 			{(provided,snapshot) => (
 			<div>
-				<DS.component.PageHeader>Categorization rules</DS.component.PageHeader>
 				<StyledCategorizationRulesView  ref={provided.innerRef} {...provided.doppableProps}>
 					{this.state.ruleList.map((r,index) => <RuleView rule={r} key={index} id={index} masterView={this}/>)}
 					{provided.placeholder}
@@ -85,7 +84,7 @@ export default class CategorizationRulesView extends BaseComponent{
 			</div>
 			)}</Droppable>
 		</DragDropContext>
-	)}
+	</DS.Layout.PageWithTitle>)}
 }
 
 const getTrashDropStyle = isDraggingOver => ({
@@ -94,9 +93,9 @@ const getTrashDropStyle = isDraggingOver => ({
 
 
 const StyledTopArea = styled.div`
-	height: 5rem;
+	height: ${props => Core.isMobile()?5:10}rem;
     position: fixed;
-    width: 100%;
+    align-self: center;
     display: flex;
     flex-direction: row;
     align-content: center;
@@ -117,7 +116,6 @@ const StyledDeleteZone = styled.div`
 `
 
 const StyledCategorizationRulesView = styled.ul`
-	max-width: ${DS.applicationMaxWidth}rem;
 	margin: auto;
 `
 

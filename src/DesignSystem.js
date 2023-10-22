@@ -55,7 +55,7 @@ class DesignSystem{
 	borderRadius= "0.7rem";
 	borderRadiusSmall= "0.3rem";
 	barWidthRem=0.5;
-	applicationMaxWidth=36;
+	applicationMaxWidth=50;
 	backgroundOpacity=0.15;
 	inputHeight=3;
 	inputHeightInline=2;
@@ -189,6 +189,10 @@ class DesignSystem{
 			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props}  disabled={props.disabled} primary={props.primary}>{props.children}</StyledButton></StyledButtonWrapper>,
 		}
 	}
+	Layout = {
+		PageContent: (props) => <StyledPageContent {...props}>{props.children}</StyledPageContent>,
+		PageWithTitle: (props) => <instance.Layout.PageContent><instance.component.PageHeader>{props.title}</instance.component.PageHeader>{props.children}</instance.Layout.PageContent>
+	}
 	spacing = {
 		xxs:0.5,
 		xs:1,
@@ -205,6 +209,15 @@ class DesignSystem{
 }
 
 const instance = new DesignSystem();
+
+
+const StyledPageContent = styled.div`
+	max-width: ${instance.applicationMaxWidth}rem;
+	display: flex;
+    flex-direction: column;
+    margin: auto;
+`
+
 
 const StyledSentenceWrapper = styled.div`
 	display: flex;
@@ -239,9 +252,7 @@ const StyledPlaceholderButton = styled.div`
     &:hover{
     	background-color: ${instance.getStyle().UIElementBackground};
     }
-
 `
-
 
 const StyledButton = styled.div`
 	background-color: ${(props) => props.primary?instance.getStyle().modalPrimaryButton:instance.getStyle().modalSecondaryButton};
@@ -274,6 +285,7 @@ const StyledButtonWrapper = styled.div`
     flex-grow: 1;
     align-items: center;
     min-width: 50%; 
+    justify-content: center;
 `
 
 const FlexColumn = styled.div`
@@ -350,7 +362,7 @@ const StyledToolTipContainer = styled.div`
 
 
 const StyledPageHeader = styled.div`
-	height: 5rem;
+	height: ${props => Core.isMobile()?5:10}rem;
 	display: flex;
     flex-direction: row;
     align-content: center;
@@ -417,6 +429,7 @@ class DSInput extends BaseComponent {
 	autoSize(){
 		if(!this.props.autoSize){return}
 		let s = this.inputRef.current.value;
+		if(s.length==0){s=this.inputRef.current.placeholderValue}
 		const tempSpan = document.createElement("span");
 		tempSpan.style.visibility = "hidden";
 		tempSpan.style.whiteSpace = "nowrap";
@@ -442,11 +455,19 @@ const StyledInput = styled.input`
     text-align: ${(props) => props.textAlign || "center"};
     font-size: ${instance.fontSize.body}rem;
     border: ${(props) => instance.borderThickness.m+"rem solid "+instance.getStyle().borderColor};
+    margin-bottom: ${props => props.noMargin?0:instance.spacing.xxs}rem;
     &:-webkit-autofill {
 		box-shadow: 0 0 0 100px ${instance.getStyle().inputFieldBackground} inset;
 		-webkit-text-fill-color: ${(props) => props.positive?instance.getStyle().positive:instance.getStyle().bodyText};
     }
-    margin-bottom: ${instance.spacing.xxs}rem;
+    ::-webkit-inner-spin-button{
+        -webkit-appearance: none; 
+        margin: 0; 
+    }
+    ::-webkit-outer-spin-button{
+        -webkit-appearance: none; 
+        margin: 0; 
+    }   
 `
 
 
@@ -472,7 +493,7 @@ class DSDropDown extends BaseComponent {
 	}
 
 	render(){return(
-		<StyledDropDownContainer ref={this.containerRef} autoSize={this.props.autoSize} highlight={this.props.highlight} inline={this.props.inline}>
+		<StyledDropDownContainer ref={this.containerRef} noMargin={this.props.noMargin} autoSize={this.props.autoSize} highlight={this.props.highlight} inline={this.props.inline}>
 			<StyledDropDown ref={this.selectRef} {...this.props} onChange={(e) => {this.autoSize(e);if(this.props.onChange){this.props.onChange(e)}}}>
 				{this.props.children}
 			</StyledDropDown>
@@ -502,7 +523,7 @@ const StyledDropDown= styled.select`
 const StyledDropDownContainer = styled.div`
 	position: relative;
 	flex-grow: ${(props) => props.autoSize?0:1};
-	margin-bottom: ${instance.spacing.xxs}rem;
+	margin-bottom: ${props => props.noMargin?0:instance.spacing.xxs}rem;
 `
 
 

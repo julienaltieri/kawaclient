@@ -51,8 +51,7 @@ export default class SettingPage extends BaseComponent{
   handleOnExit(){console.log("New connection canceled")}
 	render(){
 		return(
-		<PageContainer>
-      <DS.component.PageHeader>Bank connections</DS.component.PageHeader>
+		<DS.Layout.PageWithTitle title="Settings">
       {this.state.fetching?<div style={{textAlign:"center",marginTop:"-6rem"}}><PageLoader/></div>:
       <div style={{margin:DS.spacing.s+"rem", marginTop:"-1rem"}}>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
@@ -63,47 +62,9 @@ export default class SettingPage extends BaseComponent{
         </div>
       </div>
     }
-    </PageContainer>
+    </DS.Layout.PageWithTitle>
 	)}
 }
-
-
-
-
-const Title = styled.div`
-    font-size: 2rem;
-    border-bottom: solid 1px ${DS.getStyle().borderColor};
-    padding-bottom: 1rem;
-    font-weight: 500;
-    color: #333333;
-    margin-bottom: 1rem;
-`
-
-const PageContainer = styled.div`
-  max-width: 600px;
-    margin: auto;
-`
-const List = styled.ul`
-  
-`
-
-const PlusButton = styled.div`
-    border-radius: 1.5rem;
-    border: solid black 1px;
-    height: 1.5rem;
-    width: 1.5rem;
-    text-align: center;
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    cursor: pointer;
-    font-weight: 100;
-
-    &:hover {
-      background-color: #eee;
-      color: white;
-    }
-`
 
 
 class BCSettingItem extends BaseComponent{
