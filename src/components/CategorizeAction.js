@@ -92,27 +92,22 @@ class CategorizeActionCard extends ActionCard{
 			&& !this.props.transaction.amazonOrderDetails && !amazonConfig.include.test(this.props.transaction.description) //is not an amazon order
 			&& key.toLowerCase() != "the")? //words like "the" are too generic and don't represent a true group typically
 			Core.presentModal(ModalTemplates.ModalWithTransactions(
-				"Let's make it easier",<DS.component.Label highlight style={{display:"flex",alignItems:"baseline",flexWrap: "wrap"}}>Categorize all of these as <DS.component.StreamTag highlight noHover>{s.name}</DS.component.StreamTag>?</DS.component.Label>,branch,
-				[{name:"No, first only"},{name:"Yes, all",primary:true}]))
+				"Let's make it easier",<DS.component.SentenceWrapper>Categorize all of these as<DS.component.StreamTag highlight noHover>{s.name}</DS.component.StreamTag>?</DS.component.SentenceWrapper>
+				,branch,[{name:"No, first only"},{name:"Yes, all",primary:true}]))
 				.then(({state,buttonIndex})=>categorizeOtherTransactions = (buttonIndex==1))
 			:Promise.resolve())
 		.then(() => {//ask if we should create a rule
 			if(!adequateRuleAlreadyExists && categorizeOtherTransactions && Core.getUserData().categorizationRulesExclusionList.indexOf(key)==-1){
 				return Core.presentModal(ModalTemplates.BaseModal("One last question", 
 					<div>
-						<DS.component.Row>
-							<StyledWord>Should transactions like</StyledWord>
-							<DS.component.Input type="text" textAlign="left" formId="matchingString" onChange={this.onChangeRuleMatchingString} defaultValue={key} />
-						</DS.component.Row>
-						<DS.component.Row>
-							<DS.component.Label highlight>always be categorized as</DS.component.Label>
-							<DS.component.StreamTag style={{color:DS.getStyle().bodyText}} highlight noHover>{s.name}</DS.component.StreamTag>?
-						</DS.component.Row>
+						<DS.component.SentenceWrapper>Should transactions like
+							<DS.component.Input type="text" textAlign="left" formId="matchingString" autoSize inline onChange={this.onChangeRuleMatchingString} defaultValue={key} style={{width:key.length+"ch",marginRight:"0.3rem"}}/>
+							always be categorized as<DS.component.StreamTag highlight noHover>{s.name}</DS.component.StreamTag>?
+						</DS.component.SentenceWrapper>
 					</div>,[{name:"No, don't automate"},{name:"Yes, automate",primary:true}]))
 					.then(({state,buttonIndex}) => {createRule = buttonIndex==1; refusedCreateRule = buttonIndex==0})
 			} else {return Promise.resolve()}
 		}).then(() => {//manage categorization rule creation & finalize
-			console.log(this.inputMatchingString,key)
 			if(createRule){Core.createCategorizationRule({matchingString:this.inputMatchingString||key, allocations:[{streamId:s.id,type:"percent",amount:1.0}]})} 
 			else if(categorizeOtherTransactions && refusedCreateRule) {Core.addMatchingStringToCategorizationExclusionList(key)}
 

@@ -220,23 +220,20 @@ export class CategorizationModalView extends BaseComponent{
 	render(){
 		return(
 			<div>
-				<DS.component.Row>
-					<StyledWord>Transactions like</StyledWord>
+				<DS.component.SentenceWrapper >
+					Transactions like
 					<DS.component.Input type="text" 
-						textAlign="left" defaultValue={this.props.rule.matchingString} onChange={this.onChangedText.bind(this)}/>
-				</DS.component.Row>
-				<DS.component.Row>
-					<StyledWord>will be categorized as</StyledWord>
-					<DS.component.DropDown
+						textAlign="left" defaultValue={this.props.rule.matchingString} autoSize inline onChange={this.onChangedText.bind(this)}/>
+					&nbsp;should be categorized as
+					<DS.component.DropDown autoSize inline 
 							value={this.state.allocatedStream.name?this.state.allocatedStream.name:'DEFAULT'} 
 							onChange={this.handleStreamSelected}>
 							<option value='DEFAULT' disabled hidden> </option>
 							{Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(new Date()))
 							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
 							.map((a,j) => <option key={j} sid={a.id}>{Core.getStreamById(a.id).name}</option>)}
-
-					></DS.component.DropDown>
-				</DS.component.Row>
+					></DS.component.DropDown>&nbsp;.
+				</DS.component.SentenceWrapper>
 				<div style={{margin:"auto", minHeight:"5rem", 
 				marginTop:"3rem",fontSize:"0.8rem","textAlign":"left"}}>
 					{this.state.fetching?(<div>loading....</div>):<div>

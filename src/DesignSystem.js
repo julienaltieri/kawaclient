@@ -2,6 +2,8 @@ import AppConfig from "./AppConfig";
 import styled from 'styled-components';
 import Core from './core';
 import utils from './utils';
+import BaseComponent from './components/BaseComponent';
+import React from "react";
 import 'material-symbols';
 const logo_light = require('./assets/logo_light.svg').default;
 const logo_dark = require('./assets/logo_dark.svg').default;
@@ -56,6 +58,8 @@ class DesignSystem{
 	applicationMaxWidth=36;
 	backgroundOpacity=0.15;
 	inputHeight=3;
+	inputHeightInline=2;
+	remToPx=16;//make sure this matches the px definition in the App.css html tag font-size
 	borderThickness = {
 		s:0.1,
 		m:0.15,
@@ -169,15 +173,16 @@ class DesignSystem{
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
-		Input: (props) => <StyledInput type={props.numerical?"number":"text"} id={props.formId} {...props}>{props.children}</StyledInput>,
+		Input: (props) => <DSInput {...props}/>,
 		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledInput id={props.formId} {...props}>{props.children}</StyledInput></StyledFieldWithLabel>,
-		DropDown: (props) => <StyledDropDownContainer><StyledDropDown {...props}>{props.children}</StyledDropDown><DownArrow>{instance.icon.caretDown}</DownArrow></StyledDropDownContainer>,
+		DropDown: (props) => <DSDropDown {...props}/>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
 		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
 		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
 		Image: (props) => <StyledImage {...props}>{props.children}</StyledImage>,
 		Logo: (props) => <instance.component.Image src={!instance.isDarkMode()?logo_standalone_dark:logo_standalone_light} {...props}></instance.component.Image>,
-		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{props.children.map(c => (typeof c == 'string')?c.split(" ").map(w => <instance.component.Label style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
+		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{
+			props.children.map((c,i) => (typeof c == 'string')?c.split(" ").map((w,j) => <instance.component.Label key={i*1000+j} {...props} style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
 		Button: {
 			Icon: (props) => <StyledIcon><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
@@ -201,12 +206,10 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
-
-
 const StyledSentenceWrapper = styled.div`
 	display: flex;
 	flex-wrap: wrap;
-    align-items: center;
+    align-items: baseline;
 `
 
 const Spacer = styled.div`
@@ -357,7 +360,7 @@ const StyledPageHeader = styled.div`
 
 const DownArrow = styled.div`
     position: absolute;
-    right: 0.7rem;
+    right: ${props => props.inline?0.3:0.7}rem;
     top: calc(50% - 0.55rem);
     cursor: pointer;
     pointer-events: none;
@@ -375,8 +378,7 @@ const StyledLabel = styled.div`
 const StyledRowContainer = styled.div`
 	display: flex;
     flex-direction: row;
-    align-items: center;
-    margin-bottom: ${instance.spacing.xxs}rem;
+    align-items: baseline;
     width:100%;
 `
 
@@ -405,32 +407,89 @@ const StyledScrollableList = styled.div`
 	::-webkit-scrollbar-corner {background: rgba(0,0,0,0.5)}
 `
 
+class DSInput extends BaseComponent {
+	constructor(props){
+		super(props)
+		this.autoSize = this.autoSize.bind(this);
+		this.inputRef = React.createRef();
+	}
+	componentDidMount(){this.autoSize()}
+	autoSize(){
+		if(!this.props.autoSize){return}
+		let s = this.inputRef.current.value;
+		const tempSpan = document.createElement("span");
+		tempSpan.style.visibility = "hidden";
+		tempSpan.style.whiteSpace = "nowrap";
+		tempSpan.style.position = "absolute";
+		tempSpan.innerText = s;
+		document.body.appendChild(tempSpan);
+		this.inputRef.current.style.width = tempSpan.clientWidth+'px';
+		tempSpan.parentNode.removeChild(tempSpan);
+	}
+
+	render(){return(
+		<StyledInput inline={this.props.inline} highlight={this.props.highlight} type={this.props.numerical?"number":"text"} ref={this.inputRef} id={this.props.formId} {...this.props} onChange={(e) => {this.autoSize(e);if(this.props.onChange){this.props.onChange(e)}}}>{this.props.children}</StyledInput>
+	)}
+}
+
 const StyledInput = styled.input`
     width: calc(100% - ${instance.spacing.xs*2+instance.borderThickness.m}rem);
-	background-color: ${(props) => props.disabled?"transparent":instance.getStyle().inputFieldBackground};
-	color:  ${(props) => props.positive?instance.getStyle().positive:"inherit"};
-    padding: 0 ${instance.spacing.xs}rem;
-    height: ${instance.inputHeight - 2*instance.borderThickness.m}rem;
-    border-radius: ${instance.borderRadiusSmall};
+	background-color: ${(props) => (props.disabled)?"transparent":instance.getStyle().inputFieldBackground};
+	color:  ${(props) => props.positive?instance.getStyle().positive:props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
+    padding: 0 ${(props) => props.inline?instance.spacing.xxs:instance.spacing.xs}rem;
+    height: ${(props) => (props.inline?instance.inputHeightInline:instance.inputHeight) - 2*instance.borderThickness.m}rem;
+    border-radius: ${(props) => instance.borderRadiusSmall};
     text-align: ${(props) => props.textAlign || "center"};
     font-size: ${instance.fontSize.body}rem;
-    border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+    border: ${(props) => instance.borderThickness.m+"rem solid "+instance.getStyle().borderColor};
     &:-webkit-autofill {
 		box-shadow: 0 0 0 100px ${instance.getStyle().inputFieldBackground} inset;
 		-webkit-text-fill-color: ${(props) => props.positive?instance.getStyle().positive:instance.getStyle().bodyText};
     }
-    
-    
-
+    margin-bottom: ${instance.spacing.xxs}rem;
 `
+
+
+class DSDropDown extends BaseComponent {
+	constructor(props){
+		super(props)
+		this.autoSize = this.autoSize.bind(this);
+		this.selectRef = React.createRef();
+		this.containerRef = React.createRef();
+	}
+	componentDidMount(){this.autoSize()}
+	autoSize(){
+		if(!this.props.autoSize){return}
+		let s = this.selectRef.current.value;
+		const tempSpan = document.createElement("span");
+		tempSpan.style.visibility = "hidden";
+		tempSpan.style.whiteSpace = "nowrap";
+		tempSpan.style.position = "absolute";
+		tempSpan.innerText = s;
+		document.body.appendChild(tempSpan);
+		this.containerRef.current.style.width = tempSpan.clientWidth+(instance.spacing.xs+this.props.inline?2.3:3.7)*instance.remToPx+'px';
+		tempSpan.parentNode.removeChild(tempSpan);
+	}
+
+	render(){return(
+		<StyledDropDownContainer ref={this.containerRef} autoSize={this.props.autoSize} highlight={this.props.highlight} inline={this.props.inline}>
+			<StyledDropDown ref={this.selectRef} {...this.props} onChange={(e) => {this.autoSize(e);if(this.props.onChange){this.props.onChange(e)}}}>
+				{this.props.children}
+			</StyledDropDown>
+			<DownArrow inline={this.props.inline}>{instance.icon.caretDown}
+			</DownArrow>
+		</StyledDropDownContainer>
+	)}
+}
+
 
 const StyledDropDown= styled.select`
 	width: 100%;
 	background-color: ${instance.getStyle().inputFieldBackground};
 	color: ${instance.getStyle().bodyTextSecondary};
-    padding: 0 ${instance.spacing.xs}rem;
-    padding-right: 2rem;
-    height: ${instance.inputHeight}rem;
+    padding: 0 ${(props) => props.inline?instance.spacing.xxs:instance.spacing.xs}rem;
+    padding-right: ${(props) => props.inline?1:2}rem;
+    height: ${(props) => props.inline?instance.inputHeightInline:instance.inputHeight}rem;
     border-radius: ${instance.borderRadiusSmall};
     text-align: left;
     font-size: ${instance.fontSize.body}rem;
@@ -442,7 +501,8 @@ const StyledDropDown= styled.select`
 `
 const StyledDropDownContainer = styled.div`
 	position: relative;
-	flex-grow: 1;
+	flex-grow: ${(props) => props.autoSize?0:1};
+	margin-bottom: ${instance.spacing.xxs}rem;
 `
 
 
