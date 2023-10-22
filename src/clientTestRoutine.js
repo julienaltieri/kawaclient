@@ -59,7 +59,7 @@ class TestRoutine{
 //doesn't work for compound stream
 
 
-export default class TestRoutineView extends BaseComponent{
+class TestRoutineView extends BaseComponent{
 
 	render(){return (
 		<div>
@@ -74,7 +74,7 @@ export default class TestRoutineView extends BaseComponent{
 }
 
 
-//export default TestRoutine
+export default TestRoutine
 
 
 
