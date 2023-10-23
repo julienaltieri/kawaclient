@@ -13,30 +13,29 @@ var isInEditMode = false
 export default class MasterStreamView extends BaseComponent{
 	constructor(props){
 		super(props);
+		this.factoryActive = false;
 		this.state={
 			masterStream:Core.getMasterStream(),
 			ddContext:{
 				draggingStreamNode:undefined,
 				dragHoveredStream:{},//stream being overed right now and need to make space
 				dropTarget:{}//stream it will be dropped into
-			}
+			},
 		}
 	}
+	setFactoryActive(b){this.factoryActive=b}
+	isFactoryActive(){return this.factoryActive}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
-		return(<div>
-		<DS.component.PageHeader>Streams</DS.component.PageHeader>
-		<StyledMasterStreamView>
-			<DraggableStreamViewContainer ddContext={this.state.ddContext} streamId={this.state.masterStream.id} masterStreamNode={this} />
-		</StyledMasterStreamView>
-		</div>
+		return(<DS.Layout.PageWithTitle title="Streams" content={
+			<StyledMasterStreamView>
+				<DraggableStreamViewContainer ddContext={this.state.ddContext} streamId={this.state.masterStream.id} masterStreamNode={this} />
+			</StyledMasterStreamView>
+		}/>
 	)}
 }
 
-function onChangeDone(){
-	Core.saveStreams()
-
-}
+function onChangeDone(){Core.saveStreams()}
 
 class DraggableStreamViewContainer extends BaseComponent{
 	constructor(props){
@@ -167,7 +166,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 	isInEditMode(){return isInEditMode}
 	getStreamAmountString(){
 		var amt = this.state.stream.getCurrentExpectedAmount();
-		return utils.formatCurrencyAmount(amt,undefined,undefined,undefined,Core.getPreferredCurrency())+" /"+Period[this.state.stream.period].unitName
+		return utils.formatCurrencyAmount(amt,undefined,undefined,undefined,Core.getPreferredCurrency())+" / "+Period[this.state.stream.period].unitName
 	}
 
 	//operations
@@ -183,8 +182,8 @@ class DraggableStreamViewContainer extends BaseComponent{
 				onDragEnd={(e) => this.onDragEnd(e)}
 				onDrop={(e) => this.onDrop(e)}
 				>
-				{this.state.stream.children?(<CompoundStreamView streamNode={this}/>):/*//compound stream*/
-											(<TerminalStreamView streamNode={this}/>)}{/*terminal stream*/}
+				{this.state.stream.children?(<CompoundStreamView streamNode={this} masterStreamNode={this.props.masterStreamNode}/>):/*//compound stream*/
+											(<TerminalStreamView streamNode={this} masterStreamNode={this.props.masterStreamNode}/>)}{/*terminal stream*/}
 			</StreamContainer>
 		)
 	}
@@ -202,6 +201,7 @@ class GenericEditableStreamView extends BaseComponent{
 	isInEditMode(){return this.state.isInEditMode}
 	isToolsVisible(){return this.state.showToolButtons}
 	getStream(){return this.state.streamNode.state.stream}
+	getMasterStreamNode(){return this.props.masterStreamNode}
 	getStreamNode(){return this.state.streamNode}
 	render(){return (<div //template
 		onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
@@ -223,21 +223,26 @@ class CompoundStreamView extends GenericEditableStreamView{
 		this.onExitEditMode();
 	}
 	onClickPlusButton(e){
-		Core.makeNewTerminalStream("",0,"monthly",this.getStream().id).isFactory = true;
-		this.getStreamNode().refreshMasterStream()
+		if(this.getMasterStreamNode().isFactoryActive()){return}//don't create a new stream is one is already being created
+		else{
+			Core.makeNewTerminalStream("",0,"monthly",this.getStream().id).isFactory = true;
+			isInEditMode=true;
+			this.getMasterStreamNode().setFactoryActive(true);
+			this.getStreamNode().refreshMasterStream()
+		}
 	}
 	render(){
 		return(
 			<div>	
-				<StreamInfoContainer onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
-					<StreamTitle>{
-							this.isInEditMode()?(<input	style={{width:"6rem"}} autoFocus type="text" defaultValue={this.getStream().name} onChange={()=>{}}
-								onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
-							></input>):this.getStream().name}</StreamTitle>
-					{this.isToolsVisible()?(<PlusButton onClick={(e)=>this.onClickPlusButton(e)}>+</PlusButton>):""}
+				<StreamInfoContainer editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
+					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
+						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.getStream().name}
+							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
+						></DS.component.Input>):this.getStream().name}</DS.component.Label>
+					{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginLeft:"0.5rem",marginTop:"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<Spacer/>
-					<StreamAmount>{this.getStreamNode().getStreamAmountString()}</StreamAmount>
-					{(this.isToolsVisible() && !this.isInEditMode())?(<EditButton onClick={(e)=>this.onEnterEditMode(e)}>✎</EditButton>):""}
+					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamNode().getStreamAmountString()}</DS.component.Label>
+					{(this.isToolsVisible() && !this.isInEditMode())?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
 					{this.isInEditMode()?(<GridButtonContainer style={{marginLeft:"0.4rem",marginRight:"-1.5rem",flexDirection:"row",alignItems:"center"}}>
 						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
 						<div onClick={(e)=>this.onExitEditMode(e)} style={{marginLeft:"0.2rem",marginLeft:"0.4rem"}}>✕</div>
@@ -245,7 +250,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 				</StreamInfoContainer>
 				<StreamChildrenContainer style={{"background":this.getStreamNode().state.dropZoneActive?"#dbf2ff":"inherit"}}>
 					{this.getStream().children.filter(c => c.isActiveNow())
-						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getStreamNode().state.masterStreamNode} key={c.id} ddContext={this.getStreamNode().state.ddContext} streamId={c.id}/>)}</StreamChildrenContainer>
+						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={c.id} ddContext={this.getStreamNode().state.ddContext} streamId={c.id}/>)}</StreamChildrenContainer>
 			</div>
 		)
 	}
@@ -255,7 +260,12 @@ class CompoundStreamView extends GenericEditableStreamView{
 class TerminalStreamView extends GenericEditableStreamView{
 	constructor(props){
 		super(props)
-		this.state = {...this.state,isInEditMode:false || props.streamNode.state.stream.isFactory,newStreamNameErrorState:false,newStreamAmountErrorState:false}
+		this.state = {...this.state,isInEditMode:false || props.streamNode.state.stream.isFactory,
+			newStreamNameErrorState:false,
+			newStreamAmountErrorState:false,
+			zeroHeight: props.streamNode.state.stream.isFactory
+		}
+		this.onEditCancelled = this.onEditCancelled.bind(this)
 	}
 	onEditConfirm(e){
 		var form = e.target.parentElement.parentElement;
@@ -269,12 +279,17 @@ class TerminalStreamView extends GenericEditableStreamView{
 		if(this.getStream().isFactory)delete this.getStream().isFactory
 		this.onExitEditMode()
 	}
+	componentDidMount(){this.updateState({zeroHeight:false})}
 	onEditCancelled(e){
+		let that = this;
 		if(this.getStream().isFactory){
 			Core.deleteStream(this.getStream())
-			this.getStreamNode().refreshMasterStream()
-		}
-		this.onExitEditMode(e)
+			this.getMasterStreamNode().setFactoryActive(false);
+			this.updateState({zeroHeight:true}).then(() => setTimeout(function() {
+				that.getStreamNode().refreshMasterStream();
+				that.onExitEditMode(e);
+			}, 500));
+		}else {this.onExitEditMode(e)} 
 	}
 	onTrash(e){
 		var s = this.getStream();
@@ -287,7 +302,6 @@ class TerminalStreamView extends GenericEditableStreamView{
 			else return Core.presentModal(ModalTemplates.BaseModal("Are you sure?","This will terminate the stream "+s.name))
 		})
 		.then(({state,buttonIndex}) => {
-			console.log(buttonIndex)
 			if(buttonIndex==1){//button clicked is confirm
 				Core.deleteStream(s);
 				this.getStreamNode().refreshMasterStream(); //no need to call onExitEditMode() because the component will be unmounted 
@@ -299,38 +313,38 @@ class TerminalStreamView extends GenericEditableStreamView{
 	}
 	render(){
 		//terminal view that supports edit mode
-		var editMode = 
-		<NewStreamContainer style={{paddingRight: "0.6rem",height: "1rem"}}	onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}>
-			<NameInput 	name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" style={{border:this.state.newStreamNameErrorState?"1px solid "+DS.getStyle().alert:""}}></NameInput>
-			<Spacer/>
-			<AmountInput  name="value" placeholder="0.00"  defaultValue={this.getStream().isFactory?"":this.getStream().getCurrentExpectedAmount()}
-					style={{border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></AmountInput>
-			<div style={{"height":"1rem",marginLeft:"0.2rem"}}>/</div>
-			<StreamPeriodInput 	name="period" id="period" defaultValue={this.getStream().period} onChange={(e)=>{}}>
-				{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
-			</StreamPeriodInput>
-			<GridButtonContainer style={{}}>
-				<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
-				<div onClick={(e)=>this.onTrash(e)}>🗑</div>
-				<div onClick={(e)=>this.onEditCancelled(e)} style={{marginLeft:"0.2rem"}}>✕</div>
-			</GridButtonContainer>
-		</NewStreamContainer>
-
-		var normalMode = 
-		<StreamInfoContainerTerminal 
+		return(<StreamInfoContainerTerminal editing={this.state.isInEditMode} 
 			isIncome={this.getStreamNode().isIncome()} isSavings={this.getStreamNode().state.stream.isSavings}
 			style={{
-				marginTop: 		(this.getStreamNode().state.moveOutOfTheWay)?"30px":"inherit",
-				fontWeight: 	this.getStreamNode().state.dropZoneActive?"bold":"inherit"
+				marginTop: 		(this.getStreamNode().state.moveOutOfTheWay)?"30px":"",
+				fontWeight: 	this.getStreamNode().state.dropZoneActive?"bold":"inherit",
+				height: this.state.zeroHeight?0:"",
 			}}
 			onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
-			<StreamTitle>{this.getStream().name}</StreamTitle>
-			<Spacer/>
-			<StreamAmountTerminal>{this.getStreamNode().getStreamAmountString()}</StreamAmountTerminal>
-			{this.isToolsVisible()?(<EditButton onClick={(e)=>this.onEnterEditMode(e)}>✎</EditButton>):""}
-		</StreamInfoContainerTerminal>
-
-		return (this.isInEditMode()?editMode:normalMode)
+			{this.state.isInEditMode?<StreamRowContainer style={{opacity:this.state.zeroHeight?0:1}}>
+					<DS.component.Input inline autoSize noMargin name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" 
+						style={{textAlign:"left",border:this.state.newStreamNameErrorState?"1px solid "+DS.getStyle().alert:"",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}}/>
+					<Spacer/>
+					<DS.component.Input numerical inline noMargin autoSize name="value" placeholder="0.00" defaultValue={this.getStream().isFactory?"":this.getStream().getCurrentExpectedAmount()}
+							style={{textAlign:"right",border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></DS.component.Input>
+					<div>&nbsp;/&nbsp;</div>
+					<DS.component.DropDown inline autoSize noMargin name="period" id="period" defaultValue={this.getStream().period} onChange={(e)=>{}}>
+						{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
+					</DS.component.DropDown>
+					<GridButtonContainer style={{marginRight:"-1rem",marginLeft:"0.5rem"}}>
+						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
+						<div onClick={(e)=>this.onTrash(e)}>🗑</div>
+						<div onClick={this.onEditCancelled} style={{marginLeft:"0.2rem"}}>✕</div>
+					</GridButtonContainer>	
+				</StreamRowContainer>:
+				<StreamRowContainer>
+					<DS.component.Label style={{marginRight:"1rem"}} size={Core.isMobile()?"xs":""}>{this.getStream().name}</DS.component.Label>
+					<Spacer/>
+					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamNode().getStreamAmountString()}</DS.component.Label>
+					{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
+				</StreamRowContainer>				
+			}
+		</StreamInfoContainerTerminal>)
 	}
 
 }
@@ -353,8 +367,6 @@ function endDragNDropInteraction(ctx){
 /********Styled Components********/
 
 const StyledMasterStreamView = styled.div`
-	max-width: 600px;
-    margin: auto;
     margin-top: 0rem;
 `
 
@@ -364,34 +376,35 @@ const StreamInfoContainerTerminal = styled.div`
     justify-content: flex-end;
     align-items: center;
     color: ${DS.getStyle().bodyTextSecondary};
-    background: ${props => props.isSavings?DS.getStyle().savings:(props.isIncome?DS.getStyle().income:DS.getStyle().expenses)}${Math.floor(DS.backgroundOpacity*255).toString(16)};
-    padding: 0 3vw;
-    height:2.3rem;
+    background: ${props => props.editing?DS.getStyle().UIElementBackground:(props.isSavings?DS.getStyle().savings:(props.isIncome?DS.getStyle().income:DS.getStyle().expenses))+Math.floor(DS.backgroundOpacity*255).toString(16)};
+    padding: 0 1.5rem;
+    height:${props => props.editing?DS.inputHeight:DS.inputHeightInline}rem;
     border-radius: 100vw;
-    transition: margin 0.15s;
+    margin-top:0.3rem;
+    transition: margin 0.15s, height 0.2s;
 `
 const StreamInfoContainer = styled.div`
     display: flex;
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    padding: 0 3vw;
-    height:2.3rem;
+    padding: 0 1.5rem;
+    height:${props => props.editing?DS.inputHeight:DS.inputHeightInline}rem;
     border-radius: 100vw;
  	color: ${DS.getStyle().bodyTextSecondary}; 
  	border-top: 1px solid ${DS.getStyle().borderColor};
+	margin-top:0.3rem;
+ 	transition: height 0.2s;
 `
-
-const NewStreamContainer = styled.div`
-    padding-top:0.2rem;
+const StreamRowContainer = styled.div`
     display: flex;
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    padding: 1vw 3vw;
-    border-radius: 100vw;
-    background: ${DS.getStyle().modalBackground};
+    width:100%;
+    transition: opacity 0.5s;
 `
+
 const GridButtonContainer = styled.div`
 	display: flex;
     width: 2rem;
@@ -442,18 +455,18 @@ const StreamPeriodInput = styled.select`
 `
 
 const Spacer = styled.div`
-flex-grow:1
+	flex-grow:1
 `
 
 const StreamChildrenContainer = styled.div`
-    margin-left: 5vw;
+    margin-left: 1.5rem;
     margin-bottom: 1rem;
     padding-top: 0.0rem;
     transition: padding 0.15s
 `
 
 const PlusButton = styled.div`
-	margin-left:1vw;
+	margin-left:1rem;
 	border:1px solid;
 	border-radius: 50%;
 	height: 0.9rem;
@@ -477,7 +490,6 @@ const EditButton = styled.div`
 `
 
 const StreamContainer = styled.div`
-    padding-top:0.2rem;
     cursor: pointer !important;
 `
 
@@ -499,7 +511,13 @@ const StreamPeriod = styled.select`
 
 
 const StreamAmountTerminal = styled.div`
+	font-size:0.8rem;
+	text-align: right;
+    flex-shrink: 0;
 `
 const StreamAmount = styled.div`
-font-style:italic;
+	font-style:italic;
+	font-size:0.8rem;
+	text-align: right;
+    flex-shrink: 0;
 `
