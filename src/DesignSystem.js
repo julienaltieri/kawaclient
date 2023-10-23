@@ -150,6 +150,7 @@ class DesignSystem{
 		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
+		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
@@ -184,14 +185,14 @@ class DesignSystem{
 		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{
 			props.children.map((c,i) => (typeof c == 'string')?c.split(" ").map((w,j) => <instance.component.Label key={i*1000+j} {...props} style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
 		Button: {
-			Icon: (props) => <StyledIcon><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
+			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper >{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
 			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props}  disabled={props.disabled} primary={props.primary}>{props.children}</StyledButton></StyledButtonWrapper>,
 		}
 	}
 	Layout = {
 		PageContent: (props) => <StyledPageContent {...props}>{props.children}</StyledPageContent>,
-		PageWithTitle: (props) => <instance.Layout.PageContent><instance.component.PageHeader>{props.title}</instance.component.PageHeader>{props.children}</instance.Layout.PageContent>
+		PageWithTitle: (props) => <instance.Layout.PageContent><instance.component.PageHeader>{props.title}</instance.component.PageHeader>{props.content?<div style={{margin:"0 "+instance.spacing.s+"rem"}}>{props.content}</div>:props.children}</instance.Layout.PageContent>
 	}
 	spacing = {
 		xxs:0.5,

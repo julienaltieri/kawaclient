@@ -51,9 +51,9 @@ export default class SettingPage extends BaseComponent{
   handleOnExit(){console.log("New connection canceled")}
 	render(){
 		return(
-		<DS.Layout.PageWithTitle title="Settings">
-      {this.state.fetching?<div style={{textAlign:"center",marginTop:"-6rem"}}><PageLoader/></div>:
-      <div style={{margin:DS.spacing.s+"rem", marginTop:"-1rem"}}>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
+		this.state.fetching?<div style={{textAlign:"center",marginTop:"-6rem"}}><PageLoader/></div>:
+    <DS.Layout.PageWithTitle title="Settings" content={
+      <div style={{marginTop:"-1rem"}}>{this.state.bankConnections.map((co,i) => <BCSettingItem parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
           <PlaidLink style={{outline: "none",display: "block",background: "none",border: "none",padding: "0",flexGrow: "1",margin: "0",cursor: "pointer",width: "100%"}}
             clientName="React Plaid Setup" env="development" product={["auth", "transactions"]} token={this.state.newConnectionLinkToken}
@@ -61,8 +61,7 @@ export default class SettingPage extends BaseComponent{
           ><DS.component.Button.Placeholder iconName="plus"></DS.component.Button.Placeholder></PlaidLink>
         </div>
       </div>
-    }
-    </DS.Layout.PageWithTitle>
+    }/>
 	)}
 }
 
