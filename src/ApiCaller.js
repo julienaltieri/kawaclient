@@ -67,7 +67,7 @@ class ApiCaller{
 
 	//Saves new master stream to this user data
 	updateMasterStream(jsonMasterStream){
-		if(!AppConfig.featureFlags.apiUncategorizationOfflineMode){
+		if(!AppConfig.featureFlags.apiDisableMasterStreamUpdates){
 			const request = new Request(API.updateMasterStream,{
 				method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 				body:JSON.stringify({
@@ -77,8 +77,8 @@ class ApiCaller{
 			return this.sendRequest(request)
 		}else{
 			console.log("Simulated request to "+API.updateMasterStream+" with parameters:",jsonMasterStream)
+			return Promise.resolve()
 		}
-		return Promise.resolve()
 	}
 
 	//return both categorized and uncategorized transactions between specified dates.
