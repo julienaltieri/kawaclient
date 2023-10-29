@@ -169,7 +169,7 @@ class DesignSystem{
 			<instance.component.Label style={{minWidth:"3rem"}}>{props.transaction.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</instance.component.Label>
 			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><Spacer/>
 			<div>{props.infoSlotComponent}</div>
-			<div style={{maxWidth:"3rem",textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(props.transaction.amount,0,null,null,Core.getPreferredCurrency())}</div>
+			<div style={{textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(props.transaction.amount,2,null,null,Core.getPreferredCurrency())}</div>
 		</instance.component.ListItem>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
