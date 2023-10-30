@@ -166,7 +166,11 @@ export class CompoundStream extends Stream{
   isTerminal(){return false}
 
   //operations
-  refreshValues(){this.period = this.setPeriod || Period.longestPeriod(this.children.map(c => Period[c.period])).name}
+  refreshValues(){
+    if(!!this.setPeriod){this.period = this.setPeriod}//the stream has a period (most likely terminal)
+    else if(this.children && this.children.length>0){this.period = Period.longestPeriod(this.children.map(c => Period[c.period])).name} //this stream has children
+    else {this.period = Period.monthly.name}//default
+  }
   insertChildAt(child,index){this.children.splice(index||0,0,child)}
   removeChild(stream){
     var index = this.children.map(c => c.id).indexOf(stream.id);
