@@ -7,8 +7,9 @@ import {Period} from '../Time'
 import DS from '../DesignSystem'
 import utils from '../utils'
 
-var streamNodeMap = {}
+var streamReactNodeMap = {}
 var isInEditMode = false
+let isDraggingOverTerminalStreamGlobal = false; //using this variable for core logic as it has zero latency
 
 export default class MasterStreamView extends BaseComponent{
 	constructor(props){
@@ -29,7 +30,7 @@ export default class MasterStreamView extends BaseComponent{
 		if(!this.state.masterStream)return(<div/>)
 		return(<DS.Layout.PageWithTitle title="Streams" content={
 			<StyledMasterStreamView>
-				<DraggableStreamViewContainer ddContext={this.state.ddContext} streamId={this.state.masterStream.id} masterStreamNode={this} />
+				<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} masterStreamNode={this} />
 			</StyledMasterStreamView>
 		}/>
 	)}
@@ -41,18 +42,20 @@ class DraggableStreamViewContainer extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state={
-			stream: Core.getStreamById(props.streamId),
 			ddContext: this.props.ddContext,
 			masterStreamNode: this.props.masterStreamNode,
 		}
-		streamNodeMap[this.state.stream.id]=this
+		streamReactNodeMap[props.stream.id]=this
+		this.onDragOver = this.onDragOver.bind(this)
+		this.onDragEnd = this.onDragEnd.bind(this)
+		this.onDragStart = this.onDragStart.bind(this)
 	}
 
 	//drag and drop handling
-	onDragStart(e,streamId){
+	onDragStart(e){
 		if(this.isInEditMode()){return e.preventDefault()}
 		this.updateState({dragging :true});
-		e.target.style.opacity = 0.5
+		//e.target.style.opacity = 0.5
 		this.state.ddContext.draggingDOM = e.target;
 		this.state.ddContext.draggingStreamNode = this;
 
@@ -69,121 +72,66 @@ class DraggableStreamViewContainer extends BaseComponent{
 		var img = new Image();
 	    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
 		e.dataTransfer.setDragImage(img,0,0)
-
-		e.stopPropagation();
-	}
-	onDragEnter(e){
-		if(this.isInEditMode()){return e.preventDefault()}
-		this.state.ddContext.hoveredDOM = e.target
-		e.preventDefault()
 		e.stopPropagation();
 	}
 	onDragOver(e){
-		if(this.isInEditMode()){return e.preventDefault()}
-
+		if(this.isInEditMode()){e.preventDefault();e.stopPropagation();return}
 		//position dragging image
 		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.clone.offsetWidth/2)+"px"
 		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
-		
-		//this react node's stream
-		var stream = Core.getStreamById(this.props.streamId)
-		var node = getNodeById(stream.id);
-
-		//find the drop target
-		var dt = node.state.stream;
-		var parentStream = Core.getParentOfStream(stream)
-
-		//if hover is above a free space, update the drop target to be the parent
-		if(findStreamDom(e.target).isSameNode(e.target)){dt = parentStream}
-		
-		//if this is a new drop target, update
-		if(this.state.ddContext.dropTarget.id != dt.id){this.setDropTarget(dt)}
-
-		
-		
-		//move out of the way if there is a change
-		if(stream.id != this.state.ddContext.dragHoveredStream.id){
-			this.state.ddContext.dragHoveredStream=stream
-			node.moveOutOfTheWay(true)
-		}
+		//if the hoverStream hasn't changed, exit
+		if(this.props.stream.id==this.state.ddContext.dragHoveredStream.id){e.preventDefault();e.stopPropagation();return}
+		//else, set the hovered stream to this and set the drop target.
+		this.state.ddContext.dragHoveredStream = this.props.stream;
+		this.state.ddContext.dropTarget = this.props.stream;
+		Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay: (k == this.props.stream.id)}))
 
 		e.preventDefault()
 		e.stopPropagation();
 	}
 	onDragEnd(e){
-		if(this.isInEditMode()){return e.preventDefault()}
-		var dropStream = this.state.ddContext.dropTarget
-		var parentStream = Core.getParentOfStream(this.state.stream)
-		if(!dropStream.id || this.state.stream.id == dropStream.id){
-			endDragNDropInteraction(this.state.ddContext)
-			e.preventDefault()
-			e.stopPropagation()
-		}
-		if(!!dropStream.children){
-			var dropIndex = dropStream.children.map(c => c.id).indexOf(this.state.ddContext.dragHoveredStream.id);
-			this.state.stream.moveFromParentToParentAtIndex(parentStream,dropStream,dropIndex)
-			if(parentStream.children.length==0){
-		        Core.getParentOfStream(parentStream).removeChild(parentStream)
-		    }
-			getNodeById(parentStream.id).refreshStream(parentStream)
-			getNodeById(dropStream.id).refreshStream(dropStream)
-			
-		}else if(this.state.stream.id!=dropStream.id){//create a new stream to group the two
-			Core.groupStreams(this.state.stream,dropStream)
-			getNodeById(parentStream.id).refreshStream()
-		}
-
-		endDragNDropInteraction(this.state.ddContext)
-		e.preventDefault()
-		e.stopPropagation()
-		onChangeDone()
-	}
-	onDrop(e){
-		this.state.ddContext.draggingDOM.style.opacity = 1
 		this.state.ddContext.draggingStreamNode.updateState({dragging :false});
 		this.state.ddContext.clone.remove()
-		e.preventDefault()
+		if(this.isInEditMode()){return e.preventDefault()}
+
+		let dropTargetStream = this.state.ddContext.dropTarget
+		let dropTargetParentStream = Core.getParentOfStream(dropTargetStream)
+		let draggedStreamParent = Core.getParentOfStream(this.state.ddContext.draggingStreamNode.props.stream);
+		
+		if(!dropTargetStream.id || this.props.stream.id == dropTargetStream.id){}//dropped on itself or outside of the zone do nothing
+		else if(!!dropTargetStream.children){ //dropped on a compound stream
+			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetStream,0)
+		}else if(!dropTargetStream.children && !isDraggingOverTerminalStreamGlobal){//dropped over the placeholder of a terminal stream (neighbor)
+			let dropIndex = dropTargetParentStream.children.map(c => c.id).indexOf(this.state.ddContext.dragHoveredStream.id);
+			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetParentStream,dropIndex)
+		}else if(isDraggingOverTerminalStreamGlobal){//dropped into an existing terminal stream
+			Core.groupStreams(this.props.stream,dropTargetStream)
+		}
+
+		endDragNDropInteraction(this.state.ddContext);
+		e.preventDefault();
 		e.stopPropagation();
-	}
-	moveOutOfTheWay(bool){
-		Object.keys(streamNodeMap).forEach(k => {
-			var n = streamNodeMap[k];
-			if(n.state.stream.id != this.state.stream.id)n.updateState({moveOutOfTheWay:false})
-		})
-		this.updateState({moveOutOfTheWay:bool})
-	}
-	setDropTarget(s){this.state.ddContext.dropTarget = s;streamNodeMap[s.id].setDropZoneActive(true)}
-	setDropZoneActive(bool){
-		Object.keys(streamNodeMap).forEach(k => {
-			var n = streamNodeMap[k];
-			if(n.state.stream.id != this.state.stream.id)n.updateState({dropZoneActive:false})
-		})
-		this.updateState({dropZoneActive:bool})
+		onChangeDone();
 	}
 
 	//getters
-	isIncome(){return this.state.stream.getCurrentExpectedAmount()>0}
+	isIncome(){return this.props.stream.isIncome()}
 	isInEditMode(){return isInEditMode}
-	getStreamAmountString(){
-		var amt = this.state.stream.getCurrentExpectedAmount();
-		return utils.formatCurrencyAmount(amt,undefined,undefined,undefined,Core.getPreferredCurrency())+" / "+Period[this.state.stream.period].unitName
-	}
+	getStreamAmountString(){return utils.formatCurrencyAmount(this.props.stream.getCurrentExpectedAmount(),undefined,undefined,undefined,Core.getPreferredCurrency())+" / "+Period[this.props.stream.period].unitName}
+
 
 	//operations
-	refreshStream(s){this.updateState({stream:(s||this.state.stream)})}
+	setDraggingOverTerminalStream(b){
+		isDraggingOverTerminalStreamGlobal = b
+		if(this.state.isDraggingOverTerminalStream!=b){this.updateState({isDraggingOverTerminalStream:b})}//only for display
+	}
 	refreshMasterStream(){this.state.masterStreamNode.updateState({masterStream:this.state.masterStreamNode.state.masterStream})}
 	render(){
-		var isTerminal = !this.state.stream.children;
+		var isTerminal = !this.props.stream.children;
 		return(
-			<StreamContainer key={this.state.streamId} draggable 
-				onDragStart={(e) => this.onDragStart(e,this.state.stream.id)}
-				onDragEnter={(e) => this.onDragEnter(e)}
-				onDragOver={(e) => this.onDragOver(e)}
-				onDragEnd={(e) => this.onDragEnd(e)}
-				onDrop={(e) => this.onDrop(e)}
-				>
-				{this.state.stream.children?(<CompoundStreamView streamNode={this} masterStreamNode={this.props.masterStreamNode}/>):/*//compound stream*/
-											(<TerminalStreamView streamNode={this} masterStreamNode={this.props.masterStreamNode}/>)}{/*terminal stream*/}
+			<StreamContainer inVisible={this.state.dragging} key={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd}>
+				{this.props.stream.children?<CompoundStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>:
+				<TerminalStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>}
 			</StreamContainer>
 		)
 	}
@@ -200,9 +148,9 @@ class GenericEditableStreamView extends BaseComponent{
 	onMouseLeave(e){if(this.state.showToolButtons){this.updateState({showToolButtons:false})}}
 	isInEditMode(){return this.state.isInEditMode}
 	isToolsVisible(){return this.state.showToolButtons}
-	getStream(){return this.state.streamNode.state.stream}
+	getStream(){return this.state.streamNode.props.stream}
 	getMasterStreamNode(){return this.props.masterStreamNode}
-	getStreamNode(){return this.state.streamNode}
+	getDraggableStreamNode(){return this.state.streamNode}
 	render(){return (<div //template
 		onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 		{this.isToolsVisible()?(<EditButton onClick={(e)=>this.onEnterEditMode(e)}>✎</EditButton>):""}
@@ -213,13 +161,13 @@ class GenericEditableStreamView extends BaseComponent{
 class CompoundStreamView extends GenericEditableStreamView{
 	constructor(props){
 		super(props)
-		this.state = {...this.state,newStreamNameErrorState: false,dropZoneActive: false}
+		this.state = {...this.state,newStreamNameErrorState: false}
 	}
 	onEditConfirm(e){
 		var name = e.target.parentElement.parentElement.getElementsByTagName("input")[0].value;
 		if(!name || name.length==0)return this.updateState({newStreamNameErrorState:(!name || name.length==0)});
 		this.getStream().name = name;
-		this.getStreamNode().refreshMasterStream();
+		this.getDraggableStreamNode().refreshMasterStream();
 		this.onExitEditMode();
 	}
 	onClickPlusButton(e){
@@ -228,29 +176,30 @@ class CompoundStreamView extends GenericEditableStreamView{
 			Core.makeNewTerminalStream("",0,"monthly",this.getStream().id).isFactory = true;
 			isInEditMode=true;
 			this.getMasterStreamNode().setFactoryActive(true);
-			this.getStreamNode().refreshMasterStream()
+			this.getDraggableStreamNode().refreshMasterStream()
 		}
 	}
 	render(){
 		return(
-			<div>	
-				<StreamInfoContainer editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
+			<div id={this.props.stream.id}>	
+				<StreamInfoContainer onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.getStream().name}
 							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
 						></DS.component.Input>):this.getStream().name}</DS.component.Label>
 					{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginLeft:"0.5rem",marginTop:"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<Spacer/>
-					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamNode().getStreamAmountString()}</DS.component.Label>
+					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getDraggableStreamNode().getStreamAmountString()}</DS.component.Label>
 					{(this.isToolsVisible() && !this.isInEditMode())?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
 					{this.isInEditMode()?(<GridButtonContainer style={{marginLeft:"0.4rem",marginRight:"-1.5rem",flexDirection:"row",alignItems:"center"}}>
 						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
 						<div onClick={(e)=>this.onExitEditMode(e)} style={{marginLeft:"0.2rem",marginLeft:"0.4rem"}}>✕</div>
 					</GridButtonContainer>):""}
 				</StreamInfoContainer>
-				<StreamChildrenContainer style={{"background":this.getStreamNode().state.dropZoneActive?"#dbf2ff":"inherit"}}>
+				<StreamChildrenContainer>
+					<Placeholder highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>
 					{this.getStream().children.filter(c => c.isActiveNow())
-						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={c.id} ddContext={this.getStreamNode().state.ddContext} streamId={c.id}/>)}</StreamChildrenContainer>
+						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={"child-"+c.id} ddContext={this.getDraggableStreamNode().state.ddContext} stream={c}/>)}</StreamChildrenContainer>
 			</div>
 		)
 	}
@@ -260,10 +209,10 @@ class CompoundStreamView extends GenericEditableStreamView{
 class TerminalStreamView extends GenericEditableStreamView{
 	constructor(props){
 		super(props)
-		this.state = {...this.state,isInEditMode:false || props.streamNode.state.stream.isFactory,
+		this.state = {...this.state,isInEditMode:false || props.streamNode.props.stream.isFactory,
 			newStreamNameErrorState:false,
 			newStreamAmountErrorState:false,
-			zeroHeight: props.streamNode.state.stream.isFactory
+			zeroHeight: props.streamNode.props.stream.isFactory
 		}
 		this.onEditCancelled = this.onEditCancelled.bind(this)
 	}
@@ -275,7 +224,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 		this.getStream().name = name;
 		this.getStream().period = form.getElementsByTagName("select")[0].value;
 		this.getStream().updateExpAmount(amount,new Date)
-		this.getStreamNode().refreshMasterStream()
+		this.getDraggableStreamNode().refreshMasterStream()
 		if(this.getStream().isFactory)delete this.getStream().isFactory
 		this.onExitEditMode()
 	}
@@ -286,7 +235,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 			Core.deleteStream(this.getStream())
 			this.getMasterStreamNode().setFactoryActive(false);
 			this.updateState({zeroHeight:true}).then(() => setTimeout(function() {
-				that.getStreamNode().refreshMasterStream();
+				that.getDraggableStreamNode().refreshMasterStream();
 				that.onExitEditMode(e);
 			}, 500));
 		}else {this.onExitEditMode(e)} 
@@ -304,7 +253,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 		.then(({state,buttonIndex}) => {
 			if(buttonIndex==1){//button clicked is confirm
 				Core.deleteStream(s);
-				this.getStreamNode().refreshMasterStream(); //no need to call onExitEditMode() because the component will be unmounted 
+				this.getDraggableStreamNode().refreshMasterStream(); //no need to call onExitEditMode() because the component will be unmounted 
 				isInEditMode=false;
 				onChangeDone();
 	            console.log("Stream deleted: "+s.name);
@@ -313,53 +262,56 @@ class TerminalStreamView extends GenericEditableStreamView{
 	}
 	render(){
 		//terminal view that supports edit mode
-		return(<StreamInfoContainerTerminal editing={this.state.isInEditMode} 
-			isIncome={this.getStreamNode().isIncome()} isSavings={this.getStreamNode().state.stream.isSavings}
-			style={{
-				marginTop: 		(this.getStreamNode().state.moveOutOfTheWay)?"30px":"",
-				fontWeight: 	this.getStreamNode().state.dropZoneActive?"bold":"inherit",
-				height: this.state.zeroHeight?0:"",
-			}}
-			onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
-			{this.state.isInEditMode?<StreamRowContainer style={{opacity:this.state.zeroHeight?0:1}}>
-					<DS.component.Input inline autoSize noMargin name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" 
-						style={{textAlign:"left",border:this.state.newStreamNameErrorState?"1px solid "+DS.getStyle().alert:"",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}}/>
-					<Spacer/>
-					<DS.component.Input numerical inline noMargin autoSize name="value" placeholder="0.00" defaultValue={this.getStream().isFactory?"":this.getStream().getCurrentExpectedAmount()}
-							style={{textAlign:"right",border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></DS.component.Input>
-					<div>&nbsp;/&nbsp;</div>
-					<DS.component.DropDown inline autoSize noMargin name="period" id="period" defaultValue={this.getStream().period} onChange={(e)=>{}}>
-						{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
-					</DS.component.DropDown>
-					<GridButtonContainer style={{marginRight:"-1rem",marginLeft:"0.5rem"}}>
-						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
-						<div onClick={(e)=>this.onTrash(e)}>🗑</div>
-						<div onClick={this.onEditCancelled} style={{marginLeft:"0.2rem"}}>✕</div>
-					</GridButtonContainer>	
-				</StreamRowContainer>:
-				<StreamRowContainer>
-					<DS.component.Label style={{marginRight:"1rem"}} size={Core.isMobile()?"xs":""}>{this.getStream().name}</DS.component.Label>
-					<Spacer/>
-					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamNode().getStreamAmountString()}</DS.component.Label>
-					{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
-				</StreamRowContainer>				
-			}
-		</StreamInfoContainerTerminal>)
+		return(
+			<div>
+				<Placeholder highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id} id={this.props.stream.id+"-placeholder"} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)}/>
+				<StreamInfoContainerTerminal onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(true)} editing={this.state.isInEditMode} key={this.props.stream.id} id={this.props.stream.id}
+				isIncome={this.getDraggableStreamNode().isIncome()} isSavings={this.getDraggableStreamNode().props.stream.isSavings}
+				style={{
+					fontWeight: this.getDraggableStreamNode().state.moveOutOfTheWay&&this.getDraggableStreamNode().state.isDraggingOverTerminalStream?"bold":"inherit",
+					height: this.state.zeroHeight?0:"",
+				}}
+				onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
+				{this.state.isInEditMode?<StreamRowContainer style={{opacity:this.state.zeroHeight?0:1}}>
+						<DS.component.Input inline autoSize noMargin name="name" autoFocus defaultValue={this.getStream().name} placeholder="name" 
+							style={{textAlign:"left",border:this.state.newStreamNameErrorState?"1px solid "+DS.getStyle().alert:"",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}}/>
+						<Spacer/>
+						<DS.component.Input numerical inline noMargin autoSize name="value" placeholder="0.00" defaultValue={this.getStream().isFactory?"":this.getStream().getCurrentExpectedAmount()}
+								style={{textAlign:"right",border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></DS.component.Input>
+						<div>&nbsp;/&nbsp;</div>
+						<DS.component.DropDown inline autoSize noMargin name="period" id="period" defaultValue={this.getStream().period} onChange={(e)=>{}}>
+							{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
+						</DS.component.DropDown>
+						<GridButtonContainer style={{marginRight:"-1rem",marginLeft:"0.5rem"}}>
+							<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
+							<div onClick={(e)=>this.onTrash(e)}>🗑</div>
+							<div onClick={this.onEditCancelled} style={{marginLeft:"0.2rem"}}>✕</div>
+						</GridButtonContainer>	
+					</StreamRowContainer>:
+					<StreamRowContainer>
+						<DS.component.Label style={{marginRight:"1rem"}} size={Core.isMobile()?"xs":""}>{this.getStream().name}</DS.component.Label>
+						<Spacer/>
+						<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getDraggableStreamNode().getStreamAmountString()}</DS.component.Label>
+						{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
+					</StreamRowContainer>				
+				}
+			</StreamInfoContainerTerminal>
+		</div>)
 	}
 
 }
 
+const Placeholder = (props) => <div onDragOver={props.onDragOver} id={props.id} style={{paddingTop:props.moveOutOfTheWay?0.3+"rem":0}}><StreamPlaceholder highlight={props.highlight} style={{height:props.moveOutOfTheWay?DS.inputHeightInline+"rem":0}}/></div>
 
 /**helper functions*****/
 function findStreamDom(dom){return (dom.draggable)?dom:findStreamDom(dom.parentElement)}
-function getNodeById(id){return streamNodeMap[id]}
+function getReactNodeByStreamId(id){return streamReactNodeMap[id]}
 function endDragNDropInteraction(ctx){
 	Core.getUserData().getAllStreams().forEach(s => {
-		var node = getNodeById(s.id) 
-		if(node)node.updateState({moveOutOfTheWay:false,dropZoneActive:false})
+		var node = getReactNodeByStreamId(s.id) 
+		if(node)node.updateState({moveOutOfTheWay:false,dragging:false})
 	})
-	ctx.dragHoveredStream = {...ctx,dragHoveredStream:{},dropTarget:{}};
-	ctx.draggingDOM.style.opacity = 1;
+	ctx = {...ctx,dragHoveredStream:{},dropTarget:{}};
 	ctx.clone.remove();
 }
 
@@ -370,6 +322,22 @@ const StyledMasterStreamView = styled.div`
     margin-top: 0rem;
 `
 
+const StreamPlaceholder = styled.div`
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    color: ${DS.getStyle().bodyTextSecondary};
+    background: ${props => DS.getStyle().UIElementBackground};
+    padding: 0 1.5rem;
+    height:${props => DS.inputHeightInline}rem;
+    border-radius: 100vw;
+    transition: margin 0.15s, height 0.2s;
+    opacity: ${props => props.highlight?0.8:0};
+    &:hover{
+    	opacity:1;
+    }
+`
 const StreamInfoContainerTerminal = styled.div`
     display: flex;
     flex-direction: row;
@@ -462,7 +430,7 @@ const StreamChildrenContainer = styled.div`
     margin-left: 1.5rem;
     margin-bottom: 1rem;
     padding-top: 0.0rem;
-    transition: padding 0.15s
+    transition: padding 0.15s,margin-top 0.2s;
 `
 
 const PlusButton = styled.div`
@@ -486,11 +454,13 @@ const EditButton = styled.div`
     font-size: 1rem;
     margin-right: -1.8rem;
     margin-left: 0.4rem;
-    color: #565656
+    color: #565656;
 `
 
 const StreamContainer = styled.div`
     cursor: pointer !important;
+    opacity: ${props => props.inVisible?0:1};
+    transition: opacity 0.2s;
 `
 
 const StreamTitle = styled.div`

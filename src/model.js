@@ -136,6 +136,7 @@ class Stream{
     index = index||0;
     if(newParent.children){
       oldParent.removeChild(this);
+      if(oldParent.children.length==0){Core.getParentOfStream(oldParent).removeChild(oldParent)}
       newParent.insertChildAt(this,index);
     }
     oldParent.refreshValues()
@@ -152,8 +153,6 @@ export class CompoundStream extends Stream{
     this.period = (json.period || Period.longestPeriod(this.children.map(c => c.period)));
     this.setPeriod = json.period;
     if(!this.validate())throw new Error("Attempting to instanciate a CompoundStream Object from an invalid Json: "+JSON.stringify(json))
-
-    //this.terminalStreams = this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams():[c]).reduce(utils.reducers.concat(),[])
   }
 
   //iterators and children tools
