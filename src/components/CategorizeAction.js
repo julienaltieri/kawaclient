@@ -318,7 +318,7 @@ const TransactionContainerView = styled.div `
 `
 */
 
-const StreamTag = styled.div`
+/*const StreamTag = styled.div`
 	background-color: ${props => props.highlight?DS.getStyle().commonTag:DS.getStyle().specialTag};
 	padding: 0.2rem 0.4rem ;
 	margin:0.2rem;
@@ -329,7 +329,7 @@ const StreamTag = styled.div`
 		opacity:1;
 	}
 `
-
+*/
 const TxInfoContainer = styled.div `
 	display:flex;
 	flex-direction:column;

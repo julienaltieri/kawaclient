@@ -147,7 +147,9 @@ class TerminalStreamCard extends StreamAuditView{
 		this.handleClick = this.handleClick.bind(this)
 	}
 	getTitle(){return this.props.stream.name}
-	handleClick(){this.updateState({detailView:!this.state.detailView})}
+	handleClick(){
+		console.log(this.props.analysis.transactions.map(t => [t.transactionId,t.amount,t.description, t.pairedTransferTransactionId, t.getTransactionType(),t.getTransactionMaskString()]))
+		this.updateState({detailView:!this.state.detailView})}
 	render(){
 /*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}
 */		

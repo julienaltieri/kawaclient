@@ -319,6 +319,19 @@ export class GenericTransaction{
         this.userInstitutionAccountId+"::"+//use the account hash instead of this 
         this.date.toUTCString()
   }
+  getTransactionType(){
+    if(!this.categorized){return};
+    return this.streamAllocation[0]?.transactionType?.name
+  }
+  getTransactionTypeMask(){
+    if(!this.categorized){return};
+    return this.streamAllocation[0]?.transactionType?.mask
+  }
+  getTransactionMaskString(){
+    let m = this.getTransactionTypeMask();
+    if(!m){return};
+    return "Money in: " + m[0] + ", Saved: "+m[1]+", Transfered: "+m[2];
+  }
   /*
   Transactions from Plaid come with a date (not a timestamp). 
   When converting the date into actual timestamps for easy manipulation, they will use the GMT time.

@@ -107,7 +107,7 @@ function getTransactionTypeForAllocationToStream(txns,s){ //defines transaction 
 		else 								{return TransactionTypes.movedFromSavings}						//Type 7 x
 	}else{					//when only one side of the transaction is available
 		if  	(!sa1 && !ss1 && p)			{return TransactionTypes.income}								//Type 1  x
-		else if (sa1  && p )				{return TransactionTypes.incomeToSavings}						//Type 16 x
+		else if (sa1  && p && ii)				{return TransactionTypes.incomeToSavings}						//Type 16 x
 		else if (!sa1 && !ss1 && !p)		{return TransactionTypes.expense}								//Type 2  x
 		else if (sa1  && !ss1 && !p)		{return TransactionTypes.movedFromSavingsToDisconnectedChecking}//Type 11 x
 		else if (!sa1 && ss1  && p)			{return TransactionTypes.movedFromDisconnectedSavingAccount}	//Type 14 x

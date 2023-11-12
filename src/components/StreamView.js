@@ -63,7 +63,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 		var clone = this.state.ddContext.draggingDOM.cloneNode(true);
 		clone.style.position = "absolute"
 		clone.style["pointer-events"] = "none"
-		clone.style.opacity = 0.9
+		clone.style.opacity = 1
 		if(this.state.ddContext.clone)this.state.ddContext.clone.remove()
 		this.state.ddContext.clone = clone;
 		document.body.appendChild(clone)
@@ -383,45 +383,6 @@ const GridButtonContainer = styled.div`
     justify-content: center;
 `
 
-const NameInput = styled.input`
-	height: 	1rem;
-	width: 		6rem;
-	background: 	${DS.getStyle().inputFieldBackground};
-	color: 			${DS.getStyle().bodyTextSecondary};
-	border: solid 1px ${DS.getStyle().UIPlaceholder};
-    padding: 0.3rem;
-    appearance: none;
-    border-radius: ${DS.borderRadiusSmall};
-
-`
-
-const AmountInput = styled.input`
-	height: 	1rem;
-	width: 		3rem;
-	text-align: right;
-    appearance: none;
-    padding: 0.3rem;
-	background: 	${DS.getStyle().inputFieldBackground};
-	border: solid 1px ${DS.getStyle().UIPlaceholder};
-	color: ${DS.getStyle().bodyTextSecondary};
-    border-radius: ${DS.borderRadiusSmall};
-
-`
-
-const StreamPeriodInput = styled.select`
-    margin-right: 3vw;
-    border: none;
-    cursor: pointer;
-    appearance: 	none;
-	width: 			4.2rem;
-	margin-right: 	1rem;
-    padding: 0.3rem;
-	background: 	${DS.getStyle().inputFieldBackground};
-	color: ${DS.getStyle().bodyTextSecondary};
-	border: solid 1px ${DS.getStyle().UIPlaceholder};
-    border-radius: ${DS.borderRadiusSmall};	
-`
-
 const Spacer = styled.div`
 	flex-grow:1
 `
@@ -433,18 +394,6 @@ const StreamChildrenContainer = styled.div`
     transition: padding 0.15s,margin-top 0.2s;
 `
 
-const PlusButton = styled.div`
-	margin-left:1rem;
-	border:1px solid;
-	border-radius: 50%;
-	height: 0.9rem;
-	width: 1rem;
-	text-align: center;
-	padding-bottom: 0.1rem;
-	display: flex;
-    justify-content: center;
-    align-items: center;
-`
 const EditButton = styled.div`
 	display: flex;
     justify-content: center;
@@ -461,33 +410,4 @@ const StreamContainer = styled.div`
     cursor: pointer !important;
     opacity: ${props => props.inVisible?0:1};
     transition: opacity 0.2s;
-`
-
-const StreamTitle = styled.div`
-    flex-grow: 0;
-`
-
-const StreamPeriod = styled.select`
-    margin-right: 3vw;
-    border: none;
-    height: 1rem;
-    cursor: pointer;
-    background: none;
-    border-radius: 2px;
-    appearance: none;
-`
-
-
-
-
-const StreamAmountTerminal = styled.div`
-	font-size:0.8rem;
-	text-align: right;
-    flex-shrink: 0;
-`
-const StreamAmount = styled.div`
-	font-style:italic;
-	font-size:0.8rem;
-	text-align: right;
-    flex-shrink: 0;
 `

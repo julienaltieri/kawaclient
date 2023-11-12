@@ -1,6 +1,6 @@
 import styled, { keyframes } from 'styled-components'
 import BaseComponent from './BaseComponent';
-import DesignSystem from '../DesignSystem.js'
+import DS from '../DesignSystem.js'
 import {PlaidLink} from "react-plaid-link";
 import {relativeDates} from '../Time'
 import { fadeIn } from 'react-animations' 
@@ -75,7 +75,7 @@ const ActionViewContainer = styled.div `
 	display: flex;
     box-sizing: border-box;
 	padding:${props => ActionStyles.cardRemPadding}rem;
-    border-radius: ${props => DesignSystem.borderRadius};
+    border-radius: ${props => DS.borderRadius};
     transition: margin-right ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out, opacity ${props => ActionStyles.moveOutOfTheWayAnimationTime/1000}s ease-out 0.2s;
 `
 
@@ -136,7 +136,7 @@ export class EmptyStateAction extends Action{
 class EmptyStateCard extends ActionCard{
 	getNoLeftMargin(){return true}
 	renderContent(inFocus){
-		return <ActionsContainerBox style={{opacity: 0,height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DesignSystem.getStyle().UIElementBackground,borderRadius: DesignSystem.borderRadius,"marginTop":"0"}}>
+		return <ActionsContainerBox style={{opacity: 0,height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DS.getStyle().UIElementBackground,borderRadius: DS.borderRadius,"marginTop":"0"}}>
 			All done!
 		</ActionsContainerBox>
 	}
@@ -161,7 +161,7 @@ class BankReconnectActionCard extends ActionCard{
 	handleOnExit(){console.log("exit")}
 	handleOnSuccess(){this.props.parentAction.onActionConcluded(this.props.parentAction)}
 	renderContent(inFocus){
-		return <ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DesignSystem.getStyle().alert,color:"white", borderRadius: DesignSystem.borderRadius,"marginTop":"0"}}>
+		return <ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DS.getStyle().alert,color:"white", borderRadius: DS.borderRadius,"marginTop":"0"}}>
 			You bank account "{this.props.data.name}" wants to be reconnected<br/><br/>
 			<span>
 	            <PlaidLink
@@ -205,18 +205,18 @@ class TransactionTypeClarificationActionCard extends ActionCard{
 	handleOnSuccess(){this.props.parentAction.onActionConcluded(this.props.parentAction,this.state.selectedType)}// transaction type
 	onChange(e,type){this.updateState({selected:true,selectedType:type})}
 	renderContent(inFocus){
-		return <FadeInWrap><ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "auto",alignContent: "center",padding: "2rem",marginBottom:"",backgroundColor: DesignSystem.getStyle().warning,color:"white", borderRadius: DesignSystem.borderRadius,"marginTop":"0"}}>
+		return <FadeInWrap><ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "auto",alignContent: "center",padding: "2rem",marginBottom:"",backgroundColor: DS.getStyle().UIElementBackground,color:"white", borderRadius: DS.borderRadius,"marginTop":"0"}}>
 			<div style={{display:"flex",flexDirection:"column"}}>
 				<div style={{display:"flex",width:"100%", flexDirection:"column",marginBottom:"1rem"}}>
 					<div style={{marginBottom:"0.5rem"}}>What best describes this transaction?</div>
-					<div style={{display:"flex",justifyContent:"space-between",backgroundColor:DesignSystem.getStyle().UIElementBackground,padding:"0.5rem",margin:"0.5rem",borderRadius:"0.2rem"}}>
+					<div style={{display:"flex",justifyContent:"space-between",backgroundColor:DS.getStyle().UIElementBackground,padding:"0.5rem",margin:"0.5rem",borderRadius:"0.2rem"}}>
 						<div>
 							<span>{this.props.transaction.description}</span>
 							<div style={{marginTop:"0.2rem",fontSize:"0.7rem",textAlign:"left"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
 						</div>
 						<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
 							<span>{utils.formatCurrencyAmount(this.props.transaction.evaluator.getAllocationForStream(this.props.allocatedStream)?.amount,null,null,null,Core.getPreferredCurrency())}</span>
-							<StreamTag>{this.props.allocatedStream.name}</StreamTag>					
+							<DS.component.StreamTag>{this.props.allocatedStream.name}</DS.component.StreamTag>					
 						</div>
 					</div>
 					
@@ -225,15 +225,17 @@ class TransactionTypeClarificationActionCard extends ActionCard{
 					<fieldset id="txnType">
 						{[TransactionTypes.transferFromDisconnectedSavings, TransactionTypes.movedFromDisconnectedCheckingToSavings, TransactionTypes.incomeToSavings].map(type => {
 							return (<div key={type.code} style={{marginBottom:"0.2rem"}}>
-								<label style={{display:"flex", fontSize:"0.8rem",textAlign:"left", alignItems:"center"}}>     
+								<DS.component.Label size="xs" highlight style={{display:"flex", textAlign:"left", alignItems:"center"}}>     
 							    	<input onChange={e => this.onChange(e,type)} type="radio" id={type.code} name="txnType" value={type.description} style={{width:"1rem",height:"1rem",margin:"0"}}/>
 							    	<div style={{marginLeft:"0.3rem",alignSelf:"center",lineHeight:"1rem"}}>{type.shortDescription}</div>
-								</label>
+								</DS.component.Label>
 							</div>)
 						})}
 					</fieldset>
 				</div>
-				<div style={{marginTop:"1rem"}}><button onClick={this.handleOnSuccess} disabled={!this.state.selected}>confirm</button></div>
+				<div style={{marginTop:"1rem"}}>
+					<DS.component.Button.Action primary onClick={this.handleOnSuccess} disabled={!this.state.selected}>Confirm</DS.component.Button.Action>
+				</div>
 			</div>
 		</ActionsContainerBox></FadeInWrap>
 	}
@@ -244,7 +246,7 @@ const FadeInWrap = styled.div`
 	animation: 0.5s ${fadeInAnimation};
 `
 const StreamTag = styled.div`
-	background-color: ${props => props.highlight?DesignSystem.getStyle().commonTag:DesignSystem.getStyle().specialTag};
+	background-color: ${props => props.highlight?DS.getStyle().commonTag:DS.getStyle().specialTag};
 	padding: 0.2rem 0.4rem ;
 	margin:0.2rem;
 	border-radius: 100vw;
