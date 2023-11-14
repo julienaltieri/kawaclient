@@ -62,9 +62,9 @@ export default class MiniGraph extends GenericChartView{
 		let dY = Math.max(1,Math.max(Math.abs(this.getMinY()),Math.abs(this.getMaxY())));
 		return {...super.getDomainBounds(),my:-dY,My:dY}
 	}
-	getMinY(){return utils.min(this.getData(this.projectionLine).map(p => p.y))}
-	getMaxY(){return utils.max(this.getData(this.projectionLine).map(p => p.y))}
-	getMidY(){return 100*this.getMaxY()/(this.getMaxY()-this.getMinY())}
+	getMinY(ignoreProjection){return utils.min(this.getData(!ignoreProjection && this.projectionLine).map(p => p.y))}
+	getMaxY(ignoreProjection){return utils.max(this.getData(!ignoreProjection && this.projectionLine).map(p => p.y))}
+	getMidY(ignoreProjection){return 100*this.getMaxY(ignoreProjection)/(this.getMaxY(ignoreProjection)-this.getMinY(ignoreProjection))}
 	getMidX(){return this.getDomainBounds().mx+0.5*(this.getDomainBounds().Mx-this.getDomainBounds().mx)}
 
 	//rendering functions
@@ -85,15 +85,16 @@ export default class MiniGraph extends GenericChartView{
 	getTitle(){return this.getPeriodReports()[0].reportingDate.getUTCFullYear() + " target"}
 	getFillValue(y){return y<0?DesignSystem.getStyle().alert:DesignSystem.getStyle().positive}
 	render(){
+		let m = this.getMidY(true)
 		this.data = undefined;// forces to recalculate data when refreshing
 		let k = this.getTickEveryK()
 		let ddd = new Date(new Date().getTime()-timeIntervals.oneDay*30).getTime()
 		let domainAxisVerticalPadding = this.svgToDomain(0,this.style.axisVerticalPadding).dy-this.svgToDomain(0,0).dy
 		return (<div style={{position:"relative",cursor:"default"}}>
 		<svg style={{position:"absolute",width:0}}><defs>
-	        <linearGradient id={"linear"+this.getMidY()} x1="0%" y1="0%" x2="0%" y2="100%">
-	            <stop offset={(this.getMidY()-this.style.colorTransition)+"%"} stopColor={this.getFillValue(1)}/>
-	            <stop offset={(this.getMidY()+this.style.colorTransition)+"%"} stopColor={this.getFillValue(-1)}/>
+	        <linearGradient id={"linear"+m} x1="0%" y1="0%" x2="0%" y2={Math.max(m,100)+"%"}>
+	            <stop offset={(m-this.style.colorTransition)+"%"} stopColor={this.getFillValue(1)}/>
+	            <stop offset={(m+this.style.colorTransition)+"%"} stopColor={this.getFillValue(-1)}/>
 	        </linearGradient>
 	        <radialGradient id="alertHighlight">
 	            <stop offset="30%" stopColor={DesignSystem.UIColors.white}/>
@@ -121,7 +122,7 @@ export default class MiniGraph extends GenericChartView{
 			 />
 			{this.props.stream.expAmountHistory?.map((h,i) => <V.VictoryLine key={1000+i} data={[{x:h.startDate.getTime(),y:-0.7*domainAxisVerticalPadding},{x:h.startDate.getTime(),y:0.7*domainAxisVerticalPadding}]} style={{data: {stroke:DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}}}/>) }
 			<V.VictoryLabel dy={-this.style.axisVerticalPadding} datum={{x:this.getMidX(),y:0}} textAnchor={"middle"} verticalAnchor={"end"} standalone={false} text={this.getTitle().toUpperCase()} style={{fill:DesignSystem.getStyle().bodyTextSecondary, fontSize: 15,fontFamily:"Inter",fontWeight:500}}/>
-       		<V.VictoryLine  style={{data: {stroke: "url(#linear"+this.getMidY()+")",strokeWidth:this.style.chartStrokeWidth}}} data={this.getData()} />
+       		<V.VictoryLine style={{data: {stroke: "url(#linear"+m+")",strokeWidth:this.style.chartStrokeWidth}}} data={this.getData()} />
        		{this.projectionLine?<V.VictoryLine style={{data: {stroke: this.getFillValue(this.data.slice(-1)[0].y),strokeWidth:this.style.chartStrokeWidth,strokeDasharray: "4, 2"}}} data={this.data.slice(-2)}/>:null}
 			{this.projectionLine?<V.VictoryScatter size={this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":"transparent",strokeWidth:3,stroke: ({datum})=>this.getFillValue(datum.y)}}} data={this.data.slice(-1)}/>:null}
        		<V.VictoryScatter size={({datum})=>this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":this.getFillValue(datum.y)}}} data={this.getData()} />
