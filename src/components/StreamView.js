@@ -6,11 +6,13 @@ import {ModalController, ModalTemplates} from '../ModalManager.js'
 import {Period} from '../Time'
 import DS from '../DesignSystem'
 import utils from '../utils'
+import {CompoundStream} from '../model'
 
 var streamReactNodeMap = {}
 var isInEditMode = false
 let isDraggingOverTerminalStreamGlobal = false; //using this variable for core logic as it has zero latency
 let isDebouncing = false;
+let instance;
 
 export default class MasterStreamView extends BaseComponent{
 	constructor(props){
@@ -23,12 +25,17 @@ export default class MasterStreamView extends BaseComponent{
 				dragHoveredStream:{},//stream being overed right now and need to make space
 				dropTarget:{}//stream it will be dropped into
 			},
+			
 		}
+		instance = this;
+
 	}
 	setFactoryActive(b){this.factoryActive=b}
+	takeSnapshot(){return new CompoundStream(JSON.parse(JSON.stringify(Core.getMasterStream())))}
 	isFactoryActive(){return this.factoryActive}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
+		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
 		return(<DS.Layout.PageWithTitle title="Streams" content={
 			<StyledMasterStreamView>
 				<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} masterStreamNode={this} />
@@ -37,7 +44,14 @@ export default class MasterStreamView extends BaseComponent{
 	)}
 }
 
-function onChangeDone(){Core.saveStreams()}
+function onChangeDone(){
+	let tsSnap = instance.masterStreamSnapshot;
+	let ts = Core.getMasterStream();
+	if(ts.getAllTerminalStreams().length < tsSnap.getAllTerminalStreams().length){throw new Error("Stream Integrity is compromised. Less terminal streams are present after the change than before.")}
+	else {
+		Core.saveStreams().then(() => instance.masterStreamSnapshot = instance.takeSnapshot());
+	}
+}
 
 class DraggableStreamViewContainer extends BaseComponent{
 	constructor(props){
@@ -69,6 +83,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 		this.state.ddContext.clone = clone;
 		document.body.appendChild(clone)
 
+
 		//set ghost image to nothing
 		var img = new Image();
 	    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
@@ -82,9 +97,16 @@ class DraggableStreamViewContainer extends BaseComponent{
 		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
 		//if the hoverStream hasn't changed, exit
 		if(this.props.stream.id==this.state.ddContext.dragHoveredStream.id){e.preventDefault();e.stopPropagation();return}
+
+		let ds = this.state.ddContext.draggingStreamNode.props.stream;
+		let asid = ds.getAllStreams().map(s => s.id)
+		if(asid.indexOf(this.props.stream.id)!=-1){
+			console.log("myself") //when hovering over myself, I should ignore actions on my self and let events flow through to make react what's underneath.
+			return}
 		//else, set the hovered stream to this and set the drop target.
 		this.state.ddContext.dragHoveredStream = this.props.stream;
 		this.state.ddContext.dropTarget = this.props.stream;
+		//console.log(this.state.ddContext.dragHoveredStream)
 		Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay: (k == this.props.stream.id)}))
 
 		e.preventDefault()
@@ -99,11 +121,10 @@ class DraggableStreamViewContainer extends BaseComponent{
 		let dropTargetStream = this.state.ddContext.dropTarget
 		let dropTargetParentStream = Core.getParentOfStream(dropTargetStream)
 		let draggedStreamParent = Core.getParentOfStream(this.state.ddContext.draggingStreamNode.props.stream);
-		
-		if(!dropTargetStream.id || this.props.stream.id == dropTargetStream.id){}//dropped on itself or outside of the zone do nothing
-		else if(!!dropTargetStream.children){ //dropped on a compound stream
-			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetStream,0)
-		}else if(!dropTargetStream.children && !isDraggingOverTerminalStreamGlobal){//dropped over the placeholder of a terminal stream (neighbor)
+		if(!dropTargetParentStream){}//dropped on masterstream do nothing
+		else if(!dropTargetStream.id || this.props.stream.id == dropTargetStream.id){}//dropped on itself or outside of the zone do nothing
+		else if(!!dropTargetStream.children || !dropTargetStream.children && !isDraggingOverTerminalStreamGlobal){
+			//dropped over the placeholder of a terminal stream (neighbor) or a compound stream
 			let dropIndex = dropTargetParentStream.children.map(c => c.id).filter(id => id!=this.state.ddContext.draggingStreamNode.props.stream.id).indexOf(this.state.ddContext.dragHoveredStream.id);
 			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetParentStream,dropIndex)
 		}else if(isDraggingOverTerminalStreamGlobal){//dropped into an existing terminal stream
@@ -132,7 +153,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 		var isTerminal = !this.props.stream.children;
 		return(
 			<StreamContainer inVisible={this.state.dragging} key={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd} onDragEnter={e => e.preventDefault()}>
-				{this.props.stream.children?<CompoundStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>:
+				{this.props.stream.children?<CompoundStreamView isDragging={this.state.dragging} stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>:
 				<TerminalStreamView isDragging={this.state.dragging}  stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>}
 			</StreamContainer>
 		)
@@ -155,10 +176,7 @@ class GenericEditableStreamView extends BaseComponent{
 	getDraggableStreamNode(){return this.state.streamNode}
 	isStreamBeingDragged(){return this.state.streamNode.props.stream.id == this.props.masterStreamNode.state.ddContext.draggingStreamNode?.props.stream?.id}
 	isStreamDropReceiver(){return this.state.streamNode.props.stream.id == this.props.masterStreamNode.state.ddContext.dropTarget?.id}
-	render(){return (<div //template
-		onMouseOver={(e)=> this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
-		{this.isToolsVisible()?(<EditButton onClick={(e)=>this.onEnterEditMode(e)}>✎</EditButton>):""}
-	</div>)}
+	render(){return (<div/>)}//template
 }
 
 
@@ -185,26 +203,26 @@ class CompoundStreamView extends GenericEditableStreamView{
 	}
 	render(){
 		return(
-			<div id={this.props.stream.id}>	
+			<CompoundStreamContainer id={this.props.stream.id} isDragging={this.props.isDragging} >	
+				<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>
 				<StreamInfoContainer onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.getStream().name}
 							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
-						></DS.component.Input>):this.getStream().name}</DS.component.Label>
+						></DS.component.Input>):this.getStream().isRoot?"Total":this.getStream().name}</DS.component.Label>
 					{this.isToolsVisible()?(<DS.component.Button.Icon style={{marginLeft:"0.5rem",marginTop:"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<Spacer/>
 					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getDraggableStreamNode().getStreamAmountString()}</DS.component.Label>
-					{(this.isToolsVisible() && !this.isInEditMode())?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
+					{(this.isToolsVisible() && !this.isInEditMode() && !this.props.stream.isRoot)?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
 					{this.isInEditMode()?(<GridButtonContainer style={{marginLeft:"0.4rem",marginRight:"-1.5rem",flexDirection:"row",alignItems:"center"}}>
 						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
 						<div onClick={(e)=>this.onExitEditMode(e)} style={{marginLeft:"0.2rem",marginLeft:"0.4rem"}}>✕</div>
 					</GridButtonContainer>):""}
 				</StreamInfoContainer>
 				<StreamChildrenContainer>
-					<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>
 					{this.getStream().children.filter(c => c.isActiveNow())
 						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={"child-"+c.id} ddContext={this.getDraggableStreamNode().state.ddContext} stream={c}/>)}</StreamChildrenContainer>
-			</div>
+			</CompoundStreamContainer>
 		)
 	}
 }
@@ -332,6 +350,12 @@ function endDragNDropInteraction(ctx){
 
 /********Styled Components********/
 
+
+const CompoundStreamContainer = styled.div`
+	height: ${props => (props.isDragging)?0:""};
+
+`
+
 const StyledMasterStreamView = styled.div`
     margin-top: 0rem;
 `
@@ -406,18 +430,6 @@ const StreamChildrenContainer = styled.div`
     margin-bottom: 1rem;
     padding-top: 0.0rem;
     transition: padding 0.15s,margin-top 0.2s;
-`
-
-const EditButton = styled.div`
-	display: flex;
-    justify-content: center;
-    align-items: center;
-	width: fit-content;
-    padding: 0.2rem;
-    font-size: 1rem;
-    margin-right: -1.8rem;
-    margin-left: 0.4rem;
-    color: #565656;
 `
 
 const StreamContainer = styled.div`
