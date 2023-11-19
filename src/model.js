@@ -152,6 +152,7 @@ export class CompoundStream extends Stream{
     this.children = (json.children?json.children.map(c => (c.children && c.children.length>0)? new CompoundStream(c): new TerminalStream(c)):[]);
     this.period = (json.period || Period.longestPeriod(this.children.map(c => c.period)));
     this.setPeriod = json.period;
+    this.isRoot = json.isRoot;
     if(!this.validate())throw new Error("Attempting to instanciate a CompoundStream Object from an invalid Json: "+JSON.stringify(json))
   }
 
