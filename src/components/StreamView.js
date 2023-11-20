@@ -7,12 +7,14 @@ import {Period} from '../Time'
 import DS from '../DesignSystem'
 import utils from '../utils'
 import {CompoundStream} from '../model'
+import React from "react";
 
 var streamReactNodeMap = {}
 var isInEditMode = false
 let isDraggingOverTerminalStreamGlobal = false; //using this variable for core logic as it has zero latency
 let isDebouncing = false;
 let instance;
+let DragGhostInstance;
 
 export default class MasterStreamView extends BaseComponent{
 	constructor(props){
@@ -37,11 +39,29 @@ export default class MasterStreamView extends BaseComponent{
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
 		return(<DS.Layout.PageWithTitle title="Streams" content={
-			<StyledMasterStreamView>
-				<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} masterStreamNode={this} />
-			</StyledMasterStreamView>
+			<div>
+				<DragGhost/>
+				<StyledMasterStreamView>
+					<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} masterStreamNode={this} />
+				</StyledMasterStreamView>
+			</div>
 		}/>
 	)}
+}
+
+class DragGhost extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.state = {stream : Core.getMasterStream()}
+		DragGhostInstance = this
+		this.dom = React.createRef() 
+		
+	}
+	setVisible(b){this.dom.current.style["display"] = b?"flex":"none"}
+	setWidth(w){this.dom.current.style["width"] = w||""}
+	render(){
+		return(<DraggableGhostContainer ref={this.dom} stream={this.state.stream} id="clone"><DS.component.Label highlight>{this.state.stream.name}</DS.component.Label><DS.component.Spacer/>{this.state.stream.isTerminal()?"":<Badge> {this.state.stream.getAllTerminalStreams(true).length}</Badge>}</DraggableGhostContainer>)
+	}
 }
 
 function onChangeDone(){
@@ -69,44 +89,40 @@ class DraggableStreamViewContainer extends BaseComponent{
 	//drag and drop handling
 	onDragStart(e){
 		if(this.isInEditMode()){return e.preventDefault()}
-		this.updateState({dragging :true});
-		//e.target.style.opacity = 0.5
-		this.state.ddContext.draggingDOM = e.target;
+		
 		this.state.ddContext.draggingStreamNode = this;
+		this.state.ddContext.dragAnchorOffset = e.pageX-e.target.offsetLeft;
+		this.updateState({dragging :true}).then(() => {
+			DragGhostInstance.updateState({stream: this.props.stream})
+			//handle the dragging image: create a clone
+			var clone = DragGhostInstance.dom.current;
+			DragGhostInstance.setWidth((e.target.clientWidth-3*16)+"px");
+			this.state.ddContext.clone = clone;
 
-		//handle the dragging image
-		var clone = this.state.ddContext.draggingDOM.cloneNode(true);
-		clone.style.position = "absolute"
-		clone.style["pointer-events"] = "none"
-		clone.style.opacity = 1
-		if(this.state.ddContext.clone)this.state.ddContext.clone.remove()
-		this.state.ddContext.clone = clone;
-		document.body.appendChild(clone)
-
-
-		//set ghost image to nothing
-		var img = new Image();
-	    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-		e.dataTransfer.setDragImage(img,0,0)
+			//set ghost image to nothing
+			var img = new Image();
+		    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+			e.dataTransfer.setDragImage(img,0,0)
+		})
 		e.stopPropagation();
 	}
 	onDragOver(e){
 		if(this.isInEditMode()){e.preventDefault();e.stopPropagation();return}
 		//position dragging image
-		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.clone.offsetWidth/2)+"px"
+		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.dragAnchorOffset)+"px"
 		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
+		DragGhostInstance.setVisible(true) 
+
 		//if the hoverStream hasn't changed, exit
 		if(this.props.stream.id==this.state.ddContext.dragHoveredStream.id){e.preventDefault();e.stopPropagation();return}
 
 		let ds = this.state.ddContext.draggingStreamNode.props.stream;
 		let asid = ds.getAllStreams().map(s => s.id)
-		if(asid.indexOf(this.props.stream.id)!=-1){
-			console.log("myself") //when hovering over myself, I should ignore actions on my self and let events flow through to make react what's underneath.
-			return}
+		//when hovering over myself, I should ignore actions on my self and let events flow through to make react what's underneath.
+		if(asid.indexOf(this.props.stream.id)!=-1){return}
 		//else, set the hovered stream to this and set the drop target.
 		this.state.ddContext.dragHoveredStream = this.props.stream;
 		this.state.ddContext.dropTarget = this.props.stream;
-		//console.log(this.state.ddContext.dragHoveredStream)
 		Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay: (k == this.props.stream.id)}))
 
 		e.preventDefault()
@@ -115,7 +131,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 	onDragEnd(e){
 		this.state.ddContext.draggingStreamNode.updateState({dragging :false});
 		isDebouncing = true;//suppress the height animation when the stream is reinsterted
-		this.state.ddContext.clone.remove()
+		DragGhostInstance.setVisible(false)
 		if(this.isInEditMode()){return e.preventDefault()}
 
 		let dropTargetStream = this.state.ddContext.dropTarget
@@ -203,8 +219,8 @@ class CompoundStreamView extends GenericEditableStreamView{
 	}
 	render(){
 		return(
-			<CompoundStreamContainer id={this.props.stream.id} isDragging={this.props.isDragging} >	
-				<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>
+			<CompoundStreamContainer id={this.props.stream.id} isDragging={this.props.isDragging}>	
+				{this.props.stream.isRoot?<div/>:<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>}
 				<StreamInfoContainer onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.getStream().name}
@@ -219,9 +235,10 @@ class CompoundStreamView extends GenericEditableStreamView{
 						<div onClick={(e)=>this.onExitEditMode(e)} style={{marginLeft:"0.2rem",marginLeft:"0.4rem"}}>✕</div>
 					</GridButtonContainer>):""}
 				</StreamInfoContainer>
+				{this.props.isDragging?"":
 				<StreamChildrenContainer>
 					{this.getStream().children.filter(c => c.isActiveNow())
-						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={"child-"+c.id} ddContext={this.getDraggableStreamNode().state.ddContext} stream={c}/>)}</StreamChildrenContainer>
+						.map(c => <DraggableStreamViewContainer masterStreamNode={this.getMasterStreamNode()} key={"child-"+c.id} ddContext={this.getDraggableStreamNode().state.ddContext} stream={c}/>)}</StreamChildrenContainer>}
 			</CompoundStreamContainer>
 		)
 	}
@@ -344,16 +361,45 @@ function endDragNDropInteraction(ctx){
 		if(node)node.updateState({moveOutOfTheWay:false,dragging:false})
 	})
 	ctx = {...ctx,dragHoveredStream:{},dropTarget:{}};
-	ctx.clone.remove();
 }
 
 
 /********Styled Components********/
 
+const Badge = styled.div`
+	display:flex;
+	background: ${props=> DS.getStyle().inputFieldBackground};
+	padding: 0 0.5rem;
+    height: 1.5rem;
+    display: flex;
+    font-size: 1rem;
+    align-content: center;
+    justify-content: center;
+    color: white;
+    align-items: center;
+    border-radius: 100vw;
+    text-shadow: 0 0 4px black;
+    margin-left: 2rem;
+`
+
+const DraggableGhostContainer = styled.div`
+	display:none;
+	position: absolute;
+	height: ${DS.inputHeightInline}rem;
+	pointer-events: none;
+	padding-left: 1.5rem;
+	padding-right: ${props => props.stream.isTerminal()?1.5:0.4}rem;
+	border-radius: 100vw;
+	z-index: 1;
+	flex-direction: row;
+	color: ${DS.getStyle().bodyTextSecondary}; 
+    align-items: center;
+    background: ${props => props.stream.isTerminal()?((props.stream.isSavings?DS.getStyle().savings:(props.stream.isIncome()?DS.getStyle().income:DS.getStyle().expenses))+Math.floor(DS.backgroundOpacity*255).toString(16)):DS.getStyle().UIElementBackground};
+}
+`
 
 const CompoundStreamContainer = styled.div`
 	height: ${props => (props.isDragging)?0:""};
-
 `
 
 const StyledMasterStreamView = styled.div`
@@ -435,5 +481,4 @@ const StreamChildrenContainer = styled.div`
 const StreamContainer = styled.div`
     cursor: pointer !important;
     opacity: ${props => props.inVisible?0:1};
-    transition: opacity 0.2s;
 `

@@ -162,7 +162,7 @@ export class CompoundStream extends Stream{
   forEachTerminalStream(f){return this.getAllTerminalStreams().forEach(f)}
   getActiveTerminalStreamsAtDate(date){return this.getAllTerminalStreams().filter(s => s.isActiveAtDate(date))}
   getChildStreamById(id){return this.getAllStreams().filter(s => s.id==id)[0]}
-  getAllTerminalStreams(){return this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams():[c]).reduce(utils.reducers.concat(),[])}
+  getAllTerminalStreams(active = false){return this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams(active):[c]).reduce(utils.reducers.concat(),[]).filter(s => !active?true:s.isActiveNow())}
   isTerminal(){return false}
 
   //operations

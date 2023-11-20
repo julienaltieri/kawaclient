@@ -167,10 +167,11 @@ class DesignSystem{
 		ListItem: (props) => <StyledListItemContainer size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		TransactionListItem: (props) => <instance.component.ListItem noHover fullBleed size="xs" {...props}>
 			<instance.component.Label style={{minWidth:"3rem"}}>{props.transaction.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</instance.component.Label>
-			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><Spacer/>
+			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><StyledSpacer/>
 			<div>{props.infoSlotComponent}</div>
 			<div style={{textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(props.transaction.amount,2,null,null,Core.getPreferredCurrency())}</div>
 		</instance.component.ListItem>,
+		Spacer: (props) => <StyledSpacer/>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
@@ -226,7 +227,7 @@ const StyledSentenceWrapper = styled.div`
     align-items: baseline;
 `
 
-const Spacer = styled.div`
+const StyledSpacer = styled.div`
 	flex-grow:1;
 `
 
