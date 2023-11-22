@@ -55,7 +55,6 @@ class DragGhost extends BaseComponent{
 		this.state = {stream : Core.getMasterStream()}
 		DragGhostInstance = this
 		this.dom = React.createRef() 
-		
 	}
 	setVisible(b){this.dom.current.style["display"] = b?"flex":"none"}
 	setWidth(w){this.dom.current.style["width"] = w||""}
@@ -105,13 +104,12 @@ class DraggableStreamViewContainer extends BaseComponent{
 				var clone = DragGhostInstance.dom.current;
 				DragGhostInstance.setWidth((e.target.clientWidth-3*16)+"px");
 				this.state.ddContext.clone = clone;
-
-				//set ghost image to nothing
-				var img = new Image();
-			    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-				e.dataTransfer.setDragImage(img,0,0)
 			})
 		},20)
+		//set ghost image to nothing
+		var img = new Image();
+	    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+		e.dataTransfer.setDragImage(img,0,0)
 		e.stopPropagation();
 	}
 	onDragOver(e){
