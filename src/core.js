@@ -272,10 +272,12 @@ class Core{
 	  		children:[],
 	  		id: utils.getNewUuid()
 	  	})
+	  	let idx = this.getStreamIndexInParent(s2) //must calculate the index before moving parents
 	  	s2.moveFromParentToParentAtIndex(parent,group)
 	  	s1.moveFromParentToParentAtIndex(this.getParentOfStream(s1),group)
-	  	parent.insertChildAt(group,0)
+	  	parent.insertChildAt(group,idx)
 	}
+	getStreamIndexInParent(s){return this.getParentOfStream(s)?.children.map(ss => ss.id).indexOf(s.id)}
 	makeNewTerminalStream(name,amount,period,parentStreamId){
 		var parent = this.getStreamById(parentStreamId);
 		var newStream = new TerminalStream({

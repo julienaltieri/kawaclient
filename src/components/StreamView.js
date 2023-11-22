@@ -134,16 +134,17 @@ class DraggableStreamViewContainer extends BaseComponent{
 		DragGhostInstance.setVisible(false)
 		if(this.isInEditMode()){return e.preventDefault()}
 
-		let dropTargetStream = this.state.ddContext.dropTarget
+		let draggingStream = this.state.ddContext.draggingStreamNode.props.stream, dropTargetStream = this.state.ddContext.dropTarget
 		let dropTargetParentStream = Core.getParentOfStream(dropTargetStream)
 		let draggedStreamParent = Core.getParentOfStream(this.state.ddContext.draggingStreamNode.props.stream);
-		if(!dropTargetParentStream){}//dropped on masterstream do nothing
-		else if(!dropTargetStream.id || this.props.stream.id == dropTargetStream.id){}//dropped on itself or outside of the zone do nothing
-		else if(!!dropTargetStream.children || !dropTargetStream.children && !isDraggingOverTerminalStreamGlobal){
-			//dropped over the placeholder of a terminal stream (neighbor) or a compound stream
-			let dropIndex = dropTargetParentStream.children.map(c => c.id).filter(id => id!=this.state.ddContext.draggingStreamNode.props.stream.id).indexOf(this.state.ddContext.dragHoveredStream.id);
-			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetParentStream,dropIndex)
-		}else if(isDraggingOverTerminalStreamGlobal){//dropped into an existing terminal stream
+		if(		!dropTargetParentStream 										//dropped on masterstream: do nothing
+			|| 	!dropTargetStream.id 											//dropped outside of the zone: do nothing
+			|| 	this.props.stream.id == dropTargetStream.id){} 					//dropped on itself: do nothing
+		else if(!!dropTargetStream.children || !dropTargetStream.children && !isDraggingOverTerminalStreamGlobal){ //dropped over the placeholder: move
+			var idx = Core.getStreamIndexInParent(this.state.ddContext.dragHoveredStream);
+			if(dropTargetParentStream.id == draggedStreamParent.id && idx > Core.getStreamIndexInParent(draggingStream)){idx--} //if dropped after the original position in same parent, we're over counting
+			this.props.stream.moveFromParentToParentAtIndex(draggedStreamParent,dropTargetParentStream,idx)
+		}else if(isDraggingOverTerminalStreamGlobal){							//dropped over a terminal stream: group together
 			Core.groupStreams(this.props.stream,dropTargetStream)
 		}
 
