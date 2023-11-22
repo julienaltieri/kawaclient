@@ -92,22 +92,30 @@ class DraggableStreamViewContainer extends BaseComponent{
 		
 		this.state.ddContext.draggingStreamNode = this;
 		this.state.ddContext.dragAnchorOffset = e.pageX-e.target.offsetLeft;
-		this.updateState({dragging :true}).then(() => {
-			DragGhostInstance.updateState({stream: this.props.stream})
-			//handle the dragging image: create a clone
-			var clone = DragGhostInstance.dom.current;
-			DragGhostInstance.setWidth((e.target.clientWidth-3*16)+"px");
-			this.state.ddContext.clone = clone;
 
-			//set ghost image to nothing
-			var img = new Image();
-		    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-			e.dataTransfer.setDragImage(img,0,0)
-		})
+		this.state.ddContext.draggedStreamDOM = e.target;
+		this.state.ddContext.draggedStreamHeight = this.state.ddContext.draggedStreamDOM.clientHeight
+		this.state.ddContext.draggedStreamDOM.style["height"] = this.state.ddContext.draggedStreamHeight+"px"
+
+		setTimeout(() => {//this is necessary to let time for the DOM to render
+			this.updateState({dragging :true}).then(() => {
+				this.state.ddContext.draggedStreamDOM.style["height"] = 0;
+				DragGhostInstance.updateState({stream: this.props.stream})
+				//handle the dragging image: create a clone
+				var clone = DragGhostInstance.dom.current;
+				DragGhostInstance.setWidth((e.target.clientWidth-3*16)+"px");
+				this.state.ddContext.clone = clone;
+
+				//set ghost image to nothing
+				var img = new Image();
+			    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
+				e.dataTransfer.setDragImage(img,0,0)
+			})
+		},20)
 		e.stopPropagation();
 	}
 	onDragOver(e){
-		if(this.isInEditMode()){e.preventDefault();e.stopPropagation();return}
+		if(this.isInEditMode() || !this.state.ddContext.clone){e.preventDefault();e.stopPropagation();return}
 		//position dragging image
 		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.dragAnchorOffset)+"px"
 		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
@@ -129,7 +137,10 @@ class DraggableStreamViewContainer extends BaseComponent{
 		e.stopPropagation();
 	}
 	onDragEnd(e){
-		this.state.ddContext.draggingStreamNode.updateState({dragging :false});
+		this.state.ddContext.draggingStreamNode.updateState({dragging :false}).then(() => {
+			this.state.ddContext.draggedStreamDOM.style["height"] = this.state.ddContext.draggedStreamHeight+"px"
+			setTimeout(() => this.state.ddContext.draggedStreamDOM.style["height"] = "", 200)
+		})
 		isDebouncing = true;//suppress the height animation when the stream is reinsterted
 		DragGhostInstance.setVisible(false)
 		if(this.isInEditMode()){return e.preventDefault()}
@@ -147,10 +158,10 @@ class DraggableStreamViewContainer extends BaseComponent{
 		}else if(isDraggingOverTerminalStreamGlobal){							//dropped over a terminal stream: group together
 			Core.groupStreams(this.props.stream,dropTargetStream)
 		}
-
 		endDragNDropInteraction(this.state.ddContext);
 		e.preventDefault();
 		e.stopPropagation();
+	
 		onChangeDone();
 	}
 
@@ -482,4 +493,5 @@ const StreamChildrenContainer = styled.div`
 const StreamContainer = styled.div`
     cursor: pointer !important;
     opacity: ${props => props.inVisible?0:1};
+    transition: all 0.2s;
 `
