@@ -23,7 +23,6 @@ export default class MasterStreamView extends BaseComponent{
 		this.state={
 			masterStream:Core.getMasterStream(),
 			ddContext:{
-				draggingStreamNode:undefined,
 				dragHoveredStream:{},//stream being overed right now and need to make space
 				dropTarget:{}//stream it will be dropped into
 			},
@@ -89,12 +88,14 @@ class DraggableStreamViewContainer extends BaseComponent{
 	onDragStart(e){
 		if(this.isInEditMode()){return e.preventDefault()}
 		
-		this.state.ddContext.draggingStreamNode = this;
 		this.state.ddContext.dragAnchorOffset = e.pageX-e.target.offsetLeft;
 
+		this.state.ddContext.lastDraggedStream = this.props.stream;
 		this.state.ddContext.draggedStreamDOM = e.target;
-		this.state.ddContext.draggedStreamHeight = this.state.ddContext.draggedStreamDOM.clientHeight
+		this.state.ddContext.draggedStreamHeight = e.target.clientHeight + (this.props.stream.children?DS.remToPx:0) //add 1 rem of padding, which isn't counted in the client Height
 		this.state.ddContext.draggedStreamDOM.style["height"] = this.state.ddContext.draggedStreamHeight+"px"
+		this.state.ddContext.dragStartDomHeight = e.target.clientHeight
+		this.state.ddContext.isDragging = true;
 
 		setTimeout(() => {//this is necessary to let time for the DOM to render
 			this.updateState({dragging :true}).then(() => {
@@ -122,7 +123,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 		//if the hoverStream hasn't changed, exit
 		if(this.props.stream.id==this.state.ddContext.dragHoveredStream.id){e.preventDefault();e.stopPropagation();return}
 
-		let ds = this.state.ddContext.draggingStreamNode.props.stream;
+		let ds = this.state.ddContext.lastDraggedStream;
 		let asid = ds.getAllStreams().map(s => s.id)
 		//when hovering over myself, I should ignore actions on my self and let events flow through to make react what's underneath.
 		if(asid.indexOf(this.props.stream.id)!=-1){return}
@@ -135,17 +136,14 @@ class DraggableStreamViewContainer extends BaseComponent{
 		e.stopPropagation();
 	}
 	onDragEnd(e){
-		this.state.ddContext.draggingStreamNode.updateState({dragging :false}).then(() => {
-			this.state.ddContext.draggedStreamDOM.style["height"] = this.state.ddContext.draggedStreamHeight+"px"
-			setTimeout(() => this.state.ddContext.draggedStreamDOM.style["height"] = "", 200)
-		})
+	
 		isDebouncing = true;//suppress the height animation when the stream is reinsterted
 		DragGhostInstance.setVisible(false)
 		if(this.isInEditMode()){return e.preventDefault()}
 
-		let draggingStream = this.state.ddContext.draggingStreamNode.props.stream, dropTargetStream = this.state.ddContext.dropTarget
+		let draggingStream = this.state.ddContext.lastDraggedStream, dropTargetStream = this.state.ddContext.dropTarget
 		let dropTargetParentStream = Core.getParentOfStream(dropTargetStream)
-		let draggedStreamParent = Core.getParentOfStream(this.state.ddContext.draggingStreamNode.props.stream);
+		let draggedStreamParent = Core.getParentOfStream(this.state.ddContext.lastDraggedStream);
 		if(		!dropTargetParentStream 										//dropped on masterstream: do nothing
 			|| 	!dropTargetStream.id 											//dropped outside of the zone: do nothing
 			|| 	this.props.stream.id == dropTargetStream.id){} 					//dropped on itself: do nothing
@@ -156,11 +154,24 @@ class DraggableStreamViewContainer extends BaseComponent{
 		}else if(isDraggingOverTerminalStreamGlobal){							//dropped over a terminal stream: group together
 			Core.groupStreams(this.props.stream,dropTargetStream)
 		}
-		endDragNDropInteraction(this.state.ddContext);
+
+		Core.getUserData().getAllStreams().forEach(s => {
+			var node = getReactNodeByStreamId(s.id) 
+			if(node)node.updateState({moveOutOfTheWay:false,dragging:false})
+		})
+
+		this.state.ddContext.dragHoveredStream = {};
+		this.state.ddContext.dropTarget = {};
+
+		setTimeout(() => {
+			this.state.ddContext.isDragging = false;
+			this.refreshMasterStream();
+		},10)
+
 		e.preventDefault();
 		e.stopPropagation();
-	
 		onChangeDone();
+
 	}
 
 	//getters
@@ -174,11 +185,17 @@ class DraggableStreamViewContainer extends BaseComponent{
 		isDraggingOverTerminalStreamGlobal = b
 		if(this.state.isDraggingOverTerminalStream!=b){this.updateState({isDraggingOverTerminalStream:b})}//only for display
 	}
-	refreshMasterStream(){this.state.masterStreamNode.updateState({masterStream:this.state.masterStreamNode.state.masterStream})}
+	refreshMasterStream(){this.props.masterStreamNode.updateState({masterStream:this.props.masterStreamNode.state.masterStream})}
+	amILastDraggedStream(){return this.props.stream.id == this.props.masterStreamNode.state.ddContext.lastDraggedStream?.id}
+	amIDraggingNow(){return this.amILastDraggedStream() && this.props.masterStreamNode.state.ddContext.isDragging}
 	render(){
 		var isTerminal = !this.props.stream.children;
+		if(this.amILastDraggedStream()){
+			console.log("calculated Height for "+this.props.stream.name,this.amILastDraggedStream()?(this.amIDraggingNow()?0:this.props.masterStreamNode.state.ddContext.dragStartDomHeight +"px"):"" )
+		}
 		return(
-			<StreamContainer inVisible={this.state.dragging} key={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd} onDragEnter={e => e.preventDefault()}>
+			<StreamContainer style={
+				this.amILastDraggedStream()?(this.amIDraggingNow()?{height:0,opacity:0}:{height:this.props.masterStreamNode.state.ddContext.dragStartDomHeight +"px",opacity:1}):{}} key={"cont-"+this.props.stream.id} id={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd} onDragEnter={e => e.preventDefault()}>
 				{this.props.stream.children?<CompoundStreamView isDragging={this.state.dragging} stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>:
 				<TerminalStreamView isDragging={this.state.dragging}  stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>}
 			</StreamContainer>
@@ -200,7 +217,7 @@ class GenericEditableStreamView extends BaseComponent{
 	getStream(){return this.state.streamNode.props.stream}
 	getMasterStreamNode(){return this.props.masterStreamNode}
 	getDraggableStreamNode(){return this.state.streamNode}
-	isStreamBeingDragged(){return this.state.streamNode.props.stream.id == this.props.masterStreamNode.state.ddContext.draggingStreamNode?.props.stream?.id}
+	isStreamBeingDragged(){return this.state.streamNode.props.stream.id == this.props.masterStreamNode.state.ddContext.lastDraggedStream?.id}
 	isStreamDropReceiver(){return this.state.streamNode.props.stream.id == this.props.masterStreamNode.state.ddContext.dropTarget?.id}
 	render(){return (<div/>)}//template
 }
@@ -229,7 +246,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 	}
 	render(){
 		return(
-			<CompoundStreamContainer id={this.props.stream.id} isDragging={this.props.isDragging}>	
+			<CompoundStreamContainer key={this.props.stream.id} id={this.props.stream.id} isDragging={this.props.isDragging}>	
 				{this.props.stream.isRoot?<div/>:<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>}
 				<StreamInfoContainer onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
@@ -365,13 +382,6 @@ const Placeholder = (props) => <div onDragOver={props.onDragOver} id={props.id} 
 /**helper functions*****/
 function findStreamDom(dom){return (dom.draggable)?dom:findStreamDom(dom.parentElement)}
 function getReactNodeByStreamId(id){return streamReactNodeMap[id]}
-function endDragNDropInteraction(ctx){
-	Core.getUserData().getAllStreams().forEach(s => {
-		var node = getReactNodeByStreamId(s.id) 
-		if(node)node.updateState({moveOutOfTheWay:false,dragging:false})
-	})
-	ctx = {...ctx,dragHoveredStream:{},dropTarget:{}};
-}
 
 
 /********Styled Components********/
@@ -409,7 +419,7 @@ const DraggableGhostContainer = styled.div`
 `
 
 const CompoundStreamContainer = styled.div`
-	height: ${props => (props.isDragging)?0:""};
+
 `
 
 const StyledMasterStreamView = styled.div`
@@ -491,5 +501,5 @@ const StreamChildrenContainer = styled.div`
 const StreamContainer = styled.div`
     cursor: pointer !important;
     opacity: ${props => props.inVisible?0:1};
-    transition: all 0.2s;
+    transition: all 0.1s;
 `
