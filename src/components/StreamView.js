@@ -110,8 +110,9 @@ class DraggableStreamViewContainer extends BaseComponent{
 		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.dragAnchorOffset)+"px"
 		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
 		
-		if(new Date().getTime() - this.state.lastMoveTime < 500){return stopAndExit()}
-		else {this.state.lastMoveTime = new Date().getTime()}
+		//Skip frequent refreshes while moving fast 
+		if(new Date().getTime() - this.state.ddContext.lastMoveTime < 75){return stopAndExit()}
+		else {this.state.ddContext.lastMoveTime = new Date().getTime()}
 
 		if(this.amIDraggingNow()){return}//hovering over myself: ignore actions and let events flow to streams underneath
 		else if(!this.amIBeingDraggedOver()){//If I'm not already being hovered: make space for drop
