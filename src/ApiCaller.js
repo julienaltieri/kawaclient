@@ -76,7 +76,7 @@ class ApiCaller{
 			})
 			return this.sendRequest(request)
 		}else{
-			console.log("Simulated request to "+API.updateMasterStream+" with parameters:",jsonMasterStream)
+			//console.log("Simulated request to "+API.updateMasterStream+" with parameters:",jsonMasterStream)
 			return Promise.resolve()
 		}
 	}
