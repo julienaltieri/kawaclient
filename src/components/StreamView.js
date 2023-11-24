@@ -171,8 +171,8 @@ class DraggableStreamViewContainer extends BaseComponent{
 		return(
 			<StreamContainer style={(this.amILastDraggedStream())?(this.amIDraggingNow()?{height:0,opacity:0}:{height:this.props.masterStreamNode.state.ddContext.dragStartDomHeight +"px",opacity:1}):{}} animate={!!this.props.stream.children}
 				key={"cont-"+this.props.stream.id} id={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd} onDragEnter={e => e.preventDefault()}>
-				{this.props.stream.children?<CompoundStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>:
-				<TerminalStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode}/>}
+				{this.props.stream.children?<CompoundStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode} moveOutOfTheWay={this.state.moveOutOfTheWay}/>:
+				<TerminalStreamView stream={this.props.stream} streamNode={this} masterStreamNode={this.props.masterStreamNode} moveOutOfTheWay={this.state.moveOutOfTheWay}/>}
 			</StreamContainer>
 		)
 	}
@@ -222,7 +222,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 	render(){
 		return(
 			<CompoundStreamContainer key={this.props.stream.id} id={this.props.stream.id}>	
-				{this.props.stream.isRoot?<div/>:<Placeholder shouldAnimateHeight={isDraggingOverTerminalStreamGlobal  || !this.isStreamDropReceiver()} highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id}/>}
+				{this.props.stream.isRoot?<div/>:<Placeholder highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} /*onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay}*/ moveOutOfTheWay={this.props.moveOutOfTheWay}/>}
 				<StreamInfoContainer onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.getStream().name}
@@ -304,8 +304,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 	render(){
 		return(
 			<div>
-				<Placeholder highlight={this.getDraggableStreamNode().state.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} moveOutOfTheWay={this.getDraggableStreamNode().state.moveOutOfTheWay} key={"placeholder-"+this.props.stream.id} id={this.props.stream.id+"-placeholder"} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)}
-				/>
+				<Placeholder highlight={this.props.moveOutOfTheWay && !this.getDraggableStreamNode().state.isDraggingOverTerminalStream} moveOutOfTheWay={this.props.moveOutOfTheWay} onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(false)}/>
 				<StreamInfoContainerTerminal onDragOver={e => this.getDraggableStreamNode().setDraggingOverTerminalStream(true)} editing={this.state.isInEditMode} key={this.props.stream.id} id={this.props.stream.id}
 					isIncome={this.getDraggableStreamNode().isIncome()} isSavings={this.getDraggableStreamNode().props.stream.isSavings}
 					style={{
@@ -416,7 +415,7 @@ const StreamInfoContainerTerminal = styled.div`
     height:${props => props.editing?DS.inputHeight:DS.inputHeightInline}rem;
     border-radius: 100vw;
     margin-top:0.3rem;
-    transition: margin 0.2s;
+    transition: margin 0.2s, height 0.2s;
 `
 const StreamInfoContainer = styled.div`
     display: flex;
