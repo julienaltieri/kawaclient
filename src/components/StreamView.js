@@ -35,22 +35,33 @@ export default class MasterStreamView extends BaseComponent{
 			},
 		}
 		instance = this;
+		this.onDragOverNoMansLand = this.onDragOverNoMansLand.bind(this)
 	}
 	setFactoryActive(b){this.factoryActive=b}
+	updateClonePositionWithEvent(e){
+		this.state.ddContext.clone.style.left = Math.floor(e.pageX-this.state.ddContext.dragAnchorOffset)+"px"
+		this.state.ddContext.clone.style.top = Math.floor(e.pageY-this.state.ddContext.clone.offsetHeight/2)+"px"
+	}
+	onDragOverNoMansLand(e){
+		this.updateClonePositionWithEvent(e)
+		this.state.ddContext.draggedOverStream = {}
+	}
 	takeSnapshot(){return new CompoundStream(JSON.parse(JSON.stringify(Core.getMasterStream())))}
 	isFactoryActive(){return this.factoryActive}
 	refresh(){return this.updateState({refresh:new Date()})}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
-		return(<DS.Layout.PageWithTitle title="Streams" content={
-			<div>
-				<DragGhost/>
-				<StyledMasterStreamView>
-					<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} />
-				</StyledMasterStreamView>
-			</div>
-		}/>
+		return(<div style={{minHeight:"100vh"}} onDragOver={e => this.onDragOverNoMansLand(e)} >
+			<DS.Layout.PageWithTitle title="Streams" content={
+				<div>
+					<DragGhost/>
+					<StyledMasterStreamView>
+						<DraggableStreamViewContainer ddContext={this.state.ddContext} stream={this.state.masterStream} />
+					</StyledMasterStreamView>
+				</div>
+			}/>
+		</div>
 	)}
 }
 
@@ -69,8 +80,11 @@ class DragGhost extends BaseComponent{
 function saveMasterStream(){
 	let tsSnap = instance.masterStreamSnapshot;
 	let ts = Core.getMasterStream();
-	if(ts.getAllTerminalStreams().length < tsSnap.getAllTerminalStreams().length){throw new Error("Stream Integrity is compromised. Less terminal streams are present after the change than before.")}
-	else {
+	if(ts.getAllTerminalStreams().length < tsSnap.getAllTerminalStreams().length){
+		console.log(ts.getAllTerminalStreams().length,tsSnap.getAllTerminalStreams().length)
+		console.log(tsSnap.getAllTerminalStreams().filter(s => ts.getAllTerminalStreams().map(ss => ss.id).indexOf(s.id)==-1))
+		throw new Error("Stream Integrity is compromised. Less terminal streams are present after the change than before.")
+	} else {
 		Core.saveStreams().then(() => instance.masterStreamSnapshot = instance.takeSnapshot());
 	}
 }
@@ -110,8 +124,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 		if(this.isInEditMode() || !this.props.ddContext.clone){return stopAndExit()}
 
 		//update dragging image
-		this.props.ddContext.clone.style.left = Math.floor(e.pageX-this.props.ddContext.dragAnchorOffset)+"px"
-		this.props.ddContext.clone.style.top = Math.floor(e.pageY-this.props.ddContext.clone.offsetHeight/2)+"px"
+		instance.updateClonePositionWithEvent(e)
 		
 		//Skip frequent refreshes while moving fast 
 		if(new Date().getTime() - this.props.ddContext.lastMoveTime < 75){return stopAndExit()}
@@ -128,7 +141,6 @@ class DraggableStreamViewContainer extends BaseComponent{
 		if(this.isInEditMode()){return}
 		e.preventDefault();
 		e.stopPropagation();
-		
 		//stream grouping or insertion
 		let draggedOverStreamParent = Core.getParentOfStream(this.props.ddContext.draggedOverStream)
 		let draggedStreamParent = Core.getParentOfStream(this.props.ddContext.lastDraggedStream);
@@ -162,7 +174,7 @@ class DraggableStreamViewContainer extends BaseComponent{
 
 	//operations
 	setDraggingOverTerminalStream(b){
-		isDraggingOverTerminalStreamGlobal = b
+		isDraggingOverTerminalStreamGlobal = b 
 		if(this.state.isDraggingOverTerminalStream!=b){this.updateState({isDraggingOverTerminalStream:b})}//only for display
 	}
 	amILastDraggedStream(){return this.props.stream.id == this.props.ddContext.lastDraggedStream?.id}
