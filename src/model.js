@@ -138,6 +138,7 @@ class Stream{
       oldParent.removeChild(this);
       if(oldParent.children.length==0){Core.getParentOfStream(oldParent).removeChild(oldParent)}
       newParent.insertChildAt(this,index);
+      Core.pruneMasterStream();
     }
     oldParent.refreshValues()
     newParent.refreshValues()
@@ -149,7 +150,7 @@ class Stream{
 export class CompoundStream extends Stream{
   constructor(json){
     super(json);
-    this.children = (json.children?json.children.map(c => (c.children && c.children.length>0)? new CompoundStream(c): new TerminalStream(c)):[]);
+    this.children = (json.children?json.children.filter(c => !c.children || c.children.length>0).map(c => c.children ? new CompoundStream(c): new TerminalStream(c)):[]);
     this.period = (json.period || Period.longestPeriod(this.children.map(c => c.period)));
     this.setPeriod = json.period;
     this.isRoot = json.isRoot;
@@ -164,6 +165,10 @@ export class CompoundStream extends Stream{
   getChildStreamById(id){return this.getAllStreams().filter(s => s.id==id)[0]}
   getAllTerminalStreams(active = false){return this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams(active):[c]).reduce(utils.reducers.concat(),[]).filter(s => !active?true:s.isActiveNow())}
   isTerminal(){return false}
+  pruneChildren(){//delete compound streams that don't have terminal children
+    this.children = this.children.filter(c => c.getAllTerminalStreams().length>0)
+    this.children.filter(c => !c.isTerminal()).forEach(c => c.pruneChildren())
+  }
 
   //operations
   refreshValues(){

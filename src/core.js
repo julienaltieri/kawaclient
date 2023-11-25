@@ -273,9 +273,12 @@ class Core{
 	  		id: utils.getNewUuid()
 	  	})
 	  	let idx = this.getStreamIndexInParent(s2) //must calculate the index before moving parents
+	  	parent.insertChildAt(group,idx)
 	  	s2.moveFromParentToParentAtIndex(parent,group)
 	  	s1.moveFromParentToParentAtIndex(this.getParentOfStream(s1),group)
-	  	parent.insertChildAt(group,idx)
+	}
+	pruneMasterStream(){//remove compound streams that have no terminal children at all. This can happen if the last terminal stream of russian dolls groups is taken out
+		this.getUserData()?.masterStream?.pruneChildren()
 	}
 	getStreamIndexInParent(s){return this.getParentOfStream(s)?.children.map(ss => ss.id).indexOf(s.id)}
 	makeNewTerminalStream(name,amount,period,parentStreamId){
