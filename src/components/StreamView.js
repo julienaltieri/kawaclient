@@ -362,22 +362,13 @@ class TerminalStreamView extends GenericEditableStreamView{
 		}else {this.onExitEditMode(e)} 
 	}
 	onTrash(e){
-		var s = this.props.stream;
-		var start = s.getOldestDate();
-		var end = s.getMostRecentDate();
-		Core.getTransactionsBetweenDates(start,end)
-		.then(data => {
-			var txns = data.filter(t => t.categorized && t.isAllocatedToStream(s))
-			if(txns.length>0)return Core.presentModal(ModalTemplates.ModalWithStreamTransactions("Are you sure?","This will terminate the stream "+s.name+" with the following transactions in it:",s))
-			else return Core.presentModal(ModalTemplates.BaseModal("Are you sure?","This will terminate the stream "+s.name))
-		})
-		.then(({state,buttonIndex}) => {
+		return Core.presentModal(ModalTemplates.ModalWithComponent("Are you sure?",<TrashStreamModalView stream={this.props.stream}/>)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){//button clicked is confirm
-				Core.deleteStream(s);
-				instance.refresh() //no need to call onExitEditMode() because the component will be unmounted 
+				Core.deleteStream(this.props.stream)
+				instance.refresh();
 				isInEditMode=false;
 				instance.saveMasterStream();
-	            console.log("Stream deleted: "+s.name);
+	            console.log("Stream deleted: "+this.props.stream.name);
 			}
         }).catch((e)=>{console.log(e)})
 	}
@@ -449,6 +440,40 @@ const GridButtonContainer = styled.div`
     justify-content: center;
 `
 
+class TrashStreamModalView extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.state = {fetching: true, transactions: []}
+		this.loadTransactions()
+	}
+
+	loadTransactions(){
+		Core.getTransactionsBetweenDates(this.props.stream.getOldestDate(),this.props.stream.getMostRecentDate())
+		.then(data => this.updateState({transactions: data.filter(t => t.categorized && t.isAllocatedToStream(this.props.stream)),fetching:false}))
+	}
+
+	render(){
+		return(
+			<div>
+				<DS.component.SentenceWrapper>
+					After deleting<DS.component.StreamTag noHover highlight>{this.props.stream.name}</DS.component.StreamTag>, you won't be able to add more transactions to it.
+				{this.state.fetching?"":this.state.transactions.length>0?"It currently contains these transactions:":""}
+				</DS.component.SentenceWrapper>
+				<div style={{margin:"auto", minHeight:"5rem", 
+				marginTop:"3rem",fontSize:"0.8rem","textAlign":"left"}}>
+					{this.state.fetching?<div>loading preview....</div>:
+					<div>
+						<ul><div style={{fontWeight:"bold",marginBottom:"1rem"}}></div>
+						{this.state.transactions.slice(0,4).map((t,i) => <DS.component.TransactionListItem key={i} transaction={t}/>)}
+						{this.state.transactions.length>4?<DS.component.ListItem noHover fullBleed size="xs" style={{justifyContent:"flex-end",border:"none"}}>and {this.state.transactions.length-2} other(s)</DS.component.ListItem>:""}
+						</ul>
+					</div>
+				}
+				</div>
+			</div>
+		)
+	}
+}
 
 
 

@@ -8,9 +8,8 @@ import {TransactionView} from './components/CategorizeAction'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
+import TransactionGrouper from './processors/TransactionGrouper'
 
-
-const transactionGrouper = require('./processors/TransactionGrouper')
 
 /* A quick manual because this modal management is super complicated - One day, let's refactor it
 - Modals are promises that return once the modal is responded (cancel, confirm etc)
@@ -50,12 +49,6 @@ export const ModalTemplates = {
 		if(!buttonArray)buttonArray = [{name:"Confirm",primary:true}]
 		return ModalTemplates.ModalWithComponent(title,<SingleInput controller={instance.currentModalController}/>,buttonArray)(that)
 	},
-	ModalWithStreamTransactions: (title,message,stream) => (that) => {
-		return ModalTemplates.ModalWithComponent(title,<div>
-			<div style={{textAlign:"left"}}>{message}</div>
-			<StreamTransactionView controller={instance.currentModalController} stream={stream} key={stream.id}/>
-		</div>)(that)
-		},
 	ModalWithCategorizationRule: (title,message,rule) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
@@ -290,7 +283,7 @@ class StreamTransactionView extends BaseComponent{
 		var end = this.state.stream.getMostRecentDate();
 		Core.getTransactionsBetweenDates(start,end).then(data => {
 			var categorizedTxns = data.filter(t => t.categorized && t.isAllocatedToStream(this.state.stream));
-			var res = transactionGrouper.clusterTransactions(categorizedTxns)
+			var res = TransactionGrouper.clusterTransactions(categorizedTxns)
 			var obj = Object.keys(res).map(k => {
 				return {key: k,txns: utils.flatten(res[k]).sort(utils.sorters.asc(t => t.date)),include: true}
 			})
