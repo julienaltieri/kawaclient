@@ -38,8 +38,13 @@ export default class MasterStreamView extends BaseComponent{
 		this.state.ddContext.clone.style.top = Math.floor(y-this.state.ddContext.clone.offsetHeight/2)+"px"
 	}
 	onDragOverNoMansLand(e){
-		this.updateClonePosition(e.pageX,e.pageY)
-		this.state.ddContext.draggedOverStream = {}
+		if(e.touches){//touch interactions on touch devices
+			this.updateClonePosition(e.touches[0].pageX,e.touches[0].pageY)
+			this.state.ddContext.draggedOverStream = {}
+		}else{
+			this.updateClonePosition(e.pageX,e.pageY)
+			this.state.ddContext.draggedOverStream = {}
+		}
 	}
 	setTouchScrollEnabled(b){this.domRef.current.style["touch-action"] = b?'auto':'none'}
 	takeSnapshot(){return new CompoundStream(JSON.parse(JSON.stringify(Core.getMasterStream())))}
@@ -54,11 +59,11 @@ export default class MasterStreamView extends BaseComponent{
 	render(){
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
-		return(<div ref={this.domRef} style={{minHeight:"100vh",touchAction:"none"}} onDragOver={e => this.onDragOverNoMansLand(e)} >
+		return(<div ref={this.domRef} style={{minHeight:"100vh",touchAction:"none"}} onDragOver={e => this.onDragOverNoMansLand(e)} onTouchMove={e => this.onDragOverNoMansLand(e)} >
 			<DS.Layout.PageWithTitle title="Streams" content={<div>
 				<DragGhost/>
 				<StyledMasterStreamView>
-					<DraggableStreamView ddContext={this.state.ddContext} stream={this.state.masterStream} />
+					<DraggableStreamView ddContext={this.state.ddContext} stream={this.state.masterStream} depth={0} />
 				</StyledMasterStreamView>
 			</div>}/>
 		</div>
@@ -92,13 +97,6 @@ class DraggableStreamView extends BaseComponent{
 		this.dom = React.createRef() 
 	}
 
-/*notes for cleanup
-- target has to be calculated here. Perhaps there is a way to use similar logic for mouse and drag events
-- preventDefault isn't possible for touch events
-- missing implementation of touch move 
-- we need to suppress scrolling => touchaction css property seems to work but doesn't update while I'm already dragging
-
-*/
 	onTouchStart(e){
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		this.props.ddContext.touchScrollManager = {
@@ -111,6 +109,7 @@ class DraggableStreamView extends BaseComponent{
 			initialScrollHeight : document.documentElement.scrollHeight,
 			dragScroller : null
 		}
+
 		this.touchTimer = setTimeout((() => { //scroll while dragging
 			this.props.ddContext.touchScrollManager.dragScroller = setInterval((() => {
 				let scI = this.props.ddContext.touchScrollManager.scrollIncr, newScI = scI, x = this.props.ddContext.touchScrollManager.touchX, y = this.props.ddContext.touchScrollManager.touchY, h = window.innerHeight, s = this.props.ddContext.touchScrollManager.dragSensitiveArea, sc0 = this.props.ddContext.touchScrollManager.initialScrollY;
@@ -123,7 +122,7 @@ class DraggableStreamView extends BaseComponent{
 					this.processDraggingOver(x, Math.min(y + sc0 + scI,this.props.ddContext.touchScrollManager.initialScrollHeight),() => e.stopPropagation())
 				}
 			}).bind(this),1000/120)
-			this.initiateDrag(streamReactNodeMap[this.props.stream.id].dom.current,e.touches[0].pageX)
+			this.processDragStart(streamReactNodeMap[this.props.stream.id].dom.current,e.touches[0].pageX,e.touches[0].pageY)
 		}).bind(this), 500);
 		this.props.ddContext.touchDragging = true
 		e.stopPropagation();
@@ -131,10 +130,16 @@ class DraggableStreamView extends BaseComponent{
 	onDragStart(e){
 		if(this.isInEditMode() || this.props.stream.isRoot){return e.preventDefault()}
 		e.dataTransfer.setDragImage(new Image(),0,0)
-		this.initiateDrag(e.target,e.pageX)
+		this.processDragStart(e.target,e.pageX)
 		e.stopPropagation();//stop propagating the event to parents
 	}
-	initiateDrag(draggableNodeDom,x){//draggableNodeDom should be the top-level node beeing dragged, and x the event's pageX
+
+ 	isWithinBound(x,y){
+ 		if(!this.dom.current){return false}
+ 		let h = this.dom.current.offsetHeight, w = this.dom.current.offsetWidth, y0 = this.dom.current.offsetTop, x0 = this.dom.current.offsetLeft; 
+ 		return (y-y0)*(y0+h-y) > 0 && (x-x0)*(x0+w-x) > 0 	
+ 	} 
+	processDragStart(draggableNodeDom,x,y){//draggableNodeDom should be the top-level node beeing dragged, and x the event's pageX
 		this.props.ddContext.dragStartDomHeight = draggableNodeDom.clientHeight	//used for animating the height on drop
 		this.props.ddContext.dragAnchorOffset = x-draggableNodeDom.offsetLeft; 	//used for clone placement
 		this.props.ddContext.lastDraggedStream = this.props.stream;				//used to test that a node is the one of the dragged stream
@@ -151,13 +156,19 @@ class DraggableStreamView extends BaseComponent{
 		//handle the dragging image: set the default ghost to nothing and create our own clone
 		DragGhostInstance.updateState({stream: this.props.stream,width:(draggableNodeDom.clientWidth-3*DS.remToPx)+"px",visible:true})
 		this.props.ddContext.clone = DragGhostInstance.dom.current;
+		instance.updateClonePosition(x,y)
 	}
 	//drag and drop handling
 	onTouchMove(e){
+		if(!this.props.stream.isRoot){return} //because we need to calculate interceptions, we only process touchmoves on the root stream
+
 		if(this.props.ddContext.isDragging){//dragging and moving around
 			this.props.ddContext.touchScrollManager.touchX = e.touches[0].clientX
 			this.props.ddContext.touchScrollManager.touchY = e.touches[0].clientY
-			this.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation())
+			let interceptNode = Object.keys(streamReactNodeMap).map(k => streamReactNodeMap[k])
+								.filter(n => n.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))
+								.sort((a,b) => - a.props.depth + b.props.depth)[0];
+			if(interceptNode){interceptNode.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation())}
 		}else{//not dragging but scrolling
 			if(this.touchTimer){clearTimeout(this.touchTimer)}
 			this.props.ddContext.isDragging = false
@@ -171,12 +182,13 @@ class DraggableStreamView extends BaseComponent{
 
 		//update dragging image
 		instance.updateClonePosition(x,y)
-		//console.log(this.props.stream.name)
+		
 		//Skip frequent refreshes while moving fast 
 		if(new Date().getTime() - this.props.ddContext.lastMoveTime < 75){return onConsumed()}
 		else {this.props.ddContext.lastMoveTime = new Date().getTime()}
 
-		if(this.amIDraggingNow()){return}//hovering over myself: ignore actions and let events flow to streams underneath
+		if(this.props.stream.isRoot){return onConsumed()}//don't do anything if dragging over masterstream
+		else if(this.amIDraggingNow()){return}//hovering over myself: ignore actions and let events flow to streams underneath
 		else if(!this.amIBeingDraggedOver()){//If I'm not already being hovered: make space for drop
 			this.props.ddContext.draggedOverStream = this.props.stream;
 			Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay: (k == this.props.stream.id)}))
@@ -188,15 +200,17 @@ class DraggableStreamView extends BaseComponent{
 		this.props.ddContext.touchDragging = false
 		if(this.touchTimer){clearTimeout(this.touchTimer)}
 		if(this.props.ddContext.isDragging){
-			this.props.ddContext.isDragging = false
-			console.log("drop")
+			e.stopPropagation();
+			this.processDrop();
 		}
 	}
 	onDragEnd(e){
 		if(this.isInEditMode()){return}
 		e.preventDefault();
 		e.stopPropagation();
-
+		this.processDrop();
+	}
+	processDrop(){
 		//stream grouping or insertion
 		let draggedOverStreamParent = Core.getParentOfStream(this.props.ddContext.draggedOverStream)
 		let draggedStreamParent = Core.getParentOfStream(this.props.ddContext.lastDraggedStream);
@@ -360,7 +374,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 				{this.isStreamBeingDragged()?"":
 				<StreamChildrenContainer>
 					{this.props.stream.children.filter(c => c.isActiveNow())
-						.map(c => <DraggableStreamView key={"child-"+c.id} ddContext={this.props.ddContext} stream={c}/>)}</StreamChildrenContainer>}
+						.map(c => <DraggableStreamView depth={this.props.draggableNode.props.depth+1} key={"child-"+c.id} ddContext={this.props.ddContext} stream={c}/>)}</StreamChildrenContainer>}
 			</CompoundStreamContainer>
 		)
 	}
