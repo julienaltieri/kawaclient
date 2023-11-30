@@ -97,48 +97,85 @@ class DraggableStreamView extends BaseComponent{
 		this.dom = React.createRef() 
 	}
 
+	//touch drag and drop handling
 	onTouchStart(e){
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		this.props.ddContext.touchScrollManager = {
 			yAnchor : e.touches[0].screenY,
 			initialScrollY : window.scrollY,
+			touchX: e.touches[0].clientX, 
+			touchY: e.touches[0].clientY,
 			dragSensitiveArea : 0.35, //percent of screen sensitive to drag-scroll at the top and the bottom
 			scrollIncr : 0,
-			touchX: e.touches[0].clientX,
-			touchY: e.touches[0].clientY,
 			initialScrollHeight : document.documentElement.scrollHeight,
 			dragScroller : null
 		}
-
-		this.touchTimer = setTimeout((() => { //scroll while dragging
-			this.props.ddContext.touchScrollManager.dragScroller = setInterval((() => {
-				let scI = this.props.ddContext.touchScrollManager.scrollIncr, newScI = scI, x = this.props.ddContext.touchScrollManager.touchX, y = this.props.ddContext.touchScrollManager.touchY, h = window.innerHeight, s = this.props.ddContext.touchScrollManager.dragSensitiveArea, sc0 = this.props.ddContext.touchScrollManager.initialScrollY;
-				if(y < h*s){newScI = Math.max(scI-50*(s-y/h),-sc0)}//top part, scroll up
-				else if(y > h*(1-s)){newScI = Math.min(scI+50*(y/h-(1-s)),document.documentElement.scrollHeight-window.screen.availHeight - sc0)}//bottom part, scroll down
-				else {newScI = scI}//in the middle
-				if(newScI != scI){//only apply changes if there was a scroll
-					this.props.ddContext.touchScrollManager.scrollIncr = newScI
-					window.scroll(0,sc0 + newScI)
-					this.processDraggingOver(x, Math.min(y + sc0 + scI,this.props.ddContext.touchScrollManager.initialScrollHeight),() => e.stopPropagation())
-				}
-			}).bind(this),1000/120)
+		
+		this.touchTimer = setTimeout((() => { //only start drag interaction on long press
+			this.initiateDragScroller()
 			this.processDragStart(streamReactNodeMap[this.props.stream.id].dom.current,e.touches[0].pageX,e.touches[0].pageY)
 		}).bind(this), 500);
-		this.props.ddContext.touchDragging = true
+
 		e.stopPropagation();
 	}
+	onTouchMove(e){
+		if(!this.props.stream.isRoot){return} //because we need to calculate interceptions, we only process touchmoves on the root stream
+
+		if(this.props.ddContext.isDragging){//dragging and moving around
+			this.props.ddContext.touchScrollManager.touchX = e.touches[0].clientX
+			this.props.ddContext.touchScrollManager.touchY = e.touches[0].clientY
+			let interceptNode = Object.keys(streamReactNodeMap).map(k => streamReactNodeMap[k])
+								.filter(n => n.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))
+								.sort((a,b) => - a.props.depth + b.props.depth)[0];
+			if(interceptNode){interceptNode.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation())}
+		}else{//not dragging but scrolling
+			if(this.touchTimer){clearTimeout(this.touchTimer)}
+			this.props.ddContext.isDragging = false
+			window.scroll(0,this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor))
+		}
+	}
+	onTouchEnd(e){
+		if(!!this.props.ddContext.touchScrollManager.dragScroller){clearInterval(this.props.ddContext.touchScrollManager.dragScroller)}
+		if(this.touchTimer){clearTimeout(this.touchTimer)}
+		if(this.props.ddContext.isDragging){
+			e.stopPropagation();
+			this.processDrop();
+		}
+	}
+	initiateDragScroller(){//initiate the dragScroller the page when dragging on top part or bottom part of the page, refresh at htz value
+		let dragScrollRefreshRate = 120; //in htz
+		this.props.ddContext.touchScrollManager.dragScroller = setInterval((() => {
+			let scI = this.props.ddContext.touchScrollManager.scrollIncr, newScI = scI, x = this.props.ddContext.touchScrollManager.touchX, y = this.props.ddContext.touchScrollManager.touchY, h = window.innerHeight, s = this.props.ddContext.touchScrollManager.dragSensitiveArea, sc0 = this.props.ddContext.touchScrollManager.initialScrollY;
+			
+			//sense scroll direction
+			if(y < h*s){newScI = Math.max(scI-50*(s-y/h),-sc0)}//top part, scroll up
+			else if(y > h*(1-s)){newScI = Math.min(scI+50*(y/h-(1-s)),document.documentElement.scrollHeight-window.screen.availHeight - sc0)}//bottom part, scroll down
+			else {newScI = scI}//in the middle, do nothing
+
+			//apply changes (only if there was a scroll)
+			if(newScI != scI){
+				this.props.ddContext.touchScrollManager.scrollIncr = newScI
+				window.scroll(0,sc0 + newScI)
+				this.processDraggingOver(x, Math.min(y + sc0 + scI,this.props.ddContext.touchScrollManager.initialScrollHeight))
+			}
+		}).bind(this),1000/dragScrollRefreshRate)
+	}
+	
+	//mouse drag & drop events
 	onDragStart(e){
 		if(this.isInEditMode() || this.props.stream.isRoot){return e.preventDefault()}
 		e.dataTransfer.setDragImage(new Image(),0,0)
-		this.processDragStart(e.target,e.pageX)
 		e.stopPropagation();//stop propagating the event to parents
+		this.processDragStart(e.target,e.pageX)
+	}
+	onDragOver(e){this.processDraggingOver(e.pageX,e.pageY, () => {e.preventDefault();e.stopPropagation()})}
+	onDragEnd(e){
+		if(this.isInEditMode()){return}
+		e.preventDefault();	e.stopPropagation();
+		this.processDrop();
 	}
 
- 	isWithinBound(x,y){
- 		if(!this.dom.current){return false}
- 		let h = this.dom.current.offsetHeight, w = this.dom.current.offsetWidth, y0 = this.dom.current.offsetTop, x0 = this.dom.current.offsetLeft; 
- 		return (y-y0)*(y0+h-y) > 0 && (x-x0)*(x0+w-x) > 0 	
- 	} 
+	//drag and drop events (abstracted from even firing to unify behavior on mouse and touch)
 	processDragStart(draggableNodeDom,x,y){//draggableNodeDom should be the top-level node beeing dragged, and x the event's pageX
 		this.props.ddContext.dragStartDomHeight = draggableNodeDom.clientHeight	//used for animating the height on drop
 		this.props.ddContext.dragAnchorOffset = x-draggableNodeDom.offsetLeft; 	//used for clone placement
@@ -156,27 +193,8 @@ class DraggableStreamView extends BaseComponent{
 		//handle the dragging image: set the default ghost to nothing and create our own clone
 		DragGhostInstance.updateState({stream: this.props.stream,width:(draggableNodeDom.clientWidth-3*DS.remToPx)+"px",visible:true})
 		this.props.ddContext.clone = DragGhostInstance.dom.current;
-		instance.updateClonePosition(x,y)
+		instance.updateClonePosition(x,y);//necessary on touch devices
 	}
-	//drag and drop handling
-	onTouchMove(e){
-		if(!this.props.stream.isRoot){return} //because we need to calculate interceptions, we only process touchmoves on the root stream
-
-		if(this.props.ddContext.isDragging){//dragging and moving around
-			this.props.ddContext.touchScrollManager.touchX = e.touches[0].clientX
-			this.props.ddContext.touchScrollManager.touchY = e.touches[0].clientY
-			let interceptNode = Object.keys(streamReactNodeMap).map(k => streamReactNodeMap[k])
-								.filter(n => n.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))
-								.sort((a,b) => - a.props.depth + b.props.depth)[0];
-			if(interceptNode){interceptNode.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation())}
-		}else{//not dragging but scrolling
-			if(this.touchTimer){clearTimeout(this.touchTimer)}
-			this.props.ddContext.isDragging = false
-			this.props.ddContext.touchDragging = false
-			window.scroll(0,this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor))
-		}
-	}
-	onDragOver(e){this.processDraggingOver(e.pageX,e.pageY, () => {e.preventDefault();e.stopPropagation()})}
 	processDraggingOver(x,y,onConsumed = () => {}){
 		if(this.isInEditMode() || !this.props.ddContext.clone){return onConsumed()}
 
@@ -194,21 +212,6 @@ class DraggableStreamView extends BaseComponent{
 			Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay: (k == this.props.stream.id)}))
 		}
 		return onConsumed();
-	}
-	onTouchEnd(e){
-		if(!!this.props.ddContext.touchScrollManager.dragScroller){clearInterval(this.props.ddContext.touchScrollManager.dragScroller)}
-		this.props.ddContext.touchDragging = false
-		if(this.touchTimer){clearTimeout(this.touchTimer)}
-		if(this.props.ddContext.isDragging){
-			e.stopPropagation();
-			this.processDrop();
-		}
-	}
-	onDragEnd(e){
-		if(this.isInEditMode()){return}
-		e.preventDefault();
-		e.stopPropagation();
-		this.processDrop();
 	}
 	processDrop(){
 		//stream grouping or insertion
@@ -259,6 +262,12 @@ class DraggableStreamView extends BaseComponent{
 		return !(this.amILastDraggedStream() && !this.props.stream.children) //don't animate a terminal stream that's beeing dropped
 		&& !this.amIDropTarget() //don't animate the drop target itself
 	}
+ 	isWithinBound(x,y){//used for over detection with touch events. 
+ 		if(!this.dom.current){return false}
+ 		let h = this.dom.current.offsetHeight, w = this.dom.current.offsetWidth, y0 = this.dom.current.offsetTop, x0 = this.dom.current.offsetLeft; 
+ 		return (y-y0)*(y0+h-y) > 0 && (x-x0)*(x0+w-x) > 0 	
+ 	} 
+	
 
 	render(){
 		return(
