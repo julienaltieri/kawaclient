@@ -225,6 +225,11 @@ exports.searchInsertDesc = function(array, value, accessor = a => a) {
 };
 //searchInsertDesc([5,5,4],5)
 
+exports.isWithinBound = (x,y,reactRef) => {//used for over detection with touch events. 
+	if(!reactRef.current){return false}
+	let h = reactRef.current.offsetHeight, w = reactRef.current.offsetWidth, y0 = reactRef.current.offsetTop, x0 = reactRef.current.offsetLeft; 
+	return (y-y0)*(y0+h-y) > 0 && (x-x0)*(x0+w-x) > 0 	
+} 
 
 const utils = exports
 export default utils
