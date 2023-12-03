@@ -271,7 +271,7 @@ class DraggableStreamView extends BaseComponent{
 		return !(this.amILastDraggedStream() && !this.props.stream.children) //don't animate a terminal stream that's beeing dropped
 		&& !this.amIDropTarget() //don't animate the drop target itself
 	}
- 	isWithinBound(x,y){return utils.isWithinBound(x,y,this.reactComponentRef)}//used for over detection with touch events. 
+ 	isWithinBound(x,y){return this.isWithinBoundOfReactRef(x,y,this.reactComponentRef)}//used for over detection with touch events. 
 	
 
 	render(){
@@ -302,7 +302,7 @@ class Placeholder extends BaseComponent{
 		this.reactComponentRef = React.createRef()
 	}
 	onDragOver(){return this.props.draggableNode.setDraggingOverTerminalStream(false)}
-	isWithinBound(x,y){return utils.isWithinBound(x,y,this.reactComponentRef)}//used for over detection with touch events. 
+	isWithinBound(x,y){return this.isWithinBoundOfReactRef(x,y,this.reactComponentRef)}//used for over detection with touch events. 
 	render(){
 		return(<div ref={this.reactComponentRef} onDragOver={this.onDragOver} id={this.props.id} style={{paddingTop:this.props.moveOutOfTheWay?0.3+"rem":0}}>
 			<StreamPlaceholder animate={this.props.animate} highlight={this.props.highlight} style={{height:this.props.moveOutOfTheWay?DS.inputHeightInline+"rem":0}}/>
@@ -482,7 +482,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 			}
         }).catch((e)=>{console.log(e)})
 	}
-	isWithinBound(x,y){return utils.isWithinBound(x,y,this.reactComponentRef)}//used for over detection with touch events. 
+	isWithinBound(x,y){return this.isWithinBoundOfReactRef(x,y,this.reactComponentRef)}//used for over detection with touch events. 
 	onDragOver(){return this.props.draggableNode.setDraggingOverTerminalStream(true)}
 	render(){
 		return(
