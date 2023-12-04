@@ -75,6 +75,7 @@ export default class MasterStreamView extends BaseComponent{
 }
 
 const StyledMasterStreamView = styled.div`
+    -webkit-tap-highlight-color: transparent;
     margin-top: 0rem;
 `
 
