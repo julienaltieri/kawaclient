@@ -27,9 +27,9 @@ export default class MasterStreamView extends BaseComponent{
 				draggedOverStream:{},//stream being overed right now and need to make space
 				dropTarget:{},//stream it will be dropped into
 				scrollVelocity : 0,
-				velocityThreshold:1, 
+				velocityThreshold:0.1, 
 				dragScrollRefreshRate: 120, //htz
-				scrollDecelaratorFriction: 0.01 //percent energy lost on each tick
+				scrollDecelaratorFriction: 0.05 //percent energy lost on each tick
 			},
 		}
 		instance = this;
@@ -117,7 +117,7 @@ class DraggableStreamView extends BaseComponent{
 		clearInterval(this.props.ddContext.scrollDecelarator)
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		//only start drag interaction on long press
-		if(this.props.ddContext.scrollVelocity==0){//suppress the long press behavior when the tap is a "catch" from a rapid inertia scroll
+		if(Math.abs(this.props.ddContext.scrollVelocity)<this.props.ddContext.velocityThreshold){//suppress the long press behavior when the tap is a "catch" from a rapid inertia scroll
 			this.props.ddContext.touchTimer = setTimeout((() => { 
 			this.initiateDragScroller()
 			this.processDragStart(streamReactNodeMap[this.props.stream.id].reactComponentRef.current,e.touches[0].pageX,e.touches[0].pageY)
@@ -142,8 +142,7 @@ class DraggableStreamView extends BaseComponent{
 		}else{									//not dragging but scrolling
 			clearTimeout(this.props.ddContext.touchTimer)
 			let newScrollIndex = this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor);
-			let v = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate
-			this.props.ddContext.scrollVelocity = Math.abs(v)>this.props.ddContext.velocityThreshold?v:0
+			this.props.ddContext.scrollVelocity = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate
 			window.scroll(0,newScrollIndex)
 		}
 	}
@@ -162,6 +161,7 @@ class DraggableStreamView extends BaseComponent{
 			window.scroll(0,window.scrollY+this.props.ddContext.scrollVelocity*1000/this.props.ddContext.dragScrollRefreshRate)
 			this.props.ddContext.scrollVelocity = this.props.ddContext.scrollVelocity*(1-this.props.ddContext.scrollDecelaratorFriction)
 			if(Math.abs(this.props.ddContext.scrollVelocity)<0.05){clearInterval(this.props.ddContext.scrollDecelarator)}
+			//console.log(this.props.ddContext.scrollVelocity)
 		},1000/this.props.ddContext.dragScrollRefreshRate)
 	}
 	initiateDragScroller(){//initiate the dragScroller the page when dragging on top part or bottom part of the page, refresh at htz value
