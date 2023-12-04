@@ -47,7 +47,6 @@ export default class MasterStreamView extends BaseComponent{
 			this.state.ddContext.draggedOverStream = {}
 		}
 	}
-	setTouchScrollEnabled(b){this.reactComponentRef.current.style["touch-action"] = b?'auto':'none'}
 	takeSnapshot(){return new CompoundStream(JSON.parse(JSON.stringify(Core.getMasterStream())))}
 	isFactoryActive(){return this.factoryActive}
 	refresh(){return this.updateState({refresh:new Date()})}
@@ -101,7 +100,6 @@ class DraggableStreamView extends BaseComponent{
 
 	//touch drag and drop handling
 	onTouchStart(e){
-		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		this.props.ddContext.touchScrollManager = {
 			yAnchor : e.touches[0].screenY,
 			initialScrollY : window.scrollY,
@@ -113,6 +111,7 @@ class DraggableStreamView extends BaseComponent{
 			dragScroller : null
 		}
 
+		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		//only start drag interaction on long press
 		this.props.ddContext.touchTimer = setTimeout((() => { 
 			this.initiateDragScroller()
