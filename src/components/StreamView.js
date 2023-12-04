@@ -437,7 +437,7 @@ const StreamInfoContainer = styled.div`
 	margin-top:0.3rem;
 `
 const StreamChildrenContainer = styled.div`
-    margin-left: 1.5rem;   
+    margin-left: ${props => Core.isMobile()?DS.spacing.xs:DS.spacing.s}rem;   
     padding-top: 0.0rem;
     transition: padding 0.15s,margin-top 0.2s;
 `
