@@ -29,7 +29,7 @@ export default class MasterStreamView extends BaseComponent{
 				scrollVelocity : 0,
 				velocityThreshold:0.1, 
 				dragScrollRefreshRate: 120, //htz
-				scrollDecelaratorFriction: 0.05 //percent energy lost on each tick
+				scrollDecelaratorFriction: 0.04 //percent energy lost on each tick
 			},
 		}
 		instance = this;
@@ -402,7 +402,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.props.stream.name}
 							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
 						></DS.component.Input>):this.props.stream.isRoot?"Total":this.props.stream.name}</DS.component.Label>
-					{(this.isToolsVisible()||Core.isMobile())?(<DS.component.Button.Icon style={{marginLeft:"0.5rem",marginTop:Core.isMobile()?"":"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
+					{(this.isToolsVisible()||Core.isMobile())?(<DS.component.Button.Icon style={{marginLeft:Core.isMobile()?"0.1rem":"0.5rem",marginTop:Core.isMobile()?"":"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<DS.component.Spacer/>
 					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamAmountString()}</DS.component.Label>
 					{(this.isToolsVisible() && !this.isInEditMode() && !this.props.stream.isRoot)?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
