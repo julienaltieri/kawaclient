@@ -26,6 +26,9 @@ export default class MasterStreamView extends BaseComponent{
 			ddContext:{
 				draggedOverStream:{},//stream being overed right now and need to make space
 				dropTarget:{},//stream it will be dropped into
+				scrollVelocity : 0,
+				dragScrollRefreshRate: 120, //htz
+				scrollDecelaratorFriction: 0.01 //percent energy lost on each tick
 			},
 		}
 		instance = this;
@@ -108,9 +111,9 @@ class DraggableStreamView extends BaseComponent{
 			dragSensitiveArea : 0.35, //percent of screen sensitive to drag-scroll at the top and the bottom
 			scrollIncr : 0,
 			initialScrollHeight : document.documentElement.scrollHeight,
-			dragScroller : null
+			dragScroller : null			
 		}
-
+		clearInterval(this.props.ddContext.scrollDecelarator)
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		//only start drag interaction on long press
 		this.props.ddContext.touchTimer = setTimeout((() => { 
@@ -136,20 +139,30 @@ class DraggableStreamView extends BaseComponent{
 			[interceptNode?.placeholderComponentRef,interceptNode?.terminalStreamComponentRef].map(n => n?.current)
 				.filter(r => r?.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))[0]?.onDragOver()
 		}else{									//not dragging but scrolling
-			if(!!this.props.ddContext.touchTimer){clearTimeout(this.props.ddContext.touchTimer)}
-			window.scroll(0,this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor))
+			clearTimeout(this.props.ddContext.touchTimer)
+			let newScrollIndex = this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor);
+			this.props.ddContext.scrollVelocity = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate 
+			window.scroll(0,newScrollIndex)
 		}
 	}
 	onTouchEnd(e){
-		if(!!this.props.ddContext.touchScrollManager.dragScroller){clearInterval(this.props.ddContext.touchScrollManager.dragScroller)}
-		if(!!this.props.ddContext.touchTimer){clearTimeout(this.props.ddContext.touchTimer)}
+		clearTimeout(this.props.ddContext.touchTimer)
+		clearInterval(this.props.ddContext.touchScrollManager.dragScroller)
+		this.initiateInertia()
 		if(this.props.ddContext.isDragging){
 			e.stopPropagation();
 			this.processDrop();
 		}
 	}
+	initiateInertia(){//controls inertia when scrolling 
+		clearInterval(this.props.ddContext.scrollDecelarator)
+		this.props.ddContext.scrollDecelarator = setInterval(() => {
+			window.scroll(0,window.scrollY+this.props.ddContext.scrollVelocity*1000/this.props.ddContext.dragScrollRefreshRate)
+			this.props.ddContext.scrollVelocity = this.props.ddContext.scrollVelocity*(1-this.props.ddContext.scrollDecelaratorFriction)
+			if(Math.abs(this.props.ddContext.scrollVelocity)<0.05){clearInterval(this.props.ddContext.scrollDecelarator)}
+		},1000/this.props.ddContext.dragScrollRefreshRate)
+	}
 	initiateDragScroller(){//initiate the dragScroller the page when dragging on top part or bottom part of the page, refresh at htz value
-		let dragScrollRefreshRate = 120; //in htz
 		this.props.ddContext.hasNotMovedYet = true
 		this.props.ddContext.touchScrollManager.dragScroller = setInterval((() => {
 			if(this.props.ddContext.hasNotMovedYet){return}
@@ -166,7 +179,7 @@ class DraggableStreamView extends BaseComponent{
 				window.scroll(0,sc0 + newScI)
 				this.processDraggingOver(x, Math.min(y + sc0 + scI,this.props.ddContext.touchScrollManager.initialScrollHeight))
 			}
-		}).bind(this),1000/dragScrollRefreshRate)
+		}).bind(this),1000/this.props.ddContext.dragScrollRefreshRate)
 	}
 	
 	//mouse drag & drop events
