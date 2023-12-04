@@ -27,6 +27,7 @@ export default class MasterStreamView extends BaseComponent{
 				draggedOverStream:{},//stream being overed right now and need to make space
 				dropTarget:{},//stream it will be dropped into
 				scrollVelocity : 0,
+				velocityThreshold:1, 
 				dragScrollRefreshRate: 120, //htz
 				scrollDecelaratorFriction: 0.01 //percent energy lost on each tick
 			},
@@ -116,10 +117,11 @@ class DraggableStreamView extends BaseComponent{
 		clearInterval(this.props.ddContext.scrollDecelarator)
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		//only start drag interaction on long press
-		this.props.ddContext.touchTimer = setTimeout((() => { 
+		if(this.props.ddContext.scrollVelocity==0){//suppress the long press behavior when the tap is a "catch" from a rapid inertia scroll
+			this.props.ddContext.touchTimer = setTimeout((() => { 
 			this.initiateDragScroller()
 			this.processDragStart(streamReactNodeMap[this.props.stream.id].reactComponentRef.current,e.touches[0].pageX,e.touches[0].pageY)
-		}).bind(this), 500);
+		}).bind(this), 500)}
 		e.stopPropagation();
 	}
 	onTouchMove(e){
@@ -131,8 +133,7 @@ class DraggableStreamView extends BaseComponent{
 			this.props.ddContext.touchScrollManager.touchY = e.touches[0].clientY
 			
 			//calculates which stream node we're intercepting and dispatch dragging event
-			let interceptNode = Object.keys(streamReactNodeMap).map(k => streamReactNodeMap[k]).filter(n => n.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))
-								.sort((a,b) => - a.props.depth + b.props.depth)[0];
+			let interceptNode = Object.keys(streamReactNodeMap).map(k => streamReactNodeMap[k]).filter(n => n.isWithinBound(e.touches[0].pageX,e.touches[0].pageY)).sort((a,b) => - a.props.depth + b.props.depth)[0];
 			interceptNode?.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation());
 			
 			//dispatch dragging event to terminal stream and placeholder to manage grouping
@@ -141,7 +142,8 @@ class DraggableStreamView extends BaseComponent{
 		}else{									//not dragging but scrolling
 			clearTimeout(this.props.ddContext.touchTimer)
 			let newScrollIndex = this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor);
-			this.props.ddContext.scrollVelocity = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate 
+			let v = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate
+			this.props.ddContext.scrollVelocity = Math.abs(v)>this.props.ddContext.velocityThreshold?v:0
 			window.scroll(0,newScrollIndex)
 		}
 	}
