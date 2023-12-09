@@ -10,12 +10,15 @@ import {CompoundStream} from '../model'
 import React from "react";
 
 var streamReactNodeMap = {}
-var isInEditMode = false
 let instance;
-let DragGhostInstance;
 
-
-
+const TouchConfig = {
+	velocityThreshold:0.1, 				//velocity threshold to detect a scroll movement and ignore micro movements 
+	dragScrollRefreshRate: 120, 		//htz frequency at which the drag scroll mecanism is refreshed
+ 	scrollDecelaratorFriction: 0.04, 	//percent energy lost on each tick for scroll inertia
+ 	scrollInertiaCliff: 0.05, 			//absolute velocity under which scroll inertia stops 
+	dragSensitiveArea : 0.35, 			//percent of screen sensitive to drag-scroll at the top and the bottom
+}
 
 export default class MasterStreamView extends BaseComponent{
 	constructor(props){
@@ -26,13 +29,11 @@ export default class MasterStreamView extends BaseComponent{
 			ddContext:{
 				draggedOverStream:{},//stream being overed right now and need to make space
 				dropTarget:{},//stream it will be dropped into
-				scrollVelocity : 0,
-				velocityThreshold:0.1, 
-				dragScrollRefreshRate: 120, //htz
-				scrollDecelaratorFriction: 0.04 //percent energy lost on each tick
+				scrollVelocity : 0,//used as a variable to measure scroll velocity and apply intertia
 			},
 		}
 		instance = this;
+		this.isSomeoneInEditMode = false;
 		this.reactComponentRef = React.createRef();
 		this.onDragOverNoMansLand = this.onDragOverNoMansLand.bind(this)
 	}
@@ -100,7 +101,7 @@ class DraggableStreamView extends BaseComponent{
 		this.onTouchMove = this.onTouchMove.bind(this)
 		this.reactComponentRef = React.createRef()
 		this.placeholderComponentRef = React.createRef()
-		this.terminalStreamComponentRef = React.createRef()
+		this.editableStreamComponentRef = React.createRef()
 	}
 
 	//touch drag and drop handling
@@ -110,7 +111,6 @@ class DraggableStreamView extends BaseComponent{
 			initialScrollY : window.scrollY,
 			touchX: e.touches[0].clientX, 
 			touchY: e.touches[0].clientY,
-			dragSensitiveArea : 0.35, //percent of screen sensitive to drag-scroll at the top and the bottom
 			scrollIncr : 0,
 			initialScrollHeight : document.documentElement.scrollHeight,
 			dragScroller : null			
@@ -118,7 +118,7 @@ class DraggableStreamView extends BaseComponent{
 		clearInterval(this.props.ddContext.scrollDecelarator)
 		if(this.isInEditMode() || this.props.stream.isRoot){return}
 		//only start drag interaction on long press
-		if(Math.abs(this.props.ddContext.scrollVelocity)<this.props.ddContext.velocityThreshold){//suppress the long press behavior when the tap is a "catch" from a rapid inertia scroll
+		if(Math.abs(this.props.ddContext.scrollVelocity)<TouchConfig.velocityThreshold){//suppress the long press behavior when the tap is a "catch" from a rapid inertia scroll
 			this.props.ddContext.touchTimer = setTimeout((() => { 
 			this.initiateDragScroller()
 			this.processDragStart(streamReactNodeMap[this.props.stream.id].reactComponentRef.current,e.touches[0].pageX,e.touches[0].pageY)
@@ -138,12 +138,12 @@ class DraggableStreamView extends BaseComponent{
 			interceptNode?.processDraggingOver(e.touches[0].pageX,e.touches[0].pageY,() => e.stopPropagation());
 			
 			//dispatch dragging event to terminal stream and placeholder to manage grouping
-			[interceptNode?.placeholderComponentRef,interceptNode?.terminalStreamComponentRef].map(n => n?.current)
-				.filter(r => r?.isWithinBound(e.touches[0].pageX,e.touches[0].pageY))[0]?.onDragOver()
+			[interceptNode?.placeholderComponentRef,interceptNode?.editableStreamComponentRef].map(n => n?.current)
+				.filter(r => (r&&!!r.isWithinBound)?r.isWithinBound(e.touches[0].pageX,e.touches[0].pageY):false)[0]?.onDragOver()
 		}else{									//not dragging but scrolling
 			clearTimeout(this.props.ddContext.touchTimer)
 			let newScrollIndex = this.props.ddContext.touchScrollManager.initialScrollY - (e.touches[0].screenY-this.props.ddContext.touchScrollManager.yAnchor);
-			this.props.ddContext.scrollVelocity = (newScrollIndex - window.scrollY)/1000*this.props.ddContext.dragScrollRefreshRate
+			this.props.ddContext.scrollVelocity = (newScrollIndex - window.scrollY)/1000*TouchConfig.dragScrollRefreshRate
 			window.scroll(0,newScrollIndex)
 		}
 	}
@@ -151,7 +151,7 @@ class DraggableStreamView extends BaseComponent{
 		clearTimeout(this.props.ddContext.touchTimer)
 		clearInterval(this.props.ddContext.touchScrollManager.dragScroller)
 		this.initiateInertia()
-		if(this.props.ddContext.isDragging){
+		if(this.props.ddContext.isDragging){ //drop event
 			e.stopPropagation();
 			this.processDrop();
 		}
@@ -159,17 +159,16 @@ class DraggableStreamView extends BaseComponent{
 	initiateInertia(){//controls inertia when scrolling 
 		clearInterval(this.props.ddContext.scrollDecelarator)
 		this.props.ddContext.scrollDecelarator = setInterval(() => {
-			window.scroll(0,window.scrollY+this.props.ddContext.scrollVelocity*1000/this.props.ddContext.dragScrollRefreshRate)
-			this.props.ddContext.scrollVelocity = this.props.ddContext.scrollVelocity*(1-this.props.ddContext.scrollDecelaratorFriction)
-			if(Math.abs(this.props.ddContext.scrollVelocity)<0.05){clearInterval(this.props.ddContext.scrollDecelarator)}
-			//console.log(this.props.ddContext.scrollVelocity)
-		},1000/this.props.ddContext.dragScrollRefreshRate)
+			window.scroll(0,window.scrollY+this.props.ddContext.scrollVelocity*1000/TouchConfig.dragScrollRefreshRate)
+			this.props.ddContext.scrollVelocity = this.props.ddContext.scrollVelocity*(1-TouchConfig.scrollDecelaratorFriction)
+			if(Math.abs(this.props.ddContext.scrollVelocity)<TouchConfig.scrollInertiaCliff){clearInterval(this.props.ddContext.scrollDecelarator)}
+		},1000/TouchConfig.dragScrollRefreshRate)
 	}
 	initiateDragScroller(){//initiate the dragScroller the page when dragging on top part or bottom part of the page, refresh at htz value
 		this.props.ddContext.hasNotMovedYet = true
 		this.props.ddContext.touchScrollManager.dragScroller = setInterval((() => {
 			if(this.props.ddContext.hasNotMovedYet){return}
-			let scI = this.props.ddContext.touchScrollManager.scrollIncr, newScI = scI, x = this.props.ddContext.touchScrollManager.touchX, y = this.props.ddContext.touchScrollManager.touchY, h = window.innerHeight, s = this.props.ddContext.touchScrollManager.dragSensitiveArea, sc0 = this.props.ddContext.touchScrollManager.initialScrollY;
+			let scI = this.props.ddContext.touchScrollManager.scrollIncr, newScI = scI, x = this.props.ddContext.touchScrollManager.touchX, y = this.props.ddContext.touchScrollManager.touchY, h = window.innerHeight, s = TouchConfig.dragSensitiveArea, sc0 = this.props.ddContext.touchScrollManager.initialScrollY;
 			
 			//sense scroll direction
 			if(y < h*s){newScI = Math.max(scI-50*(s-y/h),-sc0)}//top part, scroll up
@@ -182,7 +181,7 @@ class DraggableStreamView extends BaseComponent{
 				window.scroll(0,sc0 + newScI)
 				this.processDraggingOver(x, Math.min(y + sc0 + scI,this.props.ddContext.touchScrollManager.initialScrollHeight))
 			}
-		}).bind(this),1000/this.props.ddContext.dragScrollRefreshRate)
+		}).bind(this),1000/TouchConfig.dragScrollRefreshRate)
 	}
 	
 	//mouse drag & drop events
@@ -215,8 +214,8 @@ class DraggableStreamView extends BaseComponent{
 		setTimeout(() => draggableNodeDom.style["height"] = 0,20) 						 //after letting the dom update, change to animate
 
 		//handle the dragging image: set the default ghost to nothing and create our own clone
-		DragGhostInstance.updateState({stream: this.props.stream,width:(draggableNodeDom.clientWidth-3*DS.remToPx)+"px",visible:true})
-		this.props.ddContext.clone = DragGhostInstance.reactComponentRef.current;
+		instance.dragGhostInstance.updateState({stream: this.props.stream,width:(draggableNodeDom.clientWidth-3*DS.remToPx)+"px",visible:true})
+		this.props.ddContext.clone = instance.dragGhostInstance.reactComponentRef.current;
 		instance.updateClonePosition(x,y);//necessary on touch devices
 	}
 	processDraggingOver(x,y,onConsumed = () => {}){
@@ -254,7 +253,7 @@ class DraggableStreamView extends BaseComponent{
 		//update to non-dragging state & manage animations
 		Object.keys(streamReactNodeMap).forEach(k => streamReactNodeMap[k].updateState({moveOutOfTheWay:false}))
 		this.props.ddContext.draggedOverStream = {};
-		DragGhostInstance.updateState({visible:false})
+		instance.dragGhostInstance.updateState({visible:false})
 		if(this.shouldAnimateHeight()){
 			setTimeout(() => {//setup debounce animation: this has the effect of setting the height of the dragged node back to original value
 				this.props.ddContext.isDragging = false;
@@ -276,7 +275,7 @@ class DraggableStreamView extends BaseComponent{
 	}
 
 	//convenience
-	isInEditMode(){return isInEditMode}
+	isInEditMode(){return instance.isSomeoneInEditMode}
 	amILastDraggedStream(){return this.props.stream.id == this.props.ddContext.lastDraggedStream?.id}
 	amIBeingDraggedOver(){return this.props.ddContext.draggedOverStream?.id==this.props.stream.id}
 	amIDraggingNow(){return this.amILastDraggedStream() && this.props.ddContext.isDragging}
@@ -295,8 +294,8 @@ class DraggableStreamView extends BaseComponent{
 				key={"cont-"+this.props.stream.id} draggable onDragStart={this.onDragStart} onTouchStart={this.onTouchStart} onTouchEnd={this.onTouchEnd} onDragOver={this.onDragOver} onDragEnd={this.onDragEnd} onDragEnter={e => e.preventDefault()} onTouchMove={this.onTouchMove}>
 				<Placeholder ref={this.placeholderComponentRef} draggableNode={this} highlight={this.state.moveOutOfTheWay && !this.state.isDraggingOverTerminalStream} moveOutOfTheWay={this.state.moveOutOfTheWay} animate={this.shouldAnimateHeight()}/>
 				{this.props.stream.children?
-					<CompoundStreamView ddContext={this.props.ddContext} stream={this.props.stream} draggableNode={this}/>:
-					<TerminalStreamView ref={this.terminalStreamComponentRef} ddContext={this.props.ddContext} stream={this.props.stream} draggableNode={this}/>}
+					<CompoundStreamView ref={this.editableStreamComponentRef} ddContext={this.props.ddContext} stream={this.props.stream} draggableNode={this}/>:
+					<TerminalStreamView ref={this.editableStreamComponentRef} ddContext={this.props.ddContext} stream={this.props.stream} draggableNode={this}/>}
 			</DraggableStreamContainer>
 		)
 	}
@@ -354,9 +353,13 @@ class GenericEditableStreamView extends BaseComponent{
 		super(props)
 		this.state={isInEditMode:false,showToolButtons:false}
 	}
-	onEnterEditMode(e){isInEditMode=true;this.updateState({isInEditMode:true})}
-	onExitEditMode(e){isInEditMode=false;this.updateState({isInEditMode:false});instance.saveMasterStream()}
-	onHover(e){if(!this.state.showToolButtons && !isInEditMode){this.updateState({showToolButtons:true})}}
+	onEnterEditMode(e){
+		if(instance.isSomeoneInEditMode || instance.isFactoryActive()){return}
+		instance.isSomeoneInEditMode=true;
+		this.updateState({isInEditMode:true})
+	}
+	onExitEditMode(e){instance.isSomeoneInEditMode=false;this.updateState({isInEditMode:false});instance.saveMasterStream()}
+	onHover(e){if(!this.state.showToolButtons && !instance.isSomeoneInEditMode){this.updateState({showToolButtons:true})}}
 	onMouseLeave(e){if(this.state.showToolButtons){this.updateState({showToolButtons:false})}}
 	isInEditMode(){return this.state.isInEditMode}
 	isToolsVisible(){return this.state.showToolButtons}
@@ -387,10 +390,10 @@ class CompoundStreamView extends GenericEditableStreamView{
 		this.onExitEditMode();
 	}
 	onClickPlusButton(e){
-		if(instance.isFactoryActive()){return}//don't create a new stream is one is already being created
+		if(instance.isFactoryActive() || instance.isSomeoneInEditMode){return}//don't create a new stream is one is already being created or a stream is in edit mode
 		else{
 			Core.makeNewTerminalStream("",0,"monthly",this.props.stream.id).isFactory = true;
-			isInEditMode=true;
+			instance.isSomeoneInEditMode=true;
 			instance.setFactoryActive(true);
 			instance.refresh();
 		}
@@ -403,7 +406,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.props.stream.name}
 							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
 						></DS.component.Input>):this.props.stream.isRoot?"Total":this.props.stream.name}</DS.component.Label>
-					{(this.isToolsVisible()||Core.isMobile())?(<DS.component.Button.Icon style={{marginLeft:Core.isMobile()?"0.1rem":"0.5rem",marginTop:Core.isMobile()?"":"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
+					{(this.isToolsVisible())?(<DS.component.Button.Icon style={{marginLeft:Core.isMobile()?"0.1rem":"0.5rem",marginTop:Core.isMobile()?"":"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<DS.component.Spacer/>
 					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamAmountString()}</DS.component.Label>
 					{(this.isToolsVisible() && !this.isInEditMode() && !this.props.stream.isRoot)?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
@@ -491,7 +494,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 			if(buttonIndex==1){//button clicked is confirm
 				Core.deleteStream(this.props.stream)
 				instance.refresh();
-				isInEditMode=false;
+				this.isInEditMode=false;
 				instance.saveMasterStream();
 	            console.log("Stream deleted: "+this.props.stream.name);
 			}
@@ -609,7 +612,7 @@ class DragGhost extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state = {stream : Core.getMasterStream(),width: "",visible:false}
-		DragGhostInstance = this
+		instance.dragGhostInstance = this
 		this.reactComponentRef = React.createRef() 
 	}
 	render(){
