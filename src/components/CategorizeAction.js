@@ -221,7 +221,7 @@ export class TransactionView extends BaseComponent{
 							transition:"margin-left 0.5s ease",
 							filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
 							height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
-							<img style={{alignSelf: "center"}} src={it.image}></img>
+							<DS.component.Image src={it.image}/>
 						</div>
 					)}
 				</div>

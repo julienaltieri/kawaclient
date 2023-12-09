@@ -231,7 +231,10 @@ const StyledSpacer = styled.div`
 	flex-grow:1;
 `
 
-const StyledImage = styled.img``
+const StyledImage = styled.img`
+	width: 100%;
+	align-self: center;
+`
 
 const StyledFieldWithLabel = styled.div`
 	display: flex;
