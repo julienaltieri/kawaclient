@@ -69,7 +69,7 @@ export default class CategorizationRulesView extends BaseComponent{
 			<Droppable droppableId="trash" key={0}>
 			{(provided,snapshot) => (
 				<StyledTopArea>
-					<StyledDeleteZone ref={provided.innerRef} style={getTrashDropStyle(snapshot.isDraggingOver)}  {...provided.droppableProps} visible={this.state.dragging}><DS.component.Label highlight>Drag here to remove</DS.component.Label></StyledDeleteZone>
+					<StyledDeleteZone ref={provided.innerRef} style={getTrashDropStyle(snapshot.isDraggingOver)}  {...provided.droppableProps} visible={this.state.dragging}><DS.component.Label style={{color: "inherit"}}>Drag here to remove</DS.component.Label></StyledDeleteZone>
 					<div style={{display:"none"}}>{provided.placeholder}</div>
 				</StyledTopArea>
 			)}</Droppable>
@@ -110,6 +110,7 @@ const StyledDeleteZone = styled.div`
 	opacity: ${(props) => props.visible?1:0};
     background: ${DS.getStyle().alert};
     transition: opacity 0.3s ease-in-out;
+    color: ${props => DS.getStyle().bodyTextLight};
     &:hover{
     	border: ;
     }
