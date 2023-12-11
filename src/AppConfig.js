@@ -9,6 +9,7 @@ const AppConfig = {
 		apiCategorizationOfflineMode: false,
 		apiUncategorizationOfflineMode: false,
 		apiDisableMasterStreamUpdates: false,
+		forceDesignMode: ["","darkMode","lightMode"][0],
 	},
 	transactionFetchMinDate: relativeDates.oneYearAgo(),
 }

@@ -158,7 +158,7 @@ const MiniToolTip = (props) => {
 		<V.VictoryLabel backgroundPadding={{ left: 10, right: 15,bottom:7,top:7 }}
       backgroundStyle={{fill:DesignSystem.getStyle()[props.datum.y>=0?"positive":"expenses"], opacity: 1,rx:15 }} 
       			scale={props.scale} textAnchor="middle" verticalAnchor="middle" 
-				style={{filter: "url(#shadow)",fill:DesignSystem.UIColors.white, fontSize: 22,fontFamily:"Inter",fontWeight:500}}
+				style={{filter: "url(#shadow)",fill:DesignSystem.getStyle().bodyTextLight, fontSize: 22,fontFamily:"Inter",fontWeight:500}}
 				datum={{x:props.datum.x,y:props.datum.y}}
 				dy={-7+(props.datum.y>0?1:-1)*28}
 				text={text}/></g>)

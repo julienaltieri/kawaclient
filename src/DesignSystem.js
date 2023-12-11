@@ -73,6 +73,7 @@ class DesignSystem{
 		lightMode: {
 			bodyText: this.UIColors.darkGrey5,
 			bodyTextSecondary: this.UIColors.darkGrey2,
+			bodyTextLight: this.UIColors.lightGrey4,
 			buttonDisabled: this.UIColors.lightGrey5,
 			borderColor: this.UIColors.midPurple,
 			borderColorHighlight: this.UIColors.midGrey,
@@ -100,6 +101,7 @@ class DesignSystem{
 		darkMode: {
 			bodyText: this.UIColors.lightGrey4,
 			bodyTextSecondary: this.UIColors.midGrey,
+			bodyTextLight: this.UIColors.lightGrey4,
 			buttonDisabled: this.UIColors.darkGrey2,
 			pageBackground: this.UIColors.veryDarkPurple,
 			borderColor: this.UIColors.darkGrey2,
@@ -125,7 +127,10 @@ class DesignSystem{
 			ultimateBackground: this.UIColors.black,
 		}
 	}
-	isDarkMode(){return true && (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+	isDarkMode(){
+		if(AppConfig.featureFlags.forceDesignMode != ""){return AppConfig.featureFlags.forceDesignMode == "darkMode"}
+		return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+	}
 	getMode(){return this.isDarkMode()?"darkMode":"lightMode"}
 	getStyle(){return this.styles[this.getMode()]}
 	rgbToHex(red, green, blue) {
