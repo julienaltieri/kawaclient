@@ -151,7 +151,7 @@ class DraggableStreamView extends BaseComponent{
 		clearTimeout(this.props.ddContext.touchTimer)
 		clearInterval(this.props.ddContext.touchScrollManager.dragScroller)
 		this.initiateInertia()
-		if(this.props.ddContext.isDragging){ //drop event
+		if(this.props.ddContext.isDragging){ //drop events
 			e.stopPropagation();
 			this.processDrop();
 		}
@@ -359,7 +359,14 @@ class GenericEditableStreamView extends BaseComponent{
 		this.updateState({isInEditMode:true})
 	}
 	onExitEditMode(e){instance.isSomeoneInEditMode=false;this.updateState({isInEditMode:false});instance.saveMasterStream()}
-	onHover(e){if(!this.state.showToolButtons && !instance.isSomeoneInEditMode){this.updateState({showToolButtons:true})}}
+	onHover(e){
+		if(!this.state.showToolButtons && !instance.isSomeoneInEditMode){
+			if(Core.isMobile()){
+				//on mobile, the tap-as-hover event is indistinguishable from the tap event so 2 events get fired when tapping directly on one of the tools button... resulting in entering edit mode or factory mode even when the buttons were not visible. By slightly delaying the appearance of the tool buttons, we're able to suppress this effect because the extra tap event happens while the buttons aren't visible yet, and therefore doesn't trigger anything. 
+				setTimeout((() => this.updateState({showToolButtons:true})).bind(this),20)
+			} else {this.updateState({showToolButtons:true})}
+		}
+	}
 	onMouseLeave(e){if(this.state.showToolButtons){this.updateState({showToolButtons:false})}}
 	isInEditMode(){return this.state.isInEditMode}
 	isToolsVisible(){return this.state.showToolButtons}
