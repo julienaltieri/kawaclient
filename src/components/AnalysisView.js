@@ -338,7 +338,7 @@ class AnnotationInput extends BaseComponent{
 		this.updateState({editMode:true,editStream:stream,editedAnnotationDate:a.date,inputValue:this.getAnnotations(stream)[0]?.body||"",previousInputValue:((this.getAnnotations(stream)[0]?.body)||"")})
 	}
 	onConfirm(e,s){
-		AnnotationInput.SaveAnnotation(this.state.editStream,this.state.editedAnnotationDate,this.state.inputValue)
+		AnnotationInput.SaveAnnotation(this.state.editStream,this.state.editedAnnotationDate || this.props.date,this.state.inputValue)
 		this.updateState({editMode:false,editStream:undefined,annotationSnapshot:this.getAnnotations()})
 		if(!!this.props.shouldDismiss){
 			if(this.props.stream.isTerminal() && this.state.inputValue=="" || !this.props.stream.isTerminal() && this.getAnnotations().length==0){
