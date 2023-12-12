@@ -68,7 +68,7 @@ class TopNavigationBarBase extends BaseComponent{
 	refreshSideBarState(){this.updateState({currentRouteIndex:instance.getCurrentRouteIndex()})}
 
 	summonSideBar(){
-		Core.presentModal(ModalTemplates.SideNavigation(),true).then((o) => {
+		Core.presentModal(ModalTemplates.SideNavigation(),{fromSide:true}).then((o) => {
 			let route = o.buttonIndex
 			instance.navigateToRoute(route);
   			this.updateState({sideBarVisible:false,currentRouteIndex:instance.state.registeredViews.map(v => v.path).indexOf(route)})

@@ -326,11 +326,11 @@ const TransactionListViewItem= styled.li`
 `
 
 export class ModalController{
-	constructor(getContent,fromSide){
+	constructor(getContent,options){
 		this.promise = new Promise((res,rej)=> {this.onAnswer = res;this.onCancel = rej})
 		this.getContent = getContent;
 		this.state = {modalContentState:{}};
-		this.appearFromSide = fromSide;
+		this.appearFromSide = options?.fromSide;
 	}
 	setParent(parent){this.parent = parent}
 	getParent(){return this.parent}
