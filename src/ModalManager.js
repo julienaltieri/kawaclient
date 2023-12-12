@@ -330,7 +330,8 @@ export class ModalController{
 		this.promise = new Promise((res,rej)=> {this.onAnswer = res;this.onCancel = rej})
 		this.getContent = getContent;
 		this.state = {modalContentState:{}};
-		this.appearFromSide = options?.fromSide;
+		this.options = options || {};
+		this.appearFromSide = this.options.fromSide;
 	}
 	setParent(parent){this.parent = parent}
 	getParent(){return this.parent}
@@ -400,7 +401,7 @@ export class ModalContainer extends BaseComponent{
 				</ModalBaseMobile>
 			</ModalWrapper>)
 		}else{
-			return (<ModalWrapper data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
+			return (<ModalWrapper noShade={this.props.controller.options.noShade} data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
 				<ModalBase>
 					{this.state.content}
 				</ModalBase>
@@ -413,7 +414,7 @@ export class ModalContainer extends BaseComponent{
 
 
 const ModalWrapper = styled.div`
-	background: #00000036;
+	background: ${props => props.noShade?"#00000000":"#00000036"};
     width: 100%;
     height: 100%;
     position: fixed;
