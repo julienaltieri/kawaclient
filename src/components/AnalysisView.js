@@ -162,6 +162,8 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 	constructor(props){
 		super(props)
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
+		this.onHoverOnExpectationPanel = this.onHoverOnExpectationPanel.bind(this)
+		this.onLeaveHoverOnExpecationPanel = this.onLeaveHoverOnExpecationPanel.bind(this)
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -178,6 +180,8 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			}
 		}).catch(e => {})
 	}
+	onHoverOnExpectationPanel(){if(!this.state.shouldShowExpectationPannelToolTip){this.updateState({shouldShowExpectationPannelToolTip:true})}}
+	onLeaveHoverOnExpecationPanel(){if(this.state.shouldShowExpectationPannelToolTip){this.updateState({shouldShowExpectationPannelToolTip:false})}}
 	render(){
 		let prevExp = 0;
 		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
@@ -191,9 +195,10 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			.map((r,i) => (
 				<div key={i}>
 					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
-						<ExpectationChangePannel key={2*i+1+k}>
+						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
 							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
+							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more"/></ExpectationChangePanelMoreRow>
 						</ExpectationChangePannel>
 					))}
 					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
@@ -202,6 +207,15 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		}</div>)
 	}
 }
+
+const ExpectationChangePanelMoreRow = styled.div`
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+	/*margin-bottom: ${props => -DS.spacing.xxs}rem;*/
+	transition: height 0.2s;
+	overflow: hidden;
+`
 
 const ExpectationChangePannel = styled.div`
 	font-size: 0.7rem;

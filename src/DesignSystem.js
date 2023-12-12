@@ -156,6 +156,7 @@ class DesignSystem{
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
+		more: 			<Icon className="material-symbols-rounded">more_horiz</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
