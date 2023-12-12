@@ -2,7 +2,7 @@ import utils from './utils'
 import Cookies from 'js-cookie'
 import ApiCaller, {API} from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream} from './model'
-import ModalManager, {ModalController} from './ModalManager.js'
+import ModalManager, {ModalController, ModalTemplates} from './ModalManager.js'
 import Navigation, {NavRoutes} from './components/Navigation'
 import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
@@ -277,7 +277,7 @@ class Core{
 	  	s2.moveFromParentToParentAtIndex(parent,group)
 	  	s1.moveFromParentToParentAtIndex(this.getParentOfStream(s1),group)
 	}
-	pruneMasterStream(){//remove compound streams that have no terminal children at all. This can happen if the last terminal stream of russian dolls groups is taken out
+	pruneMasterStream(){//job: remove compound streams that have no terminal children at all. This can happen if the last terminal stream of russian dolls groups is taken out
 		this.getUserData()?.masterStream?.pruneChildren()
 	}
 	getStreamIndexInParent(s){return this.getParentOfStream(s)?.children.map(ss => ss.id).indexOf(s.id)}
@@ -303,10 +303,22 @@ class Core{
 
 	//modal management
 	//return a promise that resolves based on the user action
-	presentModal(template,fromSide){return ModalManager.presentModalIn(new ModalController(template,fromSide),this.modalManagement)}
+	presentModal(template,options){return ModalManager.presentModalIn(new ModalController(template,options),this.modalManagement)}
+	presentContextualMenu(list,displayItemAccessor,target){
+		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
+			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor))
+		}else{//on desktop they are presented as floating contextual menu
+			target.style["z-index"]=301;//ensures the initial target is still clickable		
+			let onReclick = (e => {instance.dismissModal();target.removeEventListener("click",onReclick);e.stopPropagation()});
+			target.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
+			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor),
+				{noShade:true,noAnimation:true,onDismiss: () => {target.removeEventListener("click",onReclick)}})
+		}
+	}
 	registerModalManagement(present,unmount){
 		this.modalManagement={presentModal:present,unmountModal:unmount}
 	}
+	dismissModal(){ModalManager.dismissModal()}
 
 
 	//amazon transactions matching
