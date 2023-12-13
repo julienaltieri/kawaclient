@@ -304,14 +304,14 @@ class Core{
 	//modal management
 	//return a promise that resolves based on the user action
 	presentModal(template,options){return ModalManager.presentModalIn(new ModalController(template,options),this.modalManagement)}
-	presentContextualMenu(list,displayItemAccessor,target){
+	presentContextualMenu(list,displayItemAccessor,target,enableAccessor){
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
-			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor))
+			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor,enableAccessor))
 		}else{//on desktop they are presented as floating contextual menu
 			if(!instance.isMobile()){target.style["z-index"]=301}//ensures the initial target is still clickable		
 			let onReclick = (e => {instance.dismissModal();target.removeEventListener("click",onReclick);e.stopPropagation()});
 			target.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
-			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor),{
+			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor,enableAccessor),{
 					noShade:true, noAnimation:true,
 					onDismiss: () => target.removeEventListener("click",onReclick),
 					onConfirm: () => target.removeEventListener("click",onReclick)

@@ -66,9 +66,9 @@ export const ModalTemplates = {
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
-	ModalWithListItems: (title,items,itemRendered = (li) => li) => (that) => {
+	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<DS.component.ScrollableBottomSheet>
-			{items.map((s,i) => <DS.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
+			{items.map((s,i) => <DS.component.ListItem key={i} disabled={!enableAccessor(s)} onClick={(e)=>{enableAccessor(s)?that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i)):e.stopPropagation()}}>
 				{itemRendered(s)}
 			</DS.component.ListItem>)}
 		</DS.component.ScrollableBottomSheet>,[])(that)
@@ -102,14 +102,14 @@ export const ModalTemplates = {
 	  		onClickRoute={(e,route) => that.state.controller.onConfirm(e,route)}
 		/></BaseModalWrapper>)
 	},
-	ModalContextualMenu: (target,optionList = [],displayListItemAccessor = (l) => l) => (that) => { //target must be a dom element to point the contextual menu on
+	ModalContextualMenu: (target,optionList = [],displayListItemAccessor = (l) => l,enableAccessor = () => true) => (that) => { //target must be a dom element to point the contextual menu on
 		let r = target.getBoundingClientRect();
 		return (
 			<FixedBase>
 				<DS.component.Tooltip style={{paddingLeft:0,paddingRight:optionList.length>8?"":0}} x={r.x+r.width/2} y={r.y+r.height*3/4}>
 					<DS.component.ScrollableList style={{maxHeight:"15rem"}}>{
 						optionList.map((a,i) => 
-						<DS.component.ListItem size="xs" key={i} onClick={(e)=> that.state.controller.onConfirm(e,i)}>{displayListItemAccessor(a)}</DS.component.ListItem>)}
+						<DS.component.ListItem size="xs" disabled={!enableAccessor(a)} key={i} onClick={(e)=> enableAccessor(a)?that.state.controller.onConfirm(e,i):e.stopPropagation()}>{displayListItemAccessor(a)}</DS.component.ListItem>)}
 					</DS.component.ScrollableList>
 				</DS.component.Tooltip>
 			</FixedBase>

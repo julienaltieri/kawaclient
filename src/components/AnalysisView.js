@@ -194,11 +194,11 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 	onClickMoreInExpecationPanel(e,reportBefore,expChange){
 		this.updateState({stayExpanded:true})
 		let options = [
-			{name:"Edit",onSelect:() => Core.presentModal(ModalTemplates.BaseModal("How much?","On this date, this stream should expect xxx per month.")).catch(e => {})},
-			{name:"Move up", disabled: false, 	onSelect:() => this.moveExpectationChange(1,reportBefore,expChange)},
-			{name:"Move down",disabled: false, 	onSelect:() => this.moveExpectationChange(-1,reportBefore,expChange)}
+			{name:"Edit",		enable: true,	onSelect:() => Core.presentModal(ModalTemplates.BaseModal("How much?","On this date, this stream should expect xxx per month.")).catch(e => {})},
+			{name:"Move up",  	enable: reportBefore.reportingDate.getTime() < new Date().getTime(), 	onSelect:() => this.moveExpectationChange(1,reportBefore,expChange)}, //disable when rendered as part of an open report (meaning it's at the very top)
+			{name:"Move down",	enable: true, 	onSelect:() => this.moveExpectationChange(-1,reportBefore,expChange)}
 		];
-		Core.presentContextualMenu(options,o => o.name,e.target).then(({state,buttonIndex}) => {
+		Core.presentContextualMenu(options,o => o.name,e.target,o => o.enable).then(({state,buttonIndex}) => {
 			options[buttonIndex].onSelect().then(() => {
 				this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
 			})
