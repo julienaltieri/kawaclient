@@ -191,20 +191,36 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			this.updateState({shouldShowExpectationPannelToolTip:false})
 		}
 	}
-	onClickMoreInExpecationPanel(e){
+	onClickMoreInExpecationPanel(e,reportBefore,expChange){
 		this.updateState({stayExpanded:true})
-		let options = ["Move up","Move down"];
-		Core.presentContextualMenu(options,undefined,e.target).then(({state,buttonIndex}) => {
-			console.log(buttonIndex)
-			this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
+		let options = [
+			{name:"Edit",onSelect:() => Core.presentModal(ModalTemplates.BaseModal("How much?","On this date, this stream should expect xxx per month.")).catch(e => {})},
+			{name:"Move up", disabled: false, 	onSelect:() => this.moveExpectationChange(1,reportBefore,expChange)},
+			{name:"Move down",disabled: false, 	onSelect:() => this.moveExpectationChange(-1,reportBefore,expChange)}
+		];
+		Core.presentContextualMenu(options,o => o.name,e.target).then(({state,buttonIndex}) => {
+			options[buttonIndex].onSelect().then(() => {
+				this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
+			})
 		}).catch(e => {this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})})
+	}
+	moveExpectationChange(delta,reportBefore,expChange){
+		/* 	Responsible to move an expectation change in a stream up or down 1 period
+			Returns a promise (data update)
+			delta = 1 means we're moving the expectation by 1 period in the future, -1 by one period in the past */
+		
+		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingDate)//get the reporting dates in order
+		let idx = rds.indexOf(reportBefore.reportingDate)//find the delta this expectation change currently is in
+		let offsetTime = rds[idx+delta].getTime()-rds[idx].getTime() //calculate the offset we should put on the current expectation date
+		expChange.startDate = new Date(expChange.startDate.getTime()+offsetTime) 
+		return Promise.all([this.props.onMinigraphUpdateRequested(),this.updateState({refresh: new Date()}),Core.saveStreams()])
 	}
 
 
 	render(){
 		let prevExp = 0;
 		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
-			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp}
+			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp,origin:h}
 			prevExp = h.amount
 			return res
 		})
@@ -217,7 +233,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
 							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
-							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={this.onClickMoreInExpecationPanel}/></ExpectationChangePanelMoreRow>
+							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={e => this.onClickMoreInExpecationPanel(e,r,h.origin)}/></ExpectationChangePanelMoreRow>
 						</ExpectationChangePannel>
 					))}
 					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
