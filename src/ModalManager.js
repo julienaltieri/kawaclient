@@ -33,7 +33,8 @@ class ModalManager{
 		return modalController.then()
 	}
 
-	dismissModal(modalController){return (modalController || this.currentModalController).getParent().unmountModal(modalController)}
+	unmountModal(modalController){return modalController.getParent().unmountModal(modalController)}
+	dismissModal(modalController){return (modalController || this.currentModalController).onDismiss()}
 	updateState(changes){this.setState({...this.state,...changes})}		
 }
 
@@ -65,7 +66,7 @@ export const ModalTemplates = {
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
-	ModalWithListItems: (title,items,itemRendered) => (that) => {
+	ModalWithListItems: (title,items,itemRendered = (li) => li) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<DS.component.ScrollableBottomSheet>
 			{items.map((s,i) => <DS.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
 				{itemRendered(s)}
@@ -105,7 +106,7 @@ export const ModalTemplates = {
 		let r = target.getBoundingClientRect();
 		return (
 			<FixedBase>
-				<DS.component.Tooltip style={{paddingLeft:0}} x={r.x+r.width/2} y={r.y+r.height*3/4}>
+				<DS.component.Tooltip style={{paddingLeft:0,paddingRight:optionList.length>8?"":0}} x={r.x+r.width/2} y={r.y+r.height*3/4}>
 					<DS.component.ScrollableList style={{maxHeight:"15rem"}}>{
 						optionList.map((a,i) => 
 						<DS.component.ListItem size="xs" key={i} onClick={(e)=> that.state.controller.onConfirm(e,i)}>{displayListItemAccessor(a)}</DS.component.ListItem>)}
@@ -151,7 +152,7 @@ export class ModalController{
 				//res()
 				setTimeout(() => {
 					let a = instance
-					return instance.dismissModal(this).then(() => res())
+					return instance.unmountModal(this).then(() => res())
 				},this.options.noAnimation?0:animationTime)//leaves time to play the animation
 			})
 		})
@@ -169,8 +170,9 @@ export class ModalController{
 	}
 	onConfirm(e,i){
 		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
-		e.preventDefault();
-		e.stopPropagation();
+		e?.preventDefault();
+		e?.stopPropagation();
+		if(this.options.onConfirm){this.options.onConfirm(e)}
 	}
 }
 

@@ -308,11 +308,15 @@ class Core{
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
 			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor))
 		}else{//on desktop they are presented as floating contextual menu
-			target.style["z-index"]=301;//ensures the initial target is still clickable		
+			if(!instance.isMobile()){target.style["z-index"]=301}//ensures the initial target is still clickable		
 			let onReclick = (e => {instance.dismissModal();target.removeEventListener("click",onReclick);e.stopPropagation()});
 			target.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
-			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor),
-				{noShade:true,noAnimation:true,onDismiss: () => {target.removeEventListener("click",onReclick)}})
+			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor),{
+					noShade:true, noAnimation:true,
+					onDismiss: () => target.removeEventListener("click",onReclick),
+					onConfirm: () => target.removeEventListener("click",onReclick)
+				}
+			)
 		}
 	}
 	registerModalManagement(present,unmount){
