@@ -164,6 +164,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
 		this.onHoverOnExpectationPanel = this.onHoverOnExpectationPanel.bind(this)
 		this.onLeaveHoverOnExpecationPanel = this.onLeaveHoverOnExpecationPanel.bind(this)
+		this.onClickMoreInExpecationPanel = this.onClickMoreInExpecationPanel.bind(this)
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -180,8 +181,26 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			}
 		}).catch(e => {})
 	}
-	onHoverOnExpectationPanel(){if(!this.state.shouldShowExpectationPannelToolTip){this.updateState({shouldShowExpectationPannelToolTip:true})}}
-	onLeaveHoverOnExpecationPanel(){if(this.state.shouldShowExpectationPannelToolTip){this.updateState({shouldShowExpectationPannelToolTip:false})}}
+	onHoverOnExpectationPanel(){
+		if(!this.state.shouldShowExpectationPannelToolTip){
+			this.updateState({shouldShowExpectationPannelToolTip:true})
+		}
+	}
+	onLeaveHoverOnExpecationPanel(){
+		if(this.state.shouldShowExpectationPannelToolTip && !this.state.stayExpanded){
+			this.updateState({shouldShowExpectationPannelToolTip:false})
+		}
+	}
+	onClickMoreInExpecationPanel(e){
+		this.updateState({stayExpanded:true})
+		let options = ["Move up","Move down"];
+		Core.presentContextualMenu(options,undefined,e.target).then(({state,buttonIndex}) => {
+			console.log(buttonIndex)
+			this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
+		}).catch(e => {this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})})
+	}
+
+
 	render(){
 		let prevExp = 0;
 		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
@@ -198,7 +217,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
 							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
-							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more"/></ExpectationChangePanelMoreRow>
+							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={this.onClickMoreInExpecationPanel}/></ExpectationChangePanelMoreRow>
 						</ExpectationChangePannel>
 					))}
 					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
