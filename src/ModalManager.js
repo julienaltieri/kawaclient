@@ -1,3 +1,4 @@
+import React from 'react'
 import BaseComponent from './components/BaseComponent'
 import ReactDOM from 'react-dom';
 import Core from './core.js'
@@ -86,7 +87,7 @@ export const ModalTemplates = {
 						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
 				</TopBar>
-				<MainContent>{component}</MainContent>
+				<MainContent>{React.cloneElement(component,{...component.props,controller:instance.currentModalController})}</MainContent>
 				{buttonArray.length?<ActionButtons>
 					{buttonArray.map((b,i) => {
 						return <DS.component.Button.Action style={{marginTop:DS.spacing.xs+"rem"}} primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
