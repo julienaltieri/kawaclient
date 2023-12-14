@@ -308,13 +308,14 @@ class Core{
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
 			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor,enableAccessor))
 		}else{//on desktop they are presented as floating contextual menu
+			let prevZ = target.style["z-index"]
 			if(!instance.isMobile()){target.style["z-index"]=301}//ensures the initial target is still clickable		
-			let onReclick = (e => {instance.dismissModal();target.removeEventListener("click",onReclick);e.stopPropagation()});
+			let onReclick = (e => {instance.dismissModal();target.style["z-index"]=prevZ;target.removeEventListener("click",onReclick);e.stopPropagation()});
 			target.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
 			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor,enableAccessor),{
 					noShade:true, noAnimation:true,
-					onDismiss: () => target.removeEventListener("click",onReclick),
-					onConfirm: () => target.removeEventListener("click",onReclick)
+					onDismiss: () => {target.removeEventListener("click",onReclick);target.style["z-index"]=prevZ;},
+					onConfirm: () => {target.removeEventListener("click",onReclick);target.style["z-index"]=prevZ;}
 				}
 			)
 		}
