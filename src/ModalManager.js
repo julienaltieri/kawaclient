@@ -145,10 +145,14 @@ export class ModalController{
 		return Promise.resolve()
 	}
 	then(){return this.promise.then.apply(this.promise, arguments)}
-	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
+	willShow(){
+		document.body.style.overflow = 'hidden'
+		document.body.style['margin-right'] = DS.barWidthRem+"rem"
+	}//prevents scrolling behind the modal
 	hide(){
 		return new Promise((res,rej) => {
 			document.body.style.overflow = 'unset';
+			document.body.style['margin-right'] = 'unset';
 			this.modal.updateState({visible:false}).then(() => {
 				//res()
 				setTimeout(() => {
