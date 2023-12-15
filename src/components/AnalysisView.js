@@ -16,6 +16,7 @@ import React from "react"
 import {StyledLink} from "./StreamAuditView"
 import utils from '../utils'
 import Statistics from '../processors/Statistics';
+import FlipMove from 'react-flip-move'
 
 const _ = require('lodash');
 export function format(x,noMinusSign,noPlusSign){
@@ -239,22 +240,19 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			prevExp = h.amount
 			return res
 		})
-		return (<div style={{width: "100%"}}>{	
-			this.props.analysis.getPeriodReports()
-			.sort(utils.sorters.desc(r => r.reportingDate))
-			.map((r,i) => (
-				<div key={i}>
-					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
+		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => (
+				[...expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
 						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
 							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
 							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={e => this.onClickMoreInExpecationPanel(e,r,h)}/></ExpectationChangePanelMoreRow>
 						</ExpectationChangePannel>
-					))}
+					)),
 					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
-				</div>
-			))
-		}</div>)
+				]
+			)))
+
+		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
 	}
 }
 
