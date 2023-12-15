@@ -134,14 +134,10 @@ class CategorizeActionCard extends ActionCard{
 			}
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
-	setMoreStreamPopupVisible(visible,event){
-		if(Core.isMobile()){
-			Core.presentModal(ModalTemplates.ModalWithListItems("Select",this.getAvailableStreams(),this.getStreamString)).then(({state,buttonIndex}) => {
-				this.onClickStreamTag(state.selectedItem);
-			}).catch(e => {})
-		}else{
-			this.updateState({streamListVisible:visible,streamListClickEvent:event})
-		}
+	showMoreStreamContextualMenu(event){
+		Core.presentContextualMenu(this.getAvailableStreams(),this.getStreamString,event.target).then(({state,buttonIndex}) => {
+			this.onClickStreamTag(this.getAvailableStreams()[buttonIndex])
+		}).catch(e => {})
 	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return this.props.transaction.amazonOrderDetails}
@@ -168,17 +164,8 @@ class CategorizeActionCard extends ActionCard{
 					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
 					<DS.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DS.component.StreamTag>
-					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem", zIndex:100}} highlight={true} key="more" 
-							onClick={(e)=> {this.setMoreStreamPopupVisible(!this.state.streamListVisible,e)}}>...</DS.component.StreamTag>
-					{this.state.streamListVisible?<div ><FullScreenCapturer onClick={(e) => this.setMoreStreamPopupVisible(false)}></FullScreenCapturer>
-							<DS.component.Tooltip style={{paddingLeft:0}} x={this.state.streamListClickEvent.target.offsetLeft+this.state.streamListClickEvent.target.clientWidth/2} y={this.state.streamListClickEvent.target.offsetTop+this.state.streamListClickEvent.target.clientHeight*3/4}>
-								<DS.component.ScrollableList style={{maxHeight:"15rem"}}>{
-									this.getAvailableStreams().map((a,i) => 
-									<DS.component.ListItem size="xs" key={i} onClick={(e)=> this.onClickStreamTag(a)}>{this.getStreamString(a)}</DS.component.ListItem>)}
-								</DS.component.ScrollableList>
-							</DS.component.Tooltip>
-						</div>:""
-					}
+					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
+							onClick={(e)=> {this.showMoreStreamContextualMenu(e)}}>...</DS.component.StreamTag>
 			</ActionsContainerBox></FadeInWrap>}
 		</div>)
 		

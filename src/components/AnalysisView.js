@@ -16,6 +16,7 @@ import React from "react"
 import {StyledLink} from "./StreamAuditView"
 import utils from '../utils'
 import Statistics from '../processors/Statistics';
+import FlipMove from 'react-flip-move'
 
 const _ = require('lodash');
 export function format(x,noMinusSign,noPlusSign){
@@ -161,7 +162,11 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView{
 	constructor(props){
 		super(props)
+		this.state = {expectationEditPopupInputValue:undefined}
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
+		this.onHoverOnExpectationPanel = this.onHoverOnExpectationPanel.bind(this)
+		this.onLeaveHoverOnExpecationPanel = this.onLeaveHoverOnExpecationPanel.bind(this)
+		this.onClickMoreInExpecationPanel = this.onClickMoreInExpecationPanel.bind(this)
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -178,30 +183,87 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			}
 		}).catch(e => {})
 	}
+	onHoverOnExpectationPanel(){
+		if(!this.state.shouldShowExpectationPannelToolTip){
+			this.updateState({shouldShowExpectationPannelToolTip:true})
+		}
+	}
+	onLeaveHoverOnExpecationPanel(){
+		if(this.state.shouldShowExpectationPannelToolTip && !this.state.stayExpanded){
+			this.updateState({shouldShowExpectationPannelToolTip:false})
+		}
+	}
+
+	onClickMoreInExpecationPanel(e,reportBefore,expChange){
+		this.updateState({stayExpanded:true})
+		let options = [
+			{
+				name:"Edit",
+				enable: true,
+				onSelect:() => Core.presentModal(ModalTemplates.ModalWithComponent("Edit expected amount",<EditExpectationModalView stream={this.props.analysis.stream} expChange={expChange}/>)).then(({state,buttonIndex}) => {
+					if(buttonIndex==1){//primary button
+						expChange.origin.amount = state.expectationEditPopupInputValue
+						return this.save()
+					}else{return Promise.resolve()}
+				}).catch(e => {})
+			},{
+				name:"Move up",
+				enable: reportBefore.reportingDate.getTime() < new Date().getTime(),  //disable when rendered as part of an open report (meaning it's at the very top)
+				onSelect:() => this.moveExpectationChange(1,reportBefore,expChange.origin)
+			},
+			{
+				name:"Move down",
+				enable: true,
+				onSelect:() => this.moveExpectationChange(-1,reportBefore,expChange.origin)
+			}
+		];
+		Core.presentContextualMenu(options,o => o.name,e.target,o => o.enable).then(({state,buttonIndex}) => {
+			options[buttonIndex].onSelect().then(() => {
+				this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
+			})
+		}).catch(e => {this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})})
+	}
+	moveExpectationChange(delta,reportBefore,expChange){//Responsible to move an expectation change in a stream up or down 1 period
+		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingDate)//get the reporting dates in order
+		let idx = rds.indexOf(reportBefore.reportingDate)//find the delta this expectation change currently is in
+		let offsetTime = rds[idx+delta].getTime()-rds[idx].getTime() //calculate the offset we should put on the current expectation date
+		expChange.startDate = new Date(expChange.startDate.getTime()+offsetTime) 
+		return this.save()
+	}
+	save(){return Promise.all([this.props.onMinigraphUpdateRequested(),this.updateState({refresh: new Date()}),Core.saveStreams()])}
+
+
 	render(){
 		let prevExp = 0;
 		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
-			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp}
+			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp,origin:h}
 			prevExp = h.amount
 			return res
 		})
-		return (<div style={{width: "100%"}}>{	
-			this.props.analysis.getPeriodReports()
-			.sort(utils.sorters.desc(r => r.reportingDate))
-			.map((r,i) => (
-				<div key={i}>
-					{expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
-						<ExpectationChangePannel key={2*i+1+k}>
+		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => (
+				[...expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
+						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
 							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
 							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
+							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={e => this.onClickMoreInExpecationPanel(e,r,h)}/></ExpectationChangePanelMoreRow>
 						</ExpectationChangePannel>
-					))}
+					)),
 					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
-				</div>
-			))
-		}</div>)
+				]
+			)))
+
+		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
 	}
 }
+
+const ExpectationChangePanelMoreRow = styled.div`
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+	/*margin-bottom: ${props => -DS.spacing.xxs}rem;*/
+	transition: height 0.2s;
+	overflow: hidden;
+`
 
 const ExpectationChangePannel = styled.div`
 	font-size: 0.7rem;
@@ -211,6 +273,28 @@ const ExpectationChangePannel = styled.div`
     border-radius: ${DS.borderRadiusSmall};
     color: ${DS.getStyle().bodyText};
 `
+
+export class EditExpectationModalView extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.updateNewValue(this.props.expChange.newAmount)
+	}
+	onChangedExpectationAmount(e){this.updateNewValue(parseFloat(e.target.value))}
+	updateNewValue(a){
+		this.props.controller.state.modalContentState = {...this.props.controller.state.modalContentState,expectationEditPopupInputValue: a}
+		this.validate()
+	}
+	validate(){this.props.controller.setPrimaryButtonDisabled(//the input value should be a number
+		isNaN(this.props.controller.state.modalContentState.expectationEditPopupInputValue)
+	)}
+	render(){return(
+		<DS.component.SentenceWrapper>Starting on{this.props.expChange.startDate.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})}, the expected amount for<DS.component.StreamTag noHover highlight>{this.props.stream.name}</DS.component.StreamTag> should change from {utils.formatCurrencyAmount(this.props.expChange.previousAmount)} to <DS.component.Input type="number" textAlign="left" defaultValue={this.props.expChange.newAmount} autoSize inline onChange={this.onChangedExpectationAmount.bind(this)}/>.
+		</DS.component.SentenceWrapper>)
+	}
+}
+
+
+
 
 //Represents a transaction feed for a given period
 class PeriodReportTransactionFeedView extends GenericPeriodReportView{

@@ -156,6 +156,7 @@ class DesignSystem{
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
+		more: 			<Icon className="material-symbols-rounded">more_horiz</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
@@ -169,7 +170,7 @@ class DesignSystem{
 		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
-		ListItem: (props) => <StyledListItemContainer size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		ListItem: (props) => <StyledListItemContainer disabled={props.disabled} size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
 		TransactionListItem: (props) => <instance.component.ListItem noHover fullBleed size="xs" {...props}>
 			<instance.component.Label style={{minWidth:"3rem"}}>{props.transaction.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</instance.component.Label>
 			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><StyledSpacer/>
@@ -556,6 +557,7 @@ const StyledListItem = styled.div`
 const StyledListItemContainer = styled.div`
 	width: calc(100% - ${(props) => props.fullBleed?0:2*(props.size=="xs"?instance.spacing.xs:instance.spacing.s)}rem);
 	padding: 0 ${(props) => props.fullBleed?0:props.size=="xs"?instance.spacing.xs:instance.spacing.s}rem;
+	opacity: ${props => props.disabled?0.2:1};
     &:hover {
       background: ${(props) => props.noHover?"":instance.getStyle().UIElementBackground};
     }  

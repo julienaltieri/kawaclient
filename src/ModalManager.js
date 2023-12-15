@@ -1,3 +1,4 @@
+import React from 'react'
 import BaseComponent from './components/BaseComponent'
 import ReactDOM from 'react-dom';
 import Core from './core.js'
@@ -33,9 +34,8 @@ class ModalManager{
 		return modalController.then()
 	}
 
-	dismissModal(modalController){
-		return modalController.getParent().unmountModal(modalController)
-	}
+	unmountModal(modalController){return modalController.getParent().unmountModal(modalController)}
+	dismissModal(modalController){return (modalController || this.currentModalController).onDismiss()}
 	updateState(changes){this.setState({...this.state,...changes})}		
 }
 
@@ -67,9 +67,9 @@ export const ModalTemplates = {
 			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
-	ModalWithListItems: (title,items,itemRendered) => (that) => {
+	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<DS.component.ScrollableBottomSheet>
-			{items.map((s,i) => <DS.component.ListItem key={i} onClick={(e)=>{that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i))}}>
+			{items.map((s,i) => <DS.component.ListItem key={i} disabled={!enableAccessor(s)} onClick={(e)=>{enableAccessor(s)?that.state.controller.updateContentState({selectedItem:s}).then(() => that.state.controller.onConfirm(e,i)):e.stopPropagation()}}>
 				{itemRendered(s)}
 			</DS.component.ListItem>)}
 		</DS.component.ScrollableBottomSheet>,[])(that)
@@ -87,7 +87,7 @@ export const ModalTemplates = {
 						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
 				</TopBar>
-				<MainContent>{component}</MainContent>
+				<MainContent>{React.cloneElement(component,{...component.props,controller:instance.currentModalController})}</MainContent>
 				{buttonArray.length?<ActionButtons>
 					{buttonArray.map((b,i) => {
 						return <DS.component.Button.Action style={{marginTop:DS.spacing.xs+"rem"}} primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
@@ -102,8 +102,228 @@ export const ModalTemplates = {
 	  		activeIndex={Navigation.getCurrentRouteIndex()}
 	  		onClickRoute={(e,route) => that.state.controller.onConfirm(e,route)}
 		/></BaseModalWrapper>)
+	},
+	ModalContextualMenu: (target,optionList = [],displayListItemAccessor = (l) => l,enableAccessor = () => true) => (that) => { //target must be a dom element to point the contextual menu on
+		let r = target.getBoundingClientRect();
+		return (
+			<FixedBase>
+				<DS.component.Tooltip style={{paddingLeft:0,paddingRight:optionList.length>8?"":0}} x={r.x+r.width/2} y={r.y+r.height*3/4}>
+					<DS.component.ScrollableList style={{maxHeight:"15rem"}}>{
+						optionList.map((a,i) => 
+						<DS.component.ListItem size="xs" disabled={!enableAccessor(a)} key={i} onClick={(e)=> enableAccessor(a)?that.state.controller.onConfirm(e,i):e.stopPropagation()}>{displayListItemAccessor(a)}</DS.component.ListItem>)}
+					</DS.component.ScrollableList>
+				</DS.component.Tooltip>
+			</FixedBase>
+		)
 	}
 }
+
+const FixedBase = styled.div`
+	position: fixed;
+	top: 0;
+ 	left: 0;
+`
+
+
+export class ModalController{
+	constructor(getContent,options){
+		this.promise = new Promise((res,rej)=> {this.onAnswer = res;this.onCancel = rej})
+		this.getContent = getContent;
+		this.state = {modalContentState:{}};
+		this.options = options || {};
+		this.appearFromSide = this.options.fromSide;
+	}
+	setParent(parent){this.parent = parent}
+	getParent(){return this.parent}
+	registerModal(modal){
+		this.modal = modal;
+		this.state.modalContentState = modal.state.content;
+		this.modal.appearFromSide = this.appearFromSide;
+	}
+	updateContentState(s){
+		this.state.modalContentState = {...this.state.modalContentState,...s}
+		return Promise.resolve()
+	}
+	then(){return this.promise.then.apply(this.promise, arguments)}
+	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
+	hide(){
+		return new Promise((res,rej) => {
+			document.body.style.overflow = 'unset';
+			this.modal.updateState({visible:false}).then(() => {
+				//res()
+				setTimeout(() => {
+					let a = instance
+					return instance.unmountModal(this).then(() => res())
+				},this.options.noAnimation?0:animationTime)//leaves time to play the animation
+			})
+		})
+	}
+	setPrimaryButtonDisabled(b){
+		this.state = {...this.state, ...{primaryButtonDisabled:b}};
+		this.modal.refreshContent();
+	}
+	onDismiss(e){
+		this.hide();
+		this.onCancel();
+		e?.preventDefault();
+		e?.stopPropagation();
+		if(this.options.onDismiss){this.options.onDismiss(e)}
+	}
+	onConfirm(e,i){
+		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
+		e?.preventDefault();
+		e?.stopPropagation();
+		if(this.options.onConfirm){this.options.onConfirm(e)}
+	}
+}
+
+
+export class ModalContainer extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.state = {
+			controller: props.controller,
+			visible:false
+		} 
+		props.controller.registerModal(this)
+	}
+	componentDidMount(){setTimeout(() => this.setState({...this.state,visible:true,content:this.state.controller.getContent(this)}),5)}
+	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
+	render(){
+		if(this.appearFromSide){
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+				<ModalBaseSide visible={this.state.visible}>
+					{this.state.content}
+				</ModalBaseSide>
+			</ModalWrapper>)
+		}else if(Core.isMobile()){
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+				<ModalBaseMobile visible={this.state.visible}>
+					{this.state.content}
+				</ModalBaseMobile>
+			</ModalWrapper>)
+		}else{
+			return (<ModalWrapper options={this.props.controller.options} data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
+				<ModalBase options={this.props.controller.options}>
+					{this.state.content}
+				</ModalBase>
+			</ModalWrapper>)
+		}
+	}
+}
+
+
+
+
+const ModalWrapper = styled.div`
+	background: ${props => props.options?.noShade?"#00000000":"#00000036"};
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+	z-index: 300;
+	opacity: ${props => props.visible?1:0};
+    transition: ${props => props.options?.noAnimation?0:animationTime/1000}s opacity;
+`
+
+const ModalBase = styled.div`
+	background: ${DS.getStyle().modalBackground};
+    position: relative;
+    flex-grow: 0;
+    min-width: 30rem;
+    max-width: 40rem;
+    box-shadow: ${props => props.options?.noShade?"":"0 3px 14px 8px #0000001f"};
+    border-radius: ${DS.borderRadius};
+`
+const ModalBaseMobile = styled.div`
+	background: ${DS.getStyle().modalBackground};
+    position: absolute;
+    bottom:0;
+    z-index:99;
+    flex-grow: 0;
+    width: 100vw;
+    box-shadow: 0 3px 14px 8px #0000001f;
+    border-radius: ${DS.borderRadius} ${DS.borderRadius} 0 0;
+    transform: translateY(${props => props.visible?"0":"100%"});
+    transition: ${animationTime/1000}s transform;
+`
+const ModalBaseSide = styled.div`
+    position: absolute;
+    top:0;
+    left:0;
+    z-index:99;
+    flex-grow: 0;
+    width: 16rem;
+    height: 100vh;
+    transform: translateX(${props => props.visible?"0":"-16rem"});
+    transition: ${animationTime/1000}s transform;
+`
+
+const TopBar = styled.div`
+	width: 100%;
+	height: ${props => props.isMobile?"auto":"3rem"};
+	display: flex;
+	justify-content: ${props => props.isMobile?"flex-start":"center"};
+    align-items: center;
+    margin-top: ${props => props.isMobile?0:0}rem;
+    margin-bottom: ${props => props.isMobile?2:2.5}rem;
+`
+const Title = styled.div`
+	flex-grow:1;
+	font-size: ${DS.fontSize.header}rem;
+	text-align: ${props => props.isMobile?"left":"center"};
+	color: ${DS.getStyle().bodyText};
+`
+const Subtitle = styled.div`
+	flex-grow:1;
+	font-size: 0.8rem;
+	text-align: ${props => props.isMobile?"left":"center"};
+	font-weight: normal;
+	margin-top: 0.3rem;
+`
+const TopBarButton = styled.div`
+    cursor: pointer;
+    position:  ${props => props.isMobile?"static":"absolute"};
+    top: 1.5rem;
+    right: 1.5rem;
+    color: ${DS.getStyle.bodyTextSecondary};
+    -webkit-user-select: none; /* Safari */
+  	-ms-user-select: none; /* IE 10 and IE 11 */
+  	user-select: none; /* Standard syntax */
+`
+
+const BaseModalWrapper = styled.div`
+	padding: ${props => props.isMobile?1.5:3}rem;
+	padding-bottom: ${props => props.bottomBleed?"0rem":"auto"};
+    box-sizing: border-box;
+    position: relative;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+`
+const ActionButtons = styled.div`
+	width: 100%;
+    align-self: flex-end;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: ${props => Core.isMobile()?"space-around":"center"};
+    margin-top: ${DS.spacing.s}rem;
+    flex-direction: row;
+    flex-wrap: wrap-reverse;
+ 
+`
+
+const MainContent = styled.div`
+	text-align: center;
+	flex-grow:1;
+	
+`
 
 export class StreamAllocationOptionView extends BaseComponent{
 	constructor(props){
@@ -324,204 +544,6 @@ const TransactionListViewItem= styled.li`
     flex-direction: row;
     align-items: center;
 `
-
-export class ModalController{
-	constructor(getContent,fromSide){
-		this.promise = new Promise((res,rej)=> {this.onAnswer = res;this.onCancel = rej})
-		this.getContent = getContent;
-		this.state = {modalContentState:{}};
-		this.appearFromSide = fromSide;
-	}
-	setParent(parent){this.parent = parent}
-	getParent(){return this.parent}
-	registerModal(modal){
-		this.modal = modal;
-		this.state.modalContentState = modal.state.content;
-		this.modal.appearFromSide = this.appearFromSide;
-	}
-	updateContentState(s){
-		this.state.modalContentState = {...this.state.modalContentState,...s}
-		return Promise.resolve()
-	}
-	then(){return this.promise.then.apply(this.promise, arguments)}
-	willShow(){document.body.style.overflow = 'hidden'}//prevents scrolling behind the modal
-	hide(){
-		return new Promise((res,rej) => {
-			document.body.style.overflow = 'unset';
-			this.modal.updateState({visible:false}).then(() => {
-				//res()
-				setTimeout(() => {
-					let a = instance
-					return instance.dismissModal(this).then(() => res())
-				},animationTime)//leaves time to play the animation
-			})
-		})
-	}
-	setPrimaryButtonDisabled(b){
-		this.state = {...this.state, ...{primaryButtonDisabled:b}};
-		this.modal.refreshContent();
-	}
-	onDismiss(e){
-		this.hide();
-		this.onCancel();
-		e.preventDefault();
-		e.stopPropagation();
-	}
-	onConfirm(e,i){
-		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
-		e.preventDefault();
-		e.stopPropagation();
-	}
-}
-
-
-export class ModalContainer extends BaseComponent{
-	constructor(props){
-		super(props)
-		this.state = {
-			controller: props.controller,
-			visible:false
-		} 
-		props.controller.registerModal(this)
-	}
-	componentDidMount(){setTimeout(() => this.setState({...this.state,visible:true,content:this.state.controller.getContent(this)}),5)}
-	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
-	render(){
-		if(this.appearFromSide){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
-				<ModalBaseSide visible={this.state.visible}>
-					{this.state.content}
-				</ModalBaseSide>
-			</ModalWrapper>)
-		}else if(Core.isMobile()){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
-				<ModalBaseMobile visible={this.state.visible}>
-					{this.state.content}
-				</ModalBaseMobile>
-			</ModalWrapper>)
-		}else{
-			return (<ModalWrapper data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
-				<ModalBase>
-					{this.state.content}
-				</ModalBase>
-			</ModalWrapper>)
-		}
-	}
-}
-
-
-
-
-const ModalWrapper = styled.div`
-	background: #00000036;
-    width: 100%;
-    height: 100%;
-    position: fixed;
-    top: 0;
-    left: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-	z-index: 300;
-	opacity: ${props => props.visible?1:0};
-    transition: ${animationTime/1000}s opacity;
-`
-
-const ModalBase = styled.div`
-	background: ${DS.getStyle().modalBackground};
-    position: relative;
-    flex-grow: 0;
-    min-width: 30rem;
-    max-width: 40rem;
-    box-shadow: 0 3px 14px 8px #0000001f;
-    border-radius: ${DS.borderRadius};
-`
-const ModalBaseMobile = styled.div`
-	background: ${DS.getStyle().modalBackground};
-    position: absolute;
-    bottom:0;
-    z-index:99;
-    flex-grow: 0;
-    width: 100vw;
-    box-shadow: 0 3px 14px 8px #0000001f;
-    border-radius: ${DS.borderRadius} ${DS.borderRadius} 0 0;
-    transform: translateY(${props => props.visible?"0":"100%"});
-    transition: ${animationTime/1000}s transform;
-`
-const ModalBaseSide = styled.div`
-    position: absolute;
-    top:0;
-    left:0;
-    z-index:99;
-    flex-grow: 0;
-    width: 16rem;
-    height: 100vh;
-    transform: translateX(${props => props.visible?"0":"-16rem"});
-    transition: ${animationTime/1000}s transform;
-`
-
-const TopBar = styled.div`
-	width: 100%;
-	height: ${props => props.isMobile?"auto":"3rem"};
-	display: flex;
-	justify-content: ${props => props.isMobile?"flex-start":"center"};
-    align-items: center;
-    margin-top: ${props => props.isMobile?0:0}rem;
-    margin-bottom: ${props => props.isMobile?2:2.5}rem;
-`
-const Title = styled.div`
-	flex-grow:1;
-	font-size: ${DS.fontSize.header}rem;
-	text-align: ${props => props.isMobile?"left":"center"};
-	color: ${DS.getStyle().bodyText};
-`
-const Subtitle = styled.div`
-	flex-grow:1;
-	font-size: 0.8rem;
-	text-align: ${props => props.isMobile?"left":"center"};
-	font-weight: normal;
-	margin-top: 0.3rem;
-`
-const TopBarButton = styled.div`
-    cursor: pointer;
-    position:  ${props => props.isMobile?"static":"absolute"};
-    top: 1.5rem;
-    right: 1.5rem;
-    color: ${DS.getStyle.bodyTextSecondary};
-    -webkit-user-select: none; /* Safari */
-  	-ms-user-select: none; /* IE 10 and IE 11 */
-  	user-select: none; /* Standard syntax */
-`
-
-const BaseModalWrapper = styled.div`
-	padding: ${props => props.isMobile?1.5:3}rem;
-	padding-bottom: ${props => props.bottomBleed?"0rem":"auto"};
-    box-sizing: border-box;
-    position: relative;
-    height: 100%;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-`
-const ActionButtons = styled.div`
-	width: 100%;
-    align-self: flex-end;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: ${props => Core.isMobile()?"space-around":"center"};
-    margin-top: ${DS.spacing.s}rem;
-    flex-direction: row;
-    flex-wrap: wrap-reverse;
- 
-`
-
-const MainContent = styled.div`
-	text-align: center;
-	flex-grow:1;
-	
-`
-
 
 
 

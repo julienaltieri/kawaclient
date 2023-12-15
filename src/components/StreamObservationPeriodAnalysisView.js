@@ -6,10 +6,14 @@ import {GenericStreamAnalysisView, StreamAnalysisTransactionFeedView} from './An
 
 
 export class StreamObservationPeriodView extends GenericStreamAnalysisView{
+	constructor(props){
+		super(props)
+		this.state = {minigraphLastRefresh:new Date()}
+	}
 	render(){
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>
-			<CompactMiniGraph shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
-			<StreamAnalysisTransactionFeedView analysis={this.props.analysis} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+			<CompactMiniGraph refresh={this.state.minigraphLastRefresh} shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
+			<StreamAnalysisTransactionFeedView analysis={this.props.analysis} onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
 		</ObsPeriodViewContainer>
 	}
 }
