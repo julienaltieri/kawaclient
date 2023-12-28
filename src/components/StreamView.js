@@ -59,7 +59,7 @@ export default class MasterStreamView extends BaseComponent{
 		let tsSnap = this.masterStreamSnapshot, ts = Core.getMasterStream();
 		if(ts.getAllTerminalStreams().length < tsSnap.getAllTerminalStreams().length){
 			throw new Error("Stream Integrity is compromised. Less terminal streams are present after the change than before.")
-		} else {Core.saveStreams().then(() => this.masterStreamSnapshot = this.takeSnapshot())}
+		} else {return Core.saveStreams().then(() => this.masterStreamSnapshot = this.takeSnapshot())}
 	}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
@@ -358,7 +358,7 @@ class GenericEditableStreamView extends BaseComponent{
 		instance.isSomeoneInEditMode=true;
 		this.updateState({isInEditMode:true})
 	}
-	onExitEditMode(e){instance.isSomeoneInEditMode=false;this.updateState({isInEditMode:false});instance.saveMasterStream()}
+	onExitEditMode(e){instance.isSomeoneInEditMode=false;this.updateState({isInEditMode:false});instance.setFactoryActive(false);instance.saveMasterStream();}
 	onHover(e){
 		if(!this.state.showToolButtons && !instance.isSomeoneInEditMode){
 			if(Core.isMobile()){
@@ -500,10 +500,10 @@ class TerminalStreamView extends GenericEditableStreamView{
 		return Core.presentModal(ModalTemplates.ModalWithComponent("Are you sure?",<TrashStreamModalView stream={this.props.stream}/>)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){//button clicked is confirm
 				Core.deleteStream(this.props.stream)
-				instance.refresh();
-				this.isInEditMode=false;
-				instance.saveMasterStream();
-	            console.log("Stream deleted: "+this.props.stream.name);
+				instance.refresh().then(() => {
+					this.onExitEditMode(e);
+		            console.log("Stream deleted: "+this.props.stream.name);
+				});
 			}
         }).catch((e)=>{console.log(e)})
 	}
