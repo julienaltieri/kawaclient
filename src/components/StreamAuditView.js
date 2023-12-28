@@ -160,7 +160,7 @@ class TerminalStreamCard extends StreamAuditView{
 					format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
 					} per {Period[this.props.stream.period].unitName}</div>
 			</TSCardHeader>
-			<TSCardContent>{/*Main content*/}
+			<TSCardContent >{/*Main content*/}
 				{this.state.detailView?
 					<StreamObservationPeriodView analysis={this.getStreamAnalysis(this.props.stream.getReportingPeriod())} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
 					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()}/>}
