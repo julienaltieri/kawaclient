@@ -147,7 +147,7 @@ export class ModalController{
 	then(){return this.promise.then.apply(this.promise, arguments)}
 	willShow(){
 		document.body.style.overflow = 'hidden'
-		document.body.style['margin-right'] = DS.barWidthRem+"rem"
+		if(!Core.isMobile()){document.body.style['margin-right'] = DS.barWidthRem+"rem"}
 	}//prevents scrolling behind the modal
 	hide(){
 		return new Promise((res,rej) => {
