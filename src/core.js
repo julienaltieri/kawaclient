@@ -308,16 +308,29 @@ class Core{
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
 			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor,enableAccessor))
 		}else{//on desktop they are presented as floating contextual menu
-			let prevZ = target.style["z-index"]
-			if(!instance.isMobile()){target.style["z-index"]=301}//ensures the initial target is still clickable		
-			let onReclick = (e => {instance.dismissModal();target.style["z-index"]=prevZ;target.removeEventListener("click",onReclick);e.stopPropagation()});
-			target.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
+			let prevOpacity = target.style["opacity"];
+			let tPrime = target.cloneNode(true);
+			let br = target.getBoundingClientRect()
+			document.getElementById("root").appendChild(tPrime)
+			target.style.opacity = 0;
+			tPrime.style = {...target.style}
+			tPrime.style.position = "fixed";
+			tPrime.style.top = br.y+"px";
+			tPrime.style.left = br.x+"px";
+			tPrime.style["min-width"] = 0;
+			tPrime.style["z-index"]=301//ensures the initial target is still clickable		
+			let onReclick = (e => {instance.dismissModal();unPresent();e.stopPropagation()});
+			tPrime.addEventListener("click",onReclick); //ensures we dismiss and remove the listener when reclicking on the same element.
 			return this.presentModal(ModalTemplates.ModalContextualMenu(target,list,displayItemAccessor,enableAccessor),{
 					noShade:true, noAnimation:true,
-					onDismiss: () => {target.removeEventListener("click",onReclick);target.style["z-index"]=prevZ;},
-					onConfirm: () => {target.removeEventListener("click",onReclick);target.style["z-index"]=prevZ;}
+					onDismiss: () => unPresent(),
+					onConfirm: () => unPresent()
 				}
 			)
+			function unPresent(){
+				tPrime.remove();
+				target.style.opacity = prevOpacity;
+			}
 		}
 	}
 	registerModalManagement(present,unmount){

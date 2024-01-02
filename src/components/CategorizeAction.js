@@ -8,6 +8,7 @@ import DS from '../DesignSystem.js'
 import utils from '../utils'
 import TransactionGrouper from '../processors/TransactionGrouper'
 import Statistics from '../processors/Statistics';
+import React from 'react';
 
 //const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
@@ -36,6 +37,8 @@ class CategorizeActionCard extends ActionCard{
 		this.state = {...this.state,checkmarkVisible:false,isSaving:false,recStreams:[],selectedItemImage: 1,fetching:true}
 		this.props.parentAction.actionCard = this;
 		this.onChangeRuleMatchingString = this.onChangeRuleMatchingString.bind(this); 
+		this.moreButtonRef = React.createRef();
+		this.showMoreStreamContextualMenu = this.showMoreStreamContextualMenu.bind(this);
 	}
 	componentDidMount(){super.componentDidMount();this.refreshSuggestedStreams();}
 	refreshSuggestedStreams(){//calculate recommended streams
@@ -135,7 +138,7 @@ class CategorizeActionCard extends ActionCard{
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
 	showMoreStreamContextualMenu(event){
-		Core.presentContextualMenu(this.getAvailableStreams(),this.getStreamString,event.target).then(({state,buttonIndex}) => {
+		Core.presentContextualMenu(this.getAvailableStreams(),this.getStreamString,this.moreButtonRef.current).then(({state,buttonIndex}) => {
 			this.onClickStreamTag(this.getAvailableStreams()[buttonIndex])
 		}).catch(e => {})
 	}
@@ -164,8 +167,8 @@ class CategorizeActionCard extends ActionCard{
 					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
 					<DS.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DS.component.StreamTag>
-					<DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
-							onClick={(e)=> {this.showMoreStreamContextualMenu(e)}}>...</DS.component.StreamTag>
+					<div ref={this.moreButtonRef}><DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
+							onClick={(e)=> {this.showMoreStreamContextualMenu(e)}}>...</DS.component.StreamTag></div>
 			</ActionsContainerBox></FadeInWrap>}
 		</div>)
 		

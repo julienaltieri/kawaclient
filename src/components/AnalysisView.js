@@ -12,7 +12,7 @@ import {Period,timeIntervals} from '../Time';
 import dateformat from "dateformat";
 import ReactDOM from 'react-dom';
 import * as V from 'victory';
-import React from "react"
+import React, {useState} from "react"
 import {StyledLink} from "./StreamAuditView"
 import utils from '../utils'
 import Statistics from '../processors/Statistics';
@@ -164,9 +164,8 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		super(props)
 		this.state = {expectationEditPopupInputValue:undefined}
 		this.handleClickOnTransaction = this.handleClickOnTransaction.bind(this)
-		this.onHoverOnExpectationPanel = this.onHoverOnExpectationPanel.bind(this)
-		this.onLeaveHoverOnExpecationPanel = this.onLeaveHoverOnExpecationPanel.bind(this)
-		this.onClickMoreInExpecationPanel = this.onClickMoreInExpecationPanel.bind(this)
+		this.changeExpectationAmount = this.changeExpectationAmount.bind(this)
+		this.changeExpectationPosition = this.changeExpectationPosition.bind(this)
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -183,6 +182,48 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			}
 		}).catch(e => {})
 	}
+
+	changeExpectationAmount(newAmount,expChange){
+		expChange.origin.amount = newAmount
+		return this.save()
+	}
+	changeExpectationPosition(delta,reportBefore,expChange){//Responsible to move an expectation change in a stream up or down 1 period
+		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingDate)//get the reporting dates in order
+		let idx = rds.indexOf(reportBefore.reportingDate)//find the delta this expectation change currently is in
+		let offsetTime = rds[idx+delta].getTime()-rds[idx].getTime() //calculate the offset we should put on the current expectation date
+		expChange.startDate = new Date(expChange.startDate.getTime()+offsetTime) 
+		return this.save()
+	}
+	
+	save(){return Promise.all([this.props.onMinigraphUpdateRequested(),this.updateState({refresh: new Date()}),Core.saveStreams()])}
+
+
+	render(){
+		let prevExp = 0;
+		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
+			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp,origin:h}
+			prevExp = h.amount;
+			return res;
+		})
+		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
+			...expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
+				.map((h,k) => <ExpectationChangePannel key={2*i+1+k} expChangeData={h} report={r} stream={this.props.analysis.stream} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}/>
+				),
+			<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
+		])))
+		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
+	}
+}
+
+class ExpectationChangePannel extends BaseComponent{
+	constructor(props){
+		super(props)
+		this.state = {hovering:false}
+		this.onHoverOnExpectationPanel = this.onHoverOnExpectationPanel.bind(this)
+		this.onLeaveHoverOnExpecationPanel = this.onLeaveHoverOnExpecationPanel.bind(this)
+		this.onClickMoreInExpectationPanel = this.onClickMoreInExpectationPanel.bind(this)
+	}
+
 	onHoverOnExpectationPanel(){
 		if(!this.state.shouldShowExpectationPannelToolTip){
 			this.updateState({shouldShowExpectationPannelToolTip:true})
@@ -193,68 +234,46 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			this.updateState({shouldShowExpectationPannelToolTip:false})
 		}
 	}
-
-	onClickMoreInExpecationPanel(e,reportBefore,expChange){
+	onClickMoreInExpectationPanel(targetRef){
 		this.updateState({stayExpanded:true})
 		let options = [
 			{
 				name:"Edit",
 				enable: true,
-				onSelect:() => Core.presentModal(ModalTemplates.ModalWithComponent("Edit expected amount",<EditExpectationModalView stream={this.props.analysis.stream} expChange={expChange}/>)).then(({state,buttonIndex}) => {
+				onSelect:() => Core.presentModal(ModalTemplates.ModalWithComponent("Edit expected amount",
+					<EditExpectationModalView stream={this.props.stream} expChange={this.props.expChangeData}/>)).then(({state,buttonIndex}) => {
 					if(buttonIndex==1){//primary button
-						expChange.origin.amount = state.expectationEditPopupInputValue
-						return this.save()
+						return this.props.onRequestChangeAmount(state.expectationEditPopupInputValue)
 					}else{return Promise.resolve()}
 				}).catch(e => {})
 			},{
 				name:"Move up",
-				enable: reportBefore.reportingDate.getTime() < new Date().getTime(),  //disable when rendered as part of an open report (meaning it's at the very top)
-				onSelect:() => this.moveExpectationChange(1,reportBefore,expChange.origin)
+				enable: this.props.report.reportingDate.getTime() < new Date().getTime(),  //disable when rendered as part of an open report (meaning it's at the very top)
+				onSelect:() => this.props.onRequestChangePosition(1)
 			},
 			{
 				name:"Move down",
 				enable: true,
-				onSelect:() => this.moveExpectationChange(-1,reportBefore,expChange.origin)
+				onSelect:() => this.props.onRequestChangePosition(-1)
 			}
 		];
-		Core.presentContextualMenu(options,o => o.name,e.target,o => o.enable).then(({state,buttonIndex}) => {
-			options[buttonIndex].onSelect().then(() => {
-				this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})
-			})
+		Core.presentContextualMenu(options,o => o.name,targetRef.current,o => o.enable).then(({state,buttonIndex}) => {
+			options[buttonIndex].onSelect().then(() => {this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})})
 		}).catch(e => {this.updateState({stayExpanded:false,shouldShowExpectationPannelToolTip:false})})
 	}
-	moveExpectationChange(delta,reportBefore,expChange){//Responsible to move an expectation change in a stream up or down 1 period
-		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingDate)//get the reporting dates in order
-		let idx = rds.indexOf(reportBefore.reportingDate)//find the delta this expectation change currently is in
-		let offsetTime = rds[idx+delta].getTime()-rds[idx].getTime() //calculate the offset we should put on the current expectation date
-		expChange.startDate = new Date(expChange.startDate.getTime()+offsetTime) 
-		return this.save()
-	}
-	save(){return Promise.all([this.props.onMinigraphUpdateRequested(),this.updateState({refresh: new Date()}),Core.saveStreams()])}
-
 
 	render(){
-		let prevExp = 0;
-		let expChanges = this.props.analysis.stream.expAmountHistory.map(h => {
-			let res = {startDate:h.startDate,newAmount:h.amount,previousAmount:prevExp,origin:h}
-			prevExp = h.amount
-			return res
-		})
-		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => (
-				[...expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate).map((h,k) => (
-						<ExpectationChangePannel key={2*i+1+k} onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
-							<div>{utils.formatCurrencyAmount(h.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(h.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
-							<div style={{marginTop:"0.2rem"}}>per {Period[this.props.analysis.stream.period].unitName}</div>
-							<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}><DS.component.Button.Icon iconName="more" onClick={e => this.onClickMoreInExpecationPanel(e,r,h)}/></ExpectationChangePanelMoreRow>
-						</ExpectationChangePannel>
-					)),
-					<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
-				]
-			)))
-
-		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
+		return (<ExpectationChangePannelContainer onMouseOver={this.onHoverOnExpectationPanel} onMouseLeave={this.onLeaveHoverOnExpecationPanel}>
+			<div>{utils.formatCurrencyAmount(this.props.expChangeData.previousAmount,0,true,undefined,Core.getPreferredCurrency())+" → "+utils.formatCurrencyAmount(this.props.expChangeData.newAmount,0,true,undefined,Core.getPreferredCurrency())}</div>
+			<div style={{marginTop:"0.2rem"}}>per {Period[this.props.stream.period].unitName}</div>
+			<ExpectationChangePanelMoreRow style={{height:this.state.shouldShowExpectationPannelToolTip?"1rem":0}}>
+				{(() => {let ref = React.createRef();return (<div ref={ref}>
+					<DS.component.Button.Icon iconName="more" onClick={() => this.onClickMoreInExpectationPanel(ref)}/>
+				</div>)})()}
+			</ExpectationChangePanelMoreRow>
+		</ExpectationChangePannelContainer>)
 	}
-}
+} 
 
 const ExpectationChangePanelMoreRow = styled.div`
 	display: flex;
@@ -265,7 +284,7 @@ const ExpectationChangePanelMoreRow = styled.div`
 	overflow: hidden;
 `
 
-const ExpectationChangePannel = styled.div`
+const ExpectationChangePannelContainer = styled.div`
 	font-size: 0.7rem;
     padding: 0.7rem 0.5rem;
     margin: 0.7rem 0;
