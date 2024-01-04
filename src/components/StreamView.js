@@ -511,7 +511,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 	onDragOver(){return this.props.draggableNode.setDraggingOverTerminalStream(true)}
 	render(){
 		return(
-			<TerminalStreamContainer ref={this.reactComponentRef} onDragOver={this.onDragOver} editing={this.state.isInEditMode} stream={this.props.stream} style={{
+			<TerminalStreamContainer onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""} ref={this.reactComponentRef} onDragOver={this.onDragOver} editing={this.state.isInEditMode} stream={this.props.stream} style={{
 					fontWeight: this.props.draggableNode.state.moveOutOfTheWay && this.props.draggableNode.state.isDraggingOverTerminalStream?"bold":"inherit",
 					height: (this.state.zeroHeight)?0:"",//for editing only
 				}}
