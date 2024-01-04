@@ -1,9 +1,16 @@
 import Core from '../core.js';
-import {Period,dateIterator,timeIntervals} from '../Time'
+import {Period,dateIterator,timeIntervals,createDate} from '../Time'
 import dateformat from "dateformat";
-//import memoize from "memoize-one";
 import utils from '../utils'
 
+
+
+export const reportingConfig = {
+	startingDay: 21,
+	startingMonth: 12, //december = 12
+	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
+}
+export const analysisRootDate = createDate(new Date().getFullYear()-1,reportingConfig.startingMonth-1,reportingConfig.startingDay);//analysis starting date is Dec 21 GMT
 
 //note: it is expected that txns are categorized transactions. 
 export const getStreamAnalysis = function(reportingDate,stream,txns,reportingPeriod,subReportingPeriodOverride){ //single stream Streamanalysis
@@ -180,6 +187,7 @@ class StreamAnalysis extends Analysis{
 		let res = [];
 		dateIterator(this.reportingStartDate,full?this.reportingPeriod.nextDate(this.reportingStartDate):Date.now(),period,(d) => res.push(d))
 		res.push(period.nextDate(res[res.length-1] || this.reportingStartDate))
+		//if(this.stream.name=="Wages Julien"){console.log(res)} 
 		return res
 	}
 	getTransactionSumBetweenDatesForStream(sd,ed,s = this.stream){

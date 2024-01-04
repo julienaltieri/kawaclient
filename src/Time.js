@@ -72,8 +72,22 @@ export class Period {
 		else {
 			switch(this.name){
 				case Period.periodName.semimonthly:
-					let next = new Date(date); next.setMonth(date.getMonth()+b*1)
-					return new Date(date.getTime()+(next.getTime()-date.getTime())/2);
+					if(!backwards){//forward is simple
+						let nextMonth = new Date(date); nextMonth.setMonth(date.getMonth()+b*1)
+						return new Date(date.getTime()+(nextMonth.getTime()-date.getTime())/2);
+					}else{//backwards is  more complicated because it leads to unwanted offsets. We we rewind 1 year and recalculate
+						let stop = new Date(date);stop.setDate(stop.getDate()-1)
+						let lastYear = new Date(date);lastYear.setFullYear(lastYear.getFullYear()-1)
+						let res = lastYear
+						dateIterator(lastYear,stop,this, d => res=d)
+						let thisYearIsLeap = (date.getFullYear() % 4 == 0)
+						let lastYearIsLeap = (lastYear.getFullYear() % 4 == 0)
+						if(res.getMonth()==1 && res.getDate()<14){
+							if(thisYearIsLeap && !lastYearIsLeap){res = new Date(res.getTime() - 0.5*timeIntervals.oneDay)}
+							else if(!thisYearIsLeap && lastYearIsLeap){res = new Date(res.getTime() + 0.5*timeIntervals.oneDay)}
+						}
+						return res
+					}
 				break	
 				case Period.periodName.yearly:
 					return new Date(new Date(date).setFullYear(date.getFullYear()+b*1))

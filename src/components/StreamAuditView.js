@@ -7,25 +7,20 @@ import dateformat from "dateformat";
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
 import DS from '../DesignSystem.js'
-import {getStreamAnalysis,getMultiStreamAnalysis} from '../processors/ReportingCore.js';
+import {getStreamAnalysis,getMultiStreamAnalysis,reportingConfig,analysisRootDate} from '../processors/ReportingCore.js';
 import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,EndOfPeriodProjectionSummary,EndOfPeriodProjectionGraph} from './AnalysisView'
 import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView'
 import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
 import ProgressRing from './ProgressRing';
-import {Period,createDate} from '../Time'
+import {Period} from '../Time'
 import utils from '../utils'
 
 
-const reportingConfig = {
-	startingDay: 21,
-	startingMonth: 12, //december = 12
-	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
-}
+
 if(reportingConfig.startingDay<1 || reportingConfig.startingDay>28 || reportingConfig.startingMonth>12 || reportingConfig.startingMonth<1){
 	throw new Error(`Selected reporting date has invalid parameters. Month: ${reportingConfig.startingMonth} Day: ${reportingConfig.startingDay}. Reporting month must be between 1 and 12 and day must be between 1 and 28`)
 }
-const analysisRootDate = createDate(new Date().getFullYear()-1,reportingConfig.startingMonth-1,reportingConfig.startingDay);//analysis starting date is Dec 21 GMT
 let analysisDate = reportingConfig.observationPeriod.nextDateFromNow(analysisRootDate);
 
 //if we're in the first period of the observation period, show the graph from the previous period
