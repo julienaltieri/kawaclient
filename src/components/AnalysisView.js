@@ -188,10 +188,11 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		return this.save()
 	}
 	changeExpectationPosition(delta,reportBefore,expChange){//Responsible to move an expectation change in a stream up or down 1 period
-		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingDate)//get the reporting dates in order
-		let idx = rds.indexOf(reportBefore.reportingDate)//find the delta this expectation change currently is in
-		let offsetTime = rds[idx+delta].getTime()-rds[idx].getTime() //calculate the offset we should put on the current expectation date
-		expChange.startDate = new Date(expChange.startDate.getTime()+offsetTime) 
+		let rds = this.props.analysis.getPeriodReports().sort(utils.sorters.asc(r => r.reportingDate)).map(r => r.reportingStartDate)//get the reporting dates in order
+
+		let idx = rds.indexOf(reportBefore.reportingStartDate)//find the delta this expectation change currently is in
+		let offsetTime = expChange.startDate.getTime()-reportBefore.reportingStartDate.getTime() //calculate the offset we should put on the current expectation date
+		expChange.startDate = new Date(rds[idx+delta].getTime()+offsetTime) 
 		return this.save()
 	}
 	
