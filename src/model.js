@@ -239,7 +239,11 @@ export class TerminalStream extends Stream{
     if(!existing){throw new Error("attempting to update an expectation change at a date that doesn't exist for stream: "+this.name)}
     if(!!newDate){existing.startDate = newDate}
     if(!!newAmount){
-      existing.amount = newAmount
+      let idx = this.expAmountHistory.map(ex => ex.startDate).indexOf(existing.startDate)
+      if(idx > 0 && this.expAmountHistory[idx-1].amount==newAmount){
+        this.expAmountHistory.splice(idx,1)//delete the newest entry if equal to the latest one
+        console.log("Expectation change delete because new amount is the same as latest amount")
+      }else {existing.amount = newAmount}
     }
   }
   getLatestActiveExpAmount(){
