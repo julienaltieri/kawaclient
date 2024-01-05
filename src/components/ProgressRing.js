@@ -41,10 +41,11 @@ export default class ProgressRing extends BaseComponent{
 	getDashes(){return `${this.getCircumference()} ${this.getCircumference()}`}
 	getDashOffset(x){return this.getCircumference()*(1-(this.props.subdivisions?(1+Math.floor(0.99999*x*this.props.subdivisions))/this.props.subdivisions:x))}
 	getHighlightStart(){return (Math.floor(0.99999*this.props.progress*this.props.subdivisions))/this.props.subdivisions}//where the highlight should start
-	getClipPath(start=0){//used to draw subdivisions
+	getClipPath(start=0,thickness=this.props.thickness){//used to draw subdivisions
 		if(!this.props.subdivisions)return;
 		var angles = [], gap = this.getSubdivisionGapAngles(), r = this.getRadius(), n = this.props.subdivisions;
-		var [ox,oy] = [this.props.radius/this.getScaleFactor(),this.props.radius/this.getScaleFactor()]
+		let adj = (thickness-this.props.thickness)/2*16
+		var [ox,oy] = [1.03*(this.getRadius()+adj),1.03*(this.getRadius()+adj)]
 		const getCoordinatesForPercent = (x,rr) => [ox+rr*Math.cos(2*Math.PI*x), oy+rr*Math.sin(2*Math.PI*x)];
 
 		//computes the positions of the arc points
@@ -78,7 +79,7 @@ export default class ProgressRing extends BaseComponent{
 				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.props.color}			clipPath={this.getClipPath()}
 										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>
 				{this.props.highlightLastSubdivision?
-				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness*this.getHighlightThicknessFactor()} color={this.props.highlighColor} clipPath={this.getClipPath(this.getHighlightStart())}
+				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness*this.getHighlightThicknessFactor()} color={this.props.highlighColor} clipPath={this.getClipPath(this.getHighlightStart(),this.props.thickness*this.getHighlightThicknessFactor())}
 										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>:""}
 			</svg>
 		</ProgressRingContainer>)
