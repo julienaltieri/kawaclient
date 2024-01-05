@@ -231,8 +231,16 @@ export class TerminalStream extends Stream{
   updateExpAmount(newAmount,startDate){
     if(this.expAmountHistory[this.expAmountHistory.length-1].amount == newAmount)return console.log("amount same, changed ignored"); //don't do anything if there is no change
     var o = this.expAmountHistory.filter(c => Math.abs(c.startDate - startDate) < 24*60*60*1000)[0];
-    if(o)o.amount = newAmount;  //update if duplicate, at less than 1d interval
+    if(o){this.updateExistingExpChange(o.startDate,undefined,newAmount)}  //if less than 1d interval, don't create a new one but update the previous one
     else this.expAmountHistory.push({startDate:startDate,amount:newAmount})
+  }
+  updateExistingExpChange(expChangeDate,newDate,newAmount){
+    let existing = this.expAmountHistory.filter(ex => ex.startDate.getTime() == expChangeDate.getTime())[0]
+    if(!existing){throw new Error("attempting to update an expectation change at a date that doesn't exist for stream: "+this.name)}
+    if(!!newDate){existing.startDate = newDate}
+    if(!!newAmount){
+      existing.amount = newAmount
+    }
   }
   getLatestActiveExpAmount(){
     var can = this.expAmountHistory.filter(o => o.startDate < new Date());
@@ -243,16 +251,11 @@ export class TerminalStream extends Stream{
     if(this.endDate && date > this.endDate)return; //if the date falls outside of the lifespan of this stream, return undefined
     //else, we just need to find the latest amount at the specified date
     var can = this.expAmountHistory.filter(o => o.startDate <= date).sort(utils.sorters.desc(o => o.startDate));
-    //if(this.name=="401k"){console.log(this.expAmountHistory,can)}
     if(can.length>0)return can[0]; //if the stream was alive, pick the latest avaiable amount at that date
   }
   getLatestUpdateDateAtDate(date){var r = this.expAmountUpdateAtDate(date);if(r)return r.startDate}
-  getOldestDate(){
-    return this.expAmountHistory.map(a => a.startDate).sort(utils.sorters.asc())[0]
-  }
-  getMostRecentDate(){
-    return this.endDate || new Date()
-  }
+  getOldestDate(){return this.expAmountHistory.map(a => a.startDate).sort(utils.sorters.asc())[0]}
+  getMostRecentDate(){return this.endDate || new Date()}
   isActiveNow(){return !this.endDate}
 
   //implementations
