@@ -372,7 +372,7 @@ class GenericEditableStreamView extends BaseComponent{
 	isToolsVisible(){return this.state.showToolButtons}
 	isStreamBeingDragged(){return this.props.stream.id == this.props.ddContext.lastDraggedStream?.id && this.props.ddContext.isDragging}
 	isStreamDropReceiver(){return this.props.stream.id == this.props.ddContext.draggedOverStream?.id}
-	getStreamAmountString(){return utils.formatCurrencyAmount(this.props.stream.getCurrentExpectedAmount(),undefined,undefined,undefined,Core.getPreferredCurrency())+" / "+Period[this.props.stream.period].unitName}
+	getStreamAmountString(ignorePeriod = false){return utils.formatCurrencyAmount(this.props.stream.getCurrentExpectedAmount(),undefined,undefined,undefined,Core.getPreferredCurrency())+" / "+(ignorePeriod?"":Period[this.props.stream.period].unitName)}
 	render(){return (<div/>)}//to override
 }
 
@@ -388,11 +388,14 @@ class CompoundStreamView extends GenericEditableStreamView{
 	constructor(props){
 		super(props)
 		this.state = {...this.state,newStreamNameErrorState: false}
+		this.onSelectNewPeriod = this.onSelectNewPeriod.bind(this)
 	}
 	onEditConfirm(e){
 		var name = e.target.parentElement.parentElement.getElementsByTagName("input")[0].value;
+		var period = e.target.parentElement.parentElement.querySelector("#period").value
 		if(!name || name.length==0)return this.updateState({newStreamNameErrorState:(!name || name.length==0)});
 		this.props.stream.name = name;
+		this.props.stream.period = period;
 		instance.refresh();
 		this.onExitEditMode();
 	}
@@ -405,6 +408,11 @@ class CompoundStreamView extends GenericEditableStreamView{
 			instance.refresh();
 		}
 	}
+	onSelectNewPeriod(e){
+		let period = e.target.parentElement.parentElement.querySelector("#period").value
+		let newValue = utils.formatCurrencyAmount(this.props.stream.getCurrentExpectedAmountByPeriod(period),undefined,undefined,undefined,Core.getPreferredCurrency()) + " /";
+		this.updateState({streamValuePreview:newValue})
+	}
 	render(){
 		return(
 			<CompoundStreamContainer key={this.props.stream.id} onDragOver={e => this.props.draggableNode.setDraggingOverTerminalStream(false)}>	
@@ -415,7 +423,10 @@ class CompoundStreamView extends GenericEditableStreamView{
 						></DS.component.Input>):this.props.stream.isRoot?"Total":this.props.stream.name}</DS.component.Label>
 					{(this.isToolsVisible())?(<DS.component.Button.Icon style={{marginLeft:Core.isMobile()?"0.1rem":"0.5rem",marginTop:Core.isMobile()?"":"0.2rem"}} iconName="plus" onClick={(e)=>this.onClickPlusButton(e)}/>):""}
 					<DS.component.Spacer/>
-					<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamAmountString()}</DS.component.Label>
+					
+					{this.isInEditMode()?<div style={{display:"flex",alignItems:"center",flexDirection:"row"}}><DS.component.Label id="amount" style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.state.streamValuePreview || this.getStreamAmountString(true)}&nbsp;</DS.component.Label><DS.component.DropDown inline autoSize noMargin name="period" id="period" defaultValue={this.props.stream.period} onChange={(e)=>this.onSelectNewPeriod(e)}>
+						{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
+					</DS.component.DropDown></div>:<DS.component.Label style={{flexShrink:0}} size={Core.isMobile()?"xs":""}>{this.getStreamAmountString()}</DS.component.Label>}
 					{(this.isToolsVisible() && !this.isInEditMode() && !this.props.stream.isRoot)?(<DS.component.Button.Icon style={{marginRight:"-1.5rem",marginTop:"0.2rem"}} iconName="edit" onClick={(e)=>this.onEnterEditMode(e)}/>):""}
 					{this.isInEditMode()?(<GridButtonContainer style={{marginLeft:"0.4rem",marginRight:"-1.5rem",flexDirection:"row",alignItems:"center"}}>
 						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>

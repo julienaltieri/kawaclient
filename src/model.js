@@ -72,6 +72,7 @@ class Stream{
   getPreferredPeriod(){return this.period}
   getMillis(d = new Date()){return Period[this.period].getTimeIntervalFromDate(d)}
   getCurrentExpectedAmount(){return this.getExpectedAmountAtDateByPeriod(new Date())} 
+  getCurrentExpectedAmountByPeriod(period){return this.getExpectedAmountAtDateByPeriod(new Date(),period)}
   getAllStreams(){return [this]}
   getAllTerminalStreams(){return [this]}
   getDepth(){return !this.children?0:1+utils.max(this.children,c => c.getDepth())}
