@@ -40,7 +40,7 @@ export class StreamAuditView extends BaseComponent{
 
 //data for display functions
 const validStreamsForDisplay = (s,analysis) => s.isActiveAtDate(analysis.getCurrentPeriodReport().reportingDate)
-const getStreamsForDisplay = (children,analysis) => children?.filter(c => validStreamsForDisplay(c,analysis)).sort(utils.sorters.asc(c => c.name.charCodeAt()))
+const getStreamsForDisplay = (children,analysis) => children?.filter(c => validStreamsForDisplay(c,analysis)).sort(utils.sorters.asc(c => c.name.charCodeAt()))||[]
 const valueForDisplay = (analysis) => analysis.getCurrentPeriodReport().reportingDate
 
 //master audit view

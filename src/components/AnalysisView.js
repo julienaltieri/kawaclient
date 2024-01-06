@@ -89,7 +89,7 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 	isCCW(){return ! (this.isIncome() || this.isSavings())}
 	isExceedingInitialValue(){return this.props.analysis.getNetAmount()*this.props.analysis.getExpected()<0}
 	getPrimaryPercentage(){//drives progress ring
-		if(this.props.analysis.getExpected()==0){
+		if(this.props.analysis.getExpected()==0 || !this.props.analysis.getExpected()){
 			if(this.isSavings()){return (this.props.analysis.getNetAmount()<0)?1:0}
 			else if(this.props.analysis.getNetAmount()==0) {return 0}
 			else {return (this.props.analysis.getNetAmount()>0)?1:-1}
