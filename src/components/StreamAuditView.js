@@ -38,7 +38,10 @@ export class StreamAuditView extends BaseComponent{
 	render(){return (<div>I'm a generic StreamAuditView</div>)}
 }
 
-
+//data for display functions
+const validStreamsForDisplay = (s,analysis) => s.isActiveAtDate(analysis.getCurrentPeriodReport().reportingDate)
+const getStreamsForDisplay = (children,analysis) => children?.filter(c => validStreamsForDisplay(c,analysis)).sort(utils.sorters.asc(c => c.name.charCodeAt()))
+const valueForDisplay = (analysis) => analysis.getCurrentPeriodReport().reportingDate
 
 //master audit view
 class MasterAuditView extends StreamAuditView{
@@ -62,8 +65,8 @@ class MasterStreamAuditView extends StreamAuditView{
 	}
 	render(){return (<div>
 		<EndOfPeriodProjectionGraph  	
-			incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate)>0 && !s.isSavings))}
-			expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate)<0 && !s.isSavings))}
+			incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))>0 && !s.isSavings))}
+			expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
 			savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
 		/></div>)
 	}
@@ -81,7 +84,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 			<StreamAuditCellContainer>
 				{this.props.stream.getDepth()==1?
 					<RowLayout>
-						{this.props.stream.children.filter(c => c.isActiveAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate)).sort(utils.sorters.asc(c => c.name.charCodeAt())).map((s,i) => <TerminalStreamCard 
+						{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => <TerminalStreamCard 
 							auditedTransactions={this.getTransactionsForStream(s)}
 							analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
@@ -89,7 +92,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 						/>)}
 					</RowLayout>:
 					<ColumnLayout>
-						{this.props.stream.children.filter(c => c.isActiveAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate)).sort(utils.sorters.asc(c => c.name.charCodeAt())).map((s,i) => <CompoundStreamAuditView 
+						{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => <CompoundStreamAuditView 
 							auditedTransactions={this.getTransactionsForStream(s)}
 							title={s.name} analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
@@ -113,16 +116,13 @@ class CompoundStreamAuditView extends StreamAuditView{
  				</div>
  				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
- 					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
+ 					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
  				<MiniGraph analysis={this.getStreamAnalysis(Period.monthly)} stream={this.props.stream}/>
  			</DS.component.ContentTile>
  			<RowLayout>
  				<RowLayout>
- 				{this.props.stream.children?.filter(c =>{
- 					//if(c.name=="Dental Mr"){console.log(c, this.getStreamAnalysis().getCurrentPeriodReport())}
- 					return c.isActiveAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate)
- 				}).sort(utils.sorters.asc(c => c.name.charCodeAt())).map((s,i) => 
+ 				{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => 
  				<TerminalStreamCard 
 					auditedTransactions={this.getTransactionsForStream(s)}
 					analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
@@ -152,7 +152,7 @@ class TerminalStreamCard extends StreamAuditView{
 			<TSCardHeader>{/*Title*/}
 				<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
 				<div style={{fontSize:"0.8rem",color:DS.getStyle().bodyTextSecondary}}>{
-					format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(this.getStreamAnalysis().getCurrentPeriodReport().reportingStartDate),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
+					format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
 					} per {Period[this.props.stream.period].unitName}</div>
 			</TSCardHeader>
 			<TSCardContent style={{transform: "scale(1)"}}>{/*transform here is needed to get the positioning of annotations tooltips to work*/}
