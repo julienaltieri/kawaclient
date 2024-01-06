@@ -148,7 +148,7 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 			</div>
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
-					isNaN(this.getPrimaryValue())?this.getPrimaryValue():<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(this.isIncome()||this.isSavings()))}/>
+					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0):<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(this.isIncome()||this.isSavings()))}/>
 				}</div>
 				<div style={{color:this.getMainColor(),fontSize:"0.8rem"}}>{this.getSubtext()}</div>
 			</FlexColumn>
