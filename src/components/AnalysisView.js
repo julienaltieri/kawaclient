@@ -209,9 +209,9 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		})
 		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
 			...expChanges?.filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
-				.map((h,k) => <ExpectationChangePannel key={2*i+1+k} expChangeData={h} report={r} stream={this.props.analysis.stream} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}/>
+				.map((h,k) => <ExpectationChangePannel key={100*(i+1)+k} expChangeData={h} report={r} stream={this.props.analysis.stream} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}/>
 				),
-			<PeriodReportTransactionFeedView key={2*i} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
+			<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>
 		])))
 		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
 	}
