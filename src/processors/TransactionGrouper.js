@@ -34,7 +34,7 @@ function containsAllWords(s,matchingString){
 	return utils.and(getWords(matchingString), w => testString.indexOf(w)>-1)
 }
 
-function getWords(s){return cleanString(s).split(" ")}
+function getWords(s){return cleanString(s).split(" ").filter(w => ["vir","sepa","prlv"].indexOf(w.toLowerCase())==-1 )}
 function cleanString(s){return s.toLowerCase().replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').replace(/^\s+|\s+$/g,'')}
 function affinityTree(transactionArray,skipWords){
 	if(skipWords>5 || transactionArray.length<=1){return transactionArray}//cap at 5 words deep
