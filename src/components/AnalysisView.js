@@ -128,14 +128,17 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	onMouseOver(e){if(!this.state.hovering){this.updateState({ hovering: true })}}
 	onMouseOut(e){if(this.state.hovering){this.updateState({ hovering: false })}}
 	getPrimaryValue(){
-		if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return "✔"}
+		if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return this.props.analysis.getNetAmount()}
 		else if(this.isIncome()){return this.props.analysis.getNetAmount()}
 		else if(this.isSavings()){return this.props.analysis.getMovedToSavings()}
 		else {return this.props.analysis.getLeftOver()}
 	}
 	getSubtext(){
-		if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return (this.isIncome() || this.isSavings())?"complete":"paid"}
-		else if(this.isSavings() || this.isIncome()){return "/"+format(this.props.analysis.getExpected(),true,true)}
+		if(this.isIncome()){
+			return (this.props.analysis.getLeftOver()>=0)?"✔":"/"+format(this.props.analysis.getExpected(),true,true)
+		}else if(this.isSavings()){
+			return (this.props.analysis.getLeftOver()<=0)?"✔":"/"+format(this.props.analysis.getExpected(),true,true)
+		}else if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return "paid"}
 		else{return this.isAlert()?"over":"left"}
 	}
 	getFrequencyText(){
