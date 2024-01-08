@@ -113,7 +113,7 @@ exports.stringMerge = function(array,delimitor){//merges an array of strings
 
 //exports.formatDollarAmount = (n,fixed,noMinusSign,noPlusSign) => exports.formatCurrencyAmount(n,fixed,noMinusSign,noPlusSign,"USD")
 exports.formatCurrencyAmount = function(n,fixed = 2,noMinusSign = false, noPlusSign = true, cur = "USD"){
-	if(cur=="EUR"){return ((n<0 && !noMinusSign)?"-":(n>0 && !noPlusSign)?"+":"")+(Math.abs(n).toFixed(fixed).replace(/\B(?=(\d{3})+(?!\d))/g, ",")||"-")+"€"}
+	if(cur=="EUR"){return ((n<0 && !noMinusSign)?"-":(n>0 && !noPlusSign)?"+":"")+(Math.abs(n).toFixed(fixed).replace(".",",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")||"-")+"€"}
 	else return ((n<0 && !noMinusSign)?"-":(n>0 && !noPlusSign)?"+":"")+"$"+(Math.abs(n).toFixed(fixed).replace(/\B(?=(\d{3})+(?!\d))/g, ",")||"-")
 }
 exports.parseDollarsAmount = (a) => currency(a)
