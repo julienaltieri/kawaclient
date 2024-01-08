@@ -20,7 +20,7 @@ import FlipMove from 'react-flip-move'
 
 const _ = require('lodash');
 export function format(x,noMinusSign,noPlusSign){
-	if(x==0){return "$0"}
+	if(x==0){return utils.formatCurrencyAmount(0,0,undefined,undefined,Core.getPreferredCurrency())}
 	else {return utils.formatCurrencyAmount(x,(Math.abs(x)>=100 || (Math.floor(x)==x))?0:2,noMinusSign,noPlusSign,Core.getPreferredCurrency())}
 }
 const liveRenderComponents = []
@@ -148,7 +148,7 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 			</div>
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
-					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0):<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(this.isIncome()||this.isSavings()))}/>
+					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0,undefined,undefined,Core.getPreferredCurrency()):<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(this.isIncome()||this.isSavings()))}/>
 				}</div>
 				<div style={{color:this.getMainColor(),fontSize:"0.8rem"}}>{this.getSubtext()}</div>
 			</FlexColumn>
@@ -309,7 +309,7 @@ export class EditExpectationModalView extends BaseComponent{
 		isNaN(this.props.controller.state.modalContentState.expectationEditPopupInputValue)
 	)}
 	render(){return(
-		<DS.component.SentenceWrapper>Starting on{this.props.expChange.startDate.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})}, the expected amount for<DS.component.StreamTag noHover highlight>{this.props.stream.name}</DS.component.StreamTag> should change from {utils.formatCurrencyAmount(this.props.expChange.previousAmount)} to <DS.component.Input type="number" textAlign="left" defaultValue={this.props.expChange.newAmount} autoSize inline onChange={this.onChangedExpectationAmount.bind(this)}/>.
+		<DS.component.SentenceWrapper>Starting on{this.props.expChange.startDate.toLocaleDateString(undefined,{month:'long',day:'numeric',year:'numeric'})}, the expected amount for<DS.component.StreamTag noHover highlight>{this.props.stream.name}</DS.component.StreamTag> should change from {utils.formatCurrencyAmount(this.props.expChange.previousAmount,undefined,undefined,undefined,Core.getPreferredCurrency())} to <DS.component.Input type="number" textAlign="left" defaultValue={this.props.expChange.newAmount} autoSize inline onChange={this.onChangedExpectationAmount.bind(this)}/>.
 		</DS.component.SentenceWrapper>)
 	}
 }
