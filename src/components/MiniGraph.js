@@ -109,7 +109,7 @@ export default class MiniGraph extends GenericChartView{
 	    <V.VictoryChart scale={{ x: "time", y:"linear" }} domain={this.getDomain()} height={this.style.chartHeight} width={this.style.chartWidth} padding={this.style.chartPadding}
 	    				containerComponent={<V.VictoryVoronoiContainer onActivated={this.onFlyOver} onDeactivated={this.onFlyOut} 
 	    				events={{onClick:(d) => this.state.hovering?this.handleClick(this.hoverData):""}}
-	    				style={{touchAction:"auto"}} voronoiBlacklist={["lineChart-2","lineChart-3"]}
+	    				style={{touchAction:"auto"}} voronoiBlacklist={[...(this.props.stream.expAmountHistory||[]).map((h,i) => "lineChart-1-"+i),"lineChart-2","lineChart-3"]}
 	    				activateData={true} voronoiDimension="x" labels={(d) => " "} labelComponent={<MiniToolTip hoverData={this.hoverData}/>} />} >
 			<V.VictoryAxis style={{axis:{opacity:1,stroke:DesignSystem.getStyle().bodyTextSecondary}}}
 				tickValues={this.getReportSchedule().map(t => this.dateToTickDate(t)).filter((t,i)=> (this.n-i-1)%k==0)}
@@ -120,7 +120,7 @@ export default class MiniGraph extends GenericChartView{
 	          		axis:{"stroke":DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}
 	          	}}
 			 />
-			{this.props.stream.expAmountHistory?.map((h,i) => <V.VictoryLine key={1000+i} data={[{x:h.startDate.getTime(),y:-0.7*domainAxisVerticalPadding},{x:h.startDate.getTime(),y:0.7*domainAxisVerticalPadding}]} style={{data: {stroke:DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}}}/>) }
+			{this.props.stream.expAmountHistory?.map((h,i) => <V.VictoryLine key={1000+i} name={"lineChart-1-"+i} data={[{x:h.startDate.getTime(),y:-0.7*domainAxisVerticalPadding},{x:h.startDate.getTime(),y:0.7*domainAxisVerticalPadding}]} style={{data: {stroke:DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}}}/>) }
 			<V.VictoryLabel dy={-this.style.axisVerticalPadding} datum={{x:this.getMidX(),y:0}} textAnchor={"middle"} verticalAnchor={"end"} standalone={false} text={this.getTitle().toUpperCase()} style={{fill:DesignSystem.getStyle().bodyTextSecondary, fontSize: 15,fontFamily:"Inter",fontWeight:500}}/>
        		<V.VictoryLine name="lineChart-2" style={{data: {stroke: "url(#linear"+m+")",strokeWidth:this.style.chartStrokeWidth}}} data={this.getData()} />
        		{this.projectionLine?<V.VictoryLine name="lineChart-3" style={{data: {stroke: this.getFillValue(this.getData().slice(-1)[0].y),strokeWidth:this.style.chartStrokeWidth,strokeDasharray: "4, 2"}}} data={this.getData().slice(-2)}/>:null}
