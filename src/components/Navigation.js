@@ -1,11 +1,11 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
-import Cookies from 'js-cookie'
-import Core from '../core.js'
 import {useNavigate} from 'react-router-dom'
 import SideBar from './SideBar'
 import DS from '../DesignSystem'
 import {ModalTemplates} from '../ModalManager.js'
+import Core from '../core.js'
+
 
 
 
@@ -51,18 +51,11 @@ let logo = DS.icon.logo[DS.getMode()]
 class TopNavigationBarBase extends BaseComponent{
 	constructor(props){
 		super(props);
-		this.logout = this.logout.bind(this)
 		this.state = {
 			sideBarVisible:false,
 			currentRouteIndex:Math.max(instance.getCurrentRouteIndex(),0)
 		}
 		instance.registerNavBar(this)
-	}
-
-	logout(e){
-		Cookies.set("token","");
-		Core.setLoggedIn(false);
-		this.updateState({sideBarVisible:false})
 	}
 
 	refreshSideBarState(){this.updateState({currentRouteIndex:instance.getCurrentRouteIndex()})}
@@ -77,13 +70,12 @@ class TopNavigationBarBase extends BaseComponent{
 
 	render(){
 		let leftButton = <HamburgerButton onClick={(e) => {if(this.props.loggedIn)this.summonSideBar()}}>{logo}</HamburgerButton>
-		let rightButton = <StyledLogOutButton onClick={this.logout}>Log Out</StyledLogOutButton> 
 		return(
 		  <StyledNavBar loggedIn={this.props.loggedIn}>
 		  	{leftButton}
 		  	<Spacer/>
 		  	<Spacer/>
-		  	{rightButton}
+		  	{}
 		  </StyledNavBar>
 		);
 	}
@@ -114,20 +106,6 @@ const StyledNavBar = styled.div`
     backdrop-filter: blur(1rem);
     transition: all 0.5s ease-in;
 `
-
-const StyledLogOutButton = styled.button`
-    background: ${DS.getStyle().UIElementBackground};
-    color: ${DS.getStyle().bodyTextSecondary};
-    margin-right:0.5rem;
-    border-radius: 100vw;
-    height: 2.4em;
-    border: none;
-    width: 5rem;
-    cursor: pointer;
-    font-weight: bold;
-}
-`
-
 
 const HamburgerButton = styled.button`
     margin: 0;

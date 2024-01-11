@@ -194,7 +194,7 @@ class DesignSystem{
 		Button: {
 			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper >{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
-			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props}  disabled={props.disabled} primary={props.primary}>{props.children}</StyledButton></StyledButtonWrapper>,
+			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} small={props.small} disabled={props.disabled} primary={props.primary} tertiary={props.tertiary}>{props.children}</StyledButton></StyledButtonWrapper>,
 		}
 	}
 	Layout = {
@@ -266,12 +266,12 @@ const StyledPlaceholderButton = styled.div`
 `
 
 const StyledButton = styled.div`
-	background-color: ${(props) => props.primary?instance.getStyle().modalPrimaryButton:instance.getStyle().modalSecondaryButton};
+	background-color: ${(props) => props.tertiary?instance.getStyle().UIElementBackground:props.primary?instance.getStyle().modalPrimaryButton:instance.getStyle().modalSecondaryButton};
 	color: ${(props) => props.primary?instance.getStyle().primaryButtonTextColor:instance.getStyle().secondaryButtonTextColor};
 	border-radius:  ${props => 100}rem;
-	border: solid ${instance.borderThickness.s}rem ${(props) =>instance.getStyle().modalPrimaryButton};
-	min-height: ${instance.inputHeight}rem;
-	font-size:${instance.fontSize.title}rem;
+	border: solid ${props => props.tertiary?0:instance.borderThickness.s}rem ${(props) =>instance.getStyle().modalPrimaryButton};
+	min-height: ${props => props.small?instance.inputHeightInline:instance.inputHeight}rem;
+	font-size:${props => props.small?instance.fontSize.little:instance.fontSize.title}rem;
 	opacity: ${(props) => props.disabled?0.5:0.9};
 	display: flex;
 	margin: 0 ${instance.spacing.xxs}rem;
