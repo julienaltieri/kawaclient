@@ -247,6 +247,9 @@ export class TerminalStream extends Stream{
       }else {existing.amount = newAmount}
     }
   }
+  removeExpChange(date){
+    this.expAmountHistory = this.expAmountHistory.filter(e => e.startDate.getTime()!=date.getTime())
+  }
   getLatestActiveExpAmount(){
     var can = this.expAmountHistory.filter(o => o.startDate < new Date());
     if(can.length == 0)throw new Error("Trying to access getLatestActiveExpAmount in Stream that only has future dates or none")
