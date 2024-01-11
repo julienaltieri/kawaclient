@@ -167,7 +167,7 @@ class DesignSystem{
 		},
 	}
 	component = {
-		Label: (props) => <StyledLabel {...props}>{props.children}</StyledLabel>,
+		Label: (props) => <StyledLabel {...props} level={props.level}>{props.children}</StyledLabel>,
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
 		ListItem: (props) => <StyledListItemContainer disabled={props.disabled} size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
@@ -393,7 +393,12 @@ const StyledLabel = styled.div`
 	text-overflow: ellipsis;
     text-wrap: nowrap;
     overflow-x: clip;
-    color: ${(props) => props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
+    color: ${(props) => {
+    	if(props.level=="positive"){return instance.getStyle().positive}
+    	else if(props.level=="warning"){return instance.getStyle().warning}
+    	else if(props.level=="alert"){return instance.getStyle().alert}
+    	else return props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary
+    }};
     font-size: ${(props) => props.smallcaps?instance.fontSize.body:props.header?instance.fontSize.header:props.size=="xs"?instance.fontSize.little:"caboose"}rem;
     font-variant: ${(props) => props.smallcaps?"all-petite-caps":""};
 `

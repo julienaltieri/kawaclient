@@ -56,7 +56,7 @@ export default class CategorizationRulesView extends BaseComponent{
 		}
 	}
 
-	onDragStart(e){this.updateState({dragging:true})}
+	onDragStart(e){this.updateState({dragging:true,testPortal:e.draggableId})}
 
 	reload(){this.updateState({ruleList:Core.getCategorizationRules(),loading:false,dragging:false})}
 

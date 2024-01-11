@@ -3,6 +3,7 @@ import styled from 'styled-components'
 import {useNavigate} from 'react-router-dom'
 import SideBar from './SideBar'
 import DS from '../DesignSystem'
+import React from 'react'
 import {ModalTemplates} from '../ModalManager.js'
 import Core from '../core.js'
 
@@ -29,12 +30,14 @@ class NavigationController{
 
 	getCurrentRoute(){return window.location.pathname}
 	getCurrentRouteIndex(){return this.getHamburgerMenuItems().map(a => a.path).indexOf(this.getCurrentRoute())}
+	getCurrentView(){return this.state.registeredViews[this.getCurrentRouteIndex()]?.ref.current}
 	addView(name,path){if(this.state.registeredViews.map(a => a.name).indexOf(name)==-1)this.state.registeredViews.push({name:name,path:path})}
 	getHamburgerMenuItems(){return this.state.registeredViews}
 	registerNavBar(navBar){
 		this.state.navBar = navBar;
 		this.state.navBar.props.navigate(this.getCurrentRoute())
 	}
+	getPortalSlot(){return this.portalRef.current}
 	navigateToRoute(route){
 		if(route == this.getCurrentRoute())return;
 		else{
@@ -56,6 +59,7 @@ class TopNavigationBarBase extends BaseComponent{
 			currentRouteIndex:Math.max(instance.getCurrentRouteIndex(),0)
 		}
 		instance.registerNavBar(this)
+		instance.portalRef = React.createRef()
 	}
 
 	refreshSideBarState(){this.updateState({currentRouteIndex:instance.getCurrentRouteIndex()})}
@@ -74,8 +78,7 @@ class TopNavigationBarBase extends BaseComponent{
 		  <StyledNavBar loggedIn={this.props.loggedIn}>
 		  	{leftButton}
 		  	<Spacer/>
-		  	<Spacer/>
-		  	{}
+		  	<div style={{marginRight:(DS.spacing.s-0.5)+"rem"}} ref={instance.portalRef}></div>
 		  </StyledNavBar>
 		);
 	}

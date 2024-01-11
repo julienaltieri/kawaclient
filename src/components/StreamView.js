@@ -8,6 +8,9 @@ import DS from '../DesignSystem'
 import utils from '../utils'
 import {CompoundStream} from '../model'
 import React from "react";
+import Navigation from './Navigation'
+import { createPortal } from 'react-dom';
+
 
 var streamReactNodeMap = {}
 let instance;
@@ -61,6 +64,14 @@ export default class MasterStreamView extends BaseComponent{
 			throw new Error("Stream Integrity is compromised. Less terminal streams are present after the change than before.")
 		} else {return Core.saveStreams().then(() => this.masterStreamSnapshot = this.takeSnapshot())}
 	}
+	getPortal(){
+		let amount = this.state.masterStream.getCurrentExpectedAmount();
+		return(<DS.component.Row> <DS.component.Label>Total: &nbsp;</DS.component.Label>
+			<DS.component.Label level={amount>=0?"positive":"alert"}>
+				{utils.formatCurrencyAmount(this.state.masterStream.getCurrentExpectedAmount(),undefined,undefined,undefined,Core.getPreferredCurrency())}
+			</DS.component.Label></DS.component.Row>
+		)
+	}
 	render(){
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
@@ -71,6 +82,7 @@ export default class MasterStreamView extends BaseComponent{
 					<DraggableStreamView ddContext={this.state.ddContext} stream={this.state.masterStream} depth={0} />
 				</StyledMasterStreamView>
 			</div>}/>
+			{createPortal(this.getPortal(),Navigation.getPortalSlot())}
 		</div>
 	)}
 }
