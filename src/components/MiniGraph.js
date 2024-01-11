@@ -47,7 +47,7 @@ export default class MiniGraph extends GenericChartView{
 			delta += this.getAccruedPlottedValue(r)
 			this.data.push({x:this.dateToTickDate(r.reportingDate),y:delta})
 		})
-		return this.getData()
+		return this.getData(includeProjection)
 	}
 	shouldDisplayProjection(){
 		let numberOfDayInCycle = Math.floor((new Date() - this.getPeriodReports()[this.n].reportingStartDate)/timeIntervals.oneDay)//where we are in the cycle
@@ -123,10 +123,10 @@ export default class MiniGraph extends GenericChartView{
 			{this.props.stream.expAmountHistory?.map((h,i) => <V.VictoryLine key={1000+i} name={"lineChart-1-"+i} data={[{x:h.startDate.getTime(),y:-0.7*domainAxisVerticalPadding},{x:h.startDate.getTime(),y:0.7*domainAxisVerticalPadding}]} style={{data: {stroke:DesignSystem.getStyle().bodyTextSecondary,strokeWidth:1}}}/>) }
 			<V.VictoryLabel dy={-this.style.axisVerticalPadding} datum={{x:this.getMidX(),y:0}} textAnchor={"middle"} verticalAnchor={"end"} standalone={false} text={this.getTitle().toUpperCase()} style={{fill:DesignSystem.getStyle().bodyTextSecondary, fontSize: 15,fontFamily:"Inter",fontWeight:500}}/>
        		<V.VictoryLine name="lineChart-2" style={{data: {stroke: "url(#linear"+m+")",strokeWidth:this.style.chartStrokeWidth}}} data={this.getData()} />
-       		{this.projectionLine?<V.VictoryLine name="lineChart-3" style={{data: {stroke: this.getFillValue(this.getData().slice(-1)[0].y),strokeWidth:this.style.chartStrokeWidth,strokeDasharray: "4, 2"}}} data={this.getData().slice(-2)}/>:null}
-			{this.projectionLine?<V.VictoryScatter size={this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":"transparent",strokeWidth:3,stroke: ({datum})=>this.getFillValue(datum.y)}}} data={this.getData().slice(-1)}/>:null}
+       		{this.projectionLine?<V.VictoryLine name="lineChart-3" style={{data: {stroke: this.getFillValue(this.getData(true).slice(-1)[0].y),strokeWidth:this.style.chartStrokeWidth,strokeDasharray: "4, 2"}}} data={this.getData(true).slice(-2)}/>:null}
+			{this.projectionLine?<V.VictoryScatter size={this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":"transparent",strokeWidth:3,stroke: ({datum})=>this.getFillValue(datum.y)}}} data={this.getData(true).slice(-1)}/>:null}
        		<V.VictoryScatter size={({datum})=>this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":this.getFillValue(datum.y)}}} data={this.getData()} />
-     		{this.state.hovering?null:<MiniToolTip scale={{ x: "time", y:"linear" }} datum={this.getData().slice(this.projectionLine?-1:-2)[0]}/>}
+     		{this.state.hovering?null:<MiniToolTip scale={{ x: "time", y:"linear" }} datum={this.getData(true).slice(this.projectionLine?-1:-2)[0]}/>}
      	</V.VictoryChart>
      	</MiniGraphContainer>
      	{(!Core.isMobile() && this.state.hovering && this.hoverData[0]?.x && this.getAnnotationsAtDate(this.hoverData[0]?.x).length)?
