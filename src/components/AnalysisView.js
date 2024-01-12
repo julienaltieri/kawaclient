@@ -249,8 +249,10 @@ class ExpectationChangePannel extends BaseComponent{
 		if(!this.isOldest()){return this.props.report.reportingDate.getTime() < new Date().getTime()}
 		else{
 			let expStart = this.props.expChangeData.startDate.getTime()
-			let oldestTransactionDate = this.props.analysis.transactions.sort(utils.sorters.asc(t => t.date))[0].date.getTime()
-			return oldestTransactionDate > expStart + (this.props.report.reportingDate.getTime()-this.props.report.reportingStartDate.getTime()) /*since reportingStartDate and reportingDate of the next report match, this calculation is equivalent to the jump calculated when moving up*/
+			console.log(this.props.analysis.transactions)
+			let oldestTransactionDate = this.props.analysis.transactions.sort(utils.sorters.asc(t => t.date))[0]?.date.getTime()
+			return this.props.report.reportingDate.getTime() < new Date().getTime() && (!oldestTransactionDate || 
+					(oldestTransactionDate > expStart + (this.props.report.reportingDate.getTime()-this.props.report.reportingStartDate.getTime()))) /*since reportingStartDate and reportingDate of the next report match, this calculation is equivalent to the jump calculated when moving up*/
 		}
 	}
 	onClickMoreInExpectationPanel(targetRef){
