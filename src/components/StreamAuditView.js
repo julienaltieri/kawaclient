@@ -92,7 +92,13 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 						/>)}
 					</RowLayout>:
 					<ColumnLayout>
-						{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => <CompoundStreamAuditView 
+						<RowLayout style={{"marginBottom":DS.spacing.l+"rem"}}>{getStreamsForDisplay(this.props.stream.children.filter(c => c.isTerminal()),this.getStreamAnalysis()).map((s,i) => <TerminalStreamCard 
+							auditedTransactions={this.getTransactionsForStream(s)}
+							analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
+							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
+							onCategorizationUpdate={this.props.onCategorizationUpdate}
+						/>)}</RowLayout>
+						{getStreamsForDisplay(this.props.stream.children.filter(c => !c.isTerminal()),this.getStreamAnalysis()).map((s,i) => <CompoundStreamAuditView 
 							auditedTransactions={this.getTransactionsForStream(s)}
 							title={s.name} analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
