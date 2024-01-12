@@ -514,7 +514,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 		if(!name || name.length==0 || isNaN(amount))return this.updateState({newStreamNameErrorState:(!name || name.length==0),newStreamAmountErrorState:(isNaN(amount))});											
 		this.props.stream.name = name;
 		this.props.stream.period = form.getElementsByTagName("select")[0].value;
-		this.props.stream.updateExpAmount(amount,new Date)
+		this.props.stream.updateExpAmount(amount,new Date())
 		instance.refresh()
 		if(this.props.stream.isFactory)delete this.props.stream.isFactory
 		this.onExitEditMode()
