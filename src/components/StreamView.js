@@ -34,11 +34,22 @@ export default class MasterStreamView extends BaseComponent{
 				dropTarget:{},//stream it will be dropped into
 				scrollVelocity : 0,//used as a variable to measure scroll velocity and apply intertia
 			},
+			portalOpacity:0
 		}
 		instance = this;
 		this.isSomeoneInEditMode = false;
 		this.reactComponentRef = React.createRef();
 		this.onDragOverNoMansLand = this.onDragOverNoMansLand.bind(this)
+		this.firstRowRef = React.createRef()
+		this.handleScroll = this.handleScroll.bind(this)
+
+	}
+	componentDidMount = function() {window.addEventListener('scroll', this.handleScroll)}
+	componentWillUnmount = function() {window.removeEventListener('scroll', this.handleScroll)}
+	handleScroll(e){
+		let percentCovered = Math.max(0,Math.min(1,(this.firstRowRef.current?.offsetTop - e.srcElement.scrollingElement.scrollTop - 1*DS.remToPx)/this.firstRowRef.current.clientHeight))
+		percentCovered = Math.floor(percentCovered*20)/20
+		if(this.state.portalOpacity!=(1-percentCovered)){this.updateState({portalOpacity:1-percentCovered})}
 	}
 	setFactoryActive(b){this.factoryActive=b}
 	updateClonePosition(x,y){
@@ -66,7 +77,7 @@ export default class MasterStreamView extends BaseComponent{
 	}
 	getPortal(){
 		let amount = this.state.masterStream.getCurrentExpectedAmount();
-		return(<DS.component.Row> <DS.component.Label>Total: &nbsp;</DS.component.Label>
+		return(<DS.component.Row style={{opacity:this.state.portalOpacity||0}}> <DS.component.Label>Total: &nbsp;</DS.component.Label>
 			<DS.component.Label level={amount>=0?"positive":"alert"}>
 				{utils.formatCurrencyAmount(this.state.masterStream.getCurrentExpectedAmount(),undefined,undefined,undefined,Core.getPreferredCurrency())}
 			</DS.component.Label></DS.component.Row>
@@ -425,10 +436,11 @@ class CompoundStreamView extends GenericEditableStreamView{
 		let newValue = utils.formatCurrencyAmount(this.props.stream.getCurrentExpectedAmountByPeriod(period),undefined,undefined,undefined,Core.getPreferredCurrency()) + " /";
 		this.updateState({streamValuePreview:newValue})
 	}
+
 	render(){
 		return(
 			<CompoundStreamContainer key={this.props.stream.id} onDragOver={e => this.props.draggableNode.setDraggingOverTerminalStream(false)}>	
-				<StreamInfoContainer editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
+				<StreamInfoContainer ref={this.props.stream.isRoot?instance.firstRowRef:React.createRef()} editing={this.state.isInEditMode} onMouseOver={(e)=>this.onHover(e)} onMouseLeave={(e)=> this.onMouseLeave(e)}>
 					<DS.component.Label size={Core.isMobile()?"xs":""} style={{overflow:this.state.isInEditMode?"visible":""}}>{
 						this.isInEditMode()?(<DS.component.Input inline autoSize style={{textAlign:"left",marginLeft:-DS.spacing.xxs-DS.borderThickness.m+"rem"}} noMargin autoFocus type="text" defaultValue={this.props.stream.name}
 							onKeyUp={(e)=>(e.keyCode===13)?this.onEditConfirm(e):""}
