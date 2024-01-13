@@ -195,6 +195,7 @@ class DesignSystem{
 			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper >{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
 			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} small={props.small} disabled={props.disabled} primary={props.primary} tertiary={props.tertiary}>{props.children}</StyledButton></StyledButtonWrapper>,
+			Link: (props) => <StyledButtonWrapper><instance.component.Label  {...props} size={"xs"} >{props.children}</instance.component.Label></StyledButtonWrapper>,
 		}
 	}
 	Layout = {

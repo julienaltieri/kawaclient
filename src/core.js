@@ -88,6 +88,9 @@ class Core{
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
 	}
 	getUserData(){return this.globalState.userData}
+	saveBankAccountSettings(){return this.getUserData().savingAccounts?ApiCaller.saveBankAccountSettings(this.getUserData().savingAccounts):Promise.resolve()}
+	saveUserPreferences(){return this.getUserData().userPreferences?ApiCaller.saveUserPreferences(this.getUserData().userPreferences):Promise.resolve()}
+
 	getErroredBankConnections(){return this.globalState.erroredBankConnections}
 	isSavingAccount(accountId){return this.getUserData().savingAccounts.indexOf(accountId)>-1}
 	getTransactionsBetweenDates(start,end,forceFromCache){

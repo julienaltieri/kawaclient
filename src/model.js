@@ -21,6 +21,7 @@ export default class UserData {
     this.plaidConnections = json.plaidConnections;
     this.savingAccounts = json.savingAccounts;
     this.preferredCurrency = json.preferredCurrency || currencies.USD;
+    this.userPreferences = json.userPreferences || {}
   }
 
   //convenience

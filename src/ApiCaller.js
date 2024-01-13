@@ -17,8 +17,11 @@ const API = {
 	plaidExchangeLinkTokenAndSaveConnection: 	AppConfig.serverURL + "/api" + "/plaidExchangeLinkTokenAndSaveConnection",
 	plaidUpdateLinkToken: 						AppConfig.serverURL + "/api" + "/plaidUpdateLinkToken",
 	plaidGetItemStatus: 						AppConfig.serverURL + "/api" + "/plaidGetItemStatus",
+	plaidGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/plaidGetAccountsForUser",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
 	undoCategorizations: 						AppConfig.serverURL + "/api" + "/undoCategorizations",
+	saveBankAccountSettings: 					AppConfig.serverURL + "/api" + "/saveBankAccountSettings",
+	saveUserPreferences: 						AppConfig.serverURL + "/api" + "/saveUserPreferences",
 }
 
 class ApiCaller{
@@ -31,6 +34,8 @@ class ApiCaller{
 			else return res.json()
 		})
 	}
+
+
 
 	authenticate(username,password){
 		const request = new Request(API.login,{
@@ -217,6 +222,14 @@ class ApiCaller{
 		return this.sendRequest(request)
 	}
 
+	getBankAccountsForUser(){
+		const request = new Request(API.plaidGetAccountsForUser,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({})
+		})
+		return this.sendRequest(request)
+	}
+
 	forceRefreshItemTransactions(itemId){
 		const request = new Request(API.forceRefreshItemTransactions,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
@@ -240,6 +253,23 @@ class ApiCaller{
 			console.log(payload);
 			return Promise.resolve()
 		}
+	}
+
+
+	saveBankAccountSettings(savingAccounts){
+		const request = new Request(API.saveBankAccountSettings,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify(savingAccounts)
+		})
+		return this.sendRequest(request)
+	}
+
+	saveUserPreferences(userPreferences){
+		const request = new Request(API.saveUserPreferences,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify(userPreferences)
+		})
+		return this.sendRequest(request)
 	}
 }
 
