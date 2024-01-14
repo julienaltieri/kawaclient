@@ -139,17 +139,19 @@ class BCSettingItem extends BaseComponent{
             <DS.component.Label size="xs">Last updated: {utils.formatDateShort(new Date(this.props.data.lastUpdated))}</DS.component.Label> 
           </div>
         </div>
-        <div style={{paddingTop:(this.state.expanded?DS.spacing.xxs:0)+"rem", transition: "all 0.2s",height:this.state.expanded?"":"0",overflow:"hidden"}}>
-          {this.props.bankAccounts.map((ba,i) => <DS.component.ListItem key={i} fullBleed noHover>
-            <DS.component.Label size="xs">{ba.name}</DS.component.Label>
-            <DS.component.Label size="xs" style={{minWidth:"3rem",textAlign:"right"}}>**{ba.mask}</DS.component.Label>
-            <DS.component.Spacer/>
-            <div style={{width: "50%",display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
-              <DS.component.DropDown inline autoSize noMargin name="acc_type" id="acc_type" defaultValue={this.getTypeForAccount(ba)} onChange={e => this.onChangeAccountType(e,ba)}>
-                {Object.keys(AccountTypes).map((k) => <option key={k} value={k}>{this.getAccountTypeString(AccountTypes[k])}</option>)}
-              </DS.component.DropDown>
-            </div>
-          </DS.component.ListItem>)}
+        <div style={{display: "grid",gridTemplateRows: (this.state.expanded?1:0)+"fr",transition: "grid-template-rows 0.2s"}}>
+          <div style={{paddingTop:(this.state.expanded?DS.spacing.xxs:0)+"rem", transition: "all 0.2s",overflow:"hidden"}}>
+            {this.props.bankAccounts.map((ba,i) => <DS.component.ListItem key={i} fullBleed noHover>
+              <DS.component.Label size="xs">{ba.name}</DS.component.Label>
+              <DS.component.Label size="xs" style={{minWidth:"3rem",textAlign:"right"}}>**{ba.mask}</DS.component.Label>
+              <DS.component.Spacer/>
+              <div style={{width: "50%",display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
+                <DS.component.DropDown inline autoSize noMargin name="acc_type" id="acc_type" defaultValue={this.getTypeForAccount(ba)} onChange={e => this.onChangeAccountType(e,ba)}>
+                  {Object.keys(AccountTypes).map((k) => <option key={k} value={k}>{this.getAccountTypeString(AccountTypes[k])}</option>)}
+                </DS.component.DropDown>
+              </div>
+            </DS.component.ListItem>)}
+          </div>
         </div>
 
         {this.state.updateModeLinkToken?<Row style={{"marginTop":"1rem",background:"#ffe2e2","padding":"1rem"}}>
