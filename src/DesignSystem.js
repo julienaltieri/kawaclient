@@ -291,6 +291,7 @@ const StyledIcon = styled.div`
 `
 
 const StyledButtonWrapper = styled.div`
+	-webkit-tap-highlight-color: transparent;
 	cursor: ${(props) => props.disabled?"default":"pointer"};
 	color: ${(props) => instance.getStyle().bodyTextSecondary};
 	display: flex;
