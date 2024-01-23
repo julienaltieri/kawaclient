@@ -50,6 +50,7 @@ class ApiCaller{
 			method:"post",headers:{"Content-Type":"application/json"},
 			body:JSON.stringify({token:authToken})
 		})
+		console.log("checking authentication")
 		return this.sendRequest(request)
 	}
 
