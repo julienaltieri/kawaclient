@@ -215,7 +215,7 @@ class MultiStreamAnalysis extends Analysis{
 	getExpectedAmountAtDateForPeriod(d,period){		return this.getAggregateSum(this.analyses, a => a.stream.getExpectedAmountAtDateByPeriod(d,period.name))}
 	getPeriodAggregates(matureOnly=true){//PeriodAnalysis are specific to streams so in this situation, we need to create virtual reports instead
 		let acc = {netToDate:0,savedToDate:0}
-		let res = this.analyses[0].getPeriodReports(matureOnly).map((r,i) => {
+		let res = this.analyses[0]?.getPeriodReports(matureOnly).map((r,i) => {
 			acc.netToDate += r.getNetAmount()
 			acc.savedToDate += r.getMovedToSavings()
 			return {
@@ -232,7 +232,7 @@ class MultiStreamAnalysis extends Analysis{
 				},
 				transactions: r.transactions
 			}
-		});
+		}) || [];
 		for(let i = 1; i<this.analyses.length;i++){
 			let add = this.analyses[i].getPeriodReports(matureOnly);
 			let acc = {netToDate:0,savedToDate:0}
@@ -259,7 +259,7 @@ class MultiStreamAnalysis extends Analysis{
 	}
 	
 	//convenience and getters
-	getFullSchedule(){return this.analyses[0].getReportingSchedule(undefined,true)}
+	getFullSchedule(){return this.analyses[0]?.getReportingSchedule(undefined,true) || []}
 	isSavings(){return this.analyses[0].isSavings()}
 }
 //[recurringExpenses.getPeriodReports(), annualExpenses.getPeriodReports()]

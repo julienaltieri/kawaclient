@@ -47,7 +47,7 @@ const valueForDisplay = (analysis) => analysis.getCurrentPeriodReport().reportin
 class MasterAuditView extends StreamAuditView{
 	render(){
 		return (<AuditViewContainer>
-			<MasterStreamAuditView stream={Core.getMasterStream()} key={0} auditedTransactions={this.props.auditedTransactions.filter(t => t.categorized)}/>
+			{this.props.auditedTransactions.filter(t => t.categorized).length>0?<MasterStreamAuditView stream={Core.getMasterStream()} key={0} auditedTransactions={this.props.auditedTransactions.filter(t => t.categorized)}/>:""}
 			{Core.getMasterStream().children.map((s,i) => {
 				return <MacroCompoundStreamAuditView stream={s} key={i+1} auditedTransactions={this.getTransactionsForStream(s)}
 	 				onCategorizationUpdate={this.props.onCategorizationUpdate}

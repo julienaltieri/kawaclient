@@ -12,8 +12,8 @@ export default class UserData {
   constructor(json){
     this.categorizationRules = json.categorizationRules || [];
     this.categorizationRulesExclusionList = json.categorizationRulesExclusionList || [];
-    this.observedAccounts = json.observedAccounts;
-    this.observedUserInstitutionIds = json.observedUserInstitutionIds;
+   // this.observedAccounts = json.observedAccounts;
+    //this.observedUserInstitutionIds = json.observedUserInstitutionIds;
     this.masterStream = new CompoundStream(json.masterStream);
     this.userId = json.userId;
     this.timeZoneOffset = json.timeZoneOffset;

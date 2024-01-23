@@ -426,7 +426,7 @@ class SeriesDescriptor{
 	getEOYProjection(yArray){return yArray.length > this.chartContext.timeAxisBoundIndex?yArray[this.chartContext.timeAxisBoundIndex]:this.getTrend(yArray).slice(-1)[0]?.y}
 	getTimeSeries(series){return series.slice(0,this.chartContext.timeAxisBoundIndex+1).map((y,i) => {return {x:this.chartContext.xAccessor(this.chartContext.timeAxis[i]), y:y}})}
 	getTrend(yArray){
-		let fitIndex = yArray.length-1, {slope,yIntercept} = Statistics.trendLine([...[0],...yArray].map((y,i)=> {return {x: this.chartContext.timeAxis[i].getTime(), y:y}}))
+		let fitIndex = yArray.length-1, {slope,yIntercept} = Statistics.trendLine([...[0],...yArray].map((y,i)=> {return {x: this.chartContext.timeAxis[i]?.getTime(), y:y}}))
 		let res = this.chartContext.timeAxis.slice(fitIndex,this.chartContext.timeAxisBoundIndex+1).map(x => {return {
 			x:this.chartContext.xAccessor(x), 
 			y: x*slope +yArray[fitIndex]-slope*this.chartContext.timeAxis[fitIndex]
@@ -624,9 +624,9 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	//plot configuration
 	getData(){	
 		if(!!this.data){return this.data}
-		let savingsAnalysis = this.props.savingsAnalysis.getPeriodAggregates()
-		let expenseAnalysis = this.props.expenseAnalysis.getPeriodAggregates()
-		let incomeAnalysis = this.props.incomeAnalysis.getPeriodAggregates()
+		let savingsAnalysis = this.props.savingsAnalysis.getPeriodAggregates() 	||[]
+		let expenseAnalysis = this.props.expenseAnalysis.getPeriodAggregates() 	||[]
+		let incomeAnalysis = this.props.incomeAnalysis.getPeriodAggregates() 	||[]
 		let chartContext = {timeAxis: this.timeAxis,timeAxisBoundIndex: this.timeAxisBoundIndex, xAccessor:this.dateToTickDate}
 		const addToSave = (r1,r2) => {r1.stats.savedToDate = r1.stats.savedToDate+ r2.stats.savedToDate; return r1}
 		let res = {
@@ -692,7 +692,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	//domain definition 
 	getReportSchedule(){return this.props.savingsAnalysis.getFullSchedule()}
 	getDomainBounds(){
-		let acc = (g,f) =>  g(this.getData().plotList.filter(o=>o.config.render).map(p => f(p.target[p.target.length-1].y,p.projected)))
+		let acc = (g,f) =>  g(this.getData().plotList.filter(o=>o.config.render).map(p => f(p.target[p.target.length-1]?.y,p.projected)))
 		return {...super.getDomainBounds(),my:this.style.chartYScaleFactor*acc(utils.min,Math.min),My:this.style.chartYScaleFactor*acc(utils.max,Math.max)}
 	}
 
@@ -707,7 +707,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	}
 	renderDynamicBarWithLabels(series){
 		let c = series.config.color, b = this.style.fontSizeBody, h = this.style.fontSizeHeader, s = this.style.statLabelSpacing, labelHeight = 2*b+h+2*s , sign = Math.abs(series.projected)/series.projected
-		let x0 = (this.timeAxis[this.timeAxisBoundIndex].getTime())+this.style.summaryBarOffset 						//base x value to draw the chart from
+		let x0 = (this.timeAxis[this.timeAxisBoundIndex]?.getTime())+this.style.summaryBarOffset 						//base x value to draw the chart from
 		let formatPercent = (x) => Math.round(100*x)+"%"
 		let savingExpenseSum = (accessor) => accessor(this.getDataByName("savings"))+Math.abs(accessor(this.getDataByName("expenses")))
 		let getYValue = (fr,ser) =>  (fr?ser.accessor(fr):series.projected)
