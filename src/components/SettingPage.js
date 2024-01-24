@@ -29,8 +29,9 @@ export default class SettingPage extends BaseComponent{
 		}  
 	}
   loadData(){
-    var ud = Core.getUserData();
-    return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getBankAccountsForUser(),...ud.plaidConnections.map(co => ApiCaller.getPlaidItemStatus(co.itemId))])
+    return Core.loadData().then(() => {
+      var ud = Core.getUserData();
+      return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getBankAccountsForUser(),...ud.plaidConnections.map(co => ApiCaller.getPlaidItemStatus(co.itemId))])
       .then(([linkTokenResponse,bas,...rs]) => {
         this.updateState({
           bankConnections:rs,
@@ -39,7 +40,8 @@ export default class SettingPage extends BaseComponent{
           bankAccounts:bas
         })
       })
-      .catch(err => console.log(err))     
+      .catch(err => console.log(err))    
+    })
   }
   reloadData(){this.updateState({fetching: true},() => this.loadData().then(() => this.updateState({fetching: false})))}
   componentDidMount(){this.reloadData()}

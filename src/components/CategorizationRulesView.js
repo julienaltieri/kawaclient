@@ -8,7 +8,7 @@ import DS from '../DesignSystem'
 import utils from '../utils'
 import {relativeDates} from '../Time'
 import transactionGrouper from '../processors/TransactionGrouper.js'
-
+import PageLoader from './PageLoader'
 
 /*TODO
 - add stream allocations on rule view
@@ -32,11 +32,15 @@ export default class CategorizationRulesView extends BaseComponent{
 				dropTarget:{}
 			},
 			loading:false,
-			dragging:false
+			dragging:false,
+			fetching:true
 		}
 		this.onDragEnd = this.onDragEnd.bind(this)
 		this.onDragStart = this.onDragStart.bind(this)
 	}
+
+	componentDidMount = function() {this.loadData()}
+	loadData(){return Promise.all([Core.loadData()]).then(() => this.updateState({fetching: false,ruleList:Core.getCategorizationRules()}))}
 
 	onDragEnd(result){
 		var destination = result.destination
@@ -61,6 +65,7 @@ export default class CategorizationRulesView extends BaseComponent{
 	reload(){this.updateState({ruleList:Core.getCategorizationRules(),loading:false,dragging:false})}
 
 	render(){
+		if(this.state.fetching){return (<PageLoader/>)}
 		if(!this.state.ruleList)return(<div/>)
 		else if(this.state.loading) return (<div style={{'textAlign':'center','marginTop':'3rem'}}>loading...</div>)
 		var count=0;

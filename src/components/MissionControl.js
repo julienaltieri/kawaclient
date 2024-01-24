@@ -46,7 +46,8 @@ class MissionControl extends BaseComponent{
 				this.insertClarificationActionsIfNeeded(res.filter(t => t.categorized))
 				return res
 			}),
-			Core.checkBankConnectionsStatus()?.then(() => this.addBankConnectionCards())
+			Core.checkBankConnectionsStatus()?.then(() => this.addBankConnectionCards()),
+			Core.loadData()
 		]).then(([res,o]) => this.updateState({fetching: false,availableTransactions:res}))
 	}
 	addBankConnectionCards(){

@@ -60,7 +60,10 @@ class Core{
 		document.getElementsByTagName('html')[0].className = '';
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
-	loadData(){return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
+	loadData(){
+		if(!this.globalState.userData){	return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
+		else return Promise.resolve()
+	}
 	getPreferredCurrency(){return this.getUserData().preferredCurrency}
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
@@ -77,7 +80,7 @@ class Core{
 
 	//getters
 	getMasterStream(){return (this.getUserData()||{}).masterStream}
-	getCategorizationRules(){return (this.getUserData()||{}).getCategorizationRules()}
+	getCategorizationRules(){return this.getUserData()?.getCategorizationRules() ||{}}
 	getTimezoneOffsetInterval(){return timeIntervals.oneHour*this.getUserData().timeZoneOffset}
 	getStreamById(id){
 		if(!this.getUserData())return console.log("user data weren't ready")
@@ -174,7 +177,8 @@ class Core{
 		this.globalState.loggedIn = b;
 		//transitioning to logged in state
 		if(b){
-			return this.loadData().then(() => {//load or reload the data
+			///return this.loadData().then(() => {//load or reload the data
+			return Promise.resolve().then(() => {//load or reload the data
 				if(!!this.routeOrder && this.routeOrder != NavRoutes.login){//if there was a remnant route order (pre-login) navigate back
 					Navigation.navigateToRoute(this.routeOrder)
 					this.routeOrder = undefined

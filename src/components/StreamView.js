@@ -10,7 +10,7 @@ import {CompoundStream} from '../model'
 import React from "react";
 import Navigation from './Navigation'
 import { createPortal } from 'react-dom';
-
+import PageLoader from './PageLoader'
 
 var streamReactNodeMap = {}
 let instance;
@@ -34,7 +34,8 @@ export default class MasterStreamView extends BaseComponent{
 				dropTarget:{},//stream it will be dropped into
 				scrollVelocity : 0,//used as a variable to measure scroll velocity and apply intertia
 			},
-			portalOpacity:0
+			portalOpacity:0,
+			fetching:true
 		}
 		instance = this;
 		this.isSomeoneInEditMode = false;
@@ -44,7 +45,8 @@ export default class MasterStreamView extends BaseComponent{
 		this.handleScroll = this.handleScroll.bind(this)
 
 	}
-	componentDidMount = function() {window.addEventListener('scroll', this.handleScroll)}
+	loadData(){return Promise.all([Core.loadData()]).then(() => this.updateState({fetching: false,masterStream:Core.getMasterStream()}))}
+	componentDidMount = function() {this.loadData();window.addEventListener('scroll', this.handleScroll)}
 	componentWillUnmount = function() {window.removeEventListener('scroll', this.handleScroll)}
 	handleScroll(e){
 		let percentCovered = Math.max(0,Math.min(1,(this.firstRowRef.current?.offsetTop - e.srcElement.scrollingElement.scrollTop - 1*DS.remToPx)/this.firstRowRef.current.clientHeight))
@@ -84,8 +86,10 @@ export default class MasterStreamView extends BaseComponent{
 		)
 	}
 	render(){
+		if(this.state.fetching){return (<PageLoader/>)}
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
+		//console.log("rendering", Core.getMasterStream())
 		return(<div ref={this.reactComponentRef} style={{minHeight:"100vh",touchAction:"none"}} onDragOver={e => this.onDragOverNoMansLand(e)} onTouchMove={e => this.onDragOverNoMansLand(e)} >
 			<DS.Layout.PageWithTitle title="Streams" content={<div>
 				<DragGhost/>
