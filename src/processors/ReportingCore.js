@@ -40,7 +40,7 @@ class Analysis {
 		this.reportingPeriod = reportingPeriod; //Period.longestPeriod([reportingPeriod,Period[stream.period]]);
 		this.subReportingPeriod = subReportingPeriod;
 		this.reportingStartDate = this.reportingPeriod.previousDate(reportingDate);
-		this.transactions = transactions.filter(t => 	this.reportingStartDate < t.date && t.date <= this.reportingDate && //date matches report
+		this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.date.getTime() && t.date.getTime() <= this.reportingDate.getTime() && //date matches report
 														(!stream || t.isAllocatedToStream(this.stream)) //&& //transaction is related to stream
 		);
 		this.abstractMethodError = new Error("Trying to call an abstract method. Stats methods must be implemented by subclasses of Analysis");
@@ -60,7 +60,7 @@ class Analysis {
 
 	//helpers and getters
 	getAggregateSum(arr,accessor = x => x){return utils.round2Decimals(arr.reduce(utils.reducers.sum(accessor),0))}
-	getTransactionsBetweenDates(sd,ed){return this.transactions.filter(t => sd < t.date && t.date <= ed)}
+	getTransactionsBetweenDates(sd,ed){return this.transactions.filter(t => sd.getTime() < t.date.getTime() && t.date.getTime() <= ed.getTime())}
 	isMature(){return this.reportingDate<new Date()}
 	isSavings(){return this.stream.isSavings}
 	isIncome(){return this.getExpected()>0}

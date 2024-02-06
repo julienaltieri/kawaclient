@@ -29,9 +29,12 @@ export default class App extends BaseComponent{
     //set callbacks for modal management
     Core.registerApp(this)
     Core.registerModalManagement((modalC) => this.updateState({modalController:modalC}),() => this.updateState({modalController: undefined}))
+    this.refresh = this.refresh.bind(this)
   }
 
-
+  refresh(){
+    this.updateState({refresh: new Date()})
+  }
 
   componentDidMount(){
     //populate side navigation bar
@@ -50,12 +53,12 @@ export default class App extends BaseComponent{
         <TopNavigationBar loggedIn={this.state.loggedIn}/>
         <div style={{paddingTop:"3rem"}}>
           {Core.isUserLoggedIn()?<Routes>
-            <Route path={NavRoutes.streams}         element={<MasterStreamView refresh={this.state.refresh}/>}/>
-            <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.state.refresh}/>}/>
-            <Route path={NavRoutes.home}            element={<MissionControl refresh={this.state.refresh}/>}/>
-            <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.streams}         element={<MasterStreamView refresh={this.refresh}/>}/>
+            <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.refresh}/>}/>
+            <Route path={NavRoutes.home}            element={<MissionControl refresh={this.refresh}/>}/>
+            <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.refresh}/>}/>
           </Routes>:<Routes>
-            <Route path={NavRoutes.login}           element={<LoginPage refresh={this.state.refresh}/>}/>
+            <Route path={NavRoutes.login}           element={<LoginPage refresh={this.refresh}/>}/>
             <Route path={"*"}                       element={<PageLoader/>}/>
           </Routes>}
         </div>

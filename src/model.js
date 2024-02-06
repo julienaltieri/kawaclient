@@ -147,6 +147,13 @@ class Stream{
   }
 }
 
+let TerminalStreamMap = {}
+let TerminalStreamMapActive = {}
+
+export const invalidateStreamMap = () => {
+  let TerminalStreamMap = {}
+  let TerminalStreamMapActive = {}
+}
 
 //an aggregate stream - their value come from their children
 export class CompoundStream extends Stream{
@@ -165,7 +172,13 @@ export class CompoundStream extends Stream{
   forEachTerminalStream(f){return this.getAllTerminalStreams().forEach(f)}
   getActiveTerminalStreamsAtDate(date){return this.getAllTerminalStreams().filter(s => s.isActiveAtDate(date))}
   getChildStreamById(id){return this.getAllStreams().filter(s => s.id==id)[0]}
-  getAllTerminalStreams(active = false){return this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams(active):[c]).reduce(utils.reducers.concat(),[]).filter(s => !active?true:s.isActiveNow())}
+  getAllTerminalStreams(active = false){
+    if(!TerminalStreamMap[this.id]){
+      TerminalStreamMap[this.id] = this.children.map(c => c instanceof CompoundStream?c.getAllTerminalStreams():[c]).reduce(utils.reducers.concat(),[])
+      TerminalStreamMapActive[this.id] = TerminalStreamMap[this.id].filter(s => s.isActiveNow())
+    }
+    return active?TerminalStreamMapActive[this.id]:TerminalStreamMap[this.id]
+  }
   isTerminal(){return false}
   pruneChildren(){//delete compound streams that don't have terminal children
     this.children = this.children.filter(c => c.getAllTerminalStreams().length>0)

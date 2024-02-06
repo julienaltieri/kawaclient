@@ -48,7 +48,10 @@ class MissionControl extends BaseComponent{
 			}),
 			Core.checkBankConnectionsStatus()?.then(() => this.addBankConnectionCards()),
 			Core.loadData()
-		]).then(([res,o]) => this.updateState({fetching: false,availableTransactions:res}))
+		]).then(([res,o]) => {
+			this.props.refresh()
+			this.updateState({fetching: false,availableTransactions:res})
+		})
 	}
 	addBankConnectionCards(){
 		//console.log(Core.getErroredBankConnections())

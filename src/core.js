@@ -1,7 +1,7 @@
 import utils from './utils'
 import Cookies from 'js-cookie'
 import ApiCaller, {API} from './ApiCaller'
-import UserData, {GenericTransaction,CompoundStream,TerminalStream} from './model'
+import UserData, {GenericTransaction,CompoundStream,TerminalStream,invalidateStreamMap} from './model'
 import ModalManager, {ModalController, ModalTemplates} from './ModalManager.js'
 import Navigation, {NavRoutes} from './components/Navigation'
 import AppConfig from './AppConfig'
@@ -306,7 +306,10 @@ class Core{
 			s.endDate = new Date();
 		}
 	}
-	saveStreams(){return ApiCaller.updateMasterStream(this.getUserData().masterStream).then(()=> console.log("Profile Saved")).catch(err => console.log(err))}
+	saveStreams(){
+		invalidateStreamMap()
+		return ApiCaller.updateMasterStream(this.getUserData().masterStream).then(()=> console.log("Profile Saved")).catch(err => console.log(err))
+	}
 
 	//modal management
 	//return a promise that resolves based on the user action
