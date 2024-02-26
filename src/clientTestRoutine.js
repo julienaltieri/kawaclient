@@ -23,24 +23,8 @@ class TestRoutine{
 		})*/
 
 		//var s = Core.getUserData().masterStream.children[4].children[1];
-/*		ApiCaller.forceRefreshItemTransactions("P4713prkyMF0jYE4Be7DCZXpzYvxmkCmJk1ky").then(r => {
-			console.log(r)
-		}).catch(err => console.log(err))*/
 		
-/*
 
-			var config = PlaidLinkOptions = {
-			  onSuccess: (public_token, metadata) => {},
-			  onExit: (err, metadata) => {},
-			  onEvent: (eventName, metadata) => {},
-			  token: tok,
-			  // required for OAuth:
-			  receivedRedirectUri: window.location.href,
-			  // if not OAuth, set to null or do not include:
-			  receivedRedirectUri: null,
-			};
-			const { open, exit, ready } = usePlaidLink(config);
-		})*/
 /*
 		Core.getTransactionsBetweenDates(sd,ed)
 		.then(d => d.filter(t => t.categorized && t.isAllocatedToStream(s)))

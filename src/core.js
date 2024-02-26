@@ -68,10 +68,10 @@ class Core{
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
 		if(!ud){return}
-		return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getPlaidItemStatus()])
+		return Promise.all([ApiCaller.bankInitiateConnection(),ApiCaller.bankGetItemStatuses()])
 	      	.then(([linkTokenResponse,rs]) => {
 	      		let erroredItems = rs.filter(r => r.status != 'ok')
-	      		return Promise.all(erroredItems.map(co => ApiCaller.getPlaidLinkTokenUpdateMode(co.itemId).then(data => {return {...co,...data}})))
+	      		return Promise.all(erroredItems.map(co => ApiCaller.bankInitiateUpdate(co.itemId).then(data => {return {...co,...data}})))
 	      		.then(richCo => this.globalState.erroredBankConnections = richCo)
 	    	})
 	}

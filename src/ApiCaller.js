@@ -14,11 +14,11 @@ const API = {
 	excludeStringFromCategorizationRules: 		AppConfig.serverURL + "/api" + "/excludeStringFromCategorizationRules",
 	categorizeTransactionsAllocationsTupples: 	AppConfig.serverURL + "/api" + "/categorizeTransactionsAllocationsTupples",
 
-	plaidCreateLinkToken: 						AppConfig.serverURL + "/api" + "/bankInitiateConnection",
-	plaidExchangeLinkTokenAndSaveConnection: 	AppConfig.serverURL + "/api" + "/bankExchangeTokenAndSaveConnection",
-	plaidUpdateLinkToken: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
-	plaidGetItemStatus: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
-	plaidGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
+	bankInitiateConnection: 					AppConfig.serverURL + "/api" + "/bankInitiateConnection",
+	bankExchangeTokenAndSaveConnection: 		AppConfig.serverURL + "/api" + "/bankExchangeTokenAndSaveConnection",
+	bankInitiateUpdate: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
+	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
+	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
 	
 	undoCategorizations: 						AppConfig.serverURL + "/api" + "/undoCategorizations",
@@ -182,58 +182,49 @@ class ApiCaller{
 	}
 
 	//get a PlaidLinkToken to initiate the Link experience
-	getPlaidLinkToken(){
-		const request = new Request(API.plaidCreateLinkToken,{
+	bankInitiateConnection(connectorName = "plaid"){
+		const request = new Request(API.bankInitiateConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({})
+			body:JSON.stringify({connectorName:connectorName})
 		})
 		return this.sendRequest(request)
 	}
 
 	//exchange a public token returned from a successful link against a long-term access token
-	exchangePlaidLinkTokenAndSaveConnection(publicToken,friendlyName){
+	bankExchangeTokenAndSaveConnection(publicToken,friendlyName){
 		console.log(friendlyName)
-		const request = new Request(API.plaidExchangeLinkTokenAndSaveConnection,{
+		const request = new Request(API.bankExchangeTokenAndSaveConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({publicToken: publicToken,friendlyName: friendlyName})
 		})
 		return this.sendRequest(request)
 	}
 
-	//save a new connection to userdata
-	saveNewPlaidConnectionToUserData(co){
-		const request = new Request(API.plaidSaveNewConnectionToUserData,{
-			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify(co)
-		})
-		return this.sendRequest(request)
-	}
-
-	getPlaidLinkTokenUpdateMode(itemId){
-		const request = new Request(API.plaidUpdateLinkToken,{
+	bankInitiateUpdate(itemId){
+		const request = new Request(API.bankInitiateUpdate,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})
 		})
 		return this.sendRequest(request)
 	}
 
-	getPlaidItemStatus(){
-		const request = new Request(API.plaidGetItemStatus,{
+	bankGetItemStatuses(){
+		const request = new Request(API.bankGetItemStatuses,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({})
 		})
 		return this.sendRequest(request)
 	}
 
-	getBankAccountsForUser(){
-		const request = new Request(API.plaidGetAccountsForUser,{
+	bankGetAccountsForUser(){
+		const request = new Request(API.bankGetAccountsForUser,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({})
 		})
 		return this.sendRequest(request)
 	}
 
-	forceRefreshItemTransactions(itemId){
+	bankForceRefreshItemTransactions(itemId){
 		const request = new Request(API.forceRefreshItemTransactions,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({itemId: itemId})

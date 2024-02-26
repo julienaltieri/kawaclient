@@ -18,7 +18,7 @@ export default class UserData {
     this.userId = json.userId;
     this.timeZoneOffset = json.timeZoneOffset;
     this.amazonOrderHistory = json.amazonOrderHistory;
-    this.plaidConnections = json.plaidConnections;
+    this.bankConnections = json.bankConnections;
     this.savingAccounts = json.savingAccounts;
     this.preferredCurrency = json.preferredCurrency || currencies.USD;
     this.userPreferences = json.userPreferences || {}
@@ -364,7 +364,7 @@ export class GenericTransaction{
     return "Money in: " + m[0] + ", Saved: "+m[1]+", Transfered: "+m[2];
   }
   /*
-  Transactions from Plaid come with a date (not a timestamp). 
+  Transactions from bank APIs come with a date (not a timestamp). 
   When converting the date into actual timestamps for easy manipulation, they will use the GMT time.
   so the adjusted date in the current timezone will be incorrect. (they will appear as the previous day West of GMT)
   This function rectifies that and takes the date part of the GTM timestamp and converts it to its equivalent in the client's timezone   

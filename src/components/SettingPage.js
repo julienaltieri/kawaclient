@@ -3,14 +3,13 @@ import styled from 'styled-components'
 import ApiCaller from '../ApiCaller'
 import Core from '../core'
 import {ModalTemplates} from '../ModalManager.js'
-//import PlaidLinkComponent from './PlaidLink';
 import {PlaidLink} from "react-plaid-link";
 import utils from '../utils'
 import DS from '../DesignSystem'
 import PageLoader from './PageLoader'
 
 
-const PlaidStatuses = {
+const BankConnectionStatuses = {
   ok:'ok',
   error: 'error'
 }
@@ -31,7 +30,7 @@ export default class SettingPage extends BaseComponent{
   loadData(){
     return Core.loadData().then(() => {
       var ud = Core.getUserData();
-      return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getBankAccountsForUser(),ApiCaller.getPlaidItemStatus()])
+      return Promise.all([ApiCaller.bankInitiateConnection(),ApiCaller.bankGetAccountsForUser(),ApiCaller.bankGetItemStatuses()])
       .then(([linkTokenResponse,bas,rs]) => {
         this.updateState({
           bankConnections:rs,
@@ -50,7 +49,7 @@ export default class SettingPage extends BaseComponent{
   handleOnSuccess(public_token, metadata){
     //validates the new connection and saves it to user data
     Core.presentModal(ModalTemplates.ModalWithSingleInput("What should we name this connection?")).then(r => r.state.inputValue)
-    .then(friendlyName => ApiCaller.exchangePlaidLinkTokenAndSaveConnection(public_token,friendlyName))
+    .then(friendlyName => ApiCaller.bankExchangeTokenAndSaveConnection(public_token,friendlyName))
     .then(() => Core.reloadUserData())
     .then(() => this.reloadData())
     .then(r => console.log("new connection successfully created"))
@@ -86,8 +85,8 @@ class BCSettingItem extends BaseComponent{
 
   componentDidMount(){
     var debug = false;//set to true for debug
-    if(this.props.data.status!=PlaidStatuses.ok || debug){//if item is under error status
-      ApiCaller.getPlaidLinkTokenUpdateMode(this.props.data.itemId).then(data => {
+    if(this.props.data.status!=BankConnectionStatuses.ok || debug){//if item is under error status
+      ApiCaller.bankInitiateUpdate(this.props.data.itemId).then(data => {
         this.updateState({updateModeLinkToken:data.link_token})
       })
     }
@@ -98,7 +97,7 @@ class BCSettingItem extends BaseComponent{
     this.props.parent.updateState({fetching:true})
     //update the item status
     console.log("successfully repaired. updating item...")
-    ApiCaller.forceRefreshItemTransactions(this.props.data.itemId).then(r => {
+    ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId).then(r => {
       console.log("item updated with latest transactions. Result:")
       console.log(r)
       this.props.parent.reloadData()
@@ -137,7 +136,7 @@ class BCSettingItem extends BaseComponent{
           </div>
           
           <div style={{textAlign:"right"}}>
-            <div style={{marginBottom:DS.spacing.xxs+"rem"}}><Status good={this.props.data.status==PlaidStatuses.ok}>{this.props.data.status==PlaidStatuses.ok?"Connected":"Needs action"}</Status></div>
+            <div style={{marginBottom:DS.spacing.xxs+"rem"}}><Status good={this.props.data.status==BankConnectionStatuses.ok}>{this.props.data.status==BankConnectionStatuses.ok?"Connected":"Needs action"}</Status></div>
             <DS.component.Label size="xs">Last updated: {utils.formatDateShort(new Date(this.props.data.lastUpdated))}</DS.component.Label> 
           </div>
         </div>
