@@ -68,8 +68,8 @@ class Core{
 	checkBankConnectionsStatus(){
 		var ud = this.getUserData();
 		if(!ud){return}
-		return Promise.all([ApiCaller.getPlaidLinkToken(),...ud.plaidConnections.map(co => ApiCaller.getPlaidItemStatus(co.itemId))])
-	      	.then(([linkTokenResponse,...rs]) => {
+		return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getPlaidItemStatus()])
+	      	.then(([linkTokenResponse,rs]) => {
 	      		let erroredItems = rs.filter(r => r.status != 'ok')
 	      		return Promise.all(erroredItems.map(co => ApiCaller.getPlaidLinkTokenUpdateMode(co.itemId).then(data => {return {...co,...data}})))
 	      		.then(richCo => this.globalState.erroredBankConnections = richCo)
@@ -213,6 +213,7 @@ class Core{
 			var newCats = result.map(jsonCat => GenericTransaction.MakeGTFromCategorizedTransaction(jsonCat));
 			this.getModelTransactions(tupples.map(t => t.transaction)).forEach(txn => {
 				var c = newCats.filter(c => c.transactionId == (txn.categorized?txn.transactionId:txn.id))[0]; //get corresponding new categorization for original model transaction
+				if(!c){console.log(newCats)}
 				c.streamAllocation.forEach(a => a.type="value");//every transaction coming from the server uses a "value" type of allocation and don't return the type.
 				utils.morphObjectAIntoB(txn,c)
 				c.evaluator.invalidate()

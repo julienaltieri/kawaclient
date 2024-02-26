@@ -13,12 +13,14 @@ const API = {
 	updateCategorizationRules: 					AppConfig.serverURL + "/api" + "/updateCategorizationRules",
 	excludeStringFromCategorizationRules: 		AppConfig.serverURL + "/api" + "/excludeStringFromCategorizationRules",
 	categorizeTransactionsAllocationsTupples: 	AppConfig.serverURL + "/api" + "/categorizeTransactionsAllocationsTupples",
-	plaidCreateLinkToken: 						AppConfig.serverURL + "/api" + "/plaidCreateLinkToken",
-	plaidExchangeLinkTokenAndSaveConnection: 	AppConfig.serverURL + "/api" + "/plaidExchangeLinkTokenAndSaveConnection",
-	plaidUpdateLinkToken: 						AppConfig.serverURL + "/api" + "/plaidUpdateLinkToken",
-	plaidGetItemStatus: 						AppConfig.serverURL + "/api" + "/plaidGetItemStatus",
-	plaidGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/plaidGetAccountsForUser",
+
+	plaidCreateLinkToken: 						AppConfig.serverURL + "/api" + "/bankInitiateConnection",
+	plaidExchangeLinkTokenAndSaveConnection: 	AppConfig.serverURL + "/api" + "/bankExchangeTokenAndSaveConnection",
+	plaidUpdateLinkToken: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
+	plaidGetItemStatus: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
+	plaidGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
+	
 	undoCategorizations: 						AppConfig.serverURL + "/api" + "/undoCategorizations",
 	saveBankAccountSettings: 					AppConfig.serverURL + "/api" + "/saveBankAccountSettings",
 	saveUserPreferences: 						AppConfig.serverURL + "/api" + "/saveUserPreferences",
@@ -215,10 +217,10 @@ class ApiCaller{
 		return this.sendRequest(request)
 	}
 
-	getPlaidItemStatus(itemId){
+	getPlaidItemStatus(){
 		const request = new Request(API.plaidGetItemStatus,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({itemId: itemId})
+			body:JSON.stringify({})
 		})
 		return this.sendRequest(request)
 	}

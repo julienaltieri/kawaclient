@@ -31,8 +31,8 @@ export default class SettingPage extends BaseComponent{
   loadData(){
     return Core.loadData().then(() => {
       var ud = Core.getUserData();
-      return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getBankAccountsForUser(),...ud.plaidConnections.map(co => ApiCaller.getPlaidItemStatus(co.itemId))])
-      .then(([linkTokenResponse,bas,...rs]) => {
+      return Promise.all([ApiCaller.getPlaidLinkToken(),ApiCaller.getBankAccountsForUser(),ApiCaller.getPlaidItemStatus()])
+      .then(([linkTokenResponse,bas,rs]) => {
         this.updateState({
           bankConnections:rs,
           newConnectionLinkToken:linkTokenResponse.link_token,
@@ -46,7 +46,7 @@ export default class SettingPage extends BaseComponent{
   reloadData(){this.updateState({fetching: true},() => this.loadData().then(() => this.updateState({fetching: false})))}
   componentDidMount(){this.reloadData()}
 
-  getBankAccountsForItem(itemId){return this.state.bankAccounts.filter(bas => bas.item_id==itemId)[0]?.accounts}
+  getBankAccountsForItem(itemId){return this.state.bankAccounts.filter(bas => bas.itemId==itemId)[0]?.accounts}
   handleOnSuccess(public_token, metadata){
     //validates the new connection and saves it to user data
     Core.presentModal(ModalTemplates.ModalWithSingleInput("What should we name this connection?")).then(r => r.state.inputValue)
