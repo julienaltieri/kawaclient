@@ -225,5 +225,9 @@ exports.searchInsertDesc = function(array, value, accessor = a => a) {
 };
 //searchInsertDesc([5,5,4],5)
 
+exports.capitalize = function(s){
+	return s.split(". ").map(ss => ss[0].toUpperCase()+ss.slice(1)).reduce((a,v) => a = a+v,[])
+}
+
 const utils = exports
 export default utils
