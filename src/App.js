@@ -51,7 +51,7 @@ export default class App extends BaseComponent{
     <Router>
         {!!this.state.modalController?<ModalContainer controller={this.state.modalController}/>:""}
         <TopNavigationBar loggedIn={this.state.loggedIn}/>
-        <div style={{paddingTop:"3rem"}}>
+        <div style={{paddingTop:"3rem",minHeight:"calc(100vh - 3rem)",display:"flex",flexDirection:"column"}}>
           {Core.isUserLoggedIn()?<Routes>
             <Route path={NavRoutes.streams}         element={<MasterStreamView refresh={this.refresh}/>}/>
             <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.refresh}/>}/>

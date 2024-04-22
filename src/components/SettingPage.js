@@ -2,13 +2,15 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
 import ApiCaller from '../ApiCaller'
 import Core from '../core'
+import React from "react";
 import {ModalTemplates} from '../ModalManager.js'
 import {PlaidLink,PlaidLinkOnEvent} from "react-plaid-link";
 import utils from '../utils'
 import DS from '../DesignSystem'
 import PageLoader from './PageLoader'
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes} from '../Bank.js'
-
+import BankSelector from './BankSelector.js'
+import WorkflowPresenter, {BankConnectionFlow, AccountCreationFlow} from './Workflow.js'
 
 export default class SettingPage extends BaseComponent{
 	constructor(props) {
@@ -18,12 +20,12 @@ export default class SettingPage extends BaseComponent{
       bankAccounts:[],
       plaidLinkVisible: true
 		} 
-    this.handleOnSuccess = this.handleOnSuccess.bind(this)
-    this.handleOnExit = this.handleOnExit.bind(this)
-    this.handleOnEvent = this.handleOnEvent.bind(this) 
+    
+    this.presentBankSelector = this.presentBankSelector.bind(this)
+    this.workFlowPresenterRef = React.createRef()
 	}
-  loadData(){
-    return Core.loadData().then(() => {
+  loadData(forcedReload){
+    return Core.loadData(forcedReload).then(() => {
       var ud = Core.getUserData();
       return Promise.all([ApiCaller.bankInitiateConnection().catch(err => console.log(err)),ApiCaller.bankGetAccountsForUser().catch(err => console.log(err)),ApiCaller.bankGetItemStatuses().catch(err => console.log(err))])
       .then(([linkTokenResponse,bas,rs]) => {
@@ -37,41 +39,33 @@ export default class SettingPage extends BaseComponent{
       .catch(err => console.log(err))    
     })
   }
-  reloadData(){this.updateState({fetching: true},() => this.loadData().then(() => this.updateState({fetching: false})))}
+  reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.reloadData()}
-  getBankAccountsForItem(itemId){return this.state.bankAccounts?.filter(bas => bas.itemId==itemId)[0]?.accounts}
-  handleOnEvent(e,m){
-    console.log(e,m)
-    if(e=="SELECT_INSTITUTION" && m.institution_id == "ins_79"){
-      this.updateState({plaidLinkVisible:false}).then(() => this.updateState({plaidLinkVisible:true}))
-    }
-  }
-  handleOnSuccess(public_token, metadata){
-    //validates the new connection and saves it to user data
-    Core.presentModal(ModalTemplates.ModalWithSingleInput("What should we name this connection?")).then(r => r.state.inputValue)
-    .then(friendlyName => ApiCaller.bankExchangeTokenAndSaveConnection(public_token,friendlyName))
+  presentBankSelector(){return Core.presentWorkflow(new BankConnectionFlow())
+    .then(r => {
+      this.updateState({fetching:true})
+      return ApiCaller.bankExchangeTokenAndSaveConnection(r.public_token,r.friendlyName)
+    })
     .then(() => Core.reloadUserData())
     .then(() => this.reloadData())
     .then(r => console.log("new connection successfully created"))
-    .catch(err => console.log(err))
+    .catch(e => console.log("Flow didn't complete",e))
   }
-  handleOnExit(){console.log("New connection canceled")}
+  getBankAccountsForItem(itemId){return this.state.bankAccounts?.filter(bas => bas.itemId==itemId)[0]?.accounts}
+ 
 	render(){
 		return(
-		this.state.fetching?<div style={{textAlign:"center",marginTop:"-6rem"}}><PageLoader/></div>:
+		this.state.fetching?<DS.component.Loader/>:
     <DS.Layout.PageWithTitle title="Settings" content={
-      <div style={{marginTop:"-1rem"}}>{this.state.bankConnections.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
+      <div style={{marginTop:"-1rem"}}>{this.state.bankConnections?.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
-          {this.state.plaidLinkVisible?<PlaidLink style={{outline: "none",display: "block",background: "none",border: "none",padding: "0",flexGrow: "1",margin: "0",cursor: "pointer",width: "100%"}}
-            clientName="React Plaid Setup" env="development" product={["auth", "transactions"]} token={this.state.newConnectionLinkToken}
-            onExit={this.handleOnExit} onSuccess={this.handleOnSuccess} onEvent={this.handleOnEvent} className="test"
-          ><DS.component.Button.Placeholder iconName="plus"></DS.component.Button.Placeholder></PlaidLink>:""}
+          <DS.component.Button.Placeholder iconName="plus" onClick={this.presentBankSelector}></DS.component.Button.Placeholder>
         </div>
       </div>
     }/>
-	)}
-}
+  )}
 
+}
 
 class BCSettingItem extends BaseComponent{
   constructor(props) {
@@ -83,7 +77,6 @@ class BCSettingItem extends BaseComponent{
     this.onChangeAccountType=this.onChangeAccountType.bind(this)
     this.handleOnSuccess = this.handleOnSuccess.bind(this)
     this.handleOnExit = this.handleOnExit.bind(this)
-    this.handleOnEvent = this.handleOnEvent.bind(this)
   }
 
   componentDidMount(){
@@ -172,7 +165,6 @@ class BCSettingItem extends BaseComponent{
               token={this.state.updateModeLinkToken}
               onExit={this.handleOnExit}
               onSuccess={this.handleOnSuccess}
-              onEvent={this.handleOnEvent}
               className="test"
             >
             <DS.component.Button.Action small>Resolve</DS.component.Button.Action>

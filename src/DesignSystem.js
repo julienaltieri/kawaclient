@@ -147,6 +147,7 @@ class DesignSystem{
 	  	return null;
 	}
 	icon = {
+		placeholder: 	<Icon></Icon>,
 		leftArrow:  	<Icon className="material-symbols-rounded">arrow_back</Icon>,
 		rightArrow: 	<Icon className="material-symbols-rounded">arrow_forward</Icon>,
 		done: 			<Icon className="material-symbols-rounded">done</Icon>,
@@ -157,6 +158,7 @@ class DesignSystem{
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
 		more: 			<Icon className="material-symbols-rounded">more_horiz</Icon>,
+		bank: 			<Icon className="material-symbols-rounded">account_balance</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
@@ -188,15 +190,20 @@ class DesignSystem{
 		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
 		ContentTile:  (props) => <StyledContentTile {...props}>{props.children}</StyledContentTile>,
 		Image: (props) => <StyledImage {...props}>{props.children}</StyledImage>,
+		Avatar: (props) =>  <StyledAvatarContainer><StyledImage {...props}>{props.children}</StyledImage></StyledAvatarContainer>,
+		AvatarIcon: (props) =>  <StyledAvatarContainer><StyledIcon {...props}>{instance.icon[props.iconName]}</StyledIcon></StyledAvatarContainer>,
+		Loader: (props) => <StyledLoaderSuperContainer><StyledLoaderContainer><StyledLoaderWidget><div className={instance.isDarkMode()?"lds-ripple":"lds-ripple-bright"}><div></div><div></div></div></StyledLoaderWidget></StyledLoaderContainer></StyledLoaderSuperContainer>,
 		Logo: (props) => <instance.component.Image src={!instance.isDarkMode()?logo_standalone_dark:logo_standalone_light} {...props}></instance.component.Image>,
+		ModalTitle: (props) => <StyledModalTitle {...props}>{props.children}</StyledModalTitle>,
 		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{
 			props.children.map((c,i) => (typeof c == 'string')?c.split(" ").map((w,j) => <instance.component.Label key={i*1000+j} {...props} style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
 		Button: {
 			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper >{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
-			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} small={props.small} disabled={props.disabled} primary={props.primary} tertiary={props.tertiary}>{props.children}</StyledButton></StyledButtonWrapper>,
+			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} small={props.small} disabled={props.disabled} primary={props.primary} tertiary={props.tertiary}>{props.children[0].toUpperCase()+props.children.slice(1)}</StyledButton></StyledButtonWrapper>,
 			Link: (props) => <StyledButtonWrapper><instance.component.Label  {...props} size={"xs"} >{props.children}</instance.component.Label></StyledButtonWrapper>,
-		}
+		},
+		ButtonGroup: (props) => <StyledButtonGroup>{props.children}</StyledButtonGroup>,
 	}
 	Layout = {
 		PageContent: (props) => <StyledPageContent {...props}>{props.children}</StyledPageContent>,
@@ -219,12 +226,66 @@ class DesignSystem{
 
 const instance = new DesignSystem();
 
+const StyledButtonGroup = styled.div`
+	width: 100%;
+    align-self: flex-end;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: ${props => Core.isMobile()?"space-around":"center"};
+    margin-top: ${instance.spacing.s}rem;
+    flex-direction: row;
+    flex-wrap: wrap-reverse;
+ 
+`
+
+const StyledLoaderWidget = styled.div`
+  	width: 5rem;
+    height: 5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+`
+
+const StyledLoaderContainer = styled.div `
+	width:calc(100% - 2rem);
+	padding: 1rem;
+	text-align: center; 
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+` 
+
+const StyledLoaderSuperContainer = styled.div `
+	text-align: center; 
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+    height:100%;
+    flex-grow:1;
+` 
+
+const StyledAvatarContainer = styled.div`
+	display: flex;
+    margin-right: ${instance.spacing.xs}rem;
+    aspect-ratio: 1;
+    height: 80%;
+    border-radius: 100%;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+`
 
 const StyledPageContent = styled.div`
+	width: 100%;
 	max-width: ${instance.applicationMaxWidth}rem;
 	display: flex;
     flex-direction: column;
     margin: auto;
+    margin-top:0;
 `
 
 
@@ -391,6 +452,13 @@ const DownArrow = styled.div`
     pointer-events: none;
 `
 
+const StyledModalTitle = styled.div`
+	flex-grow:1;
+	font-size: ${instance.fontSize.header}rem;
+	text-align: ${props => !props.mobileCentered && Core.isMobile()?"left":"center"};
+	color: ${instance.getStyle().bodyText};
+`
+
 const StyledLabel = styled.div`
 	text-overflow: ellipsis;
     text-wrap: nowrap;
@@ -464,7 +532,7 @@ class DSInput extends BaseComponent {
 }
 
 const StyledInput = styled.input`
-    width: calc(100% - ${instance.spacing.xs*2+instance.borderThickness.m}rem);
+    width: calc(100% - ${instance.spacing.xs*2+2*instance.borderThickness.m}rem);
 	background-color: ${(props) => (props.disabled)?"transparent":instance.getStyle().inputFieldBackground};
 	color:  ${(props) => props.positive?instance.getStyle().positive:props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
     padding: 0 ${(props) => props.inline?instance.spacing.xxs:instance.spacing.xs}rem;

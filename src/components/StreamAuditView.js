@@ -7,7 +7,7 @@ import dateformat from "dateformat";
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
 import DS from '../DesignSystem.js'
-import {getStreamAnalysis,getMultiStreamAnalysis,reportingConfig,analysisRootDate} from '../processors/ReportingCore.js';
+import {getStreamAnalysis,getMultiStreamAnalysis,reportingConfig,analysisRootDate,analysisRootDateForYear} from '../processors/ReportingCore.js';
 import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,EndOfPeriodProjectionSummary,EndOfPeriodProjectionGraph} from './AnalysisView'
 import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView'
 import {format} from './AnalysisView'
@@ -22,6 +22,7 @@ if(reportingConfig.startingDay<1 || reportingConfig.startingDay>28 || reportingC
 	throw new Error(`Selected reporting date has invalid parameters. Month: ${reportingConfig.startingMonth} Day: ${reportingConfig.startingDay}. Reporting month must be between 1 and 12 and day must be between 1 and 28`)
 }
 let analysisDate = reportingConfig.observationPeriod.nextDateFromNow(analysisRootDate);
+//let analysisDate = analysisRootDateForYear(2023);
 
 //if we're in the first period of the observation period, show the graph from the previous period
 let previousAnalysisDate = reportingConfig.observationPeriod.previousDate(analysisDate);
@@ -149,7 +150,7 @@ class TerminalStreamCard extends StreamAuditView{
 	}
 	getTitle(){return this.props.stream.name}
 	handleClick(){
-		//console.log(this.getStreamAnalysis().getCurrentPeriodReport())
+		console.log(this.getStreamAnalysis().getCurrentPeriodReport())
 		this.updateState({detailView:!this.state.detailView})}
 	render(){
 /*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}

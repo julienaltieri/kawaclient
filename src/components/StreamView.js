@@ -37,19 +37,19 @@ export default class MasterStreamView extends BaseComponent{
 			portalOpacity:0,
 			fetching:true
 		}
-		instance = this;
 		this.isSomeoneInEditMode = false;
 		this.reactComponentRef = React.createRef();
 		this.onDragOverNoMansLand = this.onDragOverNoMansLand.bind(this)
 		this.firstRowRef = React.createRef()
 		this.handleScroll = this.handleScroll.bind(this)
+		instance = this;
 
 	}
 	loadData(){return Promise.all([Core.loadData()]).then(() => this.updateState({fetching: false,masterStream:Core.getMasterStream()}))}
 	componentDidMount = function() {this.loadData();window.addEventListener('scroll', this.handleScroll)}
 	componentWillUnmount = function() {window.removeEventListener('scroll', this.handleScroll)}
 	handleScroll(e){
-		let percentCovered = Math.max(0,Math.min(1,(this.firstRowRef.current?.offsetTop - e.srcElement.scrollingElement.scrollTop - 1*DS.remToPx)/this.firstRowRef.current.clientHeight))
+		let percentCovered = Math.max(0,Math.min(1,(this.firstRowRef.current?.offsetTop - e.srcElement.scrollingElement.scrollTop - 1*DS.remToPx)/this.firstRowRef.current?.clientHeight))
 		percentCovered = Math.floor(percentCovered*20)/20
 		if(this.state.portalOpacity!=(1-percentCovered)){this.updateState({portalOpacity:1-percentCovered})}
 	}
@@ -90,7 +90,7 @@ export default class MasterStreamView extends BaseComponent{
 		if(!this.state.masterStream)return(<div/>)
 		if(!this.masterStreamSnapshot){this.masterStreamSnapshot = this.takeSnapshot()}
 		//console.log("rendering", Core.getMasterStream())
-		return(<div ref={this.reactComponentRef} style={{minHeight:"100vh",touchAction:"none"}} onDragOver={e => this.onDragOverNoMansLand(e)} onTouchMove={e => this.onDragOverNoMansLand(e)} >
+		return(<div ref={this.reactComponentRef} style={{/*minHeight:"100vh",*/touchAction:"none"}} onDragOver={e => this.onDragOverNoMansLand(e)} onTouchMove={e => this.onDragOverNoMansLand(e)} >
 			<DS.Layout.PageWithTitle title="Streams" content={<div>
 				<DragGhost/>
 				<StyledMasterStreamView>

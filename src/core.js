@@ -2,7 +2,7 @@ import utils from './utils'
 import Cookies from 'js-cookie'
 import ApiCaller, {API} from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream,invalidateStreamMap} from './model'
-import ModalManager, {ModalController, ModalTemplates} from './ModalManager.js'
+import ModalManager, {ModalController, ModalTemplates, ModalWorkflowController} from './ModalManager.js'
 import Navigation, {NavRoutes} from './components/Navigation'
 import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
@@ -60,8 +60,8 @@ class Core{
 		document.getElementsByTagName('html')[0].className = '';
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
-	loadData(){
-		if(!this.globalState.userData){	return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
+	loadData(forceReload = false){
+		if(forceReload || !this.globalState.userData){	return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
 		else return Promise.resolve()
 	}
 	getPreferredCurrency(){return this.getUserData().preferredCurrency}
@@ -95,7 +95,7 @@ class Core{
 	saveUserPreferences(){return this.getUserData().userPreferences?ApiCaller.saveUserPreferences(this.getUserData().userPreferences):Promise.resolve()}
 
 	getErroredBankConnections(){return this.globalState.erroredBankConnections}
-	isSavingAccount(accountId){return this.getUserData().savingAccounts.indexOf(accountId)>-1}
+	isSavingAccount(accountId){return this.getUserData().savingAccounts?.indexOf(accountId)>-1}
 	getTransactionsBetweenDates(start,end,forceFromCache){
 
 		//TODO
@@ -315,6 +315,8 @@ class Core{
 	//modal management
 	//return a promise that resolves based on the user action
 	presentModal(template,options){return ModalManager.presentModalIn(new ModalController(template,options),this.modalManagement)}
+	presentWorkflow(workflow){return ModalManager.presentModalIn(new ModalWorkflowController(ModalTemplates.ModalWithWorkflow(workflow)),this.modalManagement)}
+	
 	presentContextualMenu(list,displayItemAccessor,target,enableAccessor){
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 
 			return this.presentModal(ModalTemplates.ModalWithListItems("Select",list,displayItemAccessor,enableAccessor))
@@ -347,7 +349,7 @@ class Core{
 	registerModalManagement(present,unmount){
 		this.modalManagement={presentModal:present,unmountModal:unmount}
 	}
-	dismissModal(){ModalManager.dismissModal()}
+	dismissModal(){return ModalManager.dismissModal()}
 
 
 	//amazon transactions matching

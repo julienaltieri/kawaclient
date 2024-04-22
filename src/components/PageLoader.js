@@ -1,7 +1,7 @@
 import styled from 'styled-components'
 import DesignSystem from '../DesignSystem.js'
 import BaseComponent from './BaseComponent'
-
+//TO DEPRECATE IN FAVOR OF THE DS LOADER
 export default class PageLoader extends BaseComponent{
 	render(){
 		return <LoaderContainer>

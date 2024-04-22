@@ -10,6 +10,7 @@ import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
 import TransactionGrouper from './processors/TransactionGrouper'
+import WorkflowPresenter from './components/Workflow'
 
 
 /* A quick manual because this modal management is super complicated - One day, let's refactor it
@@ -47,24 +48,24 @@ export const ModalTemplates = {
 	},
 	ModalWithSingleInput: (title,buttonArray) => (that)=> {
 		if(!buttonArray)buttonArray = [{name:"Confirm",primary:true}]
-		return ModalTemplates.ModalWithComponent(title,<SingleInput controller={instance.currentModalController}/>,buttonArray)(that)
+		return ModalTemplates.ModalWithComponent(title,<SingleInput controller={that.state.controller}/>,buttonArray)(that)
 	},
 	ModalWithCategorizationRule: (title,message,rule) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<CategorizationModalView controller={instance.currentModalController} rule={rule} />
+			<CategorizationModalView controller={that.state.controller} rule={rule} />
 		</div>,[{name:"Cancel"},{name:"Save",primary:true}])(that)
 	},
 	ModalWithTransactions: (title,message,transactions,buttonArray) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<TransactionsModalView controller={instance.currentModalController} transactions={transactions} />
+			<TransactionsModalView controller={that.state.controller} transactions={transactions} />
 		</div>,buttonArray)(that)
 	},
 	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs) => (that) => {
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<StreamAllocationOptionView controller={instance.currentModalController} transaction={transaction} streamRecs={streamRecs}/>
+			<StreamAllocationOptionView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
@@ -81,20 +82,25 @@ export const ModalTemplates = {
 				<TopBar isMobile={Core.isMobile()}>
 					<div style={{width:"100%"}}>
 						<div style={{"display":"flex","flexDirection":"row","justifyContent":"space-between","alignItems":"center"}}>
-							<Title isMobile={Core.isMobile()}>{title}</Title>
+							<DS.component.ModalTitle isMobile={Core.isMobile()}>{title}</DS.component.ModalTitle>
 							<TopBarButton isMobile={Core.isMobile()} onClick={(e) => that.state.controller.onDismiss(e)}>{DS.icon.close}</TopBarButton>
 						</div>
 						{subtitle?<Subtitle isMobile={Core.isMobile()}>{subtitle}</Subtitle>:""}
 					</div>
 				</TopBar>
-				<MainContent>{React.cloneElement(component,{...component.props,controller:instance.currentModalController})}</MainContent>
-				{buttonArray.length?<ActionButtons>
+				<MainContent>{React.cloneElement(component,{...component.props,controller:that.state.controller})}</MainContent>
+				{buttonArray.length?<DS.component.ButtonGroup>
 					{buttonArray.map((b,i) => {
 						return <DS.component.Button.Action style={{marginTop:DS.spacing.xs+"rem"}} primary={b.primary} key={i} disabled={b.primary && that.state.controller.state.primaryButtonDisabled} onClick={(e)=>(b.primary && that.state.controller.state.primaryButtonDisabled)?false:that.state.controller.onConfirm(e,i)}>{b.name}</DS.component.Button.Action>
 					})}
-				</ActionButtons>:<div></div>}
+				</DS.component.ButtonGroup>:<div></div>}
 			</BaseModalWrapper>
 		)
+	},
+	ModalWithWorkflow: (workflow) => (that) => {
+		return (<BaseModalWrapper isMobile={Core.isMobile()}>
+			<WorkflowPresenter workflow={workflow} controller={that.state.controller}/>
+		</BaseModalWrapper>)
 	},
 	SideNavigation: () => (that) => {
 		return (<BaseModalWrapper><SideBar items={Navigation.state.registeredViews}
@@ -132,6 +138,7 @@ export class ModalController{
 		this.state = {modalContentState:{}};
 		this.options = options || {};
 		this.appearFromSide = this.options.fromSide;
+		this.onConfirm = this.onConfirm.bind(this);
 	}
 	setParent(parent){this.parent = parent}
 	getParent(){return this.parent}
@@ -167,11 +174,12 @@ export class ModalController{
 		this.modal.refreshContent();
 	}
 	onDismiss(e){
-		this.hide();
-		this.onCancel();
-		e?.preventDefault();
-		e?.stopPropagation();
-		if(this.options.onDismiss){this.options.onDismiss(e)}
+		return this.hide().then(() => {
+			this.onCancel();
+			e?.preventDefault();
+			e?.stopPropagation();
+			if(this.options.onDismiss){this.options.onDismiss(e)}
+		});
 	}
 	onConfirm(e,i){
 		this.hide().then(() => this.onAnswer({state:this.state.modalContentState,buttonIndex:i}))
@@ -181,6 +189,20 @@ export class ModalController{
 	}
 }
 
+export class ModalWorkflowController extends ModalController{
+	constructor(getContent,options){
+		super(getContent,{...options,cannotDismiss:true,fixed:true})
+		this.onComplete = this.onComplete.bind(this)
+		this.onFail = this.onFail.bind(this)
+	}
+	onConfirm(){console.error("ModalWorkflowController must use the onComplete method to end the promise. Call was made to onConfirm - this is a noop")}
+	onComplete(data){
+		this.hide().then(() => this.onAnswer(data))
+	}
+	onFail(e){
+		this.hide().then(() => this.onCancel())
+	}
+}
 
 export class ModalContainer extends BaseComponent{
 	constructor(props){
@@ -195,19 +217,19 @@ export class ModalContainer extends BaseComponent{
 	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
 	render(){
 		if(this.appearFromSide){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && !this.state.controller.options?.cannotDismiss){this.state.controller.onDismiss(e)}}}>
 				<ModalBaseSide visible={this.state.visible}>
 					{this.state.content}
 				</ModalBaseSide>
 			</ModalWrapper>)
 		}else if(Core.isMobile()){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss){this.state.controller.onDismiss(e)}}}>
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && !this.state.controller.options?.cannotDismiss){this.state.controller.onDismiss(e)}}}>
 				<ModalBaseMobile visible={this.state.visible}>
 					{this.state.content}
 				</ModalBaseMobile>
 			</ModalWrapper>)
 		}else{
-			return (<ModalWrapper options={this.props.controller.options} data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss)this.state.controller.onDismiss(e)}}>
+			return (<ModalWrapper options={this.props.controller.options} data-dismiss="true" visible={this.state.visible} onClick={(e)=> {if(e.target.dataset.dismiss && !this.state.controller.options?.cannotDismiss)this.state.controller.onDismiss(e)}}>
 				<ModalBase options={this.props.controller.options}>
 					{this.state.content}
 				</ModalBase>
@@ -240,9 +262,11 @@ const ModalBase = styled.div`
     flex-grow: 0;
     min-width: 30rem;
     max-width: 40rem;
+    width: ${props => props.options.fixed?"20rem":"auto"};
     box-shadow: ${props => props.options?.noShade?"":"0 3px 14px 8px #0000001f"};
     border-radius: ${DS.borderRadius};
 `
+
 const ModalBaseMobile = styled.div`
 	background: ${DS.getStyle().modalBackground};
     position: absolute;
@@ -309,18 +333,6 @@ const BaseModalWrapper = styled.div`
     width: 100%;
     display: flex;
     flex-direction: column;
-`
-const ActionButtons = styled.div`
-	width: 100%;
-    align-self: flex-end;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: ${props => Core.isMobile()?"space-around":"center"};
-    margin-top: ${DS.spacing.s}rem;
-    flex-direction: row;
-    flex-wrap: wrap-reverse;
- 
 `
 
 const MainContent = styled.div`

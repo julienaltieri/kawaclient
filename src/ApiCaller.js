@@ -19,7 +19,9 @@ const API = {
 	bankInitiateUpdate: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
 	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
 	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
+	bankRemoveItem: 							AppConfig.serverURL + "/api" + "/bankRemoveItem",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
+	getSupportedInstitutions:  					AppConfig.serverURL + "/api" + "/getSupportedInstitutions",
 	
 	undoCategorizations: 						AppConfig.serverURL + "/api" + "/undoCategorizations",
 	saveBankAccountSettings: 					AppConfig.serverURL + "/api" + "/saveBankAccountSettings",
@@ -181,18 +183,17 @@ class ApiCaller{
 		}
 	}
 
-	//get a PlaidLinkToken to initiate the Link experience
-	bankInitiateConnection(connectorName = "plaid"){
+	//get an initial token to initiate the connector experience
+	bankInitiateConnection(connectorName = "plaid",options = {}){
 		const request = new Request(API.bankInitiateConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({connectorName:connectorName})
+			body:JSON.stringify({connectorName:connectorName,options:{...options}})
 		})
 		return this.sendRequest(request)
 	}
 
 	//exchange a public token returned from a successful link against a long-term access token
 	bankExchangeTokenAndSaveConnection(publicToken,friendlyName){
-		console.log(friendlyName)
 		const request = new Request(API.bankExchangeTokenAndSaveConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({publicToken: publicToken,friendlyName: friendlyName})
@@ -216,6 +217,15 @@ class ApiCaller{
 		return this.sendRequest(request)
 	}
 
+	getSupportedInstitutions(query){
+		const request = new Request(API.getSupportedInstitutions,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({searchQuery:query})
+		})
+		return this.sendRequest(request)
+	}
+
+
 	bankGetAccountsForUser(){
 		const request = new Request(API.bankGetAccountsForUser,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
@@ -231,6 +241,15 @@ class ApiCaller{
 		})
 		return this.sendRequest(request)
 	}
+	
+	bankRemoveItem(itemId){
+		const request = new Request(API.bankRemoveItem,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({itemId: itemId})
+		})
+		return this.sendRequest(request)
+	}
+
 	undoCategorizations(catIds,dates){
 		const payload =  {
 			catIds:catIds, // [...catIds]

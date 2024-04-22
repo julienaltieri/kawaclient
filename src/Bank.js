@@ -3,8 +3,9 @@
 
 
 
-const Connectors = {
+export const Connectors = {
   plaid : "plaid",
+  powens: "powens",
 }
 
 export const BankConnectionStatuses = {

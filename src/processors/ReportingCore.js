@@ -10,7 +10,8 @@ export const reportingConfig = {
 	startingMonth: 12, //december = 12
 	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
 }
-export const analysisRootDate = createDate(new Date().getFullYear()-1,reportingConfig.startingMonth-1,reportingConfig.startingDay);//analysis starting date is Dec 21 GMT
+export const analysisRootDateForYear = y => createDate(y,reportingConfig.startingMonth-1,reportingConfig.startingDay)
+export const analysisRootDate = analysisRootDateForYear(new Date().getFullYear()-1);//analysis starting date is Dec 21 GMT
 
 //note: it is expected that txns are categorized transactions. 
 export const getStreamAnalysis = function(reportingDate,stream,txns,reportingPeriod,subReportingPeriodOverride){ //single stream Streamanalysis
