@@ -10,7 +10,7 @@ import DS from '../DesignSystem'
 import PageLoader from './PageLoader'
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes} from '../Bank.js'
 import BankSelector from './BankSelector.js'
-import WorkflowPresenter, {BankConnectionFlow, AccountCreationFlow} from './Workflow.js'
+import {NewBankConnectionFlow, UpdateBankConnectionFlow} from './Workflow.js'
 
 export default class SettingPage extends BaseComponent{
 	constructor(props) {
@@ -22,7 +22,6 @@ export default class SettingPage extends BaseComponent{
 		} 
     
     this.presentBankSelector = this.presentBankSelector.bind(this)
-    this.workFlowPresenterRef = React.createRef()
 	}
   loadData(forcedReload){
     return Core.loadData(forcedReload).then(() => {
@@ -41,7 +40,7 @@ export default class SettingPage extends BaseComponent{
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.reloadData()}
-  presentBankSelector(){return Core.presentWorkflow(new BankConnectionFlow())
+  presentBankSelector(){return Core.presentWorkflow(new NewBankConnectionFlow())
     .then(r => {
       this.updateState({fetching:true})
       return ApiCaller.bankExchangeTokenAndSaveConnection(r.public_token,r.friendlyName)
@@ -75,38 +74,33 @@ class BCSettingItem extends BaseComponent{
     }  
     this.onToggleExpand=this.onToggleExpand.bind(this)
     this.onChangeAccountType=this.onChangeAccountType.bind(this)
-    this.handleOnSuccess = this.handleOnSuccess.bind(this)
-    this.handleOnExit = this.handleOnExit.bind(this)
+    this.presentBankUpdateFlow = this.presentBankUpdateFlow.bind(this)
   }
 
   componentDidMount(){
-    var debug = false;//set to true for debug
-    if(this.props.data.status!=BankConnectionStatuses.ok || debug){//if item is under error status
+    if(this.props.data.status!=BankConnectionStatuses.ok){//if item is under error status
       ApiCaller.bankInitiateUpdate(this.props.data.itemId).then(data => {
         this.updateState({updateModeLinkToken:data.link_token})
       })
     }
   }
 
-  handleOnExit(e){console.log("exit link")}
-  handleOnSuccess(e){ 
-    this.props.parent.updateState({fetching:true})
-    //update the item status
-    console.log("successfully repaired. updating item...")
-    ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId).then(r => {
-      console.log("item updated with latest transactions. Result:")
-      console.log(r)
-      this.props.parent.reloadData()
-    }).catch(err => console.log(err))
+  presentBankUpdateFlow(e){
+    return Core.presentWorkflow(new UpdateBankConnectionFlow(this.state.updateModeLinkToken))
+    .then(r => {
+      this.props.parent.updateState({fetching:true});
+      return ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId)
+    })
+    .then(r => {
+      console.log("item updated with latest transactions. Result:",r)
+      return this.props.parent.reloadData()
+    })
+    .catch(e => console.log("Update flow didn't complete",e))
   }
   handleOnEvent(e,m){console.log(e,m)}
-  onToggleExpand(e){
-    this.updateState({expanded:!this.state.expanded})
-  }
+  onToggleExpand(e){this.updateState({expanded:!this.state.expanded})}
   getAccountTypeString(type){return type}//for future localization
-  getTypeForAccount(ba){
-    return (Core.getUserData().savingAccounts.indexOf(ba.hash)!=-1)?AccountTypes.savings:AccountTypes.checking
-  }
+  getTypeForAccount(ba){return (Core.getUserData().savingAccounts.indexOf(ba.hash)!=-1)?AccountTypes.savings:AccountTypes.checking}
   onChangeAccountType(e,ba){
     if(this.getTypeForAccount(ba)!=AccountTypes[e.target.value]){//if changed (should be all the time)
       let isSavings = AccountTypes[e.target.value]==AccountTypes.savings
@@ -118,7 +112,6 @@ class BCSettingItem extends BaseComponent{
       Core.saveBankAccountSettings().then(r => console.log("Profile saved")).catch(e => console.log(e)) 
     }
   }
-
   render(){
     return <DS.component.ContentTile style={{
           margin:DS.spacing.xs+"rem 0",padding:DS.spacing.xs+"rem",
@@ -153,22 +146,8 @@ class BCSettingItem extends BaseComponent{
         </div>
 
         {this.state.updateModeLinkToken?<Row style={{"marginTop":"1rem","padding":"1rem"}}>
-          <DS.component.Label style={{}}>
-            {getBankErrorMessage(this.props.data)}
-          </DS.component.Label>
-          <span>
-            <PlaidLink
-              style={{background: "none",decoration:"none",border:"none"}}
-              clientName="React Plaid Setup"
-              env="development"
-              product={["auth", "transactions"]}
-              token={this.state.updateModeLinkToken}
-              onExit={this.handleOnExit}
-              onSuccess={this.handleOnSuccess}
-              className="test"
-            >
-            <DS.component.Button.Action small>Resolve</DS.component.Button.Action>
-            </PlaidLink></span>
+          <DS.component.Label style={{}}>{getBankErrorMessage(this.props.data)}</DS.component.Label>
+          <span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>
         </Row>:""}
     </DS.component.ContentTile>
   }

@@ -152,10 +152,10 @@ const FlowStepContainer = styled.div`
 
 
 
-//Bank connection flow
-export class BankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
+//New bank connection flow
+export class NewBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
 	setMachine(){return createMachine({
-			id: 'bankCo',
+			id: 'NewBankCo',
 			initial:'selectBank',
 			states:{
 				success:{type: "final"},
@@ -217,8 +217,10 @@ export class AggregatorConnectorStep extends FlowStep{
 		let debug = false
 		if(debug){setTimeout(() => this.onSubmit('fakeToken'),1000)}
 		else {
-			ApiCaller.bankInitiateConnection(Connectors[this.getContext().institution.connectorName],{routingNumber:this.getContext().institution.routingNumbers[0],institutionId:this.getContext().institution.id})
-			.then(({link_token}) => this.updateState({link_token:link_token,fetching:false}))
+			if(!this.props.parentFlow.updateModeToken){
+				ApiCaller.bankInitiateConnection(Connectors[this.getContext().institution.connectorName],{routingNumber:this.getContext().institution.routingNumbers[0],institutionId:this.getContext().institution.id})
+				.then(({link_token}) => this.updateState({link_token:link_token,fetching:false}))
+			}else{this.updateState({fetching:false})}
 		}
 	}
 	onSubmit(public_token){
@@ -227,7 +229,7 @@ export class AggregatorConnectorStep extends FlowStep{
 	}
 	renderContent(){
 		//TODO: when implementing another connector, add the other connector UI here
-		return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.state.link_token} 
+		return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.props.parentFlow.updateModeToken || this.state.link_token} 
 		onSuccess={(public_token,metadata) => this.onSubmit(public_token)} onExit={this.onFail}/>)
 	}
 }
@@ -250,6 +252,36 @@ export class NewBankConnectionNameStep extends FlowStep{
 	}
 	renderContent(){return(<div><DS.component.Input onChange={this.onChangeInputValue}/></div>)}
 }
+
+
+//Update bank connection flow
+export class UpdateBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
+	constructor(updateModeToken){
+		super()
+		this.updateModeToken = updateModeToken
+	}
+	setMachine(){return createMachine({
+			id: 'UpdateBankCo',
+			initial:'aggregatorUpdate',
+			states:{
+				success:{type: "final"},
+				fail: {type: "final"},
+				aggregatorUpdate:{
+					on: {
+						CONNECTED: {target: 'success'},
+						FAIL: {target:'fail'},
+						CLOSE: {target:'fail'}
+					},
+					meta: {
+						title: "Loading",
+						renderable: <AggregatorConnectorStep parentFlow={this}/>,
+					}
+				}
+			}
+		})
+	}
+}
+
 
 /*// Example of how to create a account creation flow
 
