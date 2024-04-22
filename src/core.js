@@ -69,8 +69,6 @@ class Core{
 	}
 	getPreferredCurrency(){return this.getUserData().preferredCurrency}
 	checkBankConnectionsStatus(){
-		var ud = this.getUserData();
-		if(!ud){return}
 		return Promise.all([ApiCaller.bankInitiateConnection(),ApiCaller.bankGetItemStatuses()])
 	      	.then(([linkTokenResponse,rs]) => {
 	      		let erroredItems = rs.filter(r => r.status != 'ok')
