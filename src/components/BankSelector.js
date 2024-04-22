@@ -1,66 +1,10 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
-import {BankConnectionStatuses,getBankErrorMessage,AccountTypes,Connectors} from '../Bank.js'
 import ApiCaller from '../ApiCaller'
-import Core from '../core'
-import ModalManager, {ModalTemplates} from '../ModalManager.js'
-import utils from '../utils'
 import DS from '../DesignSystem'
-import {usePlaidLink,PlaidLink,PlaidLinkOnEvent,PlaidLinkOnSuccess} from "react-plaid-link";
-import React, { useCallback, useState } from 'react';
+import {usePlaidLink} from "react-plaid-link";
 
-
-
-//class responsible to present the bank selection flow (selector -> bank link -> name institution -> select checking vs. savings)
-//should return a promise
-/*class BankSelector{
-	constructor(){
-		this.onNewConnectionCreated = ()=>{};
-		this.promise = new Promise((res,rej)=> {this.onNewConnectionCreated = res;this.onCancel = rej})
-		this.onConnectionSuccess = this.onConnectionSuccess.bind(this)
-		this.onConnectionExit = this.onConnectionExit.bind(this)
-		
-	}
-	present(){
-		Core.presentModal(ModalTemplates.ModalWithComponent("Select your institution",<BankSelectorComponent controller={ModalManager.currentModalController} onSelect={b => {
-			Core.dismissModal()
-		}}/>,[])).then((b) => {
-			if(b && b.state.selectedInstitution){
-				let institution = b.state.selectedInstitution
-				if(institution.connectorName==Connectors.plaid){
-					ApiCaller.bankInitiateConnection(Connectors.plaid,{routingNumber:institution.routingNumbers[0],institutionId:institution.id}).then((r) => {
-						Core.presentModal(ModalTemplates.ModalWithComponent("Loading Plaid",<BankSelectorContainer>
-							<PlaidLinkLoader token={r.link_token} onSuccess={(public_token,metadata) => this.onConnectionSuccess(public_token)} 
-												onExit={this.onConnectionExit}/>
-						</BankSelectorContainer> ,[])).catch(e => console.log("Exiting Plaid"))
-					})
-				}else if(institution.connectorName==Connectors.powens){
-					//Powens Code
-				}
-			}
-		}).catch(e => this.onCancel())
-		return this.promise
-	}
-	onConnectionSuccess(token){//Later: should resolve the promise of the plaid screen flow and move to the next page
-		Core.dismissModal()
-			.then(() => Core.presentModal(ModalTemplates.ModalWithSingleInput("What should we name this connection?")))
-			.then(r => r.state.inputValue)
-		    .then(friendlyName => ApiCaller.bankExchangeTokenAndSaveConnection(token,friendlyName))
-		    .then(() => this.onNewConnectionCreated())//doesn't call reload in bank settings but should
-		    .catch(err => this.onCancel("Connection creation failed"))
-	}
-	onConnectionExit(){Core.dismissModal()}//should really go back to bank select
-}
-*/
-
-
-export const PlaidLinkLoader = (props) => {
-	const {token,onSuccess,onExit} = props;
-	const { open, ready } = usePlaidLink({token,onSuccess,onExit});
- 	open()
-  	return (<div/>);
-};
-
+//This file implements the bank selection logic, meant to be presented in a modal or workflow. It's scope is only the component that enables bank selection. 
 
 let bankFrontPageList = []
 
@@ -80,20 +24,21 @@ export class BankSelectorComponent extends BaseComponent{
 	componentDidMount(){this.loadData()}
 	isDataLoaded(){return bankFrontPageList.length>0}
 	onSearchInputChanged(e){
-		if(this.searchInputTimer){clearTimeout(this.searchInputTimer)}
+		if(this.searchInputTimer){clearTimeout(this.searchInputTimer)} //this avoids doing an API call on every key stroke as the user is typing
 		this.searchInputTimer = setTimeout(() => {
 			let s = e.target.value
 			if(s.length>0){
-				this.updateState({searching:true}).then(() => ApiCaller.getSupportedInstitutions(s))
-				.then(r => this.updateState({searching:false, bankList: r}))
-			}else{this.updateState({searching: false, bankList: bankFrontPageList})}
+				this.updateState({searching:true})
+					.then(() => ApiCaller.getSupportedInstitutions(s))
+					.then(r => this.updateState({searching:false, bankList: r}))
+			}else{this.updateState({searching: false, bankList: bankFrontPageList})}//default back to front page
 		},this.searchInputTimerTimeout)
 	}
 	loadData(){
-		return (this.isDataLoaded()?Promise.resolve():
-					ApiCaller.getSupportedInstitutions().then(r => bankFrontPageList = r))
-		.then(() => this.updateState({fetching:false,bankList:bankFrontPageList}))
-		.then(() => setTimeout(() => this.updateState({invisible: false})),50)//needed for smooth fade in
+		return (this.isDataLoaded()?Promise.resolve():ApiCaller.getSupportedInstitutions()
+			.then(r => bankFrontPageList = r))
+			.then(() => this.updateState({fetching:false,bankList:bankFrontPageList}))
+			.then(() => setTimeout(() => this.updateState({invisible: false})),50)//needed for smooth fade in
 	}
 	render(){return(
 		this.state.fetching?<PageCenterer><DS.component.Loader/></PageCenterer>:
@@ -128,3 +73,12 @@ const BankSelectorContainer = styled.div`
     flex-shrink: 0;
     flex-grow: 1;
 `
+
+
+
+export const PlaidLinkLoader = (props) => {
+	const {token,onSuccess,onExit} = props;
+	const { open, ready } = usePlaidLink({token,onSuccess,onExit});
+ 	open()
+  	return (<div/>);
+};
