@@ -61,7 +61,10 @@ class Core{
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
 	loadData(forceReload = false){
-		if(forceReload || !this.globalState.userData){	return ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})}
+		if(forceReload || !this.globalState.userData){	
+			this.fetchingUserDataPromise = ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})
+			return this.fetchingUserDataPromise
+		}
 		else return Promise.resolve()
 	}
 	getPreferredCurrency(){return this.getUserData().preferredCurrency}
@@ -119,8 +122,7 @@ class Core{
 					//ABAB overlap where new is more recent
 					else if(oldMax <= newMax && oldMin <= newMin){newMin = oldMax}
 				}
-
-				ApiCaller.getTransactionsBetweenDates(newMin,newMax).then(r => {
+				ApiCaller.getTransactionsBetweenDates(newMin,newMax).then(r => (this.fetchingUserDataPromise||this.loadData()).then(() => r)).then(r => {//needs to wait for any userData fetch to be resolved as it contains critical information to evaluate transactions
 					var result = r.categorizedTransactions.map(GenericTransaction.MakeGTFromCategorizedTransaction)
 					.concat(r.uncategorizedTransactions.map(GenericTransaction.MakeGTFromUncategorizedTransaction))
 					.sort(utils.sorters.asc(t => t.date))
@@ -177,7 +179,6 @@ class Core{
 		this.globalState.loggedIn = b;
 		//transitioning to logged in state
 		if(b){
-			///return this.loadData().then(() => {//load or reload the data
 			return Promise.resolve().then(() => {//load or reload the data
 				if(!!this.routeOrder && this.routeOrder != NavRoutes.login){//if there was a remnant route order (pre-login) navigate back
 					Navigation.navigateToRoute(this.routeOrder)

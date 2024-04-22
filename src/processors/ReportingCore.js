@@ -265,4 +265,4 @@ class MultiStreamAnalysis extends Analysis{
 }
 //[recurringExpenses.getPeriodReports(), annualExpenses.getPeriodReports()]
 
-function isSavingAccount(accountId){return Core.isSavingAccount(accountId)}
+//function isSavingAccount(accountId){return Core.isSavingAccount(accountId)}
