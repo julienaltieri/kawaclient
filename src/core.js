@@ -315,7 +315,7 @@ class Core{
 	//modal management
 	//return a promise that resolves based on the user action
 	presentModal(template,options){return ModalManager.presentModalIn(new ModalController(template,options),this.modalManagement)}
-	presentWorkflow(workflow){return ModalManager.presentModalIn(new ModalWorkflowController(ModalTemplates.ModalWithWorkflow(workflow)),this.modalManagement)}
+	presentWorkflow(workflow){return ModalManager.presentModalIn(new ModalWorkflowController(ModalTemplates.ModalWithWorkflow(workflow),{shouldAllowDismiss:workflow.shouldAllowDismiss}),this.modalManagement)}
 	
 	presentContextualMenu(list,displayItemAccessor,target,enableAccessor){
 		if(this.isMobile()){//on mobile, contextual menus are displayed as bottom sheets 

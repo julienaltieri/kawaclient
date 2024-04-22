@@ -84,6 +84,7 @@ class Flow{
 		this.machine = this.setMachine()
 		if(!this.machine){throw new Error("A Flow subclass must implement a setMachine method that returns a XState state machine. This is error likely happenning because you didn't override the method setMachine.")}
 		this.actor = createActor(this.machine)
+		this.shouldAllowDismiss = this.shouldAllowDismiss.bind(this)
 	}
 	setMachine(){/*override, return createMachine(_config_) */}
 	getStateMeta(){//returns most of what we're interested in a state
@@ -92,6 +93,7 @@ class Flow{
 	}
 	getContext(){return this.getCurrentState().context}
 	getCurrentState(){return this.actor?.getSnapshot()}
+	shouldAllowDismiss(){return this.getCurrentState().can({type: 'CLOSE'})}
 	updateContext(updates){ this.getCurrentState().context = {...this.getContext(), ...updates} }
 	presentIn(presenter){/*return a promise that resolves if the flow is complete (defined by the state machine)*/ 
 		return new Promise((res,rej) => {
