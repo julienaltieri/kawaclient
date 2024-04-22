@@ -9,8 +9,7 @@ import utils from '../utils'
 import DS from '../DesignSystem'
 import PageLoader from './PageLoader'
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes} from '../Bank.js'
-import BankSelector from './BankSelector.js'
-import {NewBankConnectionFlow, UpdateBankConnectionFlow} from './Workflow.js'
+import {NewBankConnectionFlow, UpdateBankConnectionFlow} from './BankUI.js'
 
 export default class SettingPage extends BaseComponent{
 	constructor(props) {
@@ -91,10 +90,8 @@ class BCSettingItem extends BaseComponent{
       this.props.parent.updateState({fetching:true});
       return ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId)
     })
-    .then(r => {
-      console.log("item updated with latest transactions. Result:",r)
-      return this.props.parent.reloadData()
-    })
+    .then(r => this.props.parent.reloadData())
+    .then(() => console.log("item updated with latest transactions"))
     .catch(e => console.log("Update flow didn't complete",e))
   }
   handleOnEvent(e,m){console.log(e,m)}

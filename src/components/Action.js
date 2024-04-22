@@ -7,7 +7,8 @@ import { fadeIn } from 'react-animations'
 import TransactionTypes from '../TransactionTypes'
 import Core from '../core.js';
 import utils from '../utils'
-
+import {UpdateBankConnectionFlow} from './BankUI.js'
+import ApiCaller from '../ApiCaller'
 
 
 export const ActionStyles = {
@@ -144,8 +145,7 @@ class EmptyStateCard extends ActionCard{
 
 
 /**************************************/
-
-
+/*Bank reconnection card 
 /**************************************/
 
 export class BankReconnectAction extends Action{
@@ -157,13 +157,25 @@ export class BankReconnectAction extends Action{
 	renderComponent(inFocus){return (<BankReconnectActionCard appContext={this.appContext} startsOutOfTheWay={this.startsOutOfTheWay} inFocus={inFocus} id={this.id} key={this.id} parentAction={this} data={this.connectionData}/>)}
 }
 
+
+
 class BankReconnectActionCard extends ActionCard{
-	handleOnExit(){console.log("exit")}
-	handleOnSuccess(){this.props.parentAction.onActionConcluded(this.props.parentAction)}
+	constructor(props){
+		super(props)
+		this.presentBankUpdateFlow = this.presentBankUpdateFlow.bind(this)
+	}
+	presentBankUpdateFlow(){
+		return Core.presentWorkflow(new UpdateBankConnectionFlow(this.props.data.link_token))
+		    .then(() => this.updateState({working:true}))
+		    .then(() => ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId))
+		    .then(() => this.props.parentAction.onActionConcluded(this.props.parentAction))
+		    .catch(e => console.log("Flow didn't complete",e))
+	}
 	renderContent(inFocus){
 		return <ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DS.getStyle().alert,color:"white", borderRadius: DS.borderRadius,"marginTop":"0"}}>
 			You bank account "{this.props.data.name}" wants to be reconnected<br/><br/>
-			<span>
+            {this.state.working?<DS.component.Loader/>:<span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>}
+			{/*<span>
 	            <PlaidLink
 	              clientName="React Plaid Setup"
 	              env="development"
@@ -175,14 +187,14 @@ class BankReconnectActionCard extends ActionCard{
 	            >
 	            Reconnect
 	            </PlaidLink>
-            </span>
+            </span>*/}
 		</ActionsContainerBox>
 	}
 }
 
 
 /**************************************/
-
+/*Transaction clarification card
 /**************************************/
 
 export class TransactionTypeClarificationAction extends Action{

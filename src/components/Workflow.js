@@ -4,12 +4,11 @@ import { createPortal } from 'react-dom';
 import Core from '../core'
 //import Core from '../core'
 //import {ModalTemplates} from '../ModalManager.js'
-import {BankConnectionStatuses,getBankErrorMessage,AccountTypes,Connectors} from '../Bank.js'
 import utils from '../utils'
 import DS from '../DesignSystem'
 import ApiCaller from '../ApiCaller'
 import React, { useCallback, useState } from 'react';
-import {BankSelectorComponent,PlaidLinkLoader} from './BankSelector'
+//import {BankSelectorComponent,PlaidLinkLoader} from './BankSelector'
 import { createMachine, createActor } from 'xstate';
 
 
@@ -79,7 +78,7 @@ const FlowNavBar = styled.div`
 `
 
 //meant to be a higher-level Flow comprised of subflows or steps
-class Flow{
+export class Flow{
 	constructor(){
 		this.machine = this.setMachine()
 		if(!this.machine){throw new Error("A Flow subclass must implement a setMachine method that returns a XState state machine. This is error likely happenning because you didn't override the method setMachine.")}
@@ -108,7 +107,7 @@ class Flow{
 	}
 }
 
-class FlowStep extends BaseComponent{
+export class FlowStep extends BaseComponent{
 	constructor(props){
 		super(props);
 		this.onSubmit = this.onSubmit.bind(this)
@@ -151,139 +150,8 @@ const FlowStepContainer = styled.div`
 
 
 
-
-//New bank connection flow
-export class NewBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
-	setMachine(){return createMachine({
-			id: 'NewBankCo',
-			initial:'selectBank',
-			states:{
-				success:{type: "final"},
-				fail: {type: "final"},
-				selectBank:{
-					on: {
-						SELECT:  {target: 'aggregatorConnect'},
-						CLOSE: {target:'fail'}
-					},
-					meta: {
-						title: "Select your bank",
-						allowClose: true,
-						renderable: <BankSelectorStep parentFlow={this}/>,
-					}
-				},
-				aggregatorConnect:{
-					on: {
-						BACK: {target: 'selectBank'},
-						CONNECTED: {target: 'nameConnection'},
-						FAIL: {target:'fail'}
-					},
-					meta: {
-						title: "Loading",
-						renderable: <AggregatorConnectorStep parentFlow={this}/>,
-					}
-				},
-				nameConnection:{
-					on: {
-						SUBMIT: {target: 'success'},
-						CANCEL: {target:'fail'} 
-					},
-					meta: {
-						title: "Name this connection",
-						renderable: <NewBankConnectionNameStep parentFlow={this}/>,
-					}
-				},
-			}
-		})
-	}
-}
-
-
-
-//steps
-export class BankSelectorStep extends FlowStep{
-	onSubmit(selectedInsitution){
-		this.updateContext({institution: selectedInsitution})
-		this.transitionWith('SELECT')
-	}
-	renderContent(){return(<BankSelectorComponent onSelect={this.onSubmit}/>)}
-}
-
-export class AggregatorConnectorStep extends FlowStep{
-	constructor(props){
-		super(props)
-		this.state = {...this.state,fetching:true}
-	}
-	componentDidMount(){
-		let debug = false
-		if(debug){setTimeout(() => this.onSubmit('fakeToken'),1000)}
-		else {
-			if(!this.props.parentFlow.updateModeToken){
-				ApiCaller.bankInitiateConnection(Connectors[this.getContext().institution.connectorName],{routingNumber:this.getContext().institution.routingNumbers[0],institutionId:this.getContext().institution.id})
-				.then(({link_token}) => this.updateState({link_token:link_token,fetching:false}))
-			}else{this.updateState({fetching:false})}
-		}
-	}
-	onSubmit(public_token){
-		this.updateContext({public_token : public_token})
-		this.transitionWith('CONNECTED')
-	}
-	renderContent(){
-		//TODO: when implementing another connector, add the other connector UI here
-		return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.props.parentFlow.updateModeToken || this.state.link_token} 
-		onSuccess={(public_token,metadata) => this.onSubmit(public_token)} onExit={this.onFail}/>)
-	}
-}
-
-export class NewBankConnectionNameStep extends FlowStep{
-	constructor(props){
-		super(props)
-		this.onChangeInputValue = this.onChangeInputValue.bind(this)
-	}
-	getButtons(){return [
-		{name:'continue',primary:true}, //default action for primary is onSubmit
-		{name:'cancel',action:() => this.transitionWith('CANCEL')}
-	]}
-	onSubmit(){this.transitionWith('SUBMIT')}
-	onChangeInputValue(e){
-		this.updateContext({friendlyName:e.target.value})
-		//validation
-		if(this.state.primaryButtonDisabled && e.target.value.length>0){this.updateState({primaryButtonDisabled:false})}
-		else if(!this.state.primaryButtonDisabled && e.target.value.length == 0){this.updateState({primaryButtonDisabled:true})}
-	}
-	renderContent(){return(<div><DS.component.Input onChange={this.onChangeInputValue}/></div>)}
-}
-
-
-//Update bank connection flow
-export class UpdateBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
-	constructor(updateModeToken){
-		super()
-		this.updateModeToken = updateModeToken
-	}
-	setMachine(){return createMachine({
-			id: 'UpdateBankCo',
-			initial:'aggregatorUpdate',
-			states:{
-				success:{type: "final"},
-				fail: {type: "final"},
-				aggregatorUpdate:{
-					on: {
-						CONNECTED: {target: 'success'},
-						FAIL: {target:'fail'},
-						CLOSE: {target:'fail'}
-					},
-					meta: {
-						title: "Loading",
-						renderable: <AggregatorConnectorStep parentFlow={this}/>,
-					}
-				}
-			}
-		})
-	}
-}
-
-
 /*// Example of how to create a account creation flow
+import { createMachine, createActor } from 'xstate';
 
 //Account Creation Flow
 export class AccountCreationFlow extends Flow{//a class defining the flow logic (state machine)
