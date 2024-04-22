@@ -150,7 +150,7 @@ class TerminalStreamCard extends StreamAuditView{
 	}
 	getTitle(){return this.props.stream.name}
 	handleClick(){
-		console.log(this.getStreamAnalysis().getCurrentPeriodReport())
+		console.log(this.getStreamAnalysis())
 		this.updateState({detailView:!this.state.detailView})}
 	render(){
 /*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}
