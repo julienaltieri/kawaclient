@@ -139,6 +139,7 @@ export class ModalController{
 		this.options = options || {};
 		this.appearFromSide = this.options.fromSide;
 		this.onConfirm = this.onConfirm.bind(this);
+		this.shouldAllowDismiss = options?.shouldAllowDismiss || (() => true)
 	}
 	setParent(parent){this.parent = parent}
 	getParent(){return this.parent}
@@ -194,7 +195,6 @@ export class ModalWorkflowController extends ModalController{
 		super(getContent,{...options,fixed:true})
 		this.onComplete = this.onComplete.bind(this)
 		this.onFail = this.onFail.bind(this)
-		this.shouldAllowDismiss = options.shouldAllowDismiss
 	}
 	onConfirm(){console.error("ModalWorkflowController must use the onComplete method to end the promise. Call was made to onConfirm - this is a noop")}
 	onComplete(data){this.hide().then(() => this.onAnswer(data))}
@@ -214,20 +214,20 @@ export class ModalContainer extends BaseComponent{
 	refreshContent(){this.updateState({content:this.state.controller.getContent(this)})}
 	render(){
 		if(this.appearFromSide){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && this.state.controller.options?.shouldAllowDismiss()){this.state.controller.onDismiss(e)}}}>
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && this.state.controller.shouldAllowDismiss()){this.state.controller.onDismiss(e)}}}>
 				<ModalBaseSide visible={this.state.visible}>
 					{this.state.content}
 				</ModalBaseSide>
 			</ModalWrapper>)
 		}else if(Core.isMobile()){
-			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && this.state.controller.options?.shouldAllowDismiss()){this.state.controller.onDismiss(e)}}}>
+			return (<ModalWrapper visible={this.state.visible} data-dismiss="true" onClick={(e)=> {if(e.target.dataset.dismiss && this.state.controller.shouldAllowDismiss()){this.state.controller.onDismiss(e)}}}>
 				<ModalBaseMobile visible={this.state.visible}>
 					{this.state.content}
 				</ModalBaseMobile>
 			</ModalWrapper>)
 		}else{
 			return (<ModalWrapper options={this.props.controller.options} data-dismiss="true" visible={this.state.visible} onClick={(e)=> {
-				if(e.target.dataset.dismiss && this.state.controller.options?.shouldAllowDismiss())this.state.controller.onDismiss(e)}}>
+				if(e.target.dataset.dismiss && this.state.controller.shouldAllowDismiss())this.state.controller.onDismiss(e)}}>
 				<ModalBase options={this.props.controller.options}>
 					{this.state.content}
 				</ModalBase>
