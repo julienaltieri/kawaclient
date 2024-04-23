@@ -206,7 +206,7 @@ export class TransactionView extends BaseComponent{
 			{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
 				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
 					{amz.items.map((it,i) => 
-						<div  key={it.itemDescription}  style={{
+						<div  key={i}  style={{
 							marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
 							transition:"margin-left 0.5s ease",
 							filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
