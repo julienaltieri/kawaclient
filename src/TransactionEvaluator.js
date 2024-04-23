@@ -94,10 +94,10 @@ function isAllocationASavingStream(txn,s){return Core.getStreamById(allocationFo
 function isAllocationAnInterestIncomeStream(txn,s){return Core.getStreamById(allocationForStream(txn,s).streamId).isInterestIncome} 
 function getTransactionAllocationForStream(txn,s){return txn.streamAllocation.filter(al => al.streamId==s.id)[0]}
 function getTransactionTypeForAllocationToStream(txns,s){ //defines transaction type allocation logic
-	/*if(txns[0].transactionId=="xzoROMDJNdsj6J9xpxoBCpZPdNvAMvFKkJer0"){
-		console.log("lolo")
-	}*/
 	let t1 = txns[0], sa1 = isTransactionFromSavingAccount(t1), ss1 = isAllocationASavingStream(t1,s), p = getTransactionAllocationForStream(t1,s).amount>0, ii = isAllocationAnInterestIncomeStream(t1,s), udtt = allocationForStream(t1,s).userDefinedTransactionType;
+	/*if(txns[0].transactionId=="NNgqPamr5ehbEZa4y4g5S6x6kPYjv4toV83E5"){
+		console.log(t1,sa1,ss1,p,ii,udtt)
+	}*/
 	if(udtt){return TransactionTypes[udtt]}									//Was ambiguous but got informed by user (Types 10, 12, 16)
 	else if(txns.length==2){//both sides of the transaction are available 
 		let t2=txns[1], sa2 = isTransactionFromSavingAccount(t2);
