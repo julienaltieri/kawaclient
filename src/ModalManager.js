@@ -77,7 +77,6 @@ export const ModalTemplates = {
 	},
 	ModalWithComponent: (title,component,buttonArray,subtitle) => (that)=> {
 		if(!buttonArray){buttonArray = [{name:"Cancel"},{name:"Confirm",primary:true}]}
-
 		return (<BaseModalWrapper isMobile={Core.isMobile()} bottomBleed={buttonArray.length==0}>
 				<TopBar isMobile={Core.isMobile()}>
 					<div style={{width:"100%"}}>
@@ -98,7 +97,7 @@ export const ModalTemplates = {
 		)
 	},
 	ModalWithWorkflow: (workflow) => (that) => {
-		return (<BaseModalWrapper isMobile={Core.isMobile()}>
+		return (<BaseModalWrapper isMobile={Core.isMobile()} bottomBleed>
 			<WorkflowPresenter workflow={workflow} controller={that.state.controller}/>
 		</BaseModalWrapper>)
 	},
@@ -269,7 +268,9 @@ const ModalBaseMobile = styled.div`
 	background: ${DS.getStyle().modalBackground};
     position: absolute;
     bottom:0;
+    max-height: 95vh;
     z-index:99;
+    display:flex;
     flex-grow: 0;
     width: 100vw;
     box-shadow: 0 3px 14px 8px #0000001f;
@@ -327,7 +328,7 @@ const BaseModalWrapper = styled.div`
 	padding-bottom: ${props => props.bottomBleed?"0rem":"auto"};
     box-sizing: border-box;
     position: relative;
-    height: 100%;
+ /*   height: 100%;*/
     width: 100%;
     display: flex;
     flex-direction: column;

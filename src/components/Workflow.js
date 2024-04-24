@@ -2,13 +2,10 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
 import { createPortal } from 'react-dom';
 import Core from '../core'
-//import Core from '../core'
-//import {ModalTemplates} from '../ModalManager.js'
 import utils from '../utils'
 import DS from '../DesignSystem'
 import ApiCaller from '../ApiCaller'
 import React, { useCallback, useState } from 'react';
-//import {BankSelectorComponent,PlaidLinkLoader} from './BankSelector'
 import { createMachine, createActor } from 'xstate';
 
 
@@ -54,11 +51,16 @@ export default class WorkflowPresenter extends BaseComponent{
 
 const FlowPageContainer = styled.div`
     transition: opacity ${props => pageTransitionAnimationTime/1000}s;
+    height:100%;
+    display: flex;
+    flex-direction: column;
 `
 
 const Page = styled.div`
 	width: 100%;
     flex-shrink: 0;
+    display:flex;
+    flex-direction: column;
 `
 
 const FlowSlideContainer = styled.div`
@@ -142,7 +144,7 @@ export class FlowStep extends BaseComponent{
 }
 
 const FlowStepContainer = styled.div`
-	min-height:50vh;
+	height:100%;
 	display:flex;
 	flex-direction:column;
 	justify-content:space-between;

@@ -154,6 +154,7 @@ class DesignSystem{
 		plus: 			<Icon className="material-symbols-rounded">add</Icon>,
 		close: 			<Icon className="material-symbols-rounded">close</Icon>,
 		caretDown: 		<Icon className="material-symbols-rounded">expand_more</Icon>,
+		search: 		<Icon className="material-symbols-rounded">search</Icon>,
 		menu: 			<Icon className="material-symbols-rounded">menu</Icon>,
 		undo: 			<Icon className="material-symbols-rounded">undo</Icon>,
 		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
@@ -173,17 +174,20 @@ class DesignSystem{
 		Header: (props) => <StyledLabel header={true} highlight {...props}>{props.children}</StyledLabel>,
 		PageHeader: (props) => <StyledPageHeader {...props}><instance.component.Header>{props.children}</instance.component.Header></StyledPageHeader>,
 		ListItem: (props) => <StyledListItemContainer disabled={props.disabled} size={props.size} noHover={props.noHover} fullBleed={props.fullBleed}><StyledListItem className="ListItem" {...props}>{props.children}</StyledListItem></StyledListItemContainer>,
+		GridItem: (props) => <StyledGridItem {...props} noHover={props.noHover}>{props.children}</StyledGridItem>,
 		TransactionListItem: (props) => <instance.component.ListItem noHover fullBleed size="xs" {...props}>
 			<instance.component.Label style={{minWidth:"3rem"}}>{props.transaction.date.toLocaleDateString("default",{month: "2-digit", day: "2-digit"})}</instance.component.Label>
 			<instance.component.Label style={{marginRight:"0.5rem"}}>{props.transaction.description}</instance.component.Label><StyledSpacer/>
 			<div>{props.infoSlotComponent}</div>
 			<div style={{textAlign:"right",marginLeft:"0.5rem",flexShrink:0}}>{utils.formatCurrencyAmount(props.transaction.amount,2,null,null,Core.getPreferredCurrency())}</div>
 		</instance.component.ListItem>,
-		Spacer: (props) => <StyledSpacer/>,
+		Spacer: (props) => <StyledSpacer {...props}/>,
 		ScrollableList: (props) => <StyledScrollableList {...props}>{props.children}</StyledScrollableList>,
+		ScrollableGrid: (props) => <StyledScrollableGrid {...props}>{props.children}</StyledScrollableGrid>,
 		ScrollableBottomSheet: (props) => <StyledScrollableBottomSheet {...props}><StyledScrollableList {...props}>{props.children}</StyledScrollableList></StyledScrollableBottomSheet>,
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
 		Input: (props) => <DSInput {...props}/>,
+		SearchBar: (props) => <DSSearchBar {...props}/>,
 		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledInput id={props.formId} {...props}>{props.children}</StyledInput></StyledFieldWithLabel>,
 		DropDown: (props) => <DSDropDown {...props}/>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
@@ -198,7 +202,7 @@ class DesignSystem{
 		SentenceWrapper:  (props) => <StyledSentenceWrapper {...props}>{
 			props.children.map((c,i) => (typeof c == 'string')?c.split(" ").map((w,j) => <instance.component.Label key={i*1000+j} {...props} style={{margin:"0.4rem 0"}}>{w}&nbsp;</instance.component.Label>):c)}</StyledSentenceWrapper>,
 		Button: {
-			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper >{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
+			Icon: (props) => <StyledIcon {...props}><StyledButtonWrapper disabled={props.disabled}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledIcon>,
 			Placeholder: (props) => <StyledPlaceholderButton><StyledButtonWrapper {...props}>{instance.icon[props.iconName]}</StyledButtonWrapper></StyledPlaceholderButton>,
 			Action: (props) => <StyledButtonWrapper disabled={props.disabled}><StyledButton {...props} small={props.small} disabled={props.disabled} primary={props.primary} tertiary={props.tertiary}>{props.children[0].toUpperCase()+props.children.slice(1)}</StyledButton></StyledButtonWrapper>,
 			Link: (props) => <StyledButtonWrapper><instance.component.Label  {...props} size={"xs"} >{props.children}</instance.component.Label></StyledButtonWrapper>,
@@ -296,7 +300,8 @@ const StyledSentenceWrapper = styled.div`
 `
 
 const StyledSpacer = styled.div`
-	flex-grow:1;
+	flex-grow: ${props => props.size?0:1};
+	height: ${props => props.size?instance.spacing[props.size]:"unset"}rem;
 `
 
 const StyledImage = styled.img`
@@ -505,14 +510,37 @@ const StyledScrollableList = styled.div`
 	::-webkit-scrollbar-corner {background: rgba(0,0,0,0.5)}
 `
 
+const StyledScrollableGrid = styled.div`
+	overflow-y: auto;
+	overflow-x: hidden;
+	display: grid;
+	grid-template-columns: calc(50% - ${instance.spacing.xxs/2}rem) calc(50% - ${instance.spacing.xxs/2}rem);
+	gap: ${instance.spacing.xxs}rem;
+
+	::-webkit-scrollbar {
+    	width: ${props => (instance.barWidthRem+"rem")}
+    }
+	::-webkit-scrollbar-track {
+		box-shadow: inset 0 0 0.5rem rgba(0, 0, 0, 0.3);
+		border-radius: 1rem;
+	}
+	::-webkit-scrollbar-thumb {
+	  	background-color: ${props => instance.getStyle().bodyTextSecondary};
+	 	outline: none;
+ 		border-radius: 1rem;
+	}
+	::-webkit-scrollbar-corner {background: rgba(0,0,0,0.5)}
+`
+
 class DSInput extends BaseComponent {
 	constructor(props){
 		super(props)
-		this.autoSize = this.autoSize.bind(this);
+		this.valueDidChange = this.valueDidChange.bind(this);
 		this.inputRef = React.createRef();
 	}
-	componentDidMount(){this.autoSize()}
-	autoSize(){
+	componentDidMount(){this.valueDidChange()}
+	valueDidChange(){
+		//autosizes
 		if(!this.props.autoSize){return}
 		let s = this.inputRef.current.value;
 		if(s.length==0){s=this.inputRef.current.placeholderValue}
@@ -527,21 +555,64 @@ class DSInput extends BaseComponent {
 	}
 
 	render(){return(
-		<StyledInput inline={this.props.inline} highlight={this.props.highlight} type={this.props.numerical?"number":"text"} ref={this.inputRef} id={this.props.formId} {...this.props} onChange={(e) => {this.autoSize(e);if(this.props.onChange){this.props.onChange(e)}}}>{this.props.children}</StyledInput>
+		<StyledInputContainer noMargin={this.props.noMargin}>
+			{this.props.placeholderIcon?<instance.component.Button.Icon disabled iconName={this.props.placeholderIcon} style={{left:instance.spacing.xxs*1.5+"rem",marginTop:"0.1rem",position:"absolute"}}/>:""}
+			<StyledInput leftSlot={this.props.placeholderIcon} inline={this.props.inline} highlight={this.props.highlight} type={this.props.numerical?"number":"text"} ref={this.inputRef} id={this.props.formId} {...this.props} onChange={(e) => {this.valueDidChange(e);if(this.props.onChange){this.props.onChange(e)}}}>{this.props.children}</StyledInput>
+		</StyledInputContainer>
 	)}
 }
 
+class DSSearchBar extends DSInput {
+	constructor(props){
+		super(props)
+		this.state = {isEmpty:true}
+		this.onTapClearCutton = this.onTapClearCutton.bind(this)
+	}
+	componentDidMount(){}
+	onTapClearCutton(e){
+		let input = this.inputRef.current
+		var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+		nativeInputValueSetter.call(input, '');
+
+		var inputEvent = new Event('input', { bubbles: true});
+		input.dispatchEvent(inputEvent);
+	}
+	valueDidChange(e){
+		this.updateState({isEmpty:this.inputRef.current.value?.length==0});
+	}
+	render(){return(
+		<StyledInputContainer noMargin={true}>
+			<instance.component.Button.Icon disabled iconName={"search"} style={{left:instance.spacing.xxs*1.5+"rem",marginTop:"0.1rem",position:"absolute"}}/>
+			<StyledInput leftSlot={true} rightSlot={true} ref={this.inputRef} id={this.props.formId} {...this.props} onChange={(e) => {
+				this.valueDidChange(e);
+				if(this.props.onChange){this.props.onChange(e)}
+			}}/>
+			{this.state.isEmpty?"":<instance.component.Button.Icon onClick={this.onTapClearCutton} iconName={"close"} style={{right:instance.spacing.xxs*1.5+"rem",marginTop:"0.1rem",position:"absolute"}}/>}
+		</StyledInputContainer>
+	)}
+}
+
+const StyledInputContainer = styled.div`
+	display: flex;
+    flex-direction: row;
+    position: relative;
+    align-items: center;
+    margin-bottom: ${props => props.noMargin?0:instance.spacing.xxs}rem;
+`
+
 const StyledInput = styled.input`
-    width: calc(100% - ${instance.spacing.xs*2+2*instance.borderThickness.m}rem);
+    width: calc(100% - ${2*instance.spacing.xs + 2*instance.borderThickness.m}rem);
 	background-color: ${(props) => (props.disabled)?"transparent":instance.getStyle().inputFieldBackground};
 	color:  ${(props) => props.positive?instance.getStyle().positive:props.highlight?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
-    padding: 0 ${(props) => props.inline?instance.spacing.xxs:instance.spacing.xs}rem;
+    padding: 0 ${(props) => props.inline?instance.spacing.xxs:instance.spacing.xs}rem; /*used for inline version*/
+    padding-left: ${(props) => props.leftSlot?(instance.spacing.s+instance.spacing.xs)+"rem":"auto"}; /*used for placeholder icon*/
+    padding-right: ${(props) => props.rightSlot?(instance.spacing.s+instance.spacing.xs)+"rem":"auto"}; /*used for placeholder icon*/
     height: ${(props) => (props.inline?instance.inputHeightInline:instance.inputHeight) - 2*instance.borderThickness.m}rem;
     border-radius: ${(props) => instance.borderRadiusSmall};
     text-align: ${(props) => props.textAlign || "center"};
     font-size: ${instance.fontSize.body}rem;
     border: ${(props) => instance.borderThickness.m+"rem solid "+instance.getStyle().borderColor};
-    margin-bottom: ${props => props.noMargin?0:instance.spacing.xxs}rem;
+    outline:none;
     &:-webkit-autofill {
 		box-shadow: 0 0 0 100px ${instance.getStyle().inputFieldBackground} inset;
 		-webkit-text-fill-color: ${(props) => props.positive?instance.getStyle().positive:instance.getStyle().bodyText};
@@ -553,6 +624,9 @@ const StyledInput = styled.input`
     ::-webkit-outer-spin-button{
         -webkit-appearance: none; 
         margin: 0; 
+    }
+    &:focus,focus-visible{
+    	border: ${(props) => instance.borderThickness.m+"rem solid "+instance.getStyle().modalPrimaryButton};
     }   
 `
 
@@ -628,6 +702,28 @@ const StyledListItem = styled.div`
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
  	border-bottom: ${instance.borderThickness.s}rem solid ${instance.getStyle().borderColor};  
 `
+
+const StyledGridItem = styled.div`
+ 	box-sizing: border-box;
+    display:flex;
+    text-align: left;
+	font-size: ${(props) => props.size=="xs"?instance.fontSize.little:instance.fontSize.body}rem;
+    cursor: ${(props) => props.noHover?"default":"pointer"};
+    width: 100%;
+    margin-bottom: 0;
+    height:${(props) => props.size=="xs"?(instance.spacing.xxs*2+instance.fontSize.little):(instance.spacing.s*2+instance.fontSize.body)}rem;
+    align-items:center;
+    overflow:visible;
+    font-weight: ${props => props.bolded?600:"normal"};
+    color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
+ 	border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+ 	border-radius: ${instance.borderRadiusSmall};
+ 	padding: ${instance.spacing.xxs}rem;
+ 	&:hover {
+      background: ${(props) => props.noHover?"":instance.getStyle().UIElementBackground};
+    }    
+`
+
 
 const StyledListItemContainer = styled.div`
 	width: calc(100% - ${(props) => props.fullBleed?0:2*(props.size=="xs"?instance.spacing.xs:instance.spacing.s)}rem);
