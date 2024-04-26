@@ -7,51 +7,69 @@ import {usePlaidLink} from "react-plaid-link";
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes,Connectors} from '../Bank.js'
 import { createMachine, createActor } from 'xstate';
 import Core from '../core'
-
+import React from 'react';
 
 //This file implements the bank selection logic, meant to be presented in a modal or workflow. It's scope is only the component that enables bank selection. 
 
 let bankFrontPageList = []
 
-//sole job of this component: select a bank and return its institution. Should be presented in a flow (to design)
+//sole job of this component: select or search a bank and return its institution rich object. Should be presented in a flow.
 export class BankSelectorComponent extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state = {
 			fetching:true,
+			searching: false,
+			searchMode: false,
 			bankList:bankFrontPageList,
 			invisible:!this.isDataLoaded(),//don't start invisible if the data is already loaded
 		}
 		this.onSearchInputChanged = this.onSearchInputChanged.bind(this)
 		this.searchInputTimer = null;
 		this.searchInputTimerTimeout = 400 //time that should have no keystrokes to send the search request
+		this.pageContainerRef = React.createRef()
+		this.latestSearchString = ""
 	}
 	componentDidMount(){this.loadData()}
+	setFixedHeight(b){
+		if(b){
+			let h = this.pageContainerRef.current.clientHeight - parseInt(getComputedStyle(this.pageContainerRef.current).marginBottom.split('px')[0]);
+				if(this.pageContainerRef.current){this.pageContainerRef.current.style.height = h+"px"}
+		}else{
+			this.pageContainerRef.current.style.height = ""
+		}
+	}
 	isDataLoaded(){return bankFrontPageList.length>0}
 	onSearchInputChanged(e){
-		if(this.searchInputTimer){clearTimeout(this.searchInputTimer)} //this avoids doing an API call on every key stroke as the user is typing
 		let s = e.target.value
+		this.latestSearchString = s
+		if(this.searchInputTimer){clearTimeout(this.searchInputTimer)} //this avoids doing an API call on every key stroke as the user is typing
 		if(s.length==0){this.updateState({searching: false, searchMode:false, bankList: bankFrontPageList})}
 		else{
-			this.searchInputTimer = setTimeout(() => this.updateState({searching:true, searchMode:true})
-				.then(() => ApiCaller.getSupportedInstitutions(s))
-				.then(r => this.updateState({searching:false, bankList: r}))
-			,this.searchInputTimerTimeout)
+			this.searchInputTimer = setTimeout(() => {
+				this.setFixedHeight(true)//fixes height of the content before rendering the loading state
+				this.updateState({searching:true, searchMode:true})
+				.then(() => ApiCaller.getSupportedInstitutions(s))//searches
+				.then(r => {
+					this.setFixedHeight(false)
+					if(this.latestSearchString==""){return}//prevents the list to update to search results if the result comes back after clearing the search bar asynchronously
+					else{this.updateState({searching:false, bankList: r})}
+				})
+			},this.searchInputTimerTimeout)
 		}
 	}
 	loadData(){
-		return (this.isDataLoaded()?Promise.resolve():ApiCaller.getSupportedInstitutions()
-			.then(r => bankFrontPageList = r))
-			.then(() => this.updateState({fetching:false,bankList:bankFrontPageList}))
-			.then(() => setTimeout(() => this.updateState({invisible: false})),50)//needed for smooth fade in
+		return (this.isDataLoaded()?Promise.resolve():ApiCaller.getSupportedInstitutions().then(r => bankFrontPageList = r)).then(() => 
+			new Promise((res,rej) => this.updateState({fetching:false,bankList:bankFrontPageList})
+					.then(() => setTimeout(() => this.updateState({invisible: false}).then(() => res()))),50))//needed for smooth fade in
 	}
 	render(){return(
 		this.state.fetching?<PageCenterer><DS.component.Loader/></PageCenterer>:
-		<BankSelectorContainer invisible={this.state.invisible}>
+		<BankSelectorContainer ref={this.pageContainerRef} invisible={this.state.invisible}>
 			<DS.component.SearchBar placeholder="Search" placeholderIcon="search" textAlign="left" onChange={this.onSearchInputChanged}/>
 			<DS.component.Spacer size="xxs"/>
 			{this.state.searchMode?this.state.searching?<PageCenterer><DS.component.Loader/></PageCenterer>:this.state.bankList.length>0?<DS.component.ScrollableList>{
-				this.state.bankList.map((b,i) => <DS.component.ListItem fullBleed key={i} onClick={(e) => this.props.onSelect(b)}>
+				this.state.bankList.slice(0,8).map((b,i) => <DS.component.ListItem fullBleed key={i} onClick={(e) => this.props.onSelect(b)}>
 					{b.logo?<DS.component.Avatar src={`data:image/png;base64,${b.logo}`}/>:<DS.component.AvatarIcon iconName="bank" style={{color: DS.getStyle().modalPrimaryButton}}/>}
 					<DS.component.Label>{b.name}</DS.component.Label>
 					<DS.component.Spacer/>

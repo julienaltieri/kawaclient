@@ -1,11 +1,9 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
-import { createPortal } from 'react-dom';
 import Core from '../core'
 import utils from '../utils'
 import DS from '../DesignSystem'
 import ApiCaller from '../ApiCaller'
-import React, { useCallback, useState } from 'react';
 import { createMachine, createActor } from 'xstate';
 
 
