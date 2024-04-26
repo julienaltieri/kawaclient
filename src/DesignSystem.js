@@ -711,12 +711,13 @@ const StyledGridItem = styled.div`
     cursor: ${(props) => props.noHover?"default":"pointer"};
     width: 100%;
     margin-bottom: 0;
+    background-color: ${instance.getStyle().UIElementBackground};
     height:${(props) => props.size=="xs"?(instance.spacing.xxs*2+instance.fontSize.little):(instance.spacing.s*2+instance.fontSize.body)}rem;
     align-items:center;
     overflow:visible;
     font-weight: ${props => props.bolded?600:"normal"};
     color: ${props => props.bolded?instance.getStyle().bodyText:instance.getStyle().bodyTextSecondary};
- 	border: ${instance.borderThickness.m}rem solid ${instance.getStyle().borderColor};
+ 	border: ${instance.borderThickness.s}rem solid ${instance.getStyle().borderColor};
  	border-radius: ${instance.borderRadiusSmall};
  	padding: ${instance.spacing.xxs}rem;
  	&:hover {
