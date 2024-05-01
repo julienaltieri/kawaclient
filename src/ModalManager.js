@@ -324,7 +324,7 @@ const TopBarButton = styled.div`
 `
 
 const BaseModalWrapper = styled.div`
-	padding: ${props => props.isMobile?1.5:3}rem;
+	padding: ${props => props.isMobile?DS.spacing.s:DS.spacing.l}rem;
 	padding-bottom: ${props => props.bottomBleed?"0rem":"auto"};
     box-sizing: border-box;
     position: relative;

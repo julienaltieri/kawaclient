@@ -79,13 +79,13 @@ const FlowNavBar = styled.div`
 
 //meant to be a higher-level Flow comprised of subflows or steps
 export class Flow{
-	constructor(){
-		this.machine = this.setMachine()
+	constructor(context){
+		this.machine = this.setMachine(context)
 		if(!this.machine){throw new Error("A Flow subclass must implement a setMachine method that returns a XState state machine. This is error likely happenning because you didn't override the method setMachine.")}
 		this.actor = createActor(this.machine)
 		this.shouldAllowDismiss = this.shouldAllowDismiss.bind(this)
 	}
-	setMachine(){/*override, return createMachine(_config_) */}
+	setMachine(context){/*override, return createMachine(_config_). Optional context is to initiate the machine with existing context */}
 	getStateMeta(){//returns most of what we're interested in a state
 		let s = this.getCurrentState()
 		return s?.getMeta()[`${s.machine.id}.${s.value}`]
@@ -128,7 +128,7 @@ export class FlowStep extends BaseComponent{
 	getButtons(){return []}//[{primary,name,action}] 
 
 	//do not override, use the renderContent method instead to render the inside of the page
-	render(){return(<FlowStepContainer>
+	render(){return(<FlowStepContainer bleedBottom={this.getButtons().length==0}>
 		{this.renderContent()}
 		{this.getButtons().length>0?<DS.component.ButtonGroup>{
 			this.getButtons().sort((a,b) => a.primary?1:-1).map((b,i) => <DS.component.Button.Action style={{marginTop:DS.spacing.xs+"rem"}} primary={b.primary} key={i} disabled={b.primary && this.state.primaryButtonDisabled} 
@@ -146,6 +146,7 @@ const FlowStepContainer = styled.div`
 	display:flex;
 	flex-direction:column;
 	justify-content:space-between;
+	padding-bottom: ${props => props.bleedBottom?DS.spacing.s:DS.spacing.l}rem;
 `
 
 

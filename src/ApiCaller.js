@@ -193,10 +193,10 @@ class ApiCaller{
 	}
 
 	//exchange a public token returned from a successful link against a long-term access token
-	bankExchangeTokenAndSaveConnection(publicToken,friendlyName){
+	bankExchangeTokenAndSaveConnection(connectorName,publicToken,friendlyName,institutionId,connectionMetadata={}){
 		const request = new Request(API.bankExchangeTokenAndSaveConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({publicToken: publicToken,friendlyName: friendlyName})
+			body:JSON.stringify({connectorName: connectorName,publicToken: publicToken,friendlyName: friendlyName,institutionId:institutionId,connectionMetadata:connectionMetadata})
 		})
 		return this.sendRequest(request)
 	}

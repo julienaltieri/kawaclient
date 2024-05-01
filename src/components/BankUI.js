@@ -10,6 +10,10 @@ import Core from '../core'
 import React from 'react';
 
 //This file implements the bank selection logic, meant to be presented in a modal or workflow. It's scope is only the component that enables bank selection. 
+/*NOTE FOR FUTURE
+Since the implementation of Powens on 5/1/2024, this workflow has to be "restorable" from the page reload if there is a "state" parameter. This feature isn't well contained right now and lives in Settings page and in BankUI. This means that the bankUI flow isn't really modular and can't be done from another page like an onboarding flow right now, or reconnect from Home action card.
+*/
+
 
 let bankFrontPageList = []
 
@@ -121,9 +125,11 @@ export const PlaidLinkLoader = (props) => {
 
 //New bank connection flow
 export class NewBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
-	setMachine(){return createMachine({
+	setMachine(context = {}){
+		return createMachine({
 			id: 'NewBankCo',
-			initial:'selectBank',
+			context: context,
+			initial: context.step || 'selectBank',
 			states:{
 				success:{type: "final"},
 				fail: {type: "final"},
@@ -146,7 +152,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 					},
 					meta: {
 						title: "Loading",
-						renderable: <AggregatorConnectorStep parentFlow={this}/>,
+						renderable: <AggregatorConnectorStep returnFromRedirect={context.step=='aggregatorConnect'} parentFlow={this}/>,
 					}
 				},
 				nameConnection:{
@@ -172,7 +178,7 @@ export class BankSelectorStep extends FlowStep{
 		this.updateContext({institution: selectedInsitution})
 		this.transitionWith('SELECT')
 	}
-	renderContent(){return(<BankSelectorComponent onSelect={this.onSubmit}/>)}
+	renderContent(){return (<BankSelectorComponent onSelect={this.onSubmit}/>)}
 }
 
 export class AggregatorConnectorStep extends FlowStep{
@@ -180,26 +186,60 @@ export class AggregatorConnectorStep extends FlowStep{
 		super(props)
 		this.state = {...this.state,fetching:true}
 	}
+	getConnector(){return this.getContext().institution.connectorName}
 	componentDidMount(){
 		let debug = false
 		if(debug){setTimeout(() => this.onSubmit('fakeToken'),1000)}
 		else {
-			if(!this.props.parentFlow.updateModeToken){
-				ApiCaller.bankInitiateConnection(Connectors[this.getContext().institution.connectorName],{routingNumber:this.getContext().institution.routingNumbers[0],institutionId:this.getContext().institution.id})
-				.then(({link_token}) => this.updateState({link_token:link_token,fetching:false}))
-			}else{this.updateState({fetching:false})}
+			switch(this.getContext().institution.connectorName){
+				case Connectors.plaid:
+					if(!this.props.parentFlow.updateModeToken){
+						ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
+							routingNumber:this.getContext().institution.routingNumbers[0],
+							institutionId:this.getContext().institution.id
+						})
+						.then(r => this.updateState({link_token:r.link_token,fetching:false}))
+					}else{this.updateState({fetching:false})}
+					break;
+				case Connectors.powens:
+					if(this.props.returnFromRedirect){
+						let p = new URLSearchParams(window.location.search)
+						let code = p.get('code')
+						this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: p.get('connection_id')}})
+						this.onSubmit(code)
+					}else{
+						ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
+							connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId,
+							kawaInstitutionId: this.getContext().institution.id
+						})
+						.then(r => this.updateState({connect_url: r.connect_url}))
+						.then(() => window.location.replace(this.state.connect_url+"&state="+this.getURIState()))
+					}
+					break;
+			}
 		}
 	}
 	onSubmit(public_token){
 		this.updateContext({public_token : public_token})
 		this.transitionWith('CONNECTED')
 	}
+	getURIState(){
+		let a = JSON.parse(JSON.stringify(this.getContext()))
+		delete a.institution.logo
+		a.step = 'aggregatorConnect'
+		return encodeURIComponent(JSON.stringify(a))}
 	renderContent(){
-		//TODO: when implementing another connector, add the other connector UI here
-		return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.props.parentFlow.updateModeToken || this.state.link_token} 
-		onSuccess={(public_token,metadata) => this.onSubmit(public_token)} onExit={this.onFail}/>)
+		switch(this.getContext().institution.connectorName){
+			case Connectors.plaid:
+				return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.props.parentFlow.updateModeToken || this.state.link_token} 
+				onSuccess={(public_token,metadata) => this.onSubmit(public_token)} onExit={this.onFail}/>)
+				break;
+			case Connectors.powens:
+				break;
+		}
 	}
 }
+
 
 export class NewBankConnectionNameStep extends FlowStep{
 	constructor(props){
@@ -207,7 +247,7 @@ export class NewBankConnectionNameStep extends FlowStep{
 		this.onChangeInputValue = this.onChangeInputValue.bind(this)
 	}
 	getButtons(){return [
-		{name:'continue',primary:true}, //default action for primary is onSubmit
+		{name:'finish',primary:true}, //default action for primary is onSubmit
 		{name:'cancel',action:() => this.transitionWith('CANCEL')}
 	]}
 	onSubmit(){this.transitionWith('SUBMIT')}

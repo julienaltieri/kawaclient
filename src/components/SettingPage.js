@@ -10,6 +10,7 @@ import DS from '../DesignSystem'
 import PageLoader from './PageLoader'
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes} from '../Bank.js'
 import {NewBankConnectionFlow, UpdateBankConnectionFlow} from './BankUI.js'
+import Navigation, {NavRoutes} from './Navigation'
 
 export default class SettingPage extends BaseComponent{
 	constructor(props) {
@@ -34,17 +35,23 @@ export default class SettingPage extends BaseComponent{
           bankAccounts:bas
         })
       })
-      .catch(err => console.log(err))    
-    })
+    }).then(() => {
+      let p = new URLSearchParams(window.location.search).get('state')
+      if(p && p.length>0){
+        let context = JSON.parse(p)
+        this.presentBankSelector(context)
+      }else{return Promise.resolve()}
+    }).catch(err => console.log(err)) 
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.reloadData()}
-  presentBankSelector(){return Core.presentWorkflow(new NewBankConnectionFlow())
+  presentBankSelector(context){
+    return Core.presentWorkflow(new NewBankConnectionFlow(context))
     .then(r => {
       this.updateState({fetching:true})
-      return ApiCaller.bankExchangeTokenAndSaveConnection(r.public_token,r.friendlyName)
+      return ApiCaller.bankExchangeTokenAndSaveConnection(r.institution.connectorName,r.public_token,r.friendlyName,r.institution.id,r.connectionMetadata)
     })
-    .then(() => Core.reloadUserData())
+    .then(() => (context?.step)?window.history.pushState({},'',NavRoutes.settings):Core.reloadUserData())
     .then(() => this.reloadData())
     .then(r => console.log("new connection successfully created"))
     .catch(e => console.log("Flow didn't complete",e))
@@ -57,7 +64,7 @@ export default class SettingPage extends BaseComponent{
     <DS.Layout.PageWithTitle title="Settings" content={
       <div style={{marginTop:"-1rem"}}>{this.state.bankConnections?.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
-          <DS.component.Button.Placeholder iconName="plus" onClick={this.presentBankSelector}></DS.component.Button.Placeholder>
+          <DS.component.Button.Placeholder iconName="plus" onClick={e => this.presentBankSelector()}></DS.component.Button.Placeholder>
         </div>
       </div>
     }/>
