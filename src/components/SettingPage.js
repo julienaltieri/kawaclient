@@ -21,13 +21,18 @@ export default class SettingPage extends BaseComponent{
       plaidLinkVisible: true
 		} 
     
-    this.presentNewBankConnectionFlow = this.presentNewBankConnectionFlow.bind(this)
+    this.onClickAddBankConnection = this.onClickAddBankConnection.bind(this)
 	}
+
+  //data management
   loadData(forcedReload){
     return Core.loadData(forcedReload).then(() => {
       var ud = Core.getUserData();
-      return Promise.all([ApiCaller.bankInitiateConnection().catch(err => console.log(err)),ApiCaller.bankGetAccountsForUser().catch(err => console.log(err)),ApiCaller.bankGetItemStatuses().catch(err => console.log(err))])
-      .then(([linkTokenResponse,bas,rs]) => {
+      return Promise.all([
+        ApiCaller.bankInitiateConnection().catch(err => console.log(err)),
+        ApiCaller.bankGetAccountsForUser().catch(err => console.log(err)),
+        ApiCaller.bankGetItemStatuses().catch(err => console.log(err))
+      ]).then(([linkTokenResponse,bas,rs]) => {
         this.updateState({
           bankConnections:rs,
           newConnectionLinkToken:linkTokenResponse.link_token,
@@ -36,19 +41,19 @@ export default class SettingPage extends BaseComponent{
         })
       })
     })
-    .then(() => NewBankConnectionFlow.RestoreIfNeeded())//handles redirect case to finish the bank connection
+    .then(() => NewBankConnectionFlow.RestoreFlowIfNeeded().then(() => this.reloadData()))//handles redirect case to finish the bank connection
     .catch(err => console.log(err)) 
   }
-  reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
-  componentDidMount(){this.initialLoadPromise = this.reloadData()}
-  presentNewBankConnectionFlow(context){
-    return NewBankConnectionFlow.Summon()
-    .then(() => Promise.all([this.updateState({fetching:true}),Core.reloadUserData()]))
-    .then(() => this.reloadData())
-    .then(() => console.log("new connection successfully created"))
-    .catch(e => console.log("Flow didn't complete",e))
+  reloadData(forcedReload){
+    return Promise.all([this.updateState({fetching:true}),Core.reloadUserData()])
+      .then(() => this.loadData(forcedReload))
+      .then(() => this.updateState({fetching: false}))
   }
   getBankAccountsForItem(itemId){return this.state.bankAccounts?.filter(bas => bas.itemId==itemId)[0]?.accounts}
+  componentDidMount(){this.initialLoadPromise = this.reloadData()}
+  
+  //New bank connection flow
+  onClickAddBankConnection(){return NewBankConnectionFlow.Summon().then(() => this.reloadData())}
  
 	render(){
 		return(
@@ -56,7 +61,7 @@ export default class SettingPage extends BaseComponent{
     <DS.Layout.PageWithTitle title="Settings" content={
       <div style={{marginTop:"-1rem"}}>{this.state.bankConnections?.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
-          <DS.component.Button.Placeholder iconName="plus" onClick={e => this.presentNewBankConnectionFlow()}></DS.component.Button.Placeholder>
+          <DS.component.Button.Placeholder iconName="plus" onClick={e => this.onClickAddBankConnection()}></DS.component.Button.Placeholder>
         </div>
       </div>
     }/>

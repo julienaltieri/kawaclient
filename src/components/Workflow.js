@@ -105,13 +105,16 @@ export class Flow{
 			this.actor.start()
 		})
 	}
-	static RestoreIfNeeded(){
+	static RestoreFlowIfNeeded(){
 		return Core.getQueryParamsPromise().then(p => {
+			/* SAMPLE CODE
 			let param = p.get('sampleQueryParamSignifyingThisFlowShouldBeRestored')
 			if(param){
 				Core.consumeQueryParams(['sampleQueryParamSignifyingThisFlowShouldBeRestored'])
-				return this.Summon(JSON.parse(param))
-			}
+				return this.Summon(JSON.parse({...param, anythingElse: "...data"}))
+			}*/
+			
+			return Promise.reject()//default should be to reject the promise. 
 		})
 	}//use this method to summon again from query parameters if needed. Must pass a context.
 	static Summon(initialContext){return Core.presentWorkflow(new this(initialContext))}
