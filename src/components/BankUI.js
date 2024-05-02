@@ -187,7 +187,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 	static RestoreIfNeeded(){
 		console.log("attempting restore")
 		return Core.getQueryParamsPromise().then(p => {
-			let param = p.get('state')?JSON.parse(param):undefined;
+			let param = p.get('state')?JSON.parse(p.get('state')):undefined;
 
 			if(param && param.connectorName == Connectors.powens && param.step == 'aggregatorConnect'){//qualifies for a restore for Powens' flow
 				if(!p.get('error') && p.get('code') && p.get('code')){//return from redirect
