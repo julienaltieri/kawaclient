@@ -89,14 +89,12 @@ class BCSettingItem extends BaseComponent{
   }
 
   presentBankUpdateFlow(e){
-    return Core.presentWorkflow(new UpdateBankConnectionFlow({
+    return UpdateBankConnectionFlow.Summon({
       itemId: this.props.data.itemId,
       updateModeToken:this.state.updateModeLinkToken,
       connectorName: this.props.data.connectorName
-    }))
-    .then(() => Promise.all([this.props.parent.updateState({fetching:true}),this.props.parent.reloadData()]))
-    .then(() => console.log("item updated with latest transactions"))
-    .catch(e => console.log("Update flow didn't complete",e))
+    })
+    .then(() => this.props.parent.reloadData())
   }
   handleOnEvent(e,m){console.log(e,m)}
   onToggleExpand(e){this.updateState({expanded:!this.state.expanded})}

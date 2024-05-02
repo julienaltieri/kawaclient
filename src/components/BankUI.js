@@ -184,6 +184,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 			}
 		})
 	}
+
 	static RestoreFlowIfNeeded(){
 		return Core.getQueryParamsPromise().then(p => {
 			let param = p.get('state')?JSON.parse(p.get('state')):undefined;
@@ -197,12 +198,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 			return Promise.reject()
 		})
 
-	}//use this method to summon again from query parameters if needed. Must pass a context.
-	static Summon(initialContext){
-		return Core.presentWorkflow(new this(initialContext))
-			.then(() => console.log("new connection successfully created"))
-			.catch(e => console.log("new connection flow didn't complete"))
-		}
+	}
 }
 
 

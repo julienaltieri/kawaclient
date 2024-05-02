@@ -105,7 +105,18 @@ export class Flow{
 			this.actor.start()
 		})
 	}
-	static RestoreFlowIfNeeded(){
+
+	/*These methods are the only methods that should be needed to present a workflow. 
+		- Summon() presents this workflow from anywhere. It's possible to pass it an initial context for the state machine to use
+		- RestoreFlowIfNeeded() is meant to be an Override that returns a promise (either the restored flow promise, or a rejected promise if not needed)
+
+	*/
+	static Summon(initialContext){
+		return Core.presentWorkflow(new this(initialContext))
+			.then(() => console.log(this.name + " did complete"))
+			.catch(e => console.log(this.name + " didn't complete"))
+	}
+	static RestoreFlowIfNeeded(){/*Override*/
 		return Core.getQueryParamsPromise().then(p => {
 			/* SAMPLE CODE
 			let param = p.get('sampleQueryParamSignifyingThisFlowShouldBeRestored')
@@ -116,8 +127,7 @@ export class Flow{
 			
 			return Promise.reject()//default should be to reject the promise. 
 		})
-	}//use this method to summon again from query parameters if needed. Must pass a context.
-	static Summon(initialContext){return Core.presentWorkflow(new this(initialContext))}
+	}
 }
 
 export class FlowStep extends BaseComponent{
