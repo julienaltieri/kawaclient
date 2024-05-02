@@ -29,7 +29,7 @@ class Core{
 			erroredBankConnections: [],
 			history: HistoryManager
 		}
-		this.queryParamsReceivedListeners = []
+		//this.queryParamsReceivedListeners = []
 	}
 
 	//lifecycle
@@ -55,6 +55,12 @@ class Core{
 			instance.app.updateState({refresh:new Date()})
 		});
 		
+		//query parameters handling
+		this.globalState.queryParamPromise = new Promise((res,rej) => {
+	 		let qp = Navigation.getCurrentQueryParameters()
+	 		window.history.pushState({},'',Navigation.getCurrentRoute())
+			res(qp)
+		})
 
 		//check auth and redirects if needed		
 		return this.checkAuthentication()
@@ -67,24 +73,12 @@ class Core{
 	}
 
 	/*Query parameters handling*/
-	/*To implement a class that reacts to query params:
-		1. subscribe that class from its constructor via subscribeToQueryParamsReceived
-		2. implement in that class the method didReceiveQueryParams(params)
-		3. if that class takes action on these query params, it should call consumeQueryParams() when done
+	/*To use: 
+		1- call getQueryParamsPrimise().then(p => **p is a URLSearchParams object)
+		2- call consumeQueryParams(['field1', ...]) with the fields that should no longer be used by the rest of the application after handling
 	*/
-	didReceivedQueryParameters(params){//params = URLSearchParams Object
-		this.globalState.initialQueryParams = params
- 		this.queryParamsReceivedListeners.forEach(listener => listener.didReceiveQueryParams(params))
- 		window.history.pushState({},'',Navigation.getCurrentRoute())
-	}
-	getInitialQueryParams(){return this.globalState.initialQueryParams}
-	consumeQueryParams(){delete this.globalState.initialQueryParams}
-	subscribeToQueryParamsReceived(listener){
-		if(this.queryParamsReceivedListeners.indexOf(listener)==-1){
-			this.queryParamsReceivedListeners.push(listener)
-			if(this.getInitialQueryParams()){listener.didReceiveQueryParams(this.getInitialQueryParams())}// if the subscription happens after the params are received, notify immediately
-		}
-	}
+	getQueryParamsPromise(){return this.globalState.queryParamPromise}
+	consumeQueryParams(array){this.globalState.queryParamPromise.then(p => array.forEach(s => p.delete(s)))}
 	/*------------------------*/
 
 	refreshTheme(){
@@ -202,7 +196,6 @@ class Core{
 	checkAuthentication(successCallback,failureCallback){
 	  var authToken = Cookies.get('token');
 	  this.routeOrder = Navigation.getCurrentRoute();
-	  this.paramsOrder = Navigation.getCurrentQueryParameters();
 	  if(!authToken || authToken===""){return Promise.reject(new Error("no token passed"))}
 	  else{return ApiCaller.validateToken(authToken)}
 	}
@@ -216,7 +209,6 @@ class Core{
 					this.routeOrder = undefined;
 				}else { Navigation.navigateToRoute(NavRoutes.home) }
 
-				if(this.paramsOrder){instance.didReceivedQueryParameters(this.paramsOrder)}
 				return this.app?.updateState({loggedIn:true,refresh:new Date()}) || Promise.resolve()
 			})
 		}else{//logging out

@@ -36,14 +36,8 @@ class MissionControl extends BaseComponent{
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
 
-		//query parameters
-		Core.subscribeToQueryParamsReceived(this)
 	}
 	componentDidMount(){this.loadData()}
-	didReceiveQueryParams(params){//TODO
-		console.log("Query Params Received on home: ", params.toString())
-		Core.consumeQueryParams()//clear the params after taking action
-	}
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {

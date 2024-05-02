@@ -22,9 +22,6 @@ export default class SettingPage extends BaseComponent{
 		} 
     
     this.presentBankSelector = this.presentBankSelector.bind(this)
-
-    //query params subscription
-    Core.subscribeToQueryParamsReceived(this)
 	}
   loadData(forcedReload){
     return Core.loadData(forcedReload).then(() => {
@@ -38,20 +35,21 @@ export default class SettingPage extends BaseComponent{
           bankAccounts:bas
         })
       })
-    }).then(() => {
-      let p = new URLSearchParams(window.location.search).get('state')
-      if(p && p.length>0){
-        let context = JSON.parse(p)
-        this.presentBankSelector(context)
-      }else{return Promise.resolve()}
-    }).catch(err => console.log(err)) 
+    })
+    .then(() => Core.getQueryParamsPromise())
+    .then(p => this.handleQueryParameters(p))
+    .catch(err => console.log(err)) 
   }
-  didReceiveQueryParams(params){//TODO
-    console.log("Query Params Received: ", params.toString())
-    Core.consumeQueryParams()//clear the params after taking action
+  handleQueryParameters(params){
+    let s = params?.get('state')
+    if(s && !params.get('error')){
+      let context = JSON.parse(s)
+      this.presentBankSelector(context)
+      Core.consumeQueryParams(['state','error','code','connection_id'])//clear the params after taking action
+    }
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
-  componentDidMount(){this.reloadData()}
+  componentDidMount(){this.initialLoadPromise = this.reloadData()}
   presentBankSelector(context){
     return Core.presentWorkflow(new NewBankConnectionFlow(context))
     .then(r => {
