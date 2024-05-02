@@ -34,6 +34,7 @@ class Core{
 	init(){
 		window.appGlobals = {globalState: this.globalState}
 		this.globalState.Period = Period;
+		
 		//register amazon history handler
 		var amazonHistoryHandler = function(e) {
 			if(!!this.getUserData() && e && e.data && e.data.substring && e.data.substring(0,17)== "kawaAmazonOrders-" && this.globalState.amzHistorySaving == false){
@@ -51,9 +52,16 @@ class Core{
 		window.matchMedia('(prefers-color-scheme: dark)').addListener((e) => {
 			instance.app.updateState({refresh:new Date()})
 		});
-				
-		return this.checkAuthentication().then(() => this.setLoggedIn(true)).then(() => console.log("User is authenticated"))
-		.catch((e) => this.setLoggedIn(false).then(() => Navigation.navigateToRoute(NavRoutes.login)).then(() => console.log("User is authenticated")))
+		
+
+		//check auth and redirects if needed		
+		return this.checkAuthentication()
+			.then(() => console.log("User is authenticated"))
+			.then(() => this.setLoggedIn(true))
+			.catch((e) => this.setLoggedIn(false)
+				.then(() => console.log("User is not authenticated"))
+				.then(() => Navigation.navigateToRoute(NavRoutes.login))
+			)
 	}
 	refreshTheme(){
 		document.getElementById('root').style.color = DesignSystem.getStyle().bodyTextSecondary;

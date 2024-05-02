@@ -125,11 +125,11 @@ export const PlaidLinkLoader = (props) => {
 
 //New bank connection flow
 export class NewBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
-	setMachine(context = {}){
+	setMachine(initialContext = {}){
 		return createMachine({
 			id: 'NewBankCo',
-			context: context,
-			initial: context.step || 'selectBank',
+			context: initialContext,
+			initial: initialContext.step || 'selectBank',
 			states:{
 				success:{type: "final"},
 				fail: {type: "final"},
@@ -160,7 +160,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 								case Connectors.plaid:
 									return <AggregatorConnectorStepPlaid parentFlow={this}/>
 								case Connectors.powens:
-									return <AggregatorConnectorStepPowens returnFromRedirect={context.step=='aggregatorConnect'} parentFlow={this}/>
+									return <AggregatorConnectorStepPowens isReturnFromRedirect={initialContext.step=='aggregatorConnect'} parentFlow={this}/>
 							}
 							
 						},
@@ -231,7 +231,7 @@ export class AggregatorConnectorStepPowens extends AggregatorConnectorStep{
 		return encodeURIComponent(JSON.stringify(a))
 	}
 	componentDidMount(){
-		if(this.props.returnFromRedirect){
+		if(this.props.isReturnFromRedirect){
 			let p = new URLSearchParams(window.location.search)
 			let code = p.get('code')
 			this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: p.get('connection_id')}})
