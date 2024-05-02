@@ -135,7 +135,10 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 				fail: {type: "final"},
 				selectBank:{
 					on: {
-						SELECT:  {target: 'aggregatorConnect'},
+						SELECT:  {
+							//guard: ({cxt,e}) => true,
+							target: 'aggregatorConnect'
+						},
 						CLOSE: {target:'fail'}
 					},
 					meta: {
@@ -152,7 +155,15 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 					},
 					meta: {
 						title: "Loading",
-						renderable: <AggregatorConnectorStep returnFromRedirect={context.step=='aggregatorConnect'} parentFlow={this}/>,
+						renderable: (ctx) => {
+							switch(ctx.institution.connectorName){
+								case Connectors.plaid:
+									return <AggregatorConnectorStepPlaid parentFlow={this}/>
+								case Connectors.powens:
+									return <AggregatorConnectorStepPowens returnFromRedirect={context.step=='aggregatorConnect'} parentFlow={this}/>
+							}
+							
+						},
 					}
 				},
 				nameConnection:{
@@ -187,58 +198,52 @@ export class AggregatorConnectorStep extends FlowStep{
 		this.state = {...this.state,fetching:true}
 	}
 	getConnector(){return this.getContext().institution.connectorName}
-	componentDidMount(){
-		let debug = false
-		if(debug){setTimeout(() => this.onSubmit('fakeToken'),1000)}
-		else {
-			switch(this.getContext().institution.connectorName){
-				case Connectors.plaid:
-					if(!this.props.parentFlow.updateModeToken){
-						ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
-							routingNumber:this.getContext().institution.routingNumbers[0],
-							institutionId:this.getContext().institution.id
-						})
-						.then(r => this.updateState({link_token:r.link_token,fetching:false}))
-					}else{this.updateState({fetching:false})}
-					break;
-				case Connectors.powens:
-					if(this.props.returnFromRedirect){
-						let p = new URLSearchParams(window.location.search)
-						let code = p.get('code')
-						this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: p.get('connection_id')}})
-						this.onSubmit(code)
-					}else{
-						ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
-							connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId,
-							kawaInstitutionId: this.getContext().institution.id
-						})
-						.then(r => this.updateState({connect_url: r.connect_url}))
-						.then(() => window.location.replace(this.state.connect_url+"&state="+this.getURIState()))
-					}
-					break;
-			}
-		}
-	}
 	onSubmit(public_token){
 		this.updateContext({public_token : public_token})
 		this.transitionWith('CONNECTED')
 	}
+	renderContent(){return (<DS.component.Loader/>)}
+}
+
+export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
+	componentDidMount(){
+		if(!this.props.parentFlow.updateModeToken){
+			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
+				routingNumber:this.getContext().institution.routingNumbers[0],
+				institutionId:this.getContext().institution.id
+			})
+			.then(r => this.updateState({link_token:r.link_token,fetching:false}))
+		}else{this.updateState({fetching:false})}
+	}
+	renderContent(){
+		return(this.state.fetching?<DS.component.Loader/>:
+			<PlaidLinkLoader 	token={this.props.parentFlow.updateModeToken || this.state.link_token} 
+								onSuccess={(public_token,metadata) => this.onSubmit(public_token)} 
+								onExit={this.onFail}/>)		
+	}
+}
+
+export class AggregatorConnectorStepPowens extends AggregatorConnectorStep{
 	getURIState(){
 		let a = JSON.parse(JSON.stringify(this.getContext()))
 		delete a.institution.logo
 		a.step = 'aggregatorConnect'
-		return encodeURIComponent(JSON.stringify(a))}
-	renderContent(){
-		switch(this.getContext().institution.connectorName){
-			case Connectors.plaid:
-				return(this.state.fetching?<DS.component.Loader/>:<PlaidLinkLoader token={this.props.parentFlow.updateModeToken || this.state.link_token} 
-				onSuccess={(public_token,metadata) => this.onSubmit(public_token)} onExit={this.onFail}/>)
-				break;
-			case Connectors.powens:
-				break;
+		return encodeURIComponent(JSON.stringify(a))
+	}
+	componentDidMount(){
+		if(this.props.returnFromRedirect){
+			let p = new URLSearchParams(window.location.search)
+			let code = p.get('code')
+			this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: p.get('connection_id')}})
+			this.onSubmit(code)
+		}else{
+			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId})
+			.then(r => this.updateState({connect_url: r.connect_url}))
+			.then(() => window.location.replace(this.state.connect_url+"&state="+this.getURIState()))
 		}
 	}
 }
+
 
 
 export class NewBankConnectionNameStep extends FlowStep{

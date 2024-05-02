@@ -41,7 +41,7 @@ export default class WorkflowPresenter extends BaseComponent{
 				<DS.component.Button.Icon onClick={this.onClickCloseButton} iconName={this.closeAllowed()?"close":"placeholder"}/>
 			</FlowNavBar>
 			<FlowSlideContainer>
-				<Page>{this.state.displayedStep?.renderable}</Page>
+				<Page>{[this.state.displayedStep?.renderable].map(r => (typeof r=='function')?r(this.props.workflow.getContext()):r)[0]}</Page>
 			</FlowSlideContainer>
 		</FlowPageContainer>)
 	}
@@ -169,7 +169,9 @@ export class AccountCreationFlow extends Flow{//a class defining the flow logic 
 					},
 					meta: {
 						title: "What's your name?",
-						renderable: <NameInputStep parentFlow={this}/>,
+						renderable: <NameInputStep parentFlow={this}/>, 
+						or...
+						renderable: (ctx) => ctx.friendly?<FirstNameInputStep>:<NameInputStep>
 					}
 				},
 				enterEmail:{
