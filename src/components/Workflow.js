@@ -156,8 +156,9 @@ import { createMachine, createActor } from 'xstate';
 
 //Account Creation Flow
 export class AccountCreationFlow extends Flow{//a class defining the flow logic (state machine)
-	setMachine(){return createMachine({
+	setMachine(initialContext = {}){return createMachine({
 			id: 'accountCreation',
+			context: initialContext,
 			initial:'enterName',
 			states:{
 				success:{type: "final"},

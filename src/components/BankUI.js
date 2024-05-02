@@ -135,10 +135,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 				fail: {type: "final"},
 				selectBank:{
 					on: {
-						SELECT:  {
-							//guard: ({cxt,e}) => true,
-							target: 'aggregatorConnect'
-						},
+						SELECT:  {target: 'aggregatorConnect'},
 						CLOSE: {target:'fail'}
 					},
 					meta: {
@@ -161,14 +158,13 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 									return <AggregatorConnectorStepPlaid parentFlow={this}/>
 								case Connectors.powens:
 									return <AggregatorConnectorStepPowens isReturnFromRedirect={initialContext.step=='aggregatorConnect'} parentFlow={this}/>
-							}
-							
+							}	
 						},
 					}
 				},
 				nameConnection:{
 					on: {
-						SUBMIT: {target: 'success'},
+						SUBMIT: {target: 'saveConnection'},
 						CANCEL: {target:'fail'} 
 					},
 					meta: {
@@ -176,6 +172,15 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 						renderable: <NewBankConnectionNameStep parentFlow={this}/>,
 					}
 				},
+				saveConnection:{
+					on: {
+						SAVED: {target: 'success'}
+					},
+					meta: {
+						title: "Saving...",
+						renderable: <SaveConnectionStep parentFlow={this}/>
+					}
+				}
 			}
 		})
 	}
@@ -207,7 +212,7 @@ export class AggregatorConnectorStep extends FlowStep{
 
 export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
 	componentDidMount(){
-		if(!this.props.parentFlow.updateModeToken){
+		if(!this.getContext().updateModeToken){
 			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
 				routingNumber:this.getContext().institution.routingNumbers[0],
 				institutionId:this.getContext().institution.id
@@ -217,7 +222,7 @@ export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
 	}
 	renderContent(){
 		return(this.state.fetching?<DS.component.Loader/>:
-			<PlaidLinkLoader 	token={this.props.parentFlow.updateModeToken || this.state.link_token} 
+			<PlaidLinkLoader 	token={this.getContext().updateModeToken || this.state.link_token} 
 								onSuccess={(public_token,metadata) => this.onSubmit(public_token)} 
 								onExit={this.onFail}/>)		
 	}
@@ -265,30 +270,59 @@ export class NewBankConnectionNameStep extends FlowStep{
 	renderContent(){return(<div><DS.component.Input onChange={this.onChangeInputValue}/></div>)}
 }
 
+export class SaveConnectionStep extends FlowStep{
+	componentDidMount(){
+		let r = this.getContext()
+		ApiCaller.bankExchangeTokenAndSaveConnection(
+			r.institution.connectorName,
+			r.public_token,
+			r.friendlyName,
+			r.institution.id,
+			r.connectionMetadata
+		).then(() => this.onSubmit())
+	}
+	onSubmit(){this.transitionWith('SAVED')}
+	renderContent(){return (<DS.component.Loader/>)}
+}
+
 
 //Update bank connection flow
 export class UpdateBankConnectionFlow extends Flow{//a class defining the flow logic (state machine)
-	constructor(updateModeToken){
-		super()
-		this.updateModeToken = updateModeToken
-	}
-	setMachine(){return createMachine({
+	setMachine(initialContext = {}){return createMachine({
 			id: 'UpdateBankCo',
+			context: initialContext,
 			initial:'aggregatorUpdate',
 			states:{
 				success:{type: "final"},
 				fail: {type: "final"},
 				aggregatorUpdate:{
 					on: {
-						CONNECTED: {target: 'success'},
+						CONNECTED: {target: 'refreshConnection'},
 						FAIL: {target:'fail'},
 						CLOSE: {target:'fail'}
 					},
 					meta: {
 						title: "Loading",
-						renderable: <AggregatorConnectorStep parentFlow={this}/>,
+						renderable: (ctx) => {
+							switch(ctx.connectorName){
+								case Connectors.plaid:
+									return <AggregatorConnectorStepPlaid parentFlow={this}/>
+								/*case Connectors.powens: //TODO
+									return <AggregatorConnectorStepPowens isReturnFromRedirect={initialContext.step=='aggregatorConnect'} parentFlow={this}/>*/
+							}	
+						},
+					}
+				},
+				refreshConnection:{
+					on: {
+						DONE: {target: 'success'}
+					},
+					meta: {
+						title: "Refreshing connection...",
+						renderable: <RefreshConnectionStep parentFlow={this}/>
 					}
 				}
+
 			}
 		})
 	}
@@ -296,6 +330,13 @@ export class UpdateBankConnectionFlow extends Flow{//a class defining the flow l
 
 
 
-
-
+export class RefreshConnectionStep extends FlowStep{
+	componentDidMount(){
+		let r = this.getContext()
+      	ApiCaller.bankForceRefreshItemTransactions(r.itemId)
+      	.then(() => this.onSubmit())
+	}
+	onSubmit(){this.transitionWith('DONE')}
+	renderContent(){return (<DS.component.Loader/>)}
+}
 

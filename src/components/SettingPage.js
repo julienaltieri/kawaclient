@@ -21,7 +21,7 @@ export default class SettingPage extends BaseComponent{
       plaidLinkVisible: true
 		} 
     
-    this.presentBankSelector = this.presentBankSelector.bind(this)
+    this.presentNewBankConnectionFlow = this.presentNewBankConnectionFlow.bind(this)
 	}
   loadData(forcedReload){
     return Core.loadData(forcedReload).then(() => {
@@ -40,25 +40,21 @@ export default class SettingPage extends BaseComponent{
     .then(p => this.handleQueryParameters(p))
     .catch(err => console.log(err)) 
   }
-  handleQueryParameters(params){
+  handleQueryParameters(params){//consider moving content of this to bankUI and plugin the bank UI handler for parameters to manage this
     let s = params?.get('state')
     if(s && !params.get('error')){
       let context = JSON.parse(s)
-      this.presentBankSelector(context)
+      this.presentNewBankConnectionFlow(context)
       Core.consumeQueryParams(['state','error','code','connection_id'])//clear the params after taking action
     }
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.initialLoadPromise = this.reloadData()}
-  presentBankSelector(context){
+  presentNewBankConnectionFlow(context){
     return Core.presentWorkflow(new NewBankConnectionFlow(context))
-    .then(r => {
-      this.updateState({fetching:true})
-      return ApiCaller.bankExchangeTokenAndSaveConnection(r.institution.connectorName,r.public_token,r.friendlyName,r.institution.id,r.connectionMetadata)
-    })
-    .then(() => (context?.step)?window.history.pushState({},'',NavRoutes.settings):Core.reloadUserData())
+    .then(() => Promise.all([this.updateState({fetching:true}),Core.reloadUserData()]))
     .then(() => this.reloadData())
-    .then(r => console.log("new connection successfully created"))
+    .then(() => console.log("new connection successfully created"))
     .catch(e => console.log("Flow didn't complete",e))
   }
   getBankAccountsForItem(itemId){return this.state.bankAccounts?.filter(bas => bas.itemId==itemId)[0]?.accounts}
@@ -69,7 +65,7 @@ export default class SettingPage extends BaseComponent{
     <DS.Layout.PageWithTitle title="Settings" content={
       <div style={{marginTop:"-1rem"}}>{this.state.bankConnections?.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
         <div style={{"flexGrow":1,flexDirection: "column"}}>
-          <DS.component.Button.Placeholder iconName="plus" onClick={e => this.presentBankSelector()}></DS.component.Button.Placeholder>
+          <DS.component.Button.Placeholder iconName="plus" onClick={e => this.presentNewBankConnectionFlow()}></DS.component.Button.Placeholder>
         </div>
       </div>
     }/>
@@ -97,10 +93,10 @@ class BCSettingItem extends BaseComponent{
   }
 
   presentBankUpdateFlow(e){
-    return Core.presentWorkflow(new UpdateBankConnectionFlow(this.state.updateModeLinkToken))
+    return Core.presentWorkflow(new UpdateBankConnectionFlow({itemId: this.props.data.itemId,updateModeToken:this.state.updateModeLinkToken}))
     .then(r => {
       this.props.parent.updateState({fetching:true});
-      return ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId)
+     // return ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId)//consider moving to BankUI
     })
     .then(r => this.props.parent.reloadData())
     .then(() => console.log("item updated with latest transactions"))
