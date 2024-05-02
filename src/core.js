@@ -12,6 +12,7 @@ const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
 
+
 class Core{
 	constructor(){
 		this.globalState = {
@@ -28,6 +29,7 @@ class Core{
 			erroredBankConnections: [],
 			history: HistoryManager
 		}
+		this.queryParamsReceivedListeners = []
 	}
 
 	//lifecycle
@@ -63,6 +65,28 @@ class Core{
 				.then(() => Navigation.navigateToRoute(NavRoutes.login))
 			)
 	}
+
+	/*Query parameters handling*/
+	/*To implement a class that reacts to query params:
+		1. subscribe that class from its constructor via subscribeToQueryParamsReceived
+		2. implement in that class the method didReceiveQueryParams(params)
+		3. if that class takes action on these query params, it should call consumeQueryParams() when done
+	*/
+	didReceivedQueryParameters(params){//params = URLSearchParams Object
+		this.globalState.initialQueryParams = params
+ 		this.queryParamsReceivedListeners.forEach(listener => listener.didReceiveQueryParams(params))
+ 		window.history.pushState({},'',Navigation.getCurrentRoute())
+	}
+	getInitialQueryParams(){return this.globalState.initialQueryParams}
+	consumeQueryParams(){delete this.globalState.initialQueryParams}
+	subscribeToQueryParamsReceived(listener){
+		if(this.queryParamsReceivedListeners.indexOf(listener)==-1){
+			this.queryParamsReceivedListeners.push(listener)
+			if(this.getInitialQueryParams()){listener.didReceiveQueryParams(this.getInitialQueryParams())}// if the subscription happens after the params are received, notify immediately
+		}
+	}
+	/*------------------------*/
+
 	refreshTheme(){
 		document.getElementById('root').style.color = DesignSystem.getStyle().bodyTextSecondary;
 		document.getElementsByTagName('html')[0].className = '';
@@ -178,6 +202,7 @@ class Core{
 	checkAuthentication(successCallback,failureCallback){
 	  var authToken = Cookies.get('token');
 	  this.routeOrder = Navigation.getCurrentRoute();
+	  this.paramsOrder = Navigation.getCurrentQueryParameters();
 	  if(!authToken || authToken===""){return Promise.reject(new Error("no token passed"))}
 	  else{return ApiCaller.validateToken(authToken)}
 	}
@@ -187,16 +212,18 @@ class Core{
 		if(b){
 			return Promise.resolve().then(() => {//load or reload the data
 				if(!!this.routeOrder && this.routeOrder != NavRoutes.login){//if there was a remnant route order (pre-login) navigate back
-					Navigation.navigateToRoute(this.routeOrder)
-					this.routeOrder = undefined
+					Navigation.navigateToRoute(this.routeOrder);
+					this.routeOrder = undefined;
 				}else { Navigation.navigateToRoute(NavRoutes.home) }
+
+				if(this.paramsOrder){instance.didReceivedQueryParameters(this.paramsOrder)}
 				return this.app?.updateState({loggedIn:true,refresh:new Date()}) || Promise.resolve()
 			})
 		}else{//logging out
 			this.globalState = {...this.globalState, userData:undefined,
-			queriedTransactions:{ transactions:[],mustRefresh:false,minDate: undefined,maxDate: undefined},
-			transactionUpdateListeners: [],erroredBankConnections: [],history: HistoryManager
-		}
+				queriedTransactions:{ transactions:[],mustRefresh:false,minDate: undefined,maxDate: undefined},
+				transactionUpdateListeners: [],erroredBankConnections: [],history: HistoryManager
+			}
 			Navigation.navigateToRoute(NavRoutes.login);
 			return this.app?.updateState({loggedIn:false,refresh:new Date()}) || Promise.resolve()
 		}

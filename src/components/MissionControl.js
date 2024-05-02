@@ -35,8 +35,15 @@ class MissionControl extends BaseComponent{
 		this.onUserDefinedTransactionTypeClarified = this.onUserDefinedTransactionTypeClarified.bind(this);
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
+
+		//query parameters
+		Core.subscribeToQueryParamsReceived(this)
 	}
 	componentDidMount(){this.loadData()}
+	didReceiveQueryParams(params){//TODO
+		console.log("Query Params Received on home: ", params.toString())
+		Core.consumeQueryParams()//clear the params after taking action
+	}
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {
@@ -54,7 +61,6 @@ class MissionControl extends BaseComponent{
 		})
 	}
 	addBankConnectionCards(){
-		//console.log(Core.getErroredBankConnections())
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {
 			let br = new BankReconnectAction(startingId+i,this,false,() => {

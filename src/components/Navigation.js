@@ -9,7 +9,7 @@ import Core from '../core.js'
 
 
 
-
+ 
 const NavRoutes = {
 	home: 			'/',
 	login:  		'/login',
@@ -29,6 +29,11 @@ class NavigationController{
 	}
 
 	getCurrentRoute(){return window.location.pathname}
+	getCurrentQueryParameters(){
+		let res = new URLSearchParams(window.location.search)
+		if(res.size>0){return res}
+		else {/*do nothing and return undefined*/}
+	}
 	getCurrentRouteIndex(){return this.getHamburgerMenuItems().map(a => a.path).indexOf(this.getCurrentRoute())}
 	getCurrentView(){return this.state.registeredViews[this.getCurrentRouteIndex()]?.ref.current}
 	addView(name,path){if(this.state.registeredViews.map(a => a.name).indexOf(name)==-1)this.state.registeredViews.push({name:name,path:path})}

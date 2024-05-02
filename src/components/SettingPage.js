@@ -22,6 +22,9 @@ export default class SettingPage extends BaseComponent{
 		} 
     
     this.presentBankSelector = this.presentBankSelector.bind(this)
+
+    //query params subscription
+    Core.subscribeToQueryParamsReceived(this)
 	}
   loadData(forcedReload){
     return Core.loadData(forcedReload).then(() => {
@@ -42,6 +45,10 @@ export default class SettingPage extends BaseComponent{
         this.presentBankSelector(context)
       }else{return Promise.resolve()}
     }).catch(err => console.log(err)) 
+  }
+  didReceiveQueryParams(params){//TODO
+    console.log("Query Params Received: ", params.toString())
+    Core.consumeQueryParams()//clear the params after taking action
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.reloadData()}
