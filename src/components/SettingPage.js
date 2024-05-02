@@ -36,22 +36,13 @@ export default class SettingPage extends BaseComponent{
         })
       })
     })
-    .then(() => Core.getQueryParamsPromise())
-    .then(p => this.handleQueryParameters(p))
+    .then(() => NewBankConnectionFlow.RestoreIfNeeded())//handles redirect case to finish the bank connection
     .catch(err => console.log(err)) 
-  }
-  handleQueryParameters(params){//consider moving content of this to bankUI and plugin the bank UI handler for parameters to manage this
-    let s = params?.get('state')
-    if(s && !params.get('error')){
-      let context = JSON.parse(s)
-      this.presentNewBankConnectionFlow(context)
-      Core.consumeQueryParams(['state','error','code','connection_id'])//clear the params after taking action
-    }
   }
   reloadData(forcedReload){return this.updateState({fetching: true}).then(() => this.loadData(forcedReload)).then(() => this.updateState({fetching: false}))}
   componentDidMount(){this.initialLoadPromise = this.reloadData()}
   presentNewBankConnectionFlow(context){
-    return Core.presentWorkflow(new NewBankConnectionFlow(context))
+    return NewBankConnectionFlow.Summon()
     .then(() => Promise.all([this.updateState({fetching:true}),Core.reloadUserData()]))
     .then(() => this.reloadData())
     .then(() => console.log("new connection successfully created"))
@@ -93,12 +84,12 @@ class BCSettingItem extends BaseComponent{
   }
 
   presentBankUpdateFlow(e){
-    return Core.presentWorkflow(new UpdateBankConnectionFlow({itemId: this.props.data.itemId,updateModeToken:this.state.updateModeLinkToken}))
-    .then(r => {
-      this.props.parent.updateState({fetching:true});
-     // return ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId)//consider moving to BankUI
-    })
-    .then(r => this.props.parent.reloadData())
+    return Core.presentWorkflow(new UpdateBankConnectionFlow({
+      itemId: this.props.data.itemId,
+      updateModeToken:this.state.updateModeLinkToken,
+      connectorName: this.props.data.connectorName
+    }))
+    .then(() => Promise.all([this.props.parent.updateState({fetching:true}),this.props.parent.reloadData()]))
     .then(() => console.log("item updated with latest transactions"))
     .catch(e => console.log("Update flow didn't complete",e))
   }

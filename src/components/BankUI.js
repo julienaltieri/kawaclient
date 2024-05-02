@@ -184,6 +184,25 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 			}
 		})
 	}
+	static RestoreIfNeeded(){
+		console.log("attempting restore")
+		return Core.getQueryParamsPromise().then(p => {
+			let param = p.get('state')?JSON.parse(param):undefined;
+
+			if(param && param.connectorName == Connectors.powens && param.step == 'aggregatorConnect'){//qualifies for a restore for Powens' flow
+				if(!p.get('error') && p.get('code') && p.get('code')){//return from redirect
+					Core.consumeQueryParams(['state','code','connection_id'])
+					return this.Summon({...param,code:p.get('code'),connectionId:p.get('connection_id')})
+				}else if(p.get('error')){
+					console.log("not restoring")
+					Core.consumeQueryParams(['state','error'])
+					return Promise.resolve()
+				}
+			}
+		})
+
+	}//use this method to summon again from query parameters if needed. Must pass a context.
+	static Summon(initialContext){return Core.presentWorkflow(new this(initialContext))}
 }
 
 
@@ -233,14 +252,13 @@ export class AggregatorConnectorStepPowens extends AggregatorConnectorStep{
 		let a = JSON.parse(JSON.stringify(this.getContext()))
 		delete a.institution.logo
 		a.step = 'aggregatorConnect'
+		a.connectorName = Connectors.powens
 		return encodeURIComponent(JSON.stringify(a))
 	}
 	componentDidMount(){
 		if(this.props.isReturnFromRedirect){
-			let p = new URLSearchParams(window.location.search)
-			let code = p.get('code')
-			this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: p.get('connection_id')}})
-			this.onSubmit(code)
+			this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: this.getContext().connectionId}})
+			this.onSubmit(this.getContext().code)
 		}else{
 			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId})
 			.then(r => this.updateState({connect_url: r.connect_url}))
