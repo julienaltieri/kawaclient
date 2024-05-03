@@ -95,12 +95,10 @@ class Core{
 	}
 	getPreferredCurrency(){return this.getUserData().preferredCurrency}
 	checkBankConnectionsStatus(){
-		return Promise.all([ApiCaller.bankInitiateConnection(),ApiCaller.bankGetItemStatuses()])
-	      	.then(([linkTokenResponse,rs]) => {
-	      		let erroredItems = rs.filter(r => r.status != 'ok')
-	      		return Promise.all(erroredItems.map(co => ApiCaller.bankInitiateUpdate(co.itemId).then(data => {return {...co,...data}})))
-	      		.then(richCo => this.globalState.erroredBankConnections = richCo)
-	    	})
+		return ApiCaller.bankGetItemStatuses().then(rs => {
+      		this.globalState.erroredBankConnections = rs.filter(r => r.status != 'ok')
+      		return this.globalState.erroredBankConnections
+    	})
 	}
 	reloadUserData(){return this.loadData()} 
 	registerApp(app){this.app = app}

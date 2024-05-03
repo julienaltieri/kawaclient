@@ -144,7 +144,7 @@ class EmptyStateCard extends ActionCard{
 }
 
 
-/**************************************/
+/**************************************/ 
 /*Bank reconnection card 
 /**************************************/
 
@@ -165,29 +165,17 @@ class BankReconnectActionCard extends ActionCard{
 		this.presentBankUpdateFlow = this.presentBankUpdateFlow.bind(this)
 	}
 	presentBankUpdateFlow(){
-		return Core.presentWorkflow(new UpdateBankConnectionFlow(this.props.data.link_token))
-		    .then(() => this.updateState({working:true}))
-		    .then(() => ApiCaller.bankForceRefreshItemTransactions(this.props.data.itemId))
-		    .then(() => this.props.parentAction.onActionConcluded(this.props.parentAction))
-		    .catch(e => console.log("Flow didn't complete",e))
+		return UpdateBankConnectionFlow.Summon({
+			itemId: this.props.data.itemId,
+      		connectorName: this.props.data.connectorName
+		})
+		.then(() => this.props.parentAction.onActionConcluded(this.props.parentAction))
+		.catch(e => console.log("Flow didn't complete",e))
 	}
 	renderContent(inFocus){
 		return <ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DS.getStyle().alert,color:"white", borderRadius: DS.borderRadius,"marginTop":"0"}}>
 			You bank account "{this.props.data.name}" wants to be reconnected<br/><br/>
             {this.state.working?<DS.component.Loader/>:<span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>}
-			{/*<span>
-	            <PlaidLink
-	              clientName="React Plaid Setup"
-	              env="development"
-	              product={["auth", "transactions"]}
-	              token={this.props.data.link_token}
-	              onExit={this.handleOnExit}
-	              onSuccess={this.handleOnSuccess.bind(this)}
-	              className="test"
-	            >
-	            Reconnect
-	            </PlaidLink>
-            </span>*/}
 		</ActionsContainerBox>
 	}
 }
