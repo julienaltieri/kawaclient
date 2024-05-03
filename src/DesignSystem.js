@@ -218,7 +218,9 @@ class DesignSystem{
 		xs:1,
 		s:1.5,
 		m:2,
-		l:3
+		l:3,
+		xl: 6,
+		xxl: 9,
 	}
 	fontSize = {
 		little: 0.8,

@@ -152,7 +152,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 						FAIL: {target:'selectBank'}
 					},
 					meta: {
-						title: "Loading",
+						title: "Loading...",
 						renderable: (ctx) => {
 							switch(ctx.institution.connectorName){
 								case Connectors.plaid:
@@ -223,7 +223,10 @@ export class AggregatorConnectorStep extends FlowStep{
 		this.updateContext({public_token : public_token})
 		this.transitionWith('CONNECTED')
 	}
-	renderContent(){return (<DS.component.Loader/>)}
+	renderContent(){return([
+		<DS.component.Loader key={1}/>,
+		<DS.component.Spacer size={"l"} key={3}/>,
+	])}
 }
 
 export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
@@ -241,10 +244,15 @@ export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
 		}
 	}
 	renderContent(){
-		return(this.state.fetching?<DS.component.Loader/>:
-			<PlaidLinkLoader 	token={this.state.updateModeLinkToken || this.state.link_token} 
-								onSuccess={(public_token,metadata) => this.onSubmit(public_token)} 
-								onExit={this.onFail}/>)		
+		return([
+			<DS.component.Loader key={1}/>,
+			this.state.fetching?"":<PlaidLinkLoader key={2} 
+				token={this.state.updateModeLinkToken || this.state.link_token} 
+				onSuccess={(public_token,metadata) => this.onSubmit(public_token)} 
+				onExit={this.onFail}
+			/>,
+			<DS.component.Spacer size={"l"} key={3}/>,
+		])
 	}
 }
 
@@ -331,7 +339,7 @@ export class UpdateBankConnectionFlow extends Flow{//a class defining the flow l
 						CLOSE: {target:'fail'}
 					},
 					meta: {
-						title: "Loading",
+						title: "Loading...",
 						renderable: (ctx) => {
 							switch(ctx.connectorName){
 								case Connectors.plaid:
