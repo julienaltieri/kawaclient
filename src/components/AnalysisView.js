@@ -1,7 +1,6 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import Core from '../core.js';
-import {GenericTransaction} from '../model';
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
 import ModalManager, {ModalTemplates} from '../ModalManager.js'

@@ -311,7 +311,7 @@ export class GenericTransaction{
   userDefinedTransactionType;
   evaluator;
 
-  constructor(dateString,amount,description,streamAllocation,balance,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType){
+  constructor(dateString,amount,description,streamAllocation,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType){
     this.amount = amount
     this.date = new Date(dateString)
     this.description = description
@@ -374,12 +374,36 @@ export class GenericTransaction{
 
   //static constructors
   static MakeGTFromCategorizedTransaction(cat){
-    var t = new GenericTransaction(cat.date,cat.transactionAmount,cat.transactionDescription,cat.streamAllocation,null,cat.userInstitutionAccountId,cat.amazonOrderDetails,cat.transactionDate,cat.id,cat.transactionId,cat.pairedTransferTransactionId,cat.disambiguationId,cat.userDefinedTransactionType)
+    var t = new GenericTransaction(
+      cat.date,
+      cat.transactionAmount,
+      cat.transactionDescription,
+      cat.streamAllocation,
+      cat.userInstitutionAccountId,
+      cat.amazonOrderDetails,
+      cat.transactionDate,
+      cat.id,cat.transactionId,
+      cat.pairedTransferTransactionId,
+      cat.disambiguationId,
+      cat.userDefinedTransactionType
+    )
     t.streamAllocation.forEach(a => a.type = a.type || "value")
     return t
   }
 
   static MakeGTFromUncategorizedTransaction(txn){
-    return new GenericTransaction(txn.date,txn.amount,txn.description,undefined,null,txn.userInstitutionAccountId,undefined,txn.transactionDate,txn.id,txn.id,undefined,txn.disambiguationId)
+    return new GenericTransaction(
+      txn.date,
+      txn.amount,
+      txn.description,
+      undefined,
+      txn.userInstitutionAccountId,
+      undefined,
+      txn.transactionDate,
+      txn.id,
+      txn.id,
+      undefined,
+      txn.disambiguationId
+    )
   }
 }

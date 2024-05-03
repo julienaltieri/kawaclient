@@ -2,7 +2,6 @@ import React from "react"
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import Core from '../core.js';
-import {GenericTransaction} from '../model';
 import dateformat from "dateformat";
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
