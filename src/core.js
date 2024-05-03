@@ -58,7 +58,7 @@ class Core{
 		//query parameters handling
 		this.globalState.queryParamPromise = new Promise((res,rej) => {
 	 		let qp = Navigation.getCurrentQueryParameters()
-	 		//window.history.pushState({},'',Navigation.getCurrentRoute())
+	 		window.history.pushState({},'',Navigation.getCurrentRoute())
 			res(qp)
 		})
 
