@@ -23,10 +23,9 @@ export const getBankErrorMessage = function(itemData){
   let errorCodeAccessor = {}
   //Add any new connector error mapping here
   errorCodeAccessor[Connectors.plaid] = i => i.error?.error_code
-  errorCodeAccessor[Connectors.powens] = i => i.error_message
+  errorCodeAccessor[Connectors.powens] = i => i.error?.error_code
 
-  if(itemData.connectorName==Connectors.powens){return errorCodeAccessor[Connectors.powens](itemData)}
-  return BankErrorMessages[itemData.connectorName][errorCodeAccessor[itemData.connectorName](itemData) || "_default"]
+  return BankErrorMessages[itemData.connectorName][errorCodeAccessor[itemData.connectorName](itemData) || "_default"]+itemData.error?.error_message;
 
 }
 
@@ -42,6 +41,12 @@ const BankErrorMessages = {
     _default: "Plaid error."
   },
   powens:{
+    SCARequired: "",
+    webauthRequired: "",
+    additionalInformationNeeded: "",
+    actionNeeded: "",
+    passwordExpired: "",
+    wrongpass: "",
     _default: "Powens error."
   }
 }
