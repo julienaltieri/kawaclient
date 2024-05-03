@@ -184,7 +184,7 @@ class ApiCaller{
 	}
 
 	//get an initial token to initiate the connector experience
-	bankInitiateConnection(connectorName = "plaid",options = {}){
+	bankInitiateConnection(connectorName,options = {}){
 		const request = new Request(API.bankInitiateConnection,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({connectorName:connectorName,options:{...options}})
@@ -201,10 +201,10 @@ class ApiCaller{
 		return this.sendRequest(request)
 	}
 
-	bankInitiateUpdate(itemId){
+	bankInitiateUpdate(itemId, options = {}){
 		const request = new Request(API.bankInitiateUpdate,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({itemId: itemId})
+			body:JSON.stringify({itemId: itemId,options:{...options}})
 		})
 		return this.sendRequest(request)
 	}

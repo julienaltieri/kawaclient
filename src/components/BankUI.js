@@ -8,6 +8,7 @@ import {BankConnectionStatuses,getBankErrorMessage,AccountTypes,Connectors} from
 import { createMachine, createActor } from 'xstate';
 import Core from '../core'
 import React from 'react';
+import Navigation, {NavRoutes} from './Navigation'
 
 //This file implements the bank selection logic, meant to be presented in a modal or workflow. It's scope is only the component that enables bank selection. 
 /*NOTE FOR FUTURE
@@ -227,17 +228,21 @@ export class AggregatorConnectorStep extends FlowStep{
 
 export class AggregatorConnectorStepPlaid extends AggregatorConnectorStep{
 	componentDidMount(){
-		if(!this.getContext().updateModeToken){
-			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{
+		if(this.props.updateMode){
+			ApiCaller.bankInitiateUpdate(this.getContext().itemId).then(data => {
+		        this.updateState({updateModeLinkToken:data.link_token,fetching:false})
+		    })
+		}else{
+			ApiCaller.bankInitiateConnection(Connectors.plaid,{
 				routingNumber:this.getContext().institution.routingNumbers[0],
 				institutionId:this.getContext().institution.id
 			})
 			.then(r => this.updateState({link_token:r.link_token,fetching:false}))
-		}else{this.updateState({fetching:false})}
+		}
 	}
 	renderContent(){
 		return(this.state.fetching?<DS.component.Loader/>:
-			<PlaidLinkLoader 	token={this.getContext().updateModeToken || this.state.link_token} 
+			<PlaidLinkLoader 	token={this.state.updateModeLinkToken || this.state.link_token} 
 								onSuccess={(public_token,metadata) => this.onSubmit(public_token)} 
 								onExit={this.onFail}/>)		
 	}
@@ -252,13 +257,23 @@ export class AggregatorConnectorStepPowens extends AggregatorConnectorStep{
 		return encodeURIComponent(JSON.stringify(a))
 	}
 	componentDidMount(){
-		if(this.props.isReturnFromRedirect){
-			this.updateContext({connectionMetadata: {...this.getContext().connectionMetadata,connectionId: this.getContext().connectionId}})
+		if(this.props.updateMode){
+			ApiCaller.bankInitiateUpdate(this.getContext().itemId,{
+				redirectRoute: Navigation.getCurrentRoute()
+			}).then(r => window.location.replace(r.reconnectUrl))
+		}
+		else if(this.props.isReturnFromRedirect){
+			this.updateContext({connectionMetadata: {
+				...this.getContext().connectionMetadata,
+				connectionId: this.getContext().connectionId
+			}})
 			this.onSubmit(this.getContext().code)
 		}else{
-			ApiCaller.bankInitiateConnection(Connectors[this.getConnector()],{connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId})
-			.then(r => this.updateState({connect_url: r.connect_url}))
-			.then(() => window.location.replace(this.state.connect_url+"&state="+this.getURIState()))
+			ApiCaller.bankInitiateConnection(Connectors.powens,{
+				connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId,
+				redirectRoute: Navigation.getCurrentRoute()
+			})
+			.then(r => window.location.replace(r.connectUrl+"&state="+this.getURIState()))
 		}
 	}
 }
@@ -320,9 +335,9 @@ export class UpdateBankConnectionFlow extends Flow{//a class defining the flow l
 						renderable: (ctx) => {
 							switch(ctx.connectorName){
 								case Connectors.plaid:
-									return <AggregatorConnectorStepPlaid parentFlow={this}/>
-								/*case Connectors.powens: //TODO
-									return <AggregatorConnectorStepPowens isReturnFromRedirect={initialContext.step=='aggregatorConnect'} parentFlow={this}/>*/
+									return <AggregatorConnectorStepPlaid updateMode parentFlow={this}/>
+								case Connectors.powens:
+									return <AggregatorConnectorStepPowens updateMode parentFlow={this}/>
 							}	
 						},
 					}

@@ -2,15 +2,10 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
 import ApiCaller from '../ApiCaller'
 import Core from '../core'
-import React from "react";
-import {ModalTemplates} from '../ModalManager.js'
-import {PlaidLink,PlaidLinkOnEvent} from "react-plaid-link";
 import utils from '../utils'
 import DS from '../DesignSystem'
-import PageLoader from './PageLoader'
 import {BankConnectionStatuses,getBankErrorMessage,AccountTypes} from '../Bank.js'
 import {NewBankConnectionFlow, UpdateBankConnectionFlow} from './BankUI.js'
-import Navigation, {NavRoutes} from './Navigation'
 
 export default class SettingPage extends BaseComponent{
 	constructor(props) {
@@ -29,19 +24,16 @@ export default class SettingPage extends BaseComponent{
     return Core.loadData(forcedReload).then(() => {
       var ud = Core.getUserData();
       return Promise.all([
-        ApiCaller.bankInitiateConnection().catch(err => console.log(err)),
         ApiCaller.bankGetAccountsForUser().catch(err => console.log(err)),
         ApiCaller.bankGetItemStatuses().catch(err => console.log(err))
-      ]).then(([linkTokenResponse,bas,rs]) => {
+      ]).then(([bas,rs]) => {
         this.updateState({
           bankConnections:rs,
-          newConnectionLinkToken:linkTokenResponse.link_token,
-          newConnectionLinkTokenExpiration: linkTokenResponse.expiration,
           bankAccounts:bas
         })
       })
     })
-    .then(() => NewBankConnectionFlow.RestoreFlowIfNeeded().then(() => this.reloadData()))//handles redirect case to finish the bank connection
+    .then(() => NewBankConnectionFlow.RestoreFlowIfNeeded().then(() => this.reloadData()))//handles redirect case to finish the bank connection and reload if the flow finishes
     .catch(err => console.log(err)) 
   }
   reloadData(forcedReload){
@@ -50,13 +42,12 @@ export default class SettingPage extends BaseComponent{
       .then(() => this.updateState({fetching: false}))
   }
   getBankAccountsForItem(itemId){return this.state.bankAccounts?.filter(bas => bas.itemId==itemId)[0]?.accounts}
-  componentDidMount(){this.initialLoadPromise = this.reloadData()}
+  componentDidMount(){this.reloadData()}
   
   //New bank connection flow
   onClickAddBankConnection(){return NewBankConnectionFlow.Summon().then(() => this.reloadData())}
  
-	render(){
-		return(
+	render(){return(
 		this.state.fetching?<DS.component.Loader/>:
     <DS.Layout.PageWithTitle title="Settings" content={
       <div style={{marginTop:"-1rem"}}>{this.state.bankConnections?.map((co,i) => <BCSettingItem bankAccounts={this.getBankAccountsForItem(co.itemId)} parent={this} key={i} data={co} />)}
@@ -78,25 +69,15 @@ class BCSettingItem extends BaseComponent{
     this.onToggleExpand=this.onToggleExpand.bind(this)
     this.onChangeAccountType=this.onChangeAccountType.bind(this)
     this.presentBankUpdateFlow = this.presentBankUpdateFlow.bind(this)
-  }
-
-  componentDidMount(){
-    if(this.props.data.status!=BankConnectionStatuses.ok){//if item is under error status
-      ApiCaller.bankInitiateUpdate(this.props.data.itemId).then(data => {
-        this.updateState({updateModeLinkToken:data.link_token})
-      })
-    }
+    this.allowDelete = false; //for debugging only
   }
 
   presentBankUpdateFlow(e){
     return UpdateBankConnectionFlow.Summon({
       itemId: this.props.data.itemId,
-      updateModeToken:this.state.updateModeLinkToken,
       connectorName: this.props.data.connectorName
-    })
-    .then(() => this.props.parent.reloadData())
+    }).then(() => this.props.parent.reloadData())
   }
-  handleOnEvent(e,m){console.log(e,m)}
   onToggleExpand(e){this.updateState({expanded:!this.state.expanded})}
   getAccountTypeString(type){return type}//for future localization
   getTypeForAccount(ba){return (Core.getUserData().savingAccounts.indexOf(ba.hash)!=-1)?AccountTypes.savings:AccountTypes.checking}
@@ -143,8 +124,8 @@ class BCSettingItem extends BaseComponent{
             </DS.component.ListItem>)}
           </div>
         </div>
-
-        {this.state.updateModeLinkToken?<Row style={{"marginTop":"1rem","padding":"1rem"}}>
+        {this.allowDelete?<span><DS.component.Button.Action small onClick={e => ApiCaller.bankRemoveItem(this.props.data.itemId).then(() => this.props.parent.reloadData())}>Delete</DS.component.Button.Action></span>:""}
+        {this.props.data.error?<Row style={{"marginTop":"1rem","padding":"1rem"}}>
           <DS.component.Label style={{}}>{getBankErrorMessage(this.props.data)}</DS.component.Label>
           <span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>
         </Row>:""}
