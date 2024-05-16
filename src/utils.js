@@ -229,5 +229,93 @@ exports.capitalize = function(s){
 	return s.split(". ").map(ss => ss[0].toUpperCase()+ss.slice(1)).reduce((a,v) => a = a+v,[])
 }
 
+//returns an array of sorted words from the provided string immune to accent, special characters, double spaces, and order change. Used for hashing
+exports.stringHashArray = function(s){
+	return s.toLowerCase()
+	.normalize("NFD").replace(/[\u0300-\u036f]/g, "") 	//removes any accent
+	.replace(/[^\w\s]/gi, '').replace(/ +/g,' ')		//removes extra spaces and special characters
+	.split(' ').sort(exports.sorters.alphabetical())		//descriptions change order sometimes based on the aggregator
+}
+
+
+/**** Hashmap ****
+Class to manage typical operations withing hashmaps. Inspired by ES6 Maps, but not a replica and compatible with node.js
+- set: must be either a structured hashmap { key: [values...]} or an array of [values...] with a hash function (value) => group 
+- values can be objects
+*******************/
+class Hashmap{
+	constructor(set,hashF){
+		if(typeof set == 'object'){
+			if(Array.isArray(set)){
+				let res = {}
+				set.forEach(t => {
+					if(!res[hashF(t)]){res[hashF(t)] = []}
+					res[hashF(t)].push(t)
+				})
+				this.map = res
+			}else{this.map = set}
+		}
+	}
+	//getters
+	get(k){return this.map[typeof k=='number'?Object.keys(this.map)[0]:k]}
+	getValues(){return exports.flatten(Object.values(this.map))}
+	valuesLength(){return this.getValues().length}
+	keysLength(){return Object.keys(this.map).length}
+	snap(){return JSON.parse(JSON.stringify(this.map))}
+
+	//operators (always return a new hashmap and doesn't mutate the original one)
+	filterByKeys(test){return new Hashmap(Object.fromEntries(Object.entries(this.map).filter(([k,v]) => test(k))))}
+	filterByValues(test){return new Hashmap(Object.fromEntries(Object.entries(this.map).map(([k,v]) => [k,v.filter(test)]).filter(([k,v])=>v.length>0)))}
+	substract(hashmap,idAccessor = x => JSON.stringify(x)){
+		let ids = hashmap.getValues().map(idAccessor)
+		return this.filterByValues(t => ids.indexOf(idAccessor(t))==-1)
+	}
+	mergeWith(hashmap, idAccessor = x => JSON.stringify(x)){
+		let r = this.snap()
+		Object.keys(hashmap.map).forEach(k => {
+			if(!r[k]){r[k]=hashmap.map[k]}
+			else{r[k] = utils.dedup([...r[k],...hashmap.map[k]],idAccessor)}
+		})
+		return new Hashmap(r)
+	}
+	//returns a new Hashmap where keys have been reduced and merged based on the getCommonKey function. getCommonKey must return the common key of two values if they should be merged, and undefined otherwise.
+	reduceByKey(getCommonKey){
+		let keys = Object.keys(this.map)
+		let res = {}
+		for (var i = 0; i < keys.length; i++) {
+			let matched = false
+			keys.slice(0,i).forEach(k => {
+				let c = getCommonKey(this.map[keys[i]][0],this.map[k][0])
+				if(c){//if there is a common key
+					res[c] = [...this.map[k],...this.map[keys[i]]]
+					delete res[[keys[i],k].filter(o => o!=c)[0]]
+					matched = true
+				}
+			})
+			if(!matched){res[keys[i]]=this.map[keys[i]]}
+		}
+		return new Hashmap(res)
+	}
+
+
+	//analysis
+	histogram(){
+		let res ={};
+		Object.keys(this.map).forEach(k => {
+			let l = this.map[k].length
+			if(!res[l]){res[l]={description: "Groups with " +l+" value(s)",count:0}}
+			res[l].count = res[l].count+1
+		})
+		return Object.entries(res).map(([k,v])=> {
+			let r = {}
+			r[v.description] = v.count
+			return r
+		})
+	}
+}
+
+exports.Hashmap = Hashmap
+
+
 const utils = exports
 export default utils
