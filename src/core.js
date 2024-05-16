@@ -407,7 +407,7 @@ class Core{
 		})
 
 		//try grouping by combinations for dates that are 1+ days appart and for which there is a amz order that match the sum
-		if(getRemainingAmazonTransactions.length < 20)// becomes too complex after 20
+		if(getRemainingAmazonTransactions().length < 20)// becomes too complex after 20
 		for(var d = 1;d<15;d++){
 			//generate possible combinations of remaining transactions and keep the ones that are potential matches
 			var looseCombos = utils.combine(getRemainingAmazonTransactions(),2)
