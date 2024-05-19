@@ -105,7 +105,22 @@ exports.morphObjectAIntoB = function(a,b){
 
 exports.getSavableClone = function(obj){return exports.convertDatesToString(JSON.parse(JSON.stringify(obj)))}
 exports.getObjectClone = function(obj){return exports.convertStringsToDates(JSON.parse(JSON.stringify(obj)))}
-
+exports.deepClone = function(obj, clones = new WeakMap()) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (obj instanceof Date) return new Date(obj.getTime());
+    if (obj instanceof RegExp) return new RegExp(obj);
+    if (obj instanceof Error) return new Error(obj.message);
+    if (typeof obj === 'function') return structuredClone(obj);
+    if (typeof obj === 'symbol') return Object(Symbol.prototype.valueOf.call(obj));
+    if (obj instanceof Map) return new Map([...obj].map(([k, v]) => [exports.deepClone(k, clones), exports.deepClone(v, clones)]));
+    if (obj instanceof Set) return new Set([...obj].map(v => exports.deepClone(v, clones)));
+    const proto = Object.getPrototypeOf(obj);
+    if (proto !== null && proto !== Object.prototype) exports.deepClone(proto, clones);
+    const clone = Array.isArray(obj) ? [] : Object.create(proto);
+    clones.set(obj, clone);
+    for (const [key, value] of Object.entries(obj)) clone[key] = exports.deepClone(value, clones);
+    return clone;
+}
 
 exports.stringMerge = function(array,delimitor){//merges an array of strings
 	return array.reduce(exports.reducers.stringConcat(undefined,delimitor),"")
@@ -261,7 +276,7 @@ class Hashmap{
 	getValues(){return exports.flatten(Object.values(this.map))}
 	valuesLength(){return this.getValues().length}
 	keysLength(){return Object.keys(this.map).length}
-	snap(){return JSON.parse(JSON.stringify(this.map))}
+	snap(){return exports.deepClone(this.map)}
 
 	//operators (always return a new hashmap and doesn't mutate the original one)
 	filterByKeys(test){return new Hashmap(Object.fromEntries(Object.entries(this.map).filter(([k,v]) => test(k))))}

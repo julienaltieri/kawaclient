@@ -114,7 +114,7 @@ class BCSettingItem extends BaseComponent{
           <div style={{paddingTop:(this.state.expanded?DS.spacing.xxs:0)+"rem", transition: "all 0.2s",overflow:"hidden"}}>
             {this.props.bankAccounts?.map((ba,i) => <DS.component.ListItem key={i} fullBleed noHover>
               <DS.component.Label size="xs">{ba.name}</DS.component.Label>
-              <DS.component.Label size="xs" style={{minWidth:"3rem",textAlign:"right"}}>**{ba.mask}</DS.component.Label>
+              {ba.mask?<DS.component.Label size="xs" style={{minWidth:"3rem",textAlign:"right"}}>**{ba.mask}</DS.component.Label>:""}
               <DS.component.Spacer/>
               <div style={{width: "50%",display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
                 <DS.component.DropDown inline autoSize noMargin name="acc_type" id="acc_type" defaultValue={this.getTypeForAccount(ba)} onChange={e => this.onChangeAccountType(e,ba)}>
