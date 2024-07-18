@@ -6,7 +6,7 @@ import dateformat from "dateformat";
 import memoize from "memoize-one";
 import AnimatedNumber from "animated-number-react";
 import DS from '../DesignSystem.js'
-import {getStreamAnalysis,getMultiStreamAnalysis,reportingConfig,analysisRootDate,analysisRootDateForYear} from '../processors/ReportingCore.js';
+import {getStreamAnalysis,getMultiStreamAnalysis,reportingConfig,getAnalysisRootDate,analysisRootDateForYear} from '../processors/ReportingCore.js';
 import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,EndOfPeriodProjectionSummary,EndOfPeriodProjectionGraph} from './AnalysisView'
 import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView'
 import {format} from './AnalysisView'
@@ -20,15 +20,19 @@ import utils from '../utils'
 if(reportingConfig.startingDay<1 || reportingConfig.startingDay>28 || reportingConfig.startingMonth>12 || reportingConfig.startingMonth<1){
 	throw new Error(`Selected reporting date has invalid parameters. Month: ${reportingConfig.startingMonth} Day: ${reportingConfig.startingDay}. Reporting month must be between 1 and 12 and day must be between 1 and 28`)
 }
-let analysisDate = reportingConfig.observationPeriod.nextDateFromNow(analysisRootDate);
-//let analysisDate = analysisRootDateForYear(2023);
+let analysisDate
+const getAnalysisDate = () => {
+	analysisDate = analysisDate || reportingConfig.observationPeriod.nextDateFromNow(getAnalysisRootDate());
+	return analysisDate
+}
+//let getAnalysisDate() = analysisRootDateForYear(2023);
 
 //if we're in the first period of the observation period, show the graph from the previous period
-let previousAnalysisDate = reportingConfig.observationPeriod.previousDate(analysisDate);
-let shouldShowContextForObservationPeriodTransition = () => ((new Date() - previousAnalysisDate)< 2*reportingConfig.observationPeriod.subdivision.getTimeIntervalFromDate(previousAnalysisDate))
+let getPreviousAnalysisDate = () => reportingConfig.observationPeriod.previousDate(getAnalysisDate());
+let shouldShowContextForObservationPeriodTransition = () => ((new Date() - getPreviousAnalysisDate())< 2*reportingConfig.observationPeriod.subdivision.getTimeIntervalFromDate(getPreviousAnalysisDate()))
 
 
-const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(analysisDate,s,txns,observationPeriod,subReportingPeriod))
+const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(getAnalysisDate(),s,txns,observationPeriod,subReportingPeriod))
 
 var count = 0;
 //generic component
@@ -61,7 +65,7 @@ export default React.memo(MasterAuditView)
 //Level 0: High-level view of the entire portfolio and projections across the observation period 
 class MasterStreamAuditView extends StreamAuditView{
 	getAnalysisForStreams(ss){
-		return getMultiStreamAnalysis(analysisDate,ss,this.props.auditedTransactions,!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly,reportingConfig.observationPeriod.subdivision)
+		return getMultiStreamAnalysis(getAnalysisDate(),ss,this.props.auditedTransactions,!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly,reportingConfig.observationPeriod.subdivision)
 	}
 	render(){return (<div>
 		<EndOfPeriodProjectionGraph  	
