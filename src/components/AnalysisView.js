@@ -794,7 +794,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		          	}} />
 		        	
 		        	{this.renderChartTitle() /*Period Title*/}
-		           	{this.getData().plotList.filter(series => series.config.render).map((series,i) => ([
+		           	{this.getData().plotList.filter(series => series.config.render).sort(utils.sorters.asc(s => s.projected)).map((series,i) => ([
 		           		(series.config?.noTarget)?<g></g>:<V.VictoryArea name={series.name+"Area"} 	/*Areas plot*/
 		           			data={series.target} style={{data:{fill:series.config.color,opacity:this.style.backgroundOpacity}}}/>,	
 		           		this.renderScatterLine(series),												/*Scatter lines & trends*/
