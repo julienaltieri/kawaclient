@@ -419,6 +419,7 @@ class SeriesDescriptor{
 		this.config = {...o.config,...{barOffset:o.config.barOffset || {dx:0,dy:0}}} 
 		this.target = this.getTimeSeries(o.target) 
 		this.toDate = this.getTimeSeries(o.toDate)
+		this.isSavings = o.isSavings
 		this.projected = this.getEOYProjection(o.toDate) //why do this rather than a method? to avoid having to recalculate it everytime
 	}
 	accessor(r){return this.toDate[r.index]?.y}
@@ -633,7 +634,8 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 				new SeriesDescriptor({ name:"savings", chartContext:chartContext,
 					config:{render:true,color:DS.getStyle().savings,barStrings: {toDate:"Saved to date",value:"Saved",projected:"Annual savings"}},
 					target: this.timeAxis.map((d,i) => -(i+1)*this.props.savingsAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.previousDate(d),Period.monthly)),
-					toDate: savingsAnalysis.map((r,i) => r.stats.savedToDate + incomeAnalysis[i].stats.savedToDate)
+					toDate: savingsAnalysis.map((r,i) => r.stats.savedToDate + incomeAnalysis[i].stats.savedToDate),
+					isSavings: true
 				}),
 				new SeriesDescriptor({ name:"expenses", chartContext:chartContext,
 					config:{render:true,color:DS.getStyle().expenses,barStrings: {toDate:"Spent to date",value:"Spent",projected:"Annual expenses"}},
@@ -713,9 +715,8 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		let getPosition = (fr,ser) => {let sign = series.projected>=0?1:-1; return {x:x0,y:sign*Math.max(sign*getYValue(fr,ser),this.svgToDomain(0,0).dy - this.svgToDomain(0,labelHeight+0.75*b).dy)}}
 		let labelMutator = (valueAccessor) => (fr)=> {return {"datum": getPosition(fr,series),"text": valueAccessor(fr)}}	
 		let getTitle = (fr,ser) => ser.config.barStrings[fr?"toDate":"projected"]	
-		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount(fr?ser.accessor(fr):series.projected,0,true,undefined,Core.getPreferredCurrency())}		//bar $$ value
+		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount((!ser.isSavings?-1:1)*(fr?ser.accessor(fr):series.projected),0,false,undefined,Core.getPreferredCurrency())}		//bar $$ value
 		let	getRatio = (fr,ser) => formatPercent(Math.abs(fr?ser.accessor(fr):ser.projected)/savingExpenseSum(r => fr?r.accessor(fr):r.projected))
-		
 		return (<SharedPropsWrapper style={{fill: c,fontSize:b, fontFamily:"Inter"}} dx={this.style.summaryBarLabelXOffset} dy={0} textAnchor={"start"} verticalAnchor={"start"}>
 			<FocusReportWrapper 	name="bar" 		 	defaultReport={this.getDefaultReport()}	mutations={(fr)=> {return {"data":[{x:x0,y:getYValue(fr,series)+sign*(this.svgToDomain(0,0).dy-this.svgToDomain(0,this.style.chartBarWidth*0.25).dy)}],"style":{data:{fill: c,opacity:fr?1:this.style.midgroundOpacity}}}}} ref={this.registerListener()} ><V.VictoryBar standalone={false} barWidth={this.style.chartBarWidth} cornerRadius={0.5*this.style.chartBarWidth} style={{data:{fill: c,opacity:this.style.midgroundOpacity}}} /></FocusReportWrapper>
 	    	<SharedPropsWrapper 	dy={series.projected>=0?0:-labelHeight} dx={series.config.barOffset.dx||0} >
