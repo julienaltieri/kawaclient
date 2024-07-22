@@ -715,7 +715,10 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		let formatPercent = (x) => Math.round(100*x)+"%"
 		let savingExpenseSum = (accessor) => accessor(this.getDataByName("savings"))-(accessor(this.getDataByName("expenses")))
 		let getYValue = (fr,ser) =>  (fr?ser.accessor(fr):series.projected)
-		let getPosition = (fr,ser) => {let sign = series.projected>=0?1:-1; return {x:x0,y:sign*Math.max(sign*getYValue(fr,ser),this.svgToDomain(0,0).dy - this.svgToDomain(0,labelHeight+0.75*b).dy)}}
+		let getPosition = (fr,ser) => {let sign = series.projected>=0?1:-1; return {
+			x: x0,
+			y: sign*Math.max(sign*getYValue(fr,ser),this.svgToDomain(0,0).dy - this.svgToDomain(0,labelHeight+0.75*b).dy)
+		}}
 		let labelMutator = (valueAccessor) => (fr)=> {return {"datum": getPosition(fr,series),"text": valueAccessor(fr)}}	
 		let getTitle = (fr,ser) => ser.config.barStrings[fr?"toDate":"projected"]	
 		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount((!ser.isSavings?-1:1)*(fr?ser.accessor(fr):series.projected),0,false,undefined,Core.getPreferredCurrency())}		//bar $$ value
@@ -745,7 +748,8 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(-getIncrement("expenses",fr),0,false,undefined,Core.getPreferredCurrency()):""}
 		let labelHeight = 3*this.style.fontSizeBody+14*this.style.statLabelSpacing+2*this.style.secondaryLabelsOffset;
 		let shouldShowTitleBottom = Math.abs(this.getDomainBounds().My/(this.getDomainBounds().My-this.getDomainBounds().my))<0.5
-		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:(shouldShowTitleBottom?this.getDomainBounds().my-this.svgToDomain(0,labelHeight).dy:this.getDomainBounds().My)*(Core.isMobile()?1.5:1)}}>
+
+		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:(shouldShowTitleBottom?(this.getDomainBounds().my-this.svgToDomain(0,labelHeight).dy*(Core.isMobile()?0.1:1)):this.getDomainBounds().My*(Core.isMobile()?1.5:1))}}>
         	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
 			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
 			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
