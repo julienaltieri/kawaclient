@@ -710,13 +710,13 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		let c = series.config.color, b = this.style.fontSizeBody, h = this.style.fontSizeHeader, s = this.style.statLabelSpacing, labelHeight = 2*b+h+2*s , sign = Math.abs(series.projected)/series.projected
 		let x0 = (this.timeAxis[this.timeAxisBoundIndex]?.getTime())+this.style.summaryBarOffset 						//base x value to draw the chart from
 		let formatPercent = (x) => Math.round(100*x)+"%"
-		let savingExpenseSum = (accessor) => accessor(this.getDataByName("savings"))+Math.abs(accessor(this.getDataByName("expenses")))
+		let savingExpenseSum = (accessor) => accessor(this.getDataByName("savings"))-(accessor(this.getDataByName("expenses")))
 		let getYValue = (fr,ser) =>  (fr?ser.accessor(fr):series.projected)
 		let getPosition = (fr,ser) => {let sign = series.projected>=0?1:-1; return {x:x0,y:sign*Math.max(sign*getYValue(fr,ser),this.svgToDomain(0,0).dy - this.svgToDomain(0,labelHeight+0.75*b).dy)}}
 		let labelMutator = (valueAccessor) => (fr)=> {return {"datum": getPosition(fr,series),"text": valueAccessor(fr)}}	
 		let getTitle = (fr,ser) => ser.config.barStrings[fr?"toDate":"projected"]	
 		let	getValue = (fr,ser) => {return utils.formatCurrencyAmount((!ser.isSavings?-1:1)*(fr?ser.accessor(fr):series.projected),0,false,undefined,Core.getPreferredCurrency())}		//bar $$ value
-		let	getRatio = (fr,ser) => formatPercent(Math.abs(fr?ser.accessor(fr):ser.projected)/savingExpenseSum(r => fr?r.accessor(fr):r.projected))
+		let	getRatio = (fr,ser) => formatPercent(((!ser.isSavings?-1:1)*(fr?ser.accessor(fr):ser.projected))/savingExpenseSum(r => fr?r.accessor(fr):r.projected))
 		return (<SharedPropsWrapper style={{fill: c,fontSize:b, fontFamily:"Inter"}} dx={this.style.summaryBarLabelXOffset} dy={0} textAnchor={"start"} verticalAnchor={"start"}>
 			<FocusReportWrapper 	name="bar" 		 	defaultReport={this.getDefaultReport()}	mutations={(fr)=> {return {"data":[{x:x0,y:getYValue(fr,series)+sign*(this.svgToDomain(0,0).dy-this.svgToDomain(0,this.style.chartBarWidth*0.25).dy)}],"style":{data:{fill: c,opacity:fr?1:this.style.midgroundOpacity}}}}} ref={this.registerListener()} ><V.VictoryBar standalone={false} barWidth={this.style.chartBarWidth} cornerRadius={0.5*this.style.chartBarWidth} style={{data:{fill: c,opacity:this.style.midgroundOpacity}}} /></FocusReportWrapper>
 	    	<SharedPropsWrapper 	dy={series.projected>=0?0:-labelHeight} dx={series.config.barOffset.dx||0} >
