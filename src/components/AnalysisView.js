@@ -694,7 +694,10 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 	getReportSchedule(){return this.props.savingsAnalysis.getFullSchedule()}
 	getDomainBounds(){
 		let acc = (g,f) =>  g(this.getData().plotList.filter(o=>o.config.render).map(p => f(p.target[p.target.length-1]?.y,p.projected)))
-		return {...super.getDomainBounds(),my:this.style.chartYScaleFactor*acc(utils.min,Math.min),My:this.style.chartYScaleFactor*acc(utils.max,Math.max)}
+		return {...super.getDomainBounds(),
+			my:this.style.chartYScaleFactor*acc(utils.min,Math.min),
+			My:this.style.chartYScaleFactor*acc(utils.max,Math.max)
+		}
 	}
 
 	//render functions
@@ -738,10 +741,11 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			if(!this.hovering){return dateformat(this.props.expenseAnalysis.reportingDate,"yyyy")}
 			else {return fr?dateformat(fr.reportingDate,"mmmm"):dateformat(this.props.expenseAnalysis.reportingDate,"yyyy")+" Projected"}
 		}
-		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,true,undefined,Core.getPreferredCurrency()):""}
-		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(getIncrement("expenses",fr),0,true,undefined,Core.getPreferredCurrency()):""}
-
-		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:this.getDomainBounds().My*(Core.isMobile()?1.5:1)}}>
+		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,false,undefined,Core.getPreferredCurrency()):""}
+		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(-getIncrement("expenses",fr),0,false,undefined,Core.getPreferredCurrency()):""}
+		let labelHeight = 3*this.style.fontSizeBody+14*this.style.statLabelSpacing+2*this.style.secondaryLabelsOffset;
+		let shouldShowTitleBottom = Math.abs(this.getDomainBounds().My/(this.getDomainBounds().My-this.getDomainBounds().my))<0.5
+		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:(shouldShowTitleBottom?this.getDomainBounds().my-this.svgToDomain(0,labelHeight).dy:this.getDomainBounds().My)*(Core.isMobile()?1.5:1)}}>
         	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
 			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
 			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
