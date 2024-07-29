@@ -150,7 +150,7 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	render(){
 		return <FlexColumn style={{justifyContent: "center"}} onMouseOver={this.onMouseOver} onMouseOut={this.onMouseOut}>
 			<div style={{width:"90%"}}>
-				<TimeAndMoneyProgressView hovering={this.state.hovering} /*stream={this.props.analysis.stream}*/ analysis={this.props.analysis}/>
+				<TimeAndMoneyProgressView hovering={this.state.hovering} analysis={this.props.analysis}/>
 			</div>
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
@@ -219,11 +219,11 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			return res;
 		})
 		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
+			<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
 			...expChanges?.sort(utils.sorters.desc(r => r.startDate)).filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
 				.map((h,k) => <ExpectationChangePannel key={100*(i+1)+k} expChangeData={h} report={r} analysis={this.props.analysis} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}
 					onRequestToRemove={() => this.deleteExpectation(h.origin)}/>
 				),
-			<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
 		])))
 		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
 	}
