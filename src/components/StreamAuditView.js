@@ -38,7 +38,8 @@ var count = 0;
 //generic component
 export class StreamAuditView extends BaseComponent{
 	getTransactionsForStream(s){return this.props.auditedTransactions.filter(t => t.categorized && t.isAllocatedToStream(s))}
-	getStreamAnalysis(subReportingPeriod){return mAnalyze(this.props.stream,this.props.auditedTransactions,!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly,subReportingPeriod)} 
+	getStreamAnalysis(options){
+		return mAnalyze(this.props.stream,this.props.auditedTransactions,options?.observationPeriod ||(!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly),options?.subReportingPeriod || options?.observationPeriod?.subdivision)} 
 	render(){return (<div>I'm a generic StreamAuditView</div>)}
 }
 
@@ -83,7 +84,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 		return (<TopLevelStreamAuditViewContainer>
 			<TopLevelHeaderContainer>
 				<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
-				<MiniGraph analysis={this.getStreamAnalysis(Period.monthly)} stream={this.props.stream}/>
+				<MiniGraph analysis={this.getStreamAnalysis({subReportingPeriod:Period.monthly})} stream={this.props.stream}/>
 			</TopLevelHeaderContainer>
 			<StreamAuditCellContainer>
 				{this.props.stream.getDepth()==1?
@@ -118,7 +119,9 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 //Level 2: component for category aggregate containing multiple terminal streams
 class CompoundStreamAuditView extends StreamAuditView{
 	render(){
-		/*if(this.props.stream.name == "Food"){console.log(this.getStreamAnalysis(Period.monthly))}*/
+		if(this.props.stream.name == "Retraite"){console.log(this.getStreamAnalysis({
+			observationPeriod:this.props.stream.getPreferredReportingPeriod()
+		}))}
  		return (<CompountStreamAuditViewContainer >
  			<DS.component.ContentTile style={{flexDirection: "row",justifyContent: "space-between",width: "calc(100% - 1rem)", margin:0,marginBottom: "1rem"}}>
  				<div style={{width:"3rem",marginLeft:"1rem",flexShrink:0}}>
@@ -128,7 +131,7 @@ class CompoundStreamAuditView extends StreamAuditView{
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
  					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
- 				<MiniGraph analysis={this.getStreamAnalysis(Period.monthly)} stream={this.props.stream}/>
+ 				<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>
  			</DS.component.ContentTile>
  			<RowLayout>
  				<RowLayout>
@@ -153,11 +156,9 @@ class TerminalStreamCard extends StreamAuditView{
 	}
 	getTitle(){return this.props.stream.name}
 	handleClick(){
-		console.log(this.getStreamAnalysis())
+		//console.log(this.getStreamAnalysis())
 		this.updateState({detailView:!this.state.detailView})}
-	render(){
-/*		if(this.props.stream.name=="Savings"){console.log(this.getStreamAnalysis().getCurrentPeriodReport().transactions)}
-*/		
+	render(){		
 		return (<DS.component.ContentTile style={{height:"14rem",maxWidth: "10.5rem",width: "calc(50% - 2rem)"}}>
 			<TSCardHeader>{/*Title*/}
 				<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
@@ -167,7 +168,7 @@ class TerminalStreamCard extends StreamAuditView{
 			</TSCardHeader>
 			<TSCardContent style={{transform: "scale(1)"}}>{/*transform here is needed to get the positioning of annotations tooltips to work*/}
 				{this.state.detailView?
-					<StreamObservationPeriodView analysis={this.getStreamAnalysis(this.props.stream.getReportingPeriod())} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+					<StreamObservationPeriodView analysis={this.getStreamAnalysis({subReportingPeriod:this.props.stream.getReportingPeriod()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
 					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()}/>}
 			</TSCardContent>
 			<TSFooter>{/*Switch link*/}

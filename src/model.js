@@ -96,6 +96,7 @@ class Stream{
       return p && q
     })
   }
+  getPreferredReportingPeriod(){return Period[this.getPreferredPeriod()]}
   getReportingPeriod(){return Period.shortestPeriod([Period[this.getPreferredPeriod()],Period.monthly])}//this is usually what we like a stream to be subdivided in for reporting
   getAnnotationsForReport(r){return this.getAnnotationsAtDate(r.reportingDate)}
   saveAnnotation(date,body){

@@ -93,6 +93,7 @@ class PeriodAnalysis extends Analysis{
 			movedToSavings: this.getMovedToSavings(),
 			expected: this.getExpected(),
 			paexpected: this.getPastAwareExpected(),
+			expectedAtMaturity: this.getExpectedAtMaturity(),
 			leftover: this.getLeftOver()
 		}
 	}
@@ -100,7 +101,8 @@ class PeriodAnalysis extends Analysis{
 	//stats
 	getNetAmount(){return this.getAggregateSum(this.transactions,t => t.moneyInForStream(this.stream))}
 	getMovedToSavings(){return this.getAggregateSum(this.transactions,t => t.savedForStream(this.stream))}
-	getExpected(){return this.stream.getExpectedAmountAtDate(this.reportingStartDate,this.reportingPeriod.name)}
+	getExpected(){return this.stream.getExpectedAmountAtDate(this.reportingDate,this.reportingPeriod.name) }
+	getExpectedAtMaturity(){return this.getExpected()}
 	getPastAwareExpected(){return utils.round2Decimals(this.getProjectedPeriodicAmountForStream(this.stream)||0)}
 	getLeftOver(){
 		let expected = (this.stream.isTerminal()||true)?this.getExpected():this.getPastAwareExpected();
@@ -147,15 +149,20 @@ class StreamAnalysis extends Analysis{
 		this.periodReports = this.getReportingSchedule().map(date => new PeriodAnalysis(stream,this.transactions,date,this.subReportingPeriod,this));
 		this.stats = {
 			avgByPeriods: (this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true))/this.getMaturePeriodReports().length,
-			total: this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true)
+			total: this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true),
+			net: this.getNetAmount(),
+			expected: this.getExpected(),
+			expectedAtMaturity: this.getExpectedAtMaturity(),
+			leftover: this.getLeftOver()
 		}
 	}
 
 	//stats
-	getNetAmount(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.getReports(),r => r.getNetAmount())}
-	getMovedToSavings(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.getReports(),r => r.getMovedToSavings())}
-	getExpected(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.getReports(),r => r.getExpected())}
-	getLeftOver(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.getReports(),r => r.getLeftOver())}
+	getNetAmount(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.periodReports,r => r.getNetAmount())}
+	getMovedToSavings(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.periodReports,r => r.getMovedToSavings())}
+	getExpected(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.periodReports,r => r.getExpected())}
+	getExpectedAtMaturity(){return this.getExpected(true)+this.getIncompleteSubdivisionsCount()*this.periodReports.slice(-1)[0].getExpected()}
+	getLeftOver(matureOnly){return this.getAggregateSum(matureOnly?this.getMaturePeriodReports():this.periodReports,r => r.getLeftOver())}
 	getFrequencyHistogramAtDate(date){//date should be the reportingDate of the report this histogram is for (not the start date)
 		if(!this.bins){
 			let period = this.subReportingPeriod;//period being visualized in the display report - the histogram will aggregate data from other periods in the observation period

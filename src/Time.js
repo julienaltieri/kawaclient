@@ -55,7 +55,7 @@ export class Period {
 		this.name = name;
 		this.unitName = unitName;
 		this.timeInterval = timeInterval; //when undefined, it should be calculated based on a date
-		this.subdivision = subdivision;
+		this.subdivision = subdivision || this;
 		this.relationships = relationships; //can this be a bit more calculated?
 	}
 	getTimeIntervalFromDate(date){

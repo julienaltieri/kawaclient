@@ -47,7 +47,7 @@ class GenericAnalysisView extends BaseComponent{
 		super(props)
 		this.state = {}
 	}
-	isIncome(){return this.props.analysis.getExpected()>0}
+	isIncome(){return this.props.analysis.isIncome()}
 	isSavings(){return this.props.analysis.isSavings()}
 	isAlert(){
 		if(this.isSavings()){return (-this.props.analysis.getNetAmount() + this.props.analysis.getMovedToSavings()) < -this.props.analysis.getExpected()}
@@ -86,16 +86,16 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 		subdivGapAngles: this.props.viewConfig?.subdivGapAngles || 0.005
 	}}
 	isCCW(){return ! (this.isIncome() || this.isSavings())}
-	isExceedingInitialValue(){return this.props.analysis.getNetAmount()*this.props.analysis.getExpected()<0}
+	isExceedingInitialValue(){return this.props.analysis.getNetAmount()*this.props.analysis.getExpectedAtMaturity()<0}
 	getPrimaryPercentage(){//drives progress ring
-		if(this.props.analysis.getExpected()==0 || !this.props.analysis.getExpected()){
+		if(this.props.analysis.getExpectedAtMaturity()==0 || !this.props.analysis.getExpectedAtMaturity()){
 			if(this.isSavings()){return (this.props.analysis.getNetAmount()<0)?1:0}
 			else if(this.props.analysis.getNetAmount()==0) {return 0}
 			else {return (this.props.analysis.getNetAmount()>0)?1:-1}
 		}else{
-			if(this.isIncome()){return Math.min(1,this.props.analysis.getNetAmount()/this.props.analysis.getExpected())}
-			else if(this.isSavings()){return Math.min(Math.abs((-this.props.analysis.getNetAmount() + this.props.analysis.getMovedToSavings())/this.props.analysis.getExpected()),1)}
-			else {return Math.max(-1,1-(this.isExceedingInitialValue()?0:1)*this.props.analysis.getNetAmount()/this.props.analysis.getExpected())};
+			if(this.isIncome()){return Math.min(1,this.props.analysis.getNetAmount()/this.props.analysis.getExpectedAtMaturity())}
+			else if(this.isSavings()){return Math.min(Math.abs((-this.props.analysis.getNetAmount() + this.props.analysis.getMovedToSavings())/this.props.analysis.getExpectedAtMaturity()),1)}
+			else {return Math.max(-1,1-(this.isExceedingInitialValue()?0:1)*this.props.analysis.getNetAmount()/this.props.analysis.getExpectedAtMaturity())};
 		}
 	}
 
@@ -127,16 +127,20 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	onMouseOver(e){if(!this.state.hovering){this.updateState({ hovering: true })}}
 	onMouseOut(e){if(this.state.hovering){this.updateState({ hovering: false })}}
 	getPrimaryValue(){
-		if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return this.props.analysis.getNetAmount()}
-		else if(this.isIncome()){return this.props.analysis.getNetAmount()}
-		else if(this.isSavings()){return this.props.analysis.getMovedToSavings()}
+		if(!this.isSavings()&&this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return this.props.analysis.getNetAmount()}
+		else if(this.isSavings()){
+			if(this.props.analysis.getExpectedAtMaturity()<0){return this.props.analysis.getMovedToSavings()}
+			else {return this.props.analysis.getLeftOver()}
+		}else if(this.isIncome()){return this.props.analysis.getNetAmount()}
 		else {return this.props.analysis.getLeftOver()}
 	}
 	getSubtext(){
-		if(this.isIncome()){
-			return (this.props.analysis.getLeftOver()>=0)?"✔":"/"+format(this.props.analysis.getExpected(),true,true)
-		}else if(this.isSavings()){
-			return (this.props.analysis.getLeftOver()<=0)?"✔":"/"+format(this.props.analysis.getExpected(),true,true)
+		if(this.isSavings()){
+			if(this.props.analysis.getExpectedAtMaturity()>=0){//expect to unsave savings
+				return (this.props.analysis.getLeftOver()>0)?"over":"left"
+			}else{return "saved"}
+		}else if(this.isIncome()){
+			return "received"
 		}else if(this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return "paid"}
 		else{return this.isAlert()?"over":"left"}
 	}
@@ -146,11 +150,12 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	render(){
 		return <FlexColumn style={{justifyContent: "center"}} onMouseOver={this.onMouseOver} onMouseOut={this.onMouseOut}>
 			<div style={{width:"90%"}}>
-				<TimeAndMoneyProgressView hovering={this.state.hovering} stream={this.props.analysis.stream} analysis={this.props.analysis}/>
+				<TimeAndMoneyProgressView hovering={this.state.hovering} /*stream={this.props.analysis.stream}*/ analysis={this.props.analysis}/>
 			</div>
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
-					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0,undefined,undefined,Core.getPreferredCurrency()):<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(this.isIncome()||this.isSavings()))}/>
+					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0,undefined,undefined,Core.getPreferredCurrency()):
+					<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(!this.isSavings() && this.isIncome() || this.isSavings() && this.props.analysis.getExpectedAtMaturity()<0))}/>
 				}</div>
 				<div style={{color:this.getMainColor(),fontSize:"0.8rem"}}>{this.getSubtext()}</div>
 			</FlexColumn>
