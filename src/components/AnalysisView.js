@@ -711,7 +711,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			<V.VictoryAxis style={{axis:{opacity:0}}} tickFormat={() => ''}/>
 			<V.VictoryLine 		data={series.getTrend(series.toDate.map(p => p.y))} style={{data:{stroke:series.config.color,strokeWidth:0.9,opacity:this.style.midgroundOpacity,strokeDasharray: "1, 2"}}}/>
 			<V.VictoryLine 		name={series.name+"Line"} data={series.toDate} style={{data:{stroke:series.config.color,strokeWidth:Core.isMobile()?3:1}}}/>
-			<V.VictoryScatter 	name={series.name+"Dots"} data={series.toDate} size={this.style.scatterDotSize} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x,{expenses: series.name=="expenses",savings: series.name=="savings", income: series.name =="savings"}).length?"url(#"+(datum.y<0?"alertHighlight":"savingsHighlight")+")":series.config.color}}}/>
+			<V.VictoryScatter 	name={series.name+"Dots"} data={series.toDate} size={this.style.scatterDotSize} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x,{expenses: series.name=="expenses",savings: series.name=="savings", income: series.name =="savings"}).length?"url(#"+(series.name=="expenses"?"alertHighlight":"savingsHighlight")+")":series.config.color}}}/>
 		</V.VictoryChart>)
 	}
 	renderDynamicBarWithLabels(series){
