@@ -25,7 +25,8 @@ const TransactionTypes = {
 	movedToDisconnectedSavingAccount: 			new TransactionType(13,	"movedToDisconnectedSavingAccount",			[0,1,0],	"Money moved from a linked checking account to an external savings account"),				//ex: monthly transfer from Chase checking to Tellus
 	movedFromDisconnectedSavingAccount: 		new TransactionType(14,	"movedFromDisconnectedSavingAccount",		[0,-1,0],	"Money moved from an external savings account to a linked checking account"),				//ex: from Tellus to Chase checking
 	expenseFromSavings: 						new TransactionType(15,	"expenseFromSavings",						[-1,-1,0],	"Money exiting a linked savings account"), 													//(ex: pay something directly from a saving account)
-	incomeToSavings: 							new TransactionType(16,	"incomeToSavings",							[1,1,0],	"Money incoming to a linked savings account", "Interest or income")												//ex: interest income, or DD to savings
+	incomeToSavings: 							new TransactionType(16,	"incomeToSavings",							[1,1,0],	"Money incoming to a linked savings account", "Interest or income"),												//ex: interest income, or DD to savings
+	systemTransaction: 							new TransactionType(17,	"systemTransaction",						[0,0,0],	"Transaction use by bank system for internal reconciliation. Cash neutral.", "System transaction")		
 }
 
 export default TransactionTypes

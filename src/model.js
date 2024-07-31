@@ -312,7 +312,7 @@ export class GenericTransaction{
   userDefinedTransactionType;
   evaluator;
 
-  constructor(dateString,amount,description,streamAllocation,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType){
+  constructor(dateString,amount,description,streamAllocation,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType,connectorName,institutionId){
     this.amount = amount
     this.date = new Date(dateString)
     this.description = description
@@ -325,6 +325,8 @@ export class GenericTransaction{
     this.pairedTransferTransactionId = pairedTransferTransactionId
     if(amazonOrderDetails)this.amazonOrderDetails = amazonOrderDetails
     this.disambiguationId = disambiguationId
+    this.connectorName = connectorName
+    this.institutionId = institutionId
     if(this.categorized)this.evaluator = getEvaluator(this)
 
     this.UncategorizedEvaluationError = new Error("Trying to call an evaluation function on an uncategorized transaction.")
@@ -386,7 +388,9 @@ export class GenericTransaction{
       cat.id,cat.transactionId,
       cat.pairedTransferTransactionId,
       cat.disambiguationId,
-      cat.userDefinedTransactionType
+      cat.userDefinedTransactionType,
+      cat.connectorName,
+      cat.institutionId
     )
     t.streamAllocation.forEach(a => a.type = a.type || "value")
     return t
@@ -404,7 +408,10 @@ export class GenericTransaction{
       txn.id,
       txn.id,
       undefined,
-      txn.disambiguationId
+      txn.disambiguationId,
+      undefined,
+      txn.connectorName,
+      txn.institutionId
     )
   }
 }
