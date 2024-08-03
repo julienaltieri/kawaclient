@@ -53,7 +53,9 @@ export default class MiniGraph extends GenericChartView{
 		let numberOfDayInCycle = Math.floor((new Date() - this.getPeriodReports()[this.n].reportingStartDate)/timeIntervals.oneDay)//where we are in the cycle
 		let cumsum = 0;
 		let cumulativeFrequency = this.props.analysis.getFrequencyHistogramAtDate(this.props.analysis.reportingDate).map(h => {cumsum+=h; return cumsum}).map(h => h/cumsum) //cumulative frequency throughout the cycle
-		return cumulativeFrequency[numberOfDayInCycle]>0.9 || ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2)
+		return cumulativeFrequency[numberOfDayInCycle]>0.9 												//either 90%+ of the expected amount has arrived
+			|| ((this.getPeriodReports()[this.n].reportingDate-new Date())<timeIntervals.oneDay*2) 		//either we're less then 2 days way from the end of the cycle
+			|| this.props.stream.isTerminal() && this.getPeriodReports()[this.n].transactions.length>0 	//either we already have transactions and the stream is terminal
 	}
 
 	//domain definition 
