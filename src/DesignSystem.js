@@ -470,6 +470,7 @@ const StyledLabel = styled.div`
 	text-overflow: ellipsis;
     text-wrap: nowrap;
     overflow-x: clip;
+    min-width: 0;
     color: ${(props) => {
     	if(props.level=="positive"){return instance.getStyle().positive}
     	else if(props.level=="warning"){return instance.getStyle().warning}
