@@ -9,6 +9,8 @@ import { createMachine, createActor } from 'xstate';
 import Core from '../core'
 import React from 'react';
 import Navigation, {NavRoutes} from './Navigation'
+import utils from '../utils'
+
 
 //This file implements the bank selection logic, meant to be presented in a modal or workflow. It's scope is only the component that enables bank selection. 
 /*NOTE FOR FUTURE
@@ -75,15 +77,18 @@ export class BankSelectorComponent extends BaseComponent{
 			<DS.component.Spacer size="xxs"/>
 			{this.state.searchMode?this.state.searching?<PageCenterer><DS.component.Loader/></PageCenterer>:this.state.bankList.length>0?<DS.component.ScrollableList>{
 				this.state.bankList.slice(0,8).map((b,i) => <DS.component.ListItem fullBleed key={i} onClick={(e) => this.props.onSelect(b)}>
-					{b.logo?<DS.component.Avatar src={`data:image/png;base64,${b.logo}`}/>:<DS.component.AvatarIcon iconName="bank" style={{color: DS.getStyle().modalPrimaryButton}}/>}
-					<DS.component.Label>{b.name}</DS.component.Label>
+					{b.logo?<DS.component.Avatar src={isValidUrl(b.logo)?b.logo:`data:image/png;base64,${b.logo}`}/>:<DS.component.AvatarIcon iconName="bank" style={{color: DS.getStyle().modalPrimaryButton}}/>}
+					{/*<div>*/}
+						<DS.component.Label >{b.name}</DS.component.Label>
+						{/*<DS.component.Label style={{marginTop:DS.spacing.xxs/2+"rem"}} size="xs">via {utils.capitalize(b.connectorMetadata.connectorName)}</DS.component.Label>
+					</div>*/}
 					<DS.component.Spacer/>
 					<DS.component.Button.Icon iconName="caretDown" style={{transform:"rotate(-"+90+"deg)"}}/>	
 				</DS.component.ListItem>)
 			}</DS.component.ScrollableList>:<PageCenterer><DS.component.Label secondary>Sorry, we couldn't find a bank with this name.</DS.component.Label></PageCenterer>
 			:<DS.component.ScrollableGrid>{//front page display as a grid
 				this.state.bankList.map((b,i) => <DS.component.GridItem key={i} onClick={(e) => this.props.onSelect(b)}>
-					{b.logo?<DS.component.Avatar src={`data:image/png;base64,${b.logo}`}/>:<DS.component.AvatarIcon iconName="bank" style={{color: DS.getStyle().modalPrimaryButton}}/>}
+					{b.logo?<DS.component.Avatar src={isValidUrl(b.logo)?b.logo:`data:image/png;base64,${b.logo}`}/>:<DS.component.AvatarIcon iconName="bank" style={{color: DS.getStyle().modalPrimaryButton}}/>}
 					<DS.component.Label style={{textOverflow:"unset",textWrap:"wrap"}}>{b.name}</DS.component.Label>
 					<DS.component.Spacer/>
 				</DS.component.GridItem>)
@@ -92,6 +97,15 @@ export class BankSelectorComponent extends BaseComponent{
 		</BankSelectorContainer>
 		
 	)}
+}
+
+const isValidUrl = urlString=> {
+	try { 
+		return Boolean(new URL(urlString)); 
+	}
+	catch(e){ 
+		return false; 
+	}
 }
 
 const PageCenterer = styled.div`
@@ -154,7 +168,7 @@ export class NewBankConnectionFlow extends Flow{//a class defining the flow logi
 					meta: {
 						title: "Loading...",
 						renderable: (ctx) => {
-							switch(ctx.institution.connectorName){
+							switch(ctx.institution.connectorMetadata.connectorName){
 								case Connectors.plaid:
 									return <AggregatorConnectorStepPlaid parentFlow={this}/>
 								case Connectors.powens:
@@ -218,7 +232,7 @@ export class AggregatorConnectorStep extends FlowStep{
 		super(props)
 		this.state = {...this.state,fetching:true}
 	}
-	getConnector(){return this.getContext().institution.connectorName}
+	getConnector(){return this.getContext().institution.connectorMetadata.connectorName}
 	onSubmit(public_token){
 		this.updateContext({public_token : public_token})
 		this.transitionWith('CONNECTED')
@@ -277,6 +291,10 @@ export class AggregatorConnectorStepPowens extends AggregatorConnectorStep{
 			}})
 			this.onSubmit(this.getContext().code)
 		}else{
+			if(!this.getContext().institution.connectorMetadata.connectorInstitutionId){
+				
+			}
+
 			ApiCaller.bankInitiateConnection(Connectors.powens,{
 				connectorInstitutionId:this.getContext().institution.connectorMetadata.connectorInstitutionId,
 				redirectRoute: Navigation.getCurrentRoute()
@@ -311,7 +329,7 @@ export class SaveConnectionStep extends FlowStep{
 	componentDidMount(){
 		let r = this.getContext()
 		ApiCaller.bankExchangeTokenAndSaveConnection(
-			r.institution.connectorName,
+			r.institution.connectorMetadata.connectorName,
 			r.public_token,
 			r.friendlyName,
 			r.institution.id,
@@ -341,7 +359,7 @@ export class UpdateBankConnectionFlow extends Flow{//a class defining the flow l
 					meta: {
 						title: "Loading...",
 						renderable: (ctx) => {
-							switch(ctx.connectorName){
+							switch(ctx.connectorMetadata.connectorName){
 								case Connectors.plaid:
 									return <AggregatorConnectorStepPlaid updateMode parentFlow={this}/>
 								case Connectors.powens:
