@@ -49,6 +49,7 @@ class GenericAnalysisView extends BaseComponent{
 	}
 	isIncome(){return this.props.analysis.isIncome()}
 	isSavings(){return this.props.analysis.isSavings()}
+	isInterest(){return this.props.analysis.isInterest()}
 	isAlert(){
 		if(this.isSavings()){return (-this.props.analysis.getNetAmount() + this.props.analysis.getMovedToSavings()) < -this.props.analysis.getExpected()}
 		else if(this.isIncome()){return (this.props.analysis.getExpected()!=0 && this.props.analysis.getNetAmount()/this.props.analysis.getExpected())<1}
@@ -128,14 +129,14 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	onMouseOut(e){if(this.state.hovering){this.updateState({ hovering: false })}}
 	getPrimaryValue(){
 		if(!this.isSavings()&&this.props.analysis.getLeftOver()==0 && this.props.analysis.getExpected()!=0){return this.props.analysis.getNetAmount()}
-		else if(this.isSavings()){
+		else if(this.isSavings() && !this.isInterest()){
 			if(this.props.analysis.getExpectedAtMaturity()<0){return this.props.analysis.getMovedToSavings()}
 			else {return this.props.analysis.getLeftOver()}
 		}else if(this.isIncome()){return this.props.analysis.getNetAmount()}
 		else {return this.props.analysis.getLeftOver()}
 	}
 	getSubtext(){
-		if(this.isSavings()){
+		if(this.isSavings() && !this.isInterest()){
 			if(this.props.analysis.getExpectedAtMaturity()>=0){//expect to unsave savings
 				return (this.props.analysis.getLeftOver()>0)?"over":"left"
 			}else{return "saved"}
@@ -155,7 +156,7 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
 					isNaN(this.getPrimaryValue())?utils.formatCurrencyAmount(0,0,undefined,undefined,Core.getPreferredCurrency()):
-					<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(!this.isSavings() && this.isIncome() || this.isSavings() && this.props.analysis.getExpectedAtMaturity()<0))}/>
+					<AnimatedNumber value={this.getPrimaryValue()} formatValue={x => format(x,true,!(!this.isSavings() && this.isIncome() || this.isSavings() && (this.props.analysis.getExpectedAtMaturity()<0 || this.isInterest())))}/>
 				}</div>
 				<div style={{color:this.getMainColor(),fontSize:"0.8rem"}}>{this.getSubtext()}</div>
 			</FlexColumn>

@@ -65,6 +65,7 @@ class Analysis {
 	isMature(){return this.reportingDate<new Date()}
 	isSavings(){return this.stream.isSavings}
 	isIncome(){return this.getExpected()>0}
+	isInterest(){return this.stream.isInterestIncome}
 	getTransactionsForStream(s){return this.transactions.filter(t => t.categorized && utils.or(s.getAllTerminalStreams(),ss => t.isAllocatedToStream(ss)))}
 	getReportingPeriodString(){
 		if(this.reportingPeriod.name == Period.quarterly.name){return "Q"+Math.ceil((this.reportingDate.getUTCMonth()+1)/3)}
