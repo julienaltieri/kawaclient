@@ -12,7 +12,7 @@ import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView
 import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
 import ProgressRing from './ProgressRing';
-import {Period} from '../Time'
+import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 
 
@@ -155,8 +155,30 @@ class TerminalStreamCard extends StreamAuditView{
 		this.handleClick = this.handleClick.bind(this)
 	}
 	getTitle(){return this.props.stream.name}
+	findUnmatched(txnArr){//used for reconciliation 
+		let debits = [], credits = [];
+		txnArr.forEach(t => {
+			if(t.amount>0){credits.push(t)}
+			else {debits.push(t)}
+		})
+		let matches = [], orphanCredits = [];
+		credits.sort(utils.sorters.desc(t => t.amount))
+		let debitAmounts = debits.map(t => t.moneyOutForStream(this.props.stream)) 
+		credits.forEach(ct => {
+			let j = debitAmounts.indexOf(ct.moneyInForStream(this.props.stream))
+			let debit = debits[j]
+			if(j>-1 && (debit.date.getTime() <= ct.date.getTime() + timeIntervals.oneWeek )){//match
+				matches.push({credit: ct, debit: debit})
+				debits.splice(j,1)
+				debitAmounts.splice(j,1)
+			}else{orphanCredits.push(ct)}
+		})
+		let unmatched = [...debits,...orphanCredits]
+		console.log({matches: matches, unmatched: unmatched, balance: utils.sum(unmatched.map(t => t.moneyInForStream(this.props.stream)))})
+	}
 	handleClick(){
 		//console.log(this.getStreamAnalysis())
+		this.findUnmatched(this.getStreamAnalysis().transactions)
 		this.updateState({detailView:!this.state.detailView})}
 	render(){		
 		return (<DS.component.ContentTile style={{height:"14rem",maxWidth: "10.5rem",width: "calc(50% - 2rem)"}}>
