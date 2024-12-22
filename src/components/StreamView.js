@@ -419,7 +419,7 @@ class CompoundStreamView extends GenericEditableStreamView{
 	}
 	onEditConfirm(e){
 		var name = e.target.parentElement.parentElement.getElementsByTagName("input")[0].value;
-		var period = e.target.parentElement.parentElement.querySelector("#period").value
+		var period = e.target.parentElement.parentElement.parentElement.querySelector("#period")[0].value
 		if(!name || name.length==0)return this.updateState({newStreamNameErrorState:(!name || name.length==0)});
 		this.props.stream.name = name;
 		this.props.stream.period = period;
