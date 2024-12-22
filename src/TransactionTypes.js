@@ -8,7 +8,7 @@ class TransactionType{
 	}
 }
 
-const TransactionTypes = {
+const TransactionTypes = {//[moneyIn, saved, transfered]
 	ambiguous: 									new TransactionType(0, 	"ambiguous", 								[0,0,0], 	"Ambiguous transaction that needs further information to be counted"),							//ex: transfer from Tellus to Savings (initially)
 	income: 									new TransactionType(1,	"income",									[1,0,0],	"Money incoming to a linked checking account from outside"),									//ex: wages
 	expense: 									new TransactionType(2,	"expense",									[-1,0,0],	"Money exiting a linked checking account"), 													//ex: groceries
@@ -27,6 +27,7 @@ const TransactionTypes = {
 	expenseFromSavings: 						new TransactionType(15,	"expenseFromSavings",						[-1,-1,0],	"Money exiting a linked savings account"), 													//(ex: pay something directly from a saving account)
 	incomeToSavings: 							new TransactionType(16,	"incomeToSavings",							[1,1,0],	"Money incoming to a linked savings account", "Interest or income"),												//ex: interest income, or DD to savings
 	systemTransaction: 							new TransactionType(17,	"systemTransaction",						[0,0,0],	"Transaction use by bank system for internal reconciliation. Cash neutral.", "System transaction")		
+
 }
 
 export default TransactionTypes

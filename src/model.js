@@ -1,6 +1,7 @@
 import {Period,timeIntervals} from './Time'
 import getEvaluator from './TransactionEvaluator'
 import Core from './core'
+import AppConfig from './AppConfig'
 import utils from './utils'
 
 export const currencies = {
@@ -79,6 +80,7 @@ class Stream{
   getDepth(){return !this.children?0:1+utils.max(this.children,c => c.getDepth())}
   getNumberOfSubdivisionInPreferredPeriod(subdiv,date){return Period[this.period].getTimeSubdivisionsCount(date,subdiv)}
   isSaving(){return this.isSavings}
+  isInterestIncomeStream(){return this.isInterestIncome}
   isIncome(){return this.getCurrentExpectedAmount()>0}
   isTerminal(){return true}
 
@@ -146,6 +148,14 @@ class Stream{
     oldParent.refreshValues()
     newParent.refreshValues()
   }
+
+  getAncestors(){
+    if(this.isRoot){return []}
+    else{
+      let a = Core.getParentOfStream(this)
+      return [...a.getAncestors(),a]
+    }
+  }
 }
 
 let TerminalStreamMap = {}
@@ -209,7 +219,9 @@ export class CompoundStream extends Stream{
     if(!date.getMonth){
       console.log(this)
     }
-    var res = this.children.filter(c => c.isActiveAtDate(date)).reduce(utils.reducers.sum(o => o.getExpectedAmountAtDateByPeriod(date,period) || 0),0);
+    var res = this.children
+      .filter(c => !(!c.isTerminal() && c.isInterestIncome) || AppConfig.featureFlags.includeInterestInBudgeting) // unless the feature of including interest income in budgetting is on, we exclude compound streams that are interest income from the general math
+      .filter(c => c.isActiveAtDate(date)).reduce(utils.reducers.sum(o => o.getExpectedAmountAtDateByPeriod(date,period) || 0),0);
     return res;
   }
   isActiveAtDate(date){
@@ -345,6 +357,10 @@ export class GenericTransaction{
   isAllocatedToStream(s){
     if(!s.children){return !!this.evaluator.getAllocationForStream(s)?.amount}
     else {return (utils.or(s.getAllTerminalStreams(),ss => this.isAllocatedToStream(ss)))}
+  }
+  isUnderInterestIncomeCompoundStream(){
+    let as = Core.getStreamById(this.streamAllocation[0]?.streamId).getAncestors()
+    return utils.or(as, s => s.isInterestIncomeStream() && !s.isTerminal())
   }
   getTransactionHash(){
     return this.description.replace(/\s\s+/g, ' ').split(" ").slice(0,3).reduce(utils.reducers.stringConcat(undefined," "),"")+"::"+

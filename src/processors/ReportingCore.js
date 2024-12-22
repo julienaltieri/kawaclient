@@ -2,11 +2,12 @@ import Core from '../core.js';
 import {Period,dateIterator,timeIntervals,createDate} from '../Time'
 import dateformat from "dateformat";
 import utils from '../utils'
+import AppConfig from '../AppConfig'
 
 
 
 export const reportingConfig = {
-	startingDay: 21,
+	startingDay: 23,
 	startingMonth: 12, //december = 12
 	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
 }
@@ -40,9 +41,14 @@ class Analysis {
 		this.reportingDate = reportingDate;
 		this.reportingPeriod = reportingPeriod; //Period.longestPeriod([reportingPeriod,Period[stream.period]]);
 		this.subReportingPeriod = subReportingPeriod;
+		let ancestors = (stream)?stream.getAncestors():undefined
 		this.reportingStartDate = this.reportingPeriod.previousDate(reportingDate);
-		this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.date.getTime() && t.date.getTime() <= this.reportingDate.getTime() && //date matches report
-														(!stream || t.isAllocatedToStream(this.stream)) //&& //transaction is related to stream
+		this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.date.getTime() && t.date.getTime() <= this.reportingDate.getTime() //date matches report
+			&& (!stream || t.isAllocatedToStream(this.stream)) //&& //transaction is related to stream
+			&& (AppConfig.featureFlags.includeInterestInBudgeting || (
+				!t.isUnderInterestIncomeCompoundStream() || !stream 
+				|| utils.or([this.stream,...ancestors], as => !as.isTerminal() && as.isInterestIncomeStream())
+			)) // if feature flag not on, exclude transactions contributing to an interest stream
 		);
 		this.abstractMethodError = new Error("Trying to call an abstract method. Stats methods must be implemented by subclasses of Analysis");
 	}

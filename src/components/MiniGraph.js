@@ -36,7 +36,7 @@ export default class MiniGraph extends GenericChartView{
 			return this.getPeriodReports()
 		}
 	}
-	getAccruedPlottedValue(r){return (this.props.stream.isSavings?-1:1)*(r.getLeftOver()||0)}
+	getAccruedPlottedValue(r){return ((this.props.stream.isSavings||this.props.stream.isInterestIncome)?-1:1)*(r.getLeftOver()||0)}
 	dateToTickDate(d){return (this.props.analysis.subReportingPeriod.name==Period.monthly.name)?(new Date(d)).setDate(1):d.getTime()}
 	getData(includeProjection=false){
 		if(!!this.data){return includeProjection?this.data:this.data.slice(0,this.data.length-1)}
