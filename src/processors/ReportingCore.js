@@ -7,7 +7,7 @@ import AppConfig from '../AppConfig'
 
 
 export const reportingConfig = {
-	startingDay: 23,
+	startingDay: 21,
 	startingMonth: 12, //december = 12
 	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
 }
