@@ -357,9 +357,10 @@ export class UpdateBankConnectionFlow extends Flow{//a class defining the flow l
 						CLOSE: {target:'fail'}
 					},
 					meta: {
-						title: "Loading...",
+						title: "Loading...", 		
 						renderable: (ctx) => {
-							switch(ctx.connectorMetadata.connectorName){
+							console.log(ctx)
+							switch(ctx.connectorName){
 								case Connectors.plaid:
 									return <AggregatorConnectorStepPlaid updateMode parentFlow={this}/>
 								case Connectors.powens:

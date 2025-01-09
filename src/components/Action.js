@@ -9,6 +9,7 @@ import Core from '../core.js';
 import utils from '../utils'
 import {UpdateBankConnectionFlow} from './BankUI.js'
 import ApiCaller from '../ApiCaller'
+import {getBankErrorMessage} from '../Bank.js'
 
 
 export const ActionStyles = {
@@ -174,8 +175,8 @@ class BankReconnectActionCard extends ActionCard{
 	}
 	renderContent(inFocus){
 		return <ActionsContainerBox style={{opacity: (inFocus?1:0.5),height: "5rem",alignContent: "center",padding: "2rem",backgroundColor: DS.getStyle().alert,color:"white", borderRadius: DS.borderRadius,"marginTop":"0"}}>
-			You bank account "{this.props.data.name}" wants to be reconnected<br/><br/>
-            {this.state.working?<DS.component.Loader/>:<span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>}
+			{this.props.data.name}: {getBankErrorMessage(this.props.data)}<br/><br/>
+            {this.state.working?<DS.component.Loader/>:<span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Continue</DS.component.Button.Action></span>}
 		</ActionsContainerBox>
 	}
 }

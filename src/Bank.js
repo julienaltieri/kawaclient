@@ -25,7 +25,7 @@ export const getBankErrorMessage = function(itemData){
   errorCodeAccessor[Connectors.plaid] = i => i.error?.error_code
   errorCodeAccessor[Connectors.powens] = i => i.error?.error_code
 
-  return BankErrorMessages[itemData.connectorName][errorCodeAccessor[itemData.connectorName](itemData) || "_default"]+itemData.error?.error_message;
+  return BankErrorMessages[itemData.connectorName][errorCodeAccessor[itemData.connectorName](itemData) || "_default"]||itemData.error?.error_message;
 
 }
 
@@ -42,7 +42,7 @@ const BankErrorMessages = {
   },
   powens:{
     SCARequired: "",
-    webauthRequired: "",
+    webauthRequired: "A periodic re-authentication is required to meet bank data security standards. This is normal and only takes a minute.",
     additionalInformationNeeded: "",
     actionNeeded: "",
     passwordExpired: "",

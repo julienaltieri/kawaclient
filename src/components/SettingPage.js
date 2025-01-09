@@ -126,8 +126,8 @@ class BCSettingItem extends BaseComponent{
         </div>
         {this.allowDelete?<span><DS.component.Button.Action small onClick={e => ApiCaller.bankRemoveItem(this.props.data.itemId).then(() => this.props.parent.reloadData())}>Delete</DS.component.Button.Action></span>:""}
         {this.props.data.error?<Row style={{"marginTop":"1rem","padding":"1rem"}}>
-          <DS.component.Label style={{}}>{getBankErrorMessage(this.props.data)}</DS.component.Label>
-          <span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Resolve</DS.component.Button.Action></span>
+          <DS.component.Label style={{textWrap:"auto"}}>{getBankErrorMessage(this.props.data)}</DS.component.Label>
+          <span><DS.component.Button.Action small onClick={this.presentBankUpdateFlow}>Continue</DS.component.Button.Action></span>
         </Row>:""}
     </DS.component.ContentTile>
   }
