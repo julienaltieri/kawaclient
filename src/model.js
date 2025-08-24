@@ -312,7 +312,8 @@ export class TerminalStream extends Stream{
 
 export class GenericTransaction{
   amount;
-  date; 
+  date;
+  frontendDate;// used to backdate transactions without affecting their ID, only for categorized transactions
   description;
   categorized;
   streamAllocation;
@@ -324,9 +325,10 @@ export class GenericTransaction{
   userDefinedTransactionType;
   evaluator;
 
-  constructor(dateString,amount,description,streamAllocation,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType,connectorName,institutionId){
+  constructor(dateString,amount,description,streamAllocation,userInstitutionAccountId,amazonOrderDetails,authDate,id,transactionId,pairedTransferTransactionId,disambiguationId,userDefinedTransactionType,connectorName,institutionId,frontendDate){
     this.amount = amount
     this.date = new Date(dateString)
+    if(frontendDate)this.frontendDate = new Date(frontendDate)
     this.description = description
     this.streamAllocation = streamAllocation
     this.categorized = !!streamAllocation
@@ -382,6 +384,9 @@ export class GenericTransaction{
     if(!m){return};
     return "Money in: " + m[0] + ", Saved: "+m[1]+", Transfered: "+m[2];
   }
+  getDisplayDate(){
+    return this.frontendDate || this.date
+  }
   /*
   Transactions from bank APIs come with a date (not a timestamp). 
   When converting the date into actual timestamps for easy manipulation, they will use the GMT time.
@@ -406,7 +411,8 @@ export class GenericTransaction{
       cat.disambiguationId,
       cat.userDefinedTransactionType,
       cat.connectorName,
-      cat.institutionId
+      cat.institutionId,
+      cat.frontendDate
     )
     t.streamAllocation.forEach(a => a.type = a.type || "value")
     return t
@@ -417,17 +423,18 @@ export class GenericTransaction{
       txn.date,
       txn.amount,
       txn.description,
-      undefined,
+      undefined, //streamAllocation not supported for uncategorised transactions
       txn.userInstitutionAccountId,
-      undefined,
+      undefined, //amazonOrderDetails not supported for uncategorised transactions
       txn.transactionDate,
       txn.id,
       txn.id,
-      undefined,
+      undefined, //pairedTransferTransactionId not supported for uncategorised transactions
       txn.disambiguationId,
-      undefined,
+      undefined, //userDefinedTransactionType not supported for uncategorised transactions
       txn.connectorName,
-      txn.institutionId
+      txn.institutionId,
+      undefined, //frontendDate not supported for uncategorised transactions
     )
   }
 }

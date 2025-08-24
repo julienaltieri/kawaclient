@@ -25,7 +25,7 @@ export default class CategorizeAction extends Action{
 		super(id,appContext,startOutOfTheWay,onActionConcluded);
 		this.transaction = transaction;
 	}
-	getSortValue(){return this.transaction.date.getTime()}
+	getSortValue(){return this.transaction.getDisplayDate().getTime()}
 	renderComponent(inFocus){return (<CategorizeActionCard transaction={this.transaction} startsOutOfTheWay={this.startsOutOfTheWay} appContext={this.appContext} inFocus={inFocus} id={this.id} key={this.id} parentAction={this}/>)}
 	willEnterInFocus(){return this.actionCard?this.actionCard.willEnterInFocus():Promise.resolve()}
 }
@@ -114,7 +114,7 @@ class CategorizeActionCard extends ActionCard{
 			if(createRule){Core.createCategorizationRule({matchingString:this.inputMatchingString||key, allocations:[{streamId:s.id,type:"percent",amount:1.0}]})} 
 			else if(categorizeOtherTransactions && refusedCreateRule) {Core.addMatchingStringToCategorizationExclusionList(key)}
 
-			var txnsToCategorize = (categorizeOtherTransactions?branch:(amzNeighbors||[this.props.transaction])).sort(utils.sorters.asc(t => t.date))
+			var txnsToCategorize = (categorizeOtherTransactions?branch:(amzNeighbors||[this.props.transaction])).sort(utils.sorters.asc(t => t.getDisplayDate()))
 			this.props.parentAction.onActionConcluded(this.props.parentAction,txnsToCategorize,[{streamId: s.id,"type":"percent","amount":1.0}]) 
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
@@ -144,8 +144,8 @@ class CategorizeActionCard extends ActionCard{
 	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return this.props.transaction.amazonOrderDetails}
-	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.date))}
-	getAvailableStreams(){return Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date())).sort(utils.sorters.asc(s => s.name.charCodeAt()))}
+	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.getDisplayDate()))}
+	getAvailableStreams(){return Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date())).sort(utils.sorters.asc(s => s.name.charCodeAt()))}
 	getStreamString(s){return s.name+(!s.isActiveNow()?" (old)":"")}
 	renderContent(){
 		var amz = this.getAmazonData();
@@ -164,7 +164,7 @@ class CategorizeActionCard extends ActionCard{
 			{this.state.fetching?<div></div>:
 			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.checkmarkVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
 					{(this.state.recStreams.length)?this.state.recStreams
-					.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
+					.filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
 					<DS.component.StreamTag onClick={(e)=> this.onSplitClicked()}>Split</DS.component.StreamTag>
 					<div ref={this.moreButtonRef}><DS.component.StreamTag style={{paddingLeft:"1rem",paddingRight:"1rem"}} highlight={true} key="more" 
@@ -188,7 +188,7 @@ export class TransactionView extends BaseComponent{
 	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return this.props.transaction.amazonOrderDetails}
-	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.date))}
+	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.getDisplayDate()))}
 	handleAmzItemArrowClicked(e,right){
 		var offSet = (right)?1:-1;
 		var amzItemsCnt = this.props.transaction.amazonOrderDetails.items.length;
@@ -231,7 +231,7 @@ export class TransactionView extends BaseComponent{
 				{amz?<div>
 					<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
 					<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
-					:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
+					:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 				}
 			</TxInfoContainer>
 			<Spacer/>

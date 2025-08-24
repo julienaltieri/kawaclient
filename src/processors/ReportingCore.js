@@ -43,7 +43,7 @@ class Analysis {
 		this.subReportingPeriod = subReportingPeriod;
 		let ancestors = (stream)?stream.getAncestors():undefined
 		this.reportingStartDate = this.reportingPeriod.previousDate(reportingDate);
-		this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.date.getTime() && t.date.getTime() <= this.reportingDate.getTime() //date matches report
+		this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.getDisplayDate().getTime() && t.getDisplayDate().getTime() <= this.reportingDate.getTime() //date matches report
 			&& (!stream || t.isAllocatedToStream(this.stream)) //&& //transaction is related to stream
 			&& (AppConfig.featureFlags.includeInterestInBudgeting || (
 				!t.isUnderInterestIncomeCompoundStream() || !stream 
@@ -67,7 +67,7 @@ class Analysis {
 
 	//helpers and getters
 	getAggregateSum(arr,accessor = x => x){return utils.round2Decimals(arr.reduce(utils.reducers.sum(accessor),0))}
-	getTransactionsBetweenDates(sd,ed){return this.transactions.filter(t => sd.getTime() < t.date.getTime() && t.date.getTime() <= ed.getTime())}
+	getTransactionsBetweenDates(sd,ed){return this.transactions.filter(t => sd.getTime() < t.getDisplayDate().getTime() && t.getDisplayDate().getTime() <= ed.getTime())}
 	isMature(){return this.reportingDate<new Date()}
 	isSavings(){return this.stream.isSavings}
 	isIncome(){return this.getExpected()>0}

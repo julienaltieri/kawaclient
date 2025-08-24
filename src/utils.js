@@ -24,7 +24,7 @@ exports.createDate = function(year=2000,month=0,day=0,hours=0,minutes=0,seconds=
 exports.chunk = (a,n)=>[...Array(Math.ceil(a.length/n))].map((_,i)=>a.slice(n*i,n+n*i));
 
 //pretty-print a transaction
-exports.printTransaction = function(t){console.log(`${(new Date(t.date)).toDateString()} ${t.Amount} : ${t.Description}`)}
+exports.printTransaction = function(t){console.log(`${(new Date(t.getDisplayDate())).toDateString()} ${t.Amount} : ${t.Description}`)}
 
 //reducers
 exports.reducers = {

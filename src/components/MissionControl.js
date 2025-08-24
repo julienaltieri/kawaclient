@@ -41,7 +41,7 @@ class MissionControl extends BaseComponent{
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {
-				var txns = res.filter(t => !t.categorized).sort(utils.sorters.asc(t => t.date.getTime()));
+				var txns = res.filter(t => !t.categorized).sort(utils.sorters.asc(t => t.getDisplayDate().getTime()));
 				var startingId = this.state.actionQueueManager.getNextAvailableId();
 				this.state.actionQueueManager.insertActions(txns.map((t,i) => new CategorizeAction(startingId+i+1,this,false,t,this.onCategorizeActionConcluded)).reverse());
 				this.insertClarificationActionsIfNeeded(res.filter(t => t.categorized))

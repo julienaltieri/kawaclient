@@ -173,6 +173,7 @@ class ApiCaller{
 				t.transaction.transactionAmount = t.transaction.amount
 				t.transaction.transactionDescription = t.transaction.description
 				t.transaction.transactionDate = t.transaction.date
+				t.transaction.frontendDate = t.transaction.frontendDate
 				t.transaction.transactionId = t.transaction.id
 				return t.transaction
 			}))

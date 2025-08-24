@@ -255,7 +255,7 @@ class ExpectationChangePannel extends BaseComponent{
 		else{
 			let expStart = this.props.expChangeData.startDate.getTime()
 			console.log(this.props.analysis.transactions)
-			let oldestTransactionDate = this.props.analysis.transactions.sort(utils.sorters.asc(t => t.date))[0]?.date.getTime()
+			let oldestTransactionDate = this.props.analysis.transactions.sort(utils.sorters.asc(t => t.getDisplayDate()))[0]?.getDisplayDate().getTime()
 			return this.props.report.reportingDate.getTime() < new Date().getTime() && (!oldestTransactionDate || 
 					(oldestTransactionDate > expStart + (this.props.report.reportingDate.getTime()-this.props.report.reportingStartDate.getTime()))) /*since reportingStartDate and reportingDate of the next report match, this calculation is equivalent to the jump calculated when moving up*/
 		}
@@ -364,7 +364,7 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 					<EllipsisText style={{width: "6rem"}}>{this.getReportDateString()}</EllipsisText>
 					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,undefined,undefined,Core.getPreferredCurrency())}</div>
 				</TransactionFeedHeaderViewContainer>
-				{this.props.analysis.transactions.sort(utils.sorters.desc(t => t.date)).map((t,i) => (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
+				{this.props.analysis.transactions.sort(utils.sorters.desc(t => t.getDisplayDate())).map((t,i) => (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
 					<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
 					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</div>
 				</MiniTransactionContainer>))}

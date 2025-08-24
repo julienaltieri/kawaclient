@@ -192,7 +192,7 @@ export class TransactionTypeClarificationAction extends Action{
 		this.transaction = transaction;
 		this.allocatedStream = Core.getStreamById(allocation.streamId);
 	}
-	getSortValue(){return this.transaction.date.getTime()}
+	getSortValue(){return this.transaction.getDisplayDate().getTime()}
 	renderComponent(inFocus){return (<TransactionTypeClarificationActionCard appContext={this.appContext} allocatedStream={this.allocatedStream} inFocus={inFocus} id={this.id} key={this.id} parentAction={this} transaction={this.transaction} startsOutOfTheWay={this.startsOutOfTheWay}/>)}
 }
 
@@ -213,7 +213,7 @@ class TransactionTypeClarificationActionCard extends ActionCard{
 					<div style={{display:"flex",justifyContent:"space-between",backgroundColor:DS.getStyle().UIElementBackground,padding:"0.5rem",margin:"0.5rem",borderRadius:"0.2rem"}}>
 						<div>
 							<span>{this.props.transaction.description}</span>
-							<div style={{marginTop:"0.2rem",fontSize:"0.7rem",textAlign:"left"}}>{utils.formatDateShort(this.props.transaction.date)}</div>
+							<div style={{marginTop:"0.2rem",fontSize:"0.7rem",textAlign:"left"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 						</div>
 						<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>
 							<span>{utils.formatCurrencyAmount(this.props.transaction.evaluator.getAllocationForStream(this.props.allocatedStream)?.amount,null,null,null,Core.getPreferredCurrency())}</span>
