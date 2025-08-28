@@ -29,7 +29,7 @@ export class FrequencyRing extends BaseComponent{
 }
 
 
-/*props: [ccw, progress, subdivisions, color, thickness, highlight]*/
+/*props: [ccw, progress, subdivisions, color, thickness, highlight, highlightColor]*/
 export default class ProgressRing extends BaseComponent{
 	getScaleFactor(){return 1.2}
 	getHighlightThicknessFactor(){return 1.5}
@@ -79,7 +79,7 @@ export default class ProgressRing extends BaseComponent{
 				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.props.color}			clipPath={this.getClipPath()}
 										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>
 				{this.props.highlightLastSubdivision?
-				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness*this.getHighlightThicknessFactor()} color={this.props.highlighColor} clipPath={this.getClipPath(this.getHighlightStart(),this.props.thickness*this.getHighlightThicknessFactor())}
+				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness*this.getHighlightThicknessFactor()} color={this.props.highlightColor} clipPath={this.getClipPath(this.getHighlightStart(),this.props.thickness*this.getHighlightThicknessFactor())}
 										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>:""}
 			</svg>
 		</ProgressRingContainer>)

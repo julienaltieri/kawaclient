@@ -112,7 +112,7 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 			{this.props.hovering?<FrequencyRing  subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} frequencies={this.props.analysis.parentStreamAnalysis.getFrequencyHistogramAtDate(this.props.analysis.reportingDate)} />:""}
 			<ProgressRing 	radius={this.getViewConfig().moneyRadius} thickness={this.getViewConfig().moneyThickness} ccw={this.isCCW()}  progress={this.getPrimaryPercentage()} 		color={this.getMainColor()}/>
 			<ProgressRing 	radius={this.getViewConfig().timeRadius}  thickness={this.getViewConfig().timeThickness}  ccw={true}			progress={this.getSecondaryPercentage()}  	color={DS.getStyle().timePeriod}
-							subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} 	subdivGapAngles={this.getViewConfig().subdivGapAngles}	highlightLastSubdivision={true} 			highlighColor={DS.getStyle().timePeriodHighlight}/>
+							subdivisions={Math.round(this.props.analysis.getSubdivisionsCount())} 	subdivGapAngles={this.getViewConfig().subdivGapAngles}	highlightLastSubdivision={true} 			highlightColor={DS.getStyle().timePeriodHighlight}/>
 		</FlexColumn>)
 	}
 }
