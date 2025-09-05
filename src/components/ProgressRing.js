@@ -41,46 +41,69 @@ export default class ProgressRing extends BaseComponent{
 	getDashes(){return `${this.getCircumference()} ${this.getCircumference()}`}
 	getDashOffset(x){return this.getCircumference()*(1-(this.props.subdivisions?(1+Math.floor(0.99999*x*this.props.subdivisions))/this.props.subdivisions:x))}
 	getHighlightStart(){return (Math.floor(0.99999*this.props.progress*this.props.subdivisions))/this.props.subdivisions}//where the highlight should start
-	getClipPath(start=0,thickness=this.props.thickness){//used to draw subdivisions
-		if(!this.props.subdivisions)return;
-		var angles = [], gap = this.getSubdivisionGapAngles(), r = this.getRadius(), n = this.props.subdivisions;
-		let adj = (thickness-this.props.thickness)/2*16
-		var [ox,oy] = [1.03*(this.getRadius()+adj),1.03*(this.getRadius()+adj)]
-		const getCoordinatesForPercent = (x,rr) => [ox+rr*Math.cos(2*Math.PI*x), oy+rr*Math.sin(2*Math.PI*x)];
 
-		//computes the positions of the arc points
-		angles.push(gap/2); 
-		for (var i = 1; i < n; i++) {angles = [...angles, i*1/n - gap/2 , i*1/n + gap/2]}
-		angles.push(1-gap/2); 
-		var index = utils.searchInsertAsc(angles, start); 
-		angles = angles.slice(index,angles.length);
-		var pos = angles.map(a => getCoordinatesForPercent(a,2*r)); //outer circle bound
-		var lowPos = angles.map(a => getCoordinatesForPercent(a,0.1*r)); //inner circle bound
-		const idx = (i,k=0) => (2*i+k)%pos.length; //index mapping function
-
-		//create the path array
-		var pathArray =  [`M ${lowPos[0][0]} ${lowPos[0][1]}`];
-		for (var i = 0; i < angles.length/2; i++) {
-			var xx = angles[i+1]-angles[i] //difference between two arc points
-			var [a1x,a1y] = pos[idx(i)], [a2x,a2y] = pos[idx(i,1)]; //arc points
-			var [o2x,o2y] = lowPos[idx(i,1)], [o3x,o3y] = lowPos[idx(i,2)]//arc points
-			pathArray.push([
-				`L ${a1x} ${a1y}`,`A ${2*r} ${2*r} 0 ${xx>.5?1:0} ${1} ${a2x} ${a2y}`,
-				`L ${o2x} ${o2y}`,`A ${0.1*r} ${0.1*r} 0 ${xx>.5?1:0} ${1} ${o3x} ${o3y}`,
-			].join(' '))
+	getFilledPath(start = 0, end = 1, radius = 50, thickness = 10) {
+		if (!this.props.subdivisions) return ''; 
+		
+		const n = this.props.subdivisions;
+		const gap = this.getSubdivisionGapAngles(); // fraction of each dash removed for spacing
+		const cx = 50 * this.getScaleFactor(); //50 is the center of the path bounding box, which we scale 
+		const cy = 50 * this.getScaleFactor();
+		const rOuter = radius + thickness / 2;
+		const rInner = radius - thickness / 2;
+	
+		const pathSegments = [];
+		// Loop through subdivisions
+		for (let i = 0; i < n; i++) {
+			// Subdivision fractional range
+			let subStart = i / n + gap / 2;
+			let subEnd = (i + 1) / n - gap / 2;
+		
+	
+			// Skip subdivisions outside [start, end]
+			if (subEnd <= start || subStart >= end) continue;
+	
+			// Clamp the dash to the [start, end] range
+			subStart = Math.max(subStart, start);
+			subEnd = Math.min(subEnd, end);
+			
+	
+			// Convert to coordinates
+			const startOuter = [cx + rOuter * Math.cos(2 * Math.PI * subStart), cy + rOuter * Math.sin(2 * Math.PI * subStart)];
+			const endOuter = [cx + rOuter * Math.cos(2 * Math.PI * subEnd), cy + rOuter * Math.sin(2 * Math.PI * subEnd)];
+			const endInner = [cx + rInner * Math.cos(2 * Math.PI * subEnd), cy + rInner * Math.sin(2 * Math.PI * subEnd)];
+			const startInner = [cx + rInner * Math.cos(2 * Math.PI * subStart), cy + rInner * Math.sin(2 * Math.PI * subStart)];
+	
+			// Determine if the arc is > 180°
+			const delta = subEnd - subStart;
+			const largeArc = delta > 0.5 ? 1 : 0;
+	
+			// Build path for this dash
+			const segmentPath = [
+				`M ${startInner[0]} ${startInner[1]}`,
+				`L ${startOuter[0]} ${startOuter[1]}`,`A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${endOuter[0]} ${endOuter[1]}`,
+				`L ${endInner[0]} ${endInner[1]}`,`A ${rInner} ${rInner} 0 ${largeArc} 0 ${startInner[0]} ${startInner[1]}`,
+				'Z'
+			].join(' ');
+	
+			pathSegments.push(segmentPath);
 		}
-		return pathArray.join(' '); 
+		return pathSegments.join(' ');
 	}
+	
 	render(){
 		return(
 			<ProgressRingContainer style={{transform: "scaleX("+(this.shouldFlip()?-1:1)+")"}}>
-			<svg width="100%" height="100%" viewBox={"0 0 "+this.getScaleFactor()*100+" "+this.getScaleFactor()*100} preserveAspectRatio="none" style={{"transform":"rotate(-90deg)","overflow":"visible"}}>
-				<AnimatedStyledCircle   r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.getBackgroundColor()} 	clipPath={this.getClipPath()}/>
-				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.props.color}			clipPath={this.getClipPath()}
-										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>
-				{this.props.highlightLastSubdivision?
-				<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness*this.getHighlightThicknessFactor()} color={this.props.highlightColor} clipPath={this.getClipPath(this.getHighlightStart(),this.props.thickness*this.getHighlightThicknessFactor())}
-										dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>:""}
+			<svg shape-rendering="geometricPrecision" width="100%" height="100%" viewBox={"0 0 "+this.getScaleFactor()*100+" "+this.getScaleFactor()*100} preserveAspectRatio="none" style={{"transform":"rotate(-90deg)","overflow":"visible"}}>
+				{!this.props.subdivisions?<g>
+					<AnimatedStyledCircle   r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.getBackgroundColor()}/>
+					<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.props.color} dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>
+ 				</g>:<g>
+					<path d={this.getFilledPath(0,1,this.getRadius(),this.props.thickness*DesignSystem.remToPx)} fill={this.getBackgroundColor()} />
+					<path d={this.getFilledPath(0,this.props.progress,this.getRadius(),this.props.thickness*DesignSystem.remToPx)} fill={this.props.color} />
+					{this.props.highlightLastSubdivision?<path d={this.getFilledPath(this.getHighlightStart(),Math.max(this.props.progress,1/this.props.subdivisions),this.getRadius(),this.props.thickness*this.getHighlightThicknessFactor()*DesignSystem.remToPx)} fill={this.props.highlightColor} />:""}
+				</g>}
+			
 			</svg>
 		</ProgressRingContainer>)
 	}	
@@ -93,7 +116,6 @@ const AnimatedStyledCircle = styled.circle`
     stroke-dasharray: ${props => (props.dashArray)};
     stroke-dashoffset: ${props => (props.dashOffset)};
     transition: stroke-dashoffset 1s;
-    clip-path: ${props => "path('"+props.clipPath+"')"};
 `  
   
    

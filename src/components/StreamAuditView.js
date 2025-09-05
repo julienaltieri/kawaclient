@@ -11,7 +11,6 @@ import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,EndOfPeri
 import {StreamObservationPeriodView} from './StreamObservationPeriodAnalysisView'
 import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
-import ProgressRing from './ProgressRing';
 import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 

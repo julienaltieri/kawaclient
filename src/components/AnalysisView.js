@@ -83,7 +83,7 @@ export class TimeAndMoneyProgressView extends GenericPeriodReportView{
 		moneyRadius: this.props.viewConfig?.moneyRadius || 52,
 		moneyThickness: this.props.viewConfig?.moneyThickness || 0.9,
 		timeRadius: this.props.viewConfig?.timeRadius || 71,
-		timeThickness: this.props.viewConfig?.timeThickness || 0.2,
+		timeThickness: this.props.viewConfig?.timeThickness || 0.25,
 		subdivGapAngles: this.props.viewConfig?.subdivGapAngles || 0.005
 	}}
 	isCCW(){return ! (this.isIncome() || this.isSavings())}
