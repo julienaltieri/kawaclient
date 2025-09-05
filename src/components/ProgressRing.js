@@ -42,67 +42,64 @@ export default class ProgressRing extends BaseComponent{
 	getDashOffset(x){return this.getCircumference()*(1-(this.props.subdivisions?(1+Math.floor(0.99999*x*this.props.subdivisions))/this.props.subdivisions:x))}
 	getHighlightStart(){return (Math.floor(0.99999*this.props.progress*this.props.subdivisions))/this.props.subdivisions}//where the highlight should start
 
-	getFilledPath(start = 0, end = 1, radius = 50, thickness = 10) {
-		if (!this.props.subdivisions) return ''; 
-		
+	getDashedCircle(start = 0, end = 1, radius = 50, thickness = 10, color = "black") {
+	  
+		// With subdivisions
 		const n = this.props.subdivisions;
-		const gap = this.getSubdivisionGapAngles(); // fraction of each dash removed for spacing
-		const cx = 50 * this.getScaleFactor(); //50 is the center of the path bounding box, which we scale 
+		const gap = this.getSubdivisionGapAngles(); // fraction of circle per gap
+		const cx = 50 * this.getScaleFactor();
 		const cy = 50 * this.getScaleFactor();
-		const rOuter = radius + thickness / 2;
-		const rInner = radius - thickness / 2;
-	
-		const pathSegments = [];
-		// Loop through subdivisions
+		const circumference = 2 * Math.PI * radius;
+	  
+		const circles = [];
+	  
 		for (let i = 0; i < n; i++) {
-			// Subdivision fractional range
-			let subStart = i / n + gap / 2;
-			let subEnd = (i + 1) / n - gap / 2;
-		
-	
-			// Skip subdivisions outside [start, end]
-			if (subEnd <= start || subStart >= end) continue;
-	
-			// Clamp the dash to the [start, end] range
-			subStart = Math.max(subStart, start);
-			subEnd = Math.min(subEnd, end);
-			
-	
-			// Convert to coordinates
-			const startOuter = [cx + rOuter * Math.cos(2 * Math.PI * subStart), cy + rOuter * Math.sin(2 * Math.PI * subStart)];
-			const endOuter = [cx + rOuter * Math.cos(2 * Math.PI * subEnd), cy + rOuter * Math.sin(2 * Math.PI * subEnd)];
-			const endInner = [cx + rInner * Math.cos(2 * Math.PI * subEnd), cy + rInner * Math.sin(2 * Math.PI * subEnd)];
-			const startInner = [cx + rInner * Math.cos(2 * Math.PI * subStart), cy + rInner * Math.sin(2 * Math.PI * subStart)];
-	
-			// Determine if the arc is > 180°
-			const delta = subEnd - subStart;
-			const largeArc = delta > 0.5 ? 1 : 0;
-	
-			// Build path for this dash
-			const segmentPath = [
-				`M ${startInner[0]} ${startInner[1]}`,
-				`L ${startOuter[0]} ${startOuter[1]}`,`A ${rOuter} ${rOuter} 0 ${largeArc} 1 ${endOuter[0]} ${endOuter[1]}`,
-				`L ${endInner[0]} ${endInner[1]}`,`A ${rInner} ${rInner} 0 ${largeArc} 0 ${startInner[0]} ${startInner[1]}`,
-				'Z'
-			].join(' ');
-	
-			pathSegments.push(segmentPath);
+		  let subStart = i / n + gap / 2;
+		  let subEnd = (i + 1) / n - gap / 2;
+	  
+		  // skip if outside requested range
+		  if (subEnd <= start || subStart >= end) continue;
+	  
+		  // clamp subdivision to [start, end]
+		  subStart = Math.max(subStart, start);
+		  subEnd = Math.min(subEnd, end);
+	  
+		  const arcLength = (subEnd - subStart) * circumference;
+		  const dashArray = `${arcLength} ${circumference - arcLength}`;
+		  const dashOffset = -subStart * circumference;
+	  
+		  circles.push(
+			<circle
+			  key={`${i}-${color}`}
+			  cx={cx}
+			  cy={cy}
+			  r={radius}
+			  fill="none"
+			  stroke={color}
+			  strokeWidth={thickness}
+			  strokeDasharray={dashArray}
+			  strokeDashoffset={dashOffset}
+			  pathLength={circumference}
+			  shapeRendering="geometricPrecision"
+			/>
+		  );
 		}
-		return pathSegments.join(' ');
-	}
-	
+	  
+		return circles;
+	  }
+
 	render(){
 		return(
 			<ProgressRingContainer style={{transform: "scaleX("+(this.shouldFlip()?-1:1)+")"}}>
-			<svg shape-rendering="geometricPrecision" width="100%" height="100%" viewBox={"0 0 "+this.getScaleFactor()*100+" "+this.getScaleFactor()*100} preserveAspectRatio="none" style={{"transform":"rotate(-90deg)","overflow":"visible"}}>
+			<svg shapeRendering="geometricPrecision" width="100%" height="100%" viewBox={"0 0 "+this.getScaleFactor()*100+" "+this.getScaleFactor()*100} preserveAspectRatio="none" style={{"transform":"rotate(-90deg)","overflow":"visible"}}>
 				{!this.props.subdivisions?<g>
 					<AnimatedStyledCircle   r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.getBackgroundColor()}/>
 					<AnimatedStyledCircle 	r={this.getRadius()} cx="50%" cy="50%" thickness={this.props.thickness} color={this.props.color} dashArray={this.getDashes()} dashOffset={this.getDashOffset(this.props.progress)}/>
  				</g>:<g>
-					<path d={this.getFilledPath(0,1,this.getRadius(),this.props.thickness*DesignSystem.remToPx)} fill={this.getBackgroundColor()} />
-					<path d={this.getFilledPath(0,this.props.progress,this.getRadius(),this.props.thickness*DesignSystem.remToPx)} fill={this.props.color} />
-					{this.props.highlightLastSubdivision?<path d={this.getFilledPath(this.getHighlightStart(),Math.max(this.props.progress,1/this.props.subdivisions),this.getRadius(),this.props.thickness*this.getHighlightThicknessFactor()*DesignSystem.remToPx)} fill={this.props.highlightColor} />:""}
-				</g>}
+					{this.getDashedCircle(0,1,this.getRadius(),this.props.thickness*DesignSystem.remToPx,this.getBackgroundColor())}
+					{this.getDashedCircle(0,this.props.progress,this.getRadius(),this.props.thickness*DesignSystem.remToPx,this.props.color)}
+					{this.props.highlightLastSubdivision?this.getDashedCircle(this.getHighlightStart(),Math.max(this.props.progress,1/this.props.subdivisions),this.getRadius(),this.props.thickness*this.getHighlightThicknessFactor()*DesignSystem.remToPx,this.props.highlightColor):""}
+				}</g>}
 			
 			</svg>
 		</ProgressRingContainer>)
