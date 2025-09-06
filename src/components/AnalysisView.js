@@ -522,7 +522,7 @@ export class GenericChartView extends GenericAnalysisView{
 			chartPadding: {top:Core.isMobile()?60:20,bottom:Core.isMobile()?20:10,left:10,right:Core.isMobile()?120:60},
 			midgroundOpacity: 0.5, 									//opacity of middle ground items (trends and projections)
 			backgroundOpacity: DS.backgroundOpacity, 				//opacity of background items (area charts)
-			fontSizeTitle:Core.isMobile()?40:20,										//Chart title
+			fontSizeTitle:Core.isMobile()?30:20,										//Chart title
 			fontSizeHeader:Core.isMobile()?28:14,										//Big numbers
 			fontSizeBody:Core.isMobile()?14:7,											//Everthing else
 		}
@@ -618,7 +618,6 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			annotationTooltipHitRadius: Core.isMobile()?30:15,
 			secondaryLabelsOffset: Core.isMobile()?100:0,
 			chartYScaleFactor: Core.isMobile()?1.1:1,
-			fontSizeTitle: Core.isMobile()?14:this.style.fontSizeTitle,    // smaller title for mobile
 		}
 		//since the graph is expensive to render, we use internal eventing to update it instead of state
 		this.listeners = []
