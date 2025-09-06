@@ -804,7 +804,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners=[];
 
 		return (<DS.component.ContentTile 
-			style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",margin:0,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"l"]}}>
+			style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",margin:0,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"m"]}}>
 			<div style={{position:"relative",width:"100%",height:"100%"}}>
 		       	<svg style={{position:"absolute",width:0}}><defs>
 			        <radialGradient id="alertHighlight">

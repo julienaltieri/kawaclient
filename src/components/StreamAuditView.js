@@ -270,7 +270,7 @@ const AuditViewContainer = styled(FlexColumn)`
 `
 
 const TopLevelStreamAuditViewContainer = styled(FlexColumn)`
-    margin-bottom: ${props => !props.isCollapsed ? DS.spacing.m +'rem' : DS.spacing.xs +'rem'};
+    margin-bottom: ${props => props.isCollapsed ? (Core.isMobile()?DS.spacing.xs:DS.spacing.m) +'rem' : DS.spacing.m +'rem'};
     justify-content: space-between;
     align-items: flex-start;
    	width:  ${props => !props.isCollapsed ? '100%' : 'calc(100% - '+ 2*DS.spacing.xs +'rem)'};
