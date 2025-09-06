@@ -618,6 +618,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			annotationTooltipHitRadius: Core.isMobile()?30:15,
 			secondaryLabelsOffset: Core.isMobile()?100:0,
 			chartYScaleFactor: Core.isMobile()?1.1:1,
+			fontSizeTitle: Core.isMobile()?14:this.style.fontSizeTitle,    // smaller title for mobile
 		}
 		//since the graph is expensive to render, we use internal eventing to update it instead of state
 		this.listeners = []
@@ -753,15 +754,36 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		}
 		const getSavedInPeriod = (fr) => {return (fr && this.hovering)?"Saved "+utils.formatCurrencyAmount(getIncrement("savings",fr),0,false,undefined,Core.getPreferredCurrency()):""}
 		const getExpensesInPeriod = (fr) => {return (fr && this.hovering)?"Spent "+utils.formatCurrencyAmount(-getIncrement("expenses",fr),0,false,undefined,Core.getPreferredCurrency()):""}
-		let labelHeight = 3*this.style.fontSizeBody+14*this.style.statLabelSpacing+2*this.style.secondaryLabelsOffset;
-		let shouldShowTitleBottom = Math.abs(this.getDomainBounds().My/(this.getDomainBounds().My-this.getDomainBounds().my))<0.5
+		// Calculate total needed height and optimal positioning
+		const labelHeight = 2*this.style.fontSizeBody + 8*this.style.statLabelSpacing + this.style.secondaryLabelsOffset;
+		const yRange = this.getDomainBounds().My - this.getDomainBounds().my;
+		const y = this.getDomainBounds().my + (yRange * 0.18); // Position at 18% from bottom
 
-		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]),y:(shouldShowTitleBottom?(this.getDomainBounds().my-this.svgToDomain(0,labelHeight).dy*(Core.isMobile()?0.1:1)):this.getDomainBounds().My*(Core.isMobile()?1.5:1))}}>
-        	<FocusReportWrapper defaultReport={this.getDefaultReport()} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTitle(fr)
-			}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+this.style.statLabelSpacing} ref={this.registerListener()} mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+1*this.style.fontSizeBody+6*this.style.statLabelSpacing+this.style.secondaryLabelsOffset} ref={this.registerListener()} mutations={(fr)=> {return {"text":getExpensesInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
-			<FocusReportWrapper defaultReport={this.getDefaultReport()} dy={this.style.fontSizeTitle*0.8+2*this.style.fontSizeBody+8*this.style.statLabelSpacing+this.style.secondaryLabelsOffset} ref={this.registerListener()} mutations={(fr)=> {return {"text":getSavedInPeriod(fr)}}}><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
+		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]), y:y}}>
+        	<FocusReportWrapper 
+				defaultReport={this.getDefaultReport()} 
+				ref={this.registerListener()} 
+				mutations={(fr)=> {return {"text":getTitle(fr)}}}
+			><V.VictoryLabel style={{fontSize:this.style.fontSizeTitle,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
+			
+			<FocusReportWrapper 
+				defaultReport={this.getDefaultReport()} 
+				dy={this.style.fontSizeTitle*0.8 + this.style.statLabelSpacing} 
+				ref={this.registerListener()} 
+				mutations={(fr)=> {return {"text":getTimePeriodString(fr)}}}
+			><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyText}}/></FocusReportWrapper>
+			
+			<FocusReportWrapper 
+				defaultReport={this.getDefaultReport()} 
+				dy={this.style.fontSizeTitle*0.8 + this.style.fontSizeBody + 4*this.style.statLabelSpacing} 
+				ref={this.registerListener()} 
+				mutations={(fr)=> {
+					const expenses = getExpensesInPeriod(fr);
+					const savings = getSavedInPeriod(fr);
+					const separator = (expenses && savings) ? "  •  " : "";
+					return {"text": expenses + separator + savings};
+				}}
+			><V.VictoryLabel style={{fontSize:this.style.fontSizeBody,fontFamily:"Inter",fill: DS.getStyle().bodyTextSecondary}}/></FocusReportWrapper>
 		</SharedPropsWrapper>)
 	}
 	renderToolTip(){
