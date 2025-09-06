@@ -81,7 +81,7 @@ export default class MiniGraph extends GenericChartView{
 		let b = this.getDomainBounds()
 		let l = this.getTickFormat(new Date()).length //length of the tick string
 		let w = this.style.chartWidth-this.style.chartPadding.left-this.style.chartPadding.right
-		let m = w/((l+2)*this.style.fontSizeBody*0.6) //number of ticks that can fit in the drawable space + 2 characters
+		let m = w/((l+2)*this.style.fontSizeBody*0.8) //number of ticks that can fit in the drawable space + 2 characters
 		return Math.floor(this.getPeriodReports().length/m) //show a tick every k report
 	}
 	getTitle(){return this.getPeriodReports()[0].reportingDate.getUTCFullYear() + " target"}
