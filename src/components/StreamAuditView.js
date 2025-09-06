@@ -136,12 +136,32 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 
 //Level 2: component for category aggregate containing multiple terminal streams
 class CompoundStreamAuditView extends StreamAuditView{
+	constructor(props) {
+		super(props);
+		this.state = { isCollapsed: false };
+		this.toggleCollapse = this.toggleCollapse.bind(this);
+	}
+
+	toggleCollapse() {
+		this.setState(prev => ({ isCollapsed: !prev.isCollapsed }));
+	}
+
 	render(){
+		const { isCollapsed } = this.state;
 		if(this.props.stream.name == "Retraite"){console.log(this.getStreamAnalysis({
 			observationPeriod:this.props.stream.getPreferredReportingPeriod()
 		}))}
- 		return (<CompountStreamAuditViewContainer >
- 			<DS.component.ContentTile style={{flexDirection: "row",justifyContent: "space-between",width: "calc(100% - 1rem)", margin:0,marginBottom: "1rem"}}>
+ 		return (<CompountStreamAuditViewContainer isCollapsed={isCollapsed}>
+ 			<DS.component.ContentTile 
+				onClick={this.toggleCollapse}
+				style={{
+					flexDirection: "row",
+					justifyContent: "space-between",
+					width: "calc(100% - "+DS.spacing.xs+"rem)", 
+					margin: 0,
+					marginBottom: this.state.isCollapsed ? DS.verticalSpacing.xs : DS.verticalSpacing.s ,
+					cursor: "pointer"
+				}}>
  				<div style={{width:"3rem",marginLeft:"1rem",flexShrink:0}}>
 					<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>
  				</div>
@@ -151,16 +171,17 @@ class CompoundStreamAuditView extends StreamAuditView{
  				</div>
  				<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>
  			</DS.component.ContentTile>
- 			<RowLayout>
+ 			<StreamAuditCellContainer isCollapsed={isCollapsed}>
  				<RowLayout>
- 				{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => 
- 				<TerminalStreamCard 
-					auditedTransactions={this.getTransactionsForStream(s)}
-					analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
-					onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
-					onCategorizationUpdate={this.props.onCategorizationUpdate}
-				/>)}
- 			</RowLayout></RowLayout>
+ 					{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => 
+ 					<TerminalStreamCard 
+						auditedTransactions={this.getTransactionsForStream(s)}
+						analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
+						onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
+						onCategorizationUpdate={this.props.onCategorizationUpdate}
+					/>)}
+ 				</RowLayout>
+ 			</StreamAuditCellContainer>
  		</CompountStreamAuditViewContainer>)
 	}
 }
@@ -275,7 +296,6 @@ const TopLevelStreamAuditViewContainer = styled(FlexColumn)`
     align-items: flex-start;
    	width:  ${props => !props.isCollapsed ? '100%' : 'calc(100% - '+ 2*DS.spacing.xs +'rem)'};
     max-width: 50rem;
-    transition: all 0.3s ${transitionStyle};
     background-color: ${props => props.isCollapsed ? DS.getStyle().UIElementBackground : 'transparent'};
     border-radius: ${DS.borderRadius };
     padding: ${props => props.isCollapsed ? DS.spacing.xs +'rem' : '0'};
@@ -335,8 +355,8 @@ const TopLevelHeaderContainer = styled.div`
 	justify-content: space-between;
     border-bottom: solid 1px;
     border-color: ${props => props.isCollapsed ? 'transparent' : DS.getStyle().borderColor};
-    margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"xs":"s"]};
-    margin-top: ${DS.verticalSpacing[Core.isMobile()?"xs":"s"]};
+    margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"s":"s"]};
+    margin-top: ${DS.verticalSpacing[Core.isMobile()?"s":"s"]};
     width: 100%;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
@@ -344,11 +364,13 @@ const TopLevelHeaderContainer = styled.div`
 `
 
 
-const CompountStreamAuditViewContainer =styled.div`
-	margin-bottom:3rem;
-	width:100%;
+const CompountStreamAuditViewContainer = styled.div`
+	margin-bottom: ${props => props.isCollapsed ? (Core.isMobile()? DS.spacing.xxs+"rem" : DS.verticalSpacing.s) :  DS.verticalSpacing.l};
+	width: 100%;
 	max-width: 100%;
-}
+	transition: margin-bottom 0.3s ${transitionStyle};
+	-webkit-tap-highlight-color: transparent;
+	user-select: none;
 `
 
 const StreamGroupHeaderTitle = styled.div`
