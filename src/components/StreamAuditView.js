@@ -335,8 +335,8 @@ const TopLevelHeaderContainer = styled.div`
 	justify-content: space-between;
     border-bottom: solid 1px;
     border-color: ${props => props.isCollapsed ? 'transparent' : DS.getStyle().borderColor};
-    margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
-    margin-top: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
+    margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"xs":"s"]};
+    margin-top: ${DS.verticalSpacing[Core.isMobile()?"xs":"s"]};
     width: 100%;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
