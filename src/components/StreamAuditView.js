@@ -14,7 +14,7 @@ import MiniGraph from './MiniGraph'
 import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 
-
+const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
 if(reportingConfig.startingDay<1 || reportingConfig.startingDay>28 || reportingConfig.startingMonth>12 || reportingConfig.startingMonth<1){
 	throw new Error(`Selected reporting date has invalid parameters. Month: ${reportingConfig.startingMonth} Day: ${reportingConfig.startingDay}. Reporting month must be between 1 and 12 and day must be between 1 and 28`)
@@ -79,13 +79,32 @@ class MasterStreamAuditView extends StreamAuditView{
 
 //Level 1: macro category (income, savings, recurring expense, annual expense)
 class MacroCompoundStreamAuditView extends StreamAuditView{
+	constructor(props) {
+		super(props);
+		this.state = { isCollapsed: false };
+		this.toggleCollapse = this.toggleCollapse.bind(this);
+	}
+
+	toggleCollapse() {
+		this.setState(prev => ({ isCollapsed: !prev.isCollapsed }));
+	}
+
 	render(){
-		return (<TopLevelStreamAuditViewContainer>
-			<TopLevelHeaderContainer>
+		const { isCollapsed } = this.state;
+		return (<TopLevelStreamAuditViewContainer 
+			isCollapsed={isCollapsed} 
+			onClick={isCollapsed ? this.toggleCollapse : undefined}
+			style={{ cursor: isCollapsed ? 'pointer' : 'default' }}>
+			<TopLevelHeaderContainer 
+				isCollapsed={isCollapsed}
+				onClick={!isCollapsed ? this.toggleCollapse : undefined} 
+				style={{ cursor: !isCollapsed ? 'pointer' : 'inherit' }}>
 				<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
-				<MiniGraph analysis={this.getStreamAnalysis({subReportingPeriod:Period.monthly})} stream={this.props.stream}/>
+				<div onClick={e => e.stopPropagation()}>
+					<MiniGraph analysis={this.getStreamAnalysis({subReportingPeriod:Period.monthly})} stream={this.props.stream}/>
+				</div>
 			</TopLevelHeaderContainer>
-			<StreamAuditCellContainer>
+			<StreamAuditCellContainer isCollapsed={isCollapsed}>
 				{this.props.stream.getDepth()==1?
 					<RowLayout>
 						{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => <TerminalStreamCard 
@@ -111,7 +130,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 					</ColumnLayout>
 				}
 			</StreamAuditCellContainer>
-		</TopLevelStreamAuditViewContainer>)
+		</TopLevelStreamAuditViewContainer>);
 	}
 }
 
@@ -251,10 +270,18 @@ const AuditViewContainer = styled(FlexColumn)`
 `
 
 const TopLevelStreamAuditViewContainer = styled(FlexColumn)`
-    margin-bottom: 2rem;
+    margin-bottom: ${props => !props.isCollapsed ? DS.spacing.m +'rem' : DS.spacing.xs +'rem'};
     justify-content: space-between;
     align-items: flex-start;
-    width:100%;
+   	width:  ${props => !props.isCollapsed ? '100%' : 'calc(100% - '+ 2*DS.spacing.xs +'rem)'};
+    max-width: 50rem;
+    transition: all 0.3s ${transitionStyle};
+    background-color: ${props => props.isCollapsed ? DS.getStyle().UIElementBackground : 'transparent'};
+    border-radius: ${DS.borderRadius };
+    padding: ${props => props.isCollapsed ? DS.spacing.xs +'rem' : '0'};
+	-webkit-tap-highlight-color: transparent;
+	user-select: none;
+	transition: all 0.3s ${transitionStyle};
 `
 
 
@@ -307,10 +334,13 @@ const TopLevelHeaderContainer = styled.div`
 	align-items: center;
 	justify-content: space-between;
     border-bottom: solid 1px;
-    border-color: ${DS.getStyle().borderColor};
+    border-color: ${props => props.isCollapsed ? 'transparent' : DS.getStyle().borderColor};
     margin-bottom: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
     margin-top: ${DS.verticalSpacing[Core.isMobile()?"s":"m"]};
     width: 100%;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition: border-color 0.2s ${transitionStyle};
 `
 
 
@@ -330,8 +360,14 @@ const StreamGroupHeaderTitle = styled.div`
 
 
 const StreamAuditCellContainer = styled.div`
-	display:flex;
-	justify-content:space-evenly;
+	display: flex;
+	justify-content: space-evenly;
 	align-items: center;
-	width:100%;
+	width:  100%;
+	max-height: ${props => props.isCollapsed ? '0' : '10000px'};
+	overflow: hidden;
+	opacity: ${props => props.isCollapsed ? '0' : '1'};
+	transition: max-height 0.2s ${transitionStyle}, opacity 0.2s ${transitionStyle};
+	-webkit-tap-highlight-color: transparent;
+	user-select: none;
 `
