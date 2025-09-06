@@ -756,7 +756,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		// Calculate total needed height and optimal positioning
 		const labelHeight = 2*this.style.fontSizeBody + 8*this.style.statLabelSpacing + this.style.secondaryLabelsOffset;
 		const yRange = this.getDomainBounds().My - this.getDomainBounds().my;
-		const y = this.getDomainBounds().my + (yRange * 0.18); // Position at 18% from bottom
+		const y = this.getDomainBounds().My + (yRange * (Core.isMobile()?0.3:0.0)); // Position at 18% from bottom
 
 		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]), y:y}}>
         	<FocusReportWrapper 
