@@ -639,13 +639,13 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			plotList: [
 				new SeriesDescriptor({ name:"savings", chartContext:chartContext,
 					config:{render:true,color:DS.getStyle().savings,barStrings: {toDate:"Saved to date",value:"Saved",projected:"Annual savings"}},
-					target: this.timeAxis.map((d,i) => utils.sum(this.timeAxis.slice(0,i).map((dd,j) => -this.props.savingsAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.nextDate(dd),Period.monthly)))),
+					target: this.timeAxis.map((d,i) => utils.sum(this.timeAxis.slice(0,i+1).map((dd,j) => -this.props.savingsAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.nextDate(dd),Period.monthly)))),
 					toDate: savingsAnalysis.map((r,i) => r.stats.savedToDate + incomeAnalysis[i].stats.savedToDate),
 					isSavings: true
 				}),
 				new SeriesDescriptor({ name:"expenses", chartContext:chartContext,
 					config:{render:true,color:DS.getStyle().expenses,barStrings: {toDate:"Spent to date",value:"Spent",projected:"Annual expenses"}},
-					target: this.timeAxis.map((d,i) => utils.sum(this.timeAxis.slice(0,i).map((dd,j) => this.props.expenseAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.nextDate(dd),Period.monthly)))),
+					target: this.timeAxis.map((d,i) => utils.sum(this.timeAxis.slice(0,i+1).map((dd,j) => this.props.expenseAnalysis.getExpectedAmountAtDateForPeriod(Period.monthly.nextDate(dd),Period.monthly)))),
 					toDate: expenseAnalysis.map(r => r.stats.netToDate)
 				}),
 				new SeriesDescriptor({ name:"income", chartContext:chartContext,
