@@ -12,12 +12,15 @@ const disappearAnimationTime = 300;
 .getQueue() to read the queue  
 */
 export default class ActionQueueManager{
-	constructor(){
+	constructor(onQueueUpdate){
 		this.queue = [new EmptyStateAction(0,this)]
+		this.onQueueUpdate = onQueueUpdate || (() => {}); //callback to trigger when the queue updates	
 	}
 	getQueue(){return this.queue}
 	hasActions(){return this.getQueue().length>1}
 	getNextAvailableId(){return this.queue.map(a => a.id).sort(utils.sorters.desc())[0]+1}
+	
+	skipAction(action) {return action.isSkippable()?this.consumeActions([action], true):Promise.reject()}
 	insertActions(actions){
 		var sortedActionSortingValues = this.queue.map(a => a.getSortValue()).sort(utils.sorters.asc());
 		var inserts = actions.map((a,i) => {
@@ -25,20 +28,31 @@ export default class ActionQueueManager{
 		}).sort(utils.sorters.desc(insert => insert.index))
 		inserts.forEach(insert => this.queue.splice(insert.index,0,insert.action))
 	}
-	consumeActions(actions){
+	//actions must be in the queue, skip (boolean) indicates whether to treat the actions as skipped (not removed from the queue)
+	consumeActions(actions,skip){
 		const finalize = (a) => {
 			if(!a.reactComponent){return Promise.resolve()} //if component isn't mounted, we'll skip this part
-			return a.reactComponent.preExitAnimation().then(() => new Promise((res,rej) => a.reactComponent.updateState({moveOutOfTheWay:true})
+			return a.reactComponent.preExitAnimation(skip).then(() => new Promise((res) => a.reactComponent.updateState({moveOutOfTheWay:true})
 				.then(()=> setTimeout(() => {a.isVisible = false;res()}, ActionStyles.moveOutOfTheWayAnimationTime)))) //leaves enough time to play the exit animation
 		}
 		//defines the animation promises to play
 		var promises = actions.map(finalize), newIndex = 0;
 		var consumingActionIndexes = actions.map(a => this.queue.findIndex(o => o.id == a.id));
+		
 		while(consumingActionIndexes.indexOf(newIndex)>-1 && newIndex<this.queue.length){newIndex++}	//deternime index of next card to enter 
 		if(this.queue[newIndex]){promises.push(this.queue[newIndex].willEnterInFocus())}		//trigger entrance animation
 
-		//run the promises
-		return Promise.all(promises).then(() => this.queue = this.queue.filter(a => actions.indexOf(a)==-1))
+		//run the promises (skip actions don't get filtered out)
+		return Promise.all(promises).then(() => {
+			this.queue = this.queue.filter(a => actions.indexOf(a)==-1)//.sort(utils.sorters.asc(a => a.getSortValue()));
+			if(skip){// Find the empty state action index and Insert skipped actions just before the empty state action
+				const emptyStateIndex = this.queue.findIndex(a => a instanceof EmptyStateAction);
+				const insertIndex = emptyStateIndex === -1 ? this.queue.length : emptyStateIndex;
+				this.queue.splice(insertIndex, 0, ...actions);
+				actions.forEach(a => a.resetAnimationState())
+			}
+					
+		}).then(() => {actions.map(a => a.setVisible(true))}).then(() => this.onQueueUpdate())
 	}
 	isInFocus(action){return this.queue.filter(a => a.isVisible)[0]?.id == action.id} //focus logic
 

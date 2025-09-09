@@ -9,6 +9,7 @@ import utils from '../utils'
 import TransactionGrouper from '../processors/TransactionGrouper'
 import Statistics from '../processors/Statistics';
 import React from 'react';
+import { use } from 'react';
 
 //const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
@@ -16,7 +17,7 @@ const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').r
 //exist scene animation
 const checkmarkGrowAnimation = 500;
 const disappearAnimationTime = 300;
-const checkmarkAnimationTime = 700;
+const animationIconTime = 700;
 
 
 //Action for categorization card
@@ -34,7 +35,7 @@ export default class CategorizeAction extends Action{
 class CategorizeActionCard extends ActionCard{
 	constructor(props){
 		super(props)
-		this.state = {...this.state,checkmarkVisible:false,isSaving:false,recStreams:[],selectedItemImage: 1,fetching:true}
+		this.state = {...this.state,animationIconVisible:false,isSaving:false,recStreams:[],selectedItemImage: 1,fetching:true,useSkipIcon:false}
 		this.props.parentAction.actionCard = this;
 		this.onChangeRuleMatchingString = this.onChangeRuleMatchingString.bind(this); 
 		this.moreButtonRef = React.createRef();
@@ -123,13 +124,14 @@ class CategorizeActionCard extends ActionCard{
 		this.inputMatchingString = s;
 	}
 
-	preExitAnimation(){//card will start exiting after this promise returns
+	preExitAnimation(skip){//card will start exiting after this promise returns
 		return new Promise((res,rej)=> {
-			this.updateState({checkmarkVisible:true}).then(() => setTimeout(()=>{
+			this.updateState({animationIconVisible:true,useSkipIcon:skip}).then(() => setTimeout(()=>{
 				this.updateState({visible:false},() => setTimeout(res,disappearAnimationTime))
-			},checkmarkAnimationTime))
+			},animationIconTime))
 		})
 	}
+	resetAnimationState(){return this.updateState({animationIconVisible:false,visible:true,isSaving:false,moveOutOfTheWay:this.props.startsOutOfTheWay,useSkipIcon:false})}
 	onSplitClicked(){
 		Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Split",undefined,undefined,this.props.transaction,this.state.recStreams)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
@@ -155,14 +157,14 @@ class CategorizeActionCard extends ActionCard{
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 
 		return (<div>
-			<CheckMarkContainer style={{opacity:this.state.checkmarkVisible?1:0,transform:"scale("+(this.state.checkmarkVisible?1:0.5)+")"}}>
-				<Checkmark><Check></Check></Checkmark>
+			<CheckMarkContainer style={{opacity:this.state.animationIconVisible?1:0,transform:"scale("+(this.state.animationIconVisible?1:0.5)+")"}}>
+				<Checkmark>{this.state.useSkipIcon?<Chevron/>:<Check/>}</Checkmark>
 			</CheckMarkContainer>
-			<TransactionView checkmarkVisible={this.state.checkmarkVisible} transaction={this.props.transaction}/>
+			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction}/>
 
 			{/*stream suggestions*/}
 			{this.state.fetching?<div></div>:
-			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.checkmarkVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
+			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.animationIconVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
 					{(this.state.recStreams.length)?this.state.recStreams
 					.filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
@@ -201,7 +203,7 @@ export class TransactionView extends BaseComponent{
 		var amznghbrs = this.getAmazonNeighbors();
 		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
-		return(<DS.component.ContentTile  style={{opacity:this.props.checkmarkVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",
+		return(<DS.component.ContentTile  style={{opacity:this.props.animationIconVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",
 	padding:"1.5rem", transition: "opacity "+disappearAnimationTime/1000+"s ease", alignItems: "center" }}>
 			{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
 				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
@@ -280,6 +282,17 @@ const Check = styled.div`
     transform: rotate(135deg);
     margin-bottom: 9%;
     margin-right: 2%;
+`
+
+const Chevron = styled.div`
+	border-top: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
+	border-right: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
+    width:50%;
+    height:50%;
+    border-radius: 0px;
+    transform: rotate(45deg);
+    margin-bottom: 0%;
+    margin-right: 15%;
 `
 
 const Checkmark = styled.div`

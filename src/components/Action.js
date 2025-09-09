@@ -1,14 +1,12 @@
 import styled, { keyframes } from 'styled-components'
 import BaseComponent from './BaseComponent';
 import DS from '../DesignSystem.js'
-import {PlaidLink} from "react-plaid-link";
 import {relativeDates} from '../Time'
 import { fadeIn } from 'react-animations' 
 import TransactionTypes from '../TransactionTypes'
 import Core from '../core.js';
 import utils from '../utils'
 import {UpdateBankConnectionFlow} from './BankUI.js'
-import ApiCaller from '../ApiCaller'
 import {getBankErrorMessage} from '../Bank.js'
 
 
@@ -20,6 +18,7 @@ export const ActionStyles = {
 	cardContentWidth : 26
 }
 
+
 export class Action{
 	constructor(id,appContext,startsOutOfTheWay,onActionConcluded){
 		this.id = id
@@ -29,11 +28,15 @@ export class Action{
 		this.startsOutOfTheWay = false || startsOutOfTheWay
 		this.onActionConcluded = onActionConcluded //callback to call when action is concluded and should be consumed
 	}
+	
 	renderComponent(inFocus){
 		return (<ActionCard startsOutOfTheWay={this.startsOutOfTheWay} appContext={this.appContext} inFocus={inFocus} id={this.id} key={this.id} parentAction={this}/>)
 	}
 	willEnterInFocus(){return Promise.resolve()}//to override - called right before the previous element enters in focus
-	getSortValue(){}//to override - value used by the queue to sort all actions
+	getSortValue(){return 0}//to override - value used by the queue to sort all actions
+	setVisible(visible){this.isVisible = visible; this.reactComponent?.updateState({visible:visible})}
+	isSkippable(){return true} //to override - whether this action can be skipped
+	resetAnimationState(){this.reactComponent?.resetAnimationState()}
 }
 
 
@@ -50,13 +53,14 @@ export class ActionCard extends BaseComponent{
 	}
 	componentDidMount(){if(this.props.startsOutOfTheWay){setTimeout(() => this.updateState({moveOutOfTheWay:false}),50)}}
 	willEnterInFocus(){return Promise.resolve()}//to overide to customize
-	preExitAnimation(){//to overide to customize
+	preExitAnimation(skip){//to overide to customize. Skip indicates whether the action is being skipped
 		return new Promise((res,rej)=> {
 			this.updateState({visible:false},() => {
 				setTimeout(res,ActionStyles.moveOutOfTheWayAnimationTime)
 			})
 		})
 	}
+	resetAnimationState(){this.updateState({moveOutOfTheWay:this.props.startsOutOfTheWay,visible:true})}
 	getNoLeftMargin(){return this.props.appContext.state.actionQueueManager.queue.length <=2}
 	renderContent(){return ""}//to override to include content
 	render(){return (
@@ -132,6 +136,7 @@ class YesNoActionCard extends ActionCard{
 
 export class EmptyStateAction extends Action{
 	getSortValue(){return relativeDates.oneYearInTheFuture().getTime()}//always sits at the end
+	isSkippable(){return false}
 	renderComponent(inFocus){return (<EmptyStateCard inFocus={inFocus} id={this.id} key={this.id} parentAction={this}/>)}
 }
 
@@ -154,7 +159,8 @@ export class BankReconnectAction extends Action{
 		super(id,appContext,startsOutOfTheWay,onActionConcluded)
 		this.connectionData = connectionData
 	}
-	getSortValue(){return new Date("01/01/1980").getTime()+this.id}//always sits at the end
+	isSkippable(){return false}
+	getSortValue(){return new Date("01/01/1980").getTime()+this.id}//always sits at the beginning
 	renderComponent(inFocus){return (<BankReconnectActionCard appContext={this.appContext} startsOutOfTheWay={this.startsOutOfTheWay} inFocus={inFocus} id={this.id} key={this.id} parentAction={this} data={this.connectionData}/>)}
 }
 
@@ -193,6 +199,7 @@ export class TransactionTypeClarificationAction extends Action{
 		this.allocatedStream = Core.getStreamById(allocation.streamId);
 	}
 	getSortValue(){return this.transaction.getDisplayDate().getTime()}
+	isSkippable(){return false}	
 	renderComponent(inFocus){return (<TransactionTypeClarificationActionCard appContext={this.appContext} allocatedStream={this.allocatedStream} inFocus={inFocus} id={this.id} key={this.id} parentAction={this} transaction={this.transaction} startsOutOfTheWay={this.startsOutOfTheWay}/>)}
 }
 

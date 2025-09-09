@@ -18,7 +18,9 @@ export const relativeDates = {
 	oneYearAgo: () => new Date(Date.now() - timeIntervals.oneYear),
 	threeYearsAgo: () => new Date(Date.now() - timeIntervals.oneYear*3),
 	now: () => new Date(),
-	oneYearInTheFuture: ()=> new Date(Date.now() + timeIntervals.oneYear)
+	oneYearInTheFuture: ()=> new Date(Date.now() + timeIntervals.oneYear),
+	oneWeekInTheFuture: ()=> new Date(Date.now() + timeIntervals.oneWeek),
+	oneMonthInTheFuture: ()=> new Date(Date.now() + 30*timeIntervals.oneDay)
 }
 
 

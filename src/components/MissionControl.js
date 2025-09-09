@@ -12,6 +12,7 @@ import {BankReconnectAction,TransactionTypeClarificationAction} from './Action'
 import {refreshLiveRenderComponents} from './AnalysisView'
 import utils from '../utils'
 import PageLoader from './PageLoader'
+import { GenericTransaction } from "../model.js";
 
 const loading = require('../assets/blue_loading.gif');
 const Grouper = require('../processors/TransactionGrouper')
@@ -20,13 +21,14 @@ const undoIcon = require('../assets/undo.svg').default;
 class MissionControl extends BaseComponent{
 	constructor(props){
 		super(props)
+		this.onQueueUpdate = this.onQueueUpdate.bind(this);
 		this.state = {...this.state,
 			fetching:true,
 			instanceMaxDate: new Date(),
 			instanceMinDate: AppConfig.transactionFetchMinDate,
 			availableTransactions: [],
 			streamTree: Core.getMasterStream(),
-			actionQueueManager : new ActionQueueManager()
+			actionQueueManager : new ActionQueueManager(this.onQueueUpdate)
 		}
 
 		//binds
@@ -35,6 +37,7 @@ class MissionControl extends BaseComponent{
 		this.onUserDefinedTransactionTypeClarified = this.onUserDefinedTransactionTypeClarified.bind(this);
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
+		this.handleSkipAction = this.handleSkipAction.bind(this);
 
 	}
 	componentDidMount(){this.loadData()}
@@ -54,12 +57,13 @@ class MissionControl extends BaseComponent{
 			this.updateState({fetching: false,availableTransactions:res})
 		})
 	}
+	onQueueUpdate(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})}
 	addBankConnectionCards(){
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {
 			let br = new BankReconnectAction(startingId+i,this,false,() => {
 				this.state.actionQueueManager.consumeActions([br]).then(() => {
-					return 	this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})
+					//return 	this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})
 				})
 			},co)
 			return br
@@ -94,7 +98,7 @@ class MissionControl extends BaseComponent{
 			let toConsume = this.state.actionQueueManager.getQueue().filter(a => !!a.transaction && ids.indexOf(a.transaction.transactionId)>-1 && a.constructor.name==TransactionTypeClarificationAction.name)
 			let toInsert = txns.map((t,i) => new CategorizeAction(startingId+i,this,true,t,this.onCategorizeActionConcluded)).reverse();
 			return Promise.all([this.state.actionQueueManager.consumeActions(toConsume),this.state.actionQueueManager.insertActions(toInsert)
-			]).then(() => this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}))
+			]).then(() => this.onQueueUpdate())
 		})
 	}
 	onUserDefinedTransactionTypeClarified(parentAction,selectedType){
@@ -102,7 +106,7 @@ class MissionControl extends BaseComponent{
 		let tupple = {transaction:parentAction.transaction,streamAllocation:parentAction.transaction.streamAllocation}
 		//TODO: save undo in history
 		return Promise.all([Core.categorizeTransactionsAllocationsTupples([tupple]),this.state.actionQueueManager.consumeActions([parentAction])
-		]).then(() => this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}))
+		]).then(() => this.onQueueUpdate())
 	}
 
 	//getters
@@ -110,6 +114,17 @@ class MissionControl extends BaseComponent{
 	getAllAvailableTransactions(){return this.state.availableTransactions}
 
 	//UI Callbacks
+	handleSkipAction() {
+		const queue = this.state.actionQueueManager.getQueue();
+		const currentAction = queue.find(a => this.state.actionQueueManager.isInFocus(a));
+		
+		if (currentAction && currentAction.isSkippable()) {
+			// Play skip animation using the same mechanism as regular actions
+			this.state.actionQueueManager.skipAction(currentAction)
+				.then(() => this.onQueueUpdate());
+		}
+	}
+
 	onClickUndoButton(e){//top level undo button
 		//get the action to undo
 		var lastState = Core.globalState.history.getLastState();
@@ -120,11 +135,11 @@ class MissionControl extends BaseComponent{
 		setTimeout(() => {e.target.style.transition = ""; e.target.style.transform = ""},1500)
 		
 		//call server
-		var txnsToCategorize = lastState.transactions.filter(t => t.categorized);
+		var txnsToCategorize = lastState.transactions.filter(t => t.categorized).map(t => GenericTransaction.MakeGTFFromObject(t));
 		var allocs = txnsToCategorize.map((t,i) => t.streamAllocation);
 		if(lastState.action == ActionTypes.TransactionUpdate){
 			return Promise.all([
-				this.uncategorizeTransactions(lastState.transactions.filter(t => !t.categorized)),
+				this.uncategorizeTransactions(lastState.transactions.filter(t => !t.categorized).map(t => GenericTransaction.MakeGTFFromObject(t))),
 				this.categorizeTransactions(txnsToCategorize,allocs)
 			]).then(() => {
 				Core.globalState.history.popState();
@@ -140,14 +155,14 @@ class MissionControl extends BaseComponent{
 		var txnsSnapshot = Core.globalState.history.snapshot(txnsToUpdate);
 		this.categorizeTransactions(txnsToUpdate,streamAllocations).then(() => {
 			Core.globalState.history.recordTransactionUpdate(txnsSnapshot);
-			this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)
+			this.onQueueUpdate().then(refreshLiveRenderComponents)
 		})
 	}
 	onRequestedToUncategorizeFromAuditView(txns){//uncategorize button from audit view
 		var txnsSnapshot = Core.globalState.history.snapshot(txns);
 		this.uncategorizeTransactions(txns).then(() => {
 			Core.globalState.history.recordTransactionUpdate(txnsSnapshot);
-			this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)
+			this.onQueueUpdate().then(refreshLiveRenderComponents)
 		})
 	}
 
@@ -156,7 +171,11 @@ class MissionControl extends BaseComponent{
 		else if(this.state.availableTransactions.length==0){return (<div></div>)}
 		else{return <StyledHomeContainer>
 				<ActionZoneContainer style={this.state.actionQueueManager.hasActions()?{height:'20rem',opacity:1}:{height:0,opacity:0}}>
-					<UndoButtonContainer><UndoButton src={undoIcon} onClick={this.onClickUndoButton}></UndoButton></UndoButtonContainer>
+					<ActionButtonsContainer>
+						<ActionButton alt="skip" className="material-symbols-rounded" onClick={this.handleSkipAction}
+							disabled={!this.state.actionQueueManager.getQueue().find(a => this.state.actionQueueManager.isInFocus(a))?.isSkippable()}>
+						arrow_forward_ios</ActionButton><ActionButton alt="undo" style={{transformOrigin: "60% 53%"}} className="material-symbols-rounded" onClick={this.onClickUndoButton}>replay</ActionButton>
+					</ActionButtonsContainer>
 					{this.state.actionQueueManager.renderComponent()}
 				</ActionZoneContainer>
 				<div style={{width:"100%",display: "flex",flexDirection: "column",alignItems: "stretch"}}>
@@ -189,21 +208,30 @@ const StyledHomeContainer = styled.div `
     margin-top: ${(props) => Core.isMobile()?DS.verticalSpacing.s:DS.verticalSpacing.m};
 `   
 
-const UndoButton = styled.img`
+
+const ActionButton = styled.div`
     width: 1.5rem;
     height: 2.5rem;
-    opacity: 0.3;
-    cursor: pointer;
+    opacity: ${props => props.disabled ? 0 : 0.3};
+    cursor: ${props => props.disabled ? 'default' : 'pointer'};
     filter: ${"brightness("+(DS.isDarkMode()?9:1)+")"};
+    transition: opacity 0.3s ease;
+	display: flex;
+    align-items: center;
+	font-size: 1.8rem;
+	margin-right: 0.3rem;
     
     &:hover{
-    	opacity:0.5;
+    	opacity: ${props => props.disabled ? 0 : 0.5};
     }
+		
 `
 
-const UndoButtonContainer = styled.div`
+const ActionButtonsContainer = styled.div`
 	max-width: 26rem;
     margin: auto;
     display: flex;
     justify-content: flex-end;
+    gap: 1rem;
+    align-items: center;
 `

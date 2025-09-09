@@ -437,4 +437,6 @@ export class GenericTransaction{
       undefined, //frontendDate not supported for uncategorised transactions
     )
   }
+
+  static MakeGTFFromObject(t){return (t.categorized?GenericTransaction.MakeGTFromCategorizedTransaction(t):GenericTransaction.MakeGTFromUncategorizedTransaction(t))}
 }
