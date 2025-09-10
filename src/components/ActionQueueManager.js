@@ -16,17 +16,23 @@ export default class ActionQueueManager{
 		this.queue = [new EmptyStateAction(0,this)]
 		this.onQueueUpdate = onQueueUpdate || (() => {}); //callback to trigger when the queue updates	
 	}
+
+	//convenience
 	getQueue(){return this.queue}
 	hasActions(){return this.getQueue().length>1}
+	getCurrentAction(){return this.getQueue()[0]&&this.isInFocus(this.getQueue()[0])?this.getQueue()[0] : this.getQueue().find(a => this.isInFocus(a))}	//optimized getter for the current action (the one in focus) avoiding a full scan of the queue if the first action is in focus
+	isCurrentActionSkippable(){return this.getCurrentAction()?.isSkippable() && this.queue.length>2} //only skippable if there's another non-empty state action to focus on
 	getNextAvailableId(){return this.queue.map(a => a.id).sort(utils.sorters.desc())[0]+1}
 	
-	skipAction(action) {return action.isSkippable()?this.consumeActions([action], true):Promise.reject()}
+	//operations
+	skipCurrentAction() {return this.isCurrentActionSkippable()?this.consumeActions([this.getCurrentAction()], true):Promise.reject()}
 	insertActions(actions){
 		var sortedActionSortingValues = this.queue.map(a => a.getSortValue()).sort(utils.sorters.asc());
 		var inserts = actions.map((a,i) => {
 			return {action:a,index:utils.searchInsertAsc(sortedActionSortingValues,a.getSortValue())}
 		}).sort(utils.sorters.desc(insert => insert.index))
 		inserts.forEach(insert => this.queue.splice(insert.index,0,insert.action))
+		this.onQueueUpdate()
 	}
 	//actions must be in the queue, skip (boolean) indicates whether to treat the actions as skipped (not removed from the queue)
 	consumeActions(actions,skip){
@@ -51,7 +57,6 @@ export default class ActionQueueManager{
 				this.queue.splice(insertIndex, 0, ...actions);
 				actions.forEach(a => a.resetAnimationState())
 			}
-					
 		}).then(() => {actions.map(a => a.setVisible(true))}).then(() => this.onQueueUpdate())
 	}
 	isInFocus(action){return this.queue.filter(a => a.isVisible)[0]?.id == action.id} //focus logic

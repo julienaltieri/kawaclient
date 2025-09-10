@@ -9,7 +9,6 @@ import utils from '../utils'
 import TransactionGrouper from '../processors/TransactionGrouper'
 import Statistics from '../processors/Statistics';
 import React from 'react';
-import { use } from 'react';
 
 //const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
@@ -43,11 +42,11 @@ class CategorizeActionCard extends ActionCard{
 	}
 	componentDidMount(){super.componentDidMount();this.refreshSuggestedStreams();}
 	refreshSuggestedStreams(){//calculate recommended streams
-		var recStreams = [], txns = this.props.appContext.getAllAvailableTransactions();
+		var txns = this.props.appContext.getAllAvailableTransactions();
 
 		//suggestions by similar categorization
 		var recNeighbors = [];
-		var {key,branch} = TransactionGrouper.getRelevantBranchInTree(this.props.transaction,TransactionGrouper.clusterTransactions(txns))
+		var {branch} = TransactionGrouper.getRelevantBranchInTree(this.props.transaction,TransactionGrouper.clusterTransactions(txns))
 		var sids = Core.getUserData().getAllTerminalStreams().map(s => s.id);
 		if(branch.length>0){
 			var categorizedTxns = branch.filter(t => t.categorized)
@@ -150,16 +149,11 @@ class CategorizeActionCard extends ActionCard{
 	getAvailableStreams(){return Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date())).sort(utils.sorters.asc(s => s.name.charCodeAt()))}
 	getStreamString(s){return s.name+(!s.isActiveNow()?" (old)":"")}
 	renderContent(){
-		var amz = this.getAmazonData();
-		var isCompound = this.isAmazon() && amz.items.length>1;
-		var amznghbrs = this.getAmazonNeighbors();
-		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
-		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 
 		return (<div>
-			<CheckMarkContainer style={{opacity:this.state.animationIconVisible?1:0,transform:"scale("+(this.state.animationIconVisible?1:0.5)+")"}}>
-				<Checkmark>{this.state.useSkipIcon?<Chevron/>:<Check/>}</Checkmark>
-			</CheckMarkContainer>
+			<AnimationSymbolContainer style={{opacity:this.state.animationIconVisible?1:0,transform:"scale("+(this.state.animationIconVisible?1:0.5)+")"}}>
+				<AnimationSymbol>{this.state.useSkipIcon?<Chevron/>:<Check/>}</AnimationSymbol>
+			</AnimationSymbolContainer>
 			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction}/>
 
 			{/*stream suggestions*/}
@@ -254,16 +248,8 @@ const FadeInWrap = styled.div`
 	animation: 0.5s ${fadeInAnimation};
 `
 
-const FullScreenCapturer = styled.div`
-	width: 100vw;
-    height: 100vh;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 98;
-`
 
-const CheckMarkContainer = styled.div`
+const AnimationSymbolContainer = styled.div`
     width: calc(100% - ${ActionStyles.cardRemSpacing}rem);
     position: absolute;
     margin-top: 1.5rem;
@@ -287,15 +273,15 @@ const Check = styled.div`
 const Chevron = styled.div`
 	border-top: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
 	border-right: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
-    width:50%;
-    height:50%;
+    width:40%;
+    height:40%;
     border-radius: 0px;
     transform: rotate(45deg);
     margin-bottom: 0%;
     margin-right: 15%;
 `
 
-const Checkmark = styled.div`
+const AnimationSymbol = styled.div`
     width: 5rem;
     height: 5rem;
     border: solid ${DS.borderThickness.m}rem ${DS.getStyle().modalPrimaryButton};
@@ -307,32 +293,6 @@ const Checkmark = styled.div`
 
 `
 
-/*
-const TransactionContainerView = styled.div `
-	text-align: center;
-	display: flex;
-    background: ${props => DS.getStyle().UIElementBackground};
-	box-shadow: 0px 6px 10px #00000023;
-    box-sizing: border-box;
-	padding:1.5rem;
-    border-radius: ${props => DS.borderRadius};
-    transition: opacity ${disappearAnimationTime/1000}s ease;
-    align-items: center;
-`
-*/
-
-/*const StreamTag = styled.div`
-	background-color: ${props => props.highlight?DS.getStyle().commonTag:DS.getStyle().specialTag};
-	padding: 0.2rem 0.4rem ;
-	margin:0.2rem;
-	border-radius: 100vw;
-	opacity:0.8;
-	&:hover{
-		cursor:pointer;
-		opacity:1;
-	}
-`
-*/
 const TxInfoContainer = styled.div `
 	display:flex;
 	flex-direction:column;

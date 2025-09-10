@@ -14,10 +14,6 @@ import utils from '../utils'
 import PageLoader from './PageLoader'
 import { GenericTransaction } from "../model.js";
 
-const loading = require('../assets/blue_loading.gif');
-const Grouper = require('../processors/TransactionGrouper')
-const undoIcon = require('../assets/undo.svg').default;
-
 class MissionControl extends BaseComponent{
 	constructor(props){
 		super(props)
@@ -37,7 +33,7 @@ class MissionControl extends BaseComponent{
 		this.onUserDefinedTransactionTypeClarified = this.onUserDefinedTransactionTypeClarified.bind(this);
 		this.onClickUndoButton = this.onClickUndoButton.bind(this);
 		this.onCategorizationUpdate = this.onCategorizationUpdate.bind(this);
-		this.handleSkipAction = this.handleSkipAction.bind(this);
+		this.onClickSkipButton = this.onClickSkipButton.bind(this);
 
 	}
 	componentDidMount(){this.loadData()}
@@ -62,9 +58,7 @@ class MissionControl extends BaseComponent{
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {
 			let br = new BankReconnectAction(startingId+i,this,false,() => {
-				this.state.actionQueueManager.consumeActions([br]).then(() => {
-					//return 	this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})
-				})
+				this.state.actionQueueManager.consumeActions([br])
 			},co)
 			return br
 		}))
@@ -79,7 +73,7 @@ class MissionControl extends BaseComponent{
 		var tupples = txns.map((t,i) => {return {transaction:t,streamAllocation:streamAllocations[i]}})
 		var actionsToConsume = this.state.actionQueueManager.getQueue().filter(a => a.transaction && txnsIds.indexOf(a.transaction.id)>-1);
 		return Promise.all([this.state.actionQueueManager.consumeActions(actionsToConsume),Core.categorizeTransactionsAllocationsTupples(tupples)])
-		.then(([actionsConsumeResults,cats]) => this.insertClarificationActionsIfNeeded(cats))
+		.then(([,cats]) => this.insertClarificationActionsIfNeeded(cats))
 	}
 	insertClarificationActionsIfNeeded(cats){
 		let startingId = this.state.actionQueueManager.getNextAvailableId();
@@ -97,34 +91,24 @@ class MissionControl extends BaseComponent{
 			let ids = txns.map(txn => txn.transactionId)
 			let toConsume = this.state.actionQueueManager.getQueue().filter(a => !!a.transaction && ids.indexOf(a.transaction.transactionId)>-1 && a.constructor.name==TransactionTypeClarificationAction.name)
 			let toInsert = txns.map((t,i) => new CategorizeAction(startingId+i,this,true,t,this.onCategorizeActionConcluded)).reverse();
-			return Promise.all([this.state.actionQueueManager.consumeActions(toConsume),this.state.actionQueueManager.insertActions(toInsert)
-			]).then(() => this.onQueueUpdate())
+			return Promise.all([this.state.actionQueueManager.consumeActions(toConsume),this.state.actionQueueManager.insertActions(toInsert)])
 		})
 	}
 	onUserDefinedTransactionTypeClarified(parentAction,selectedType){
 		parentAction.transaction.evaluator.getAllocationForStream(parentAction.allocatedStream).userDefinedTransactionType = selectedType.name
 		let tupple = {transaction:parentAction.transaction,streamAllocation:parentAction.transaction.streamAllocation}
 		//TODO: save undo in history
-		return Promise.all([Core.categorizeTransactionsAllocationsTupples([tupple]),this.state.actionQueueManager.consumeActions([parentAction])
-		]).then(() => this.onQueueUpdate())
+		return Promise.all([Core.categorizeTransactionsAllocationsTupples([tupple]),this.state.actionQueueManager.consumeActions([parentAction])])
 	}
 
 	//getters
-	getTransactionsInQueue(){return this.state.actionQueueManager.getQueue().filter(a => a.transaction).map(a => a.transaction)}
+	getQueue(){return this.state.actionQueueManager.getQueue()}
+	getTransactionsInQueue(){return this.getQueue().filter(a => a.transaction).map(a => a.transaction)}
 	getAllAvailableTransactions(){return this.state.availableTransactions}
+	getCurrentAction(){return this.state.actionQueueManager.getCurrentAction()}
 
 	//UI Callbacks
-	handleSkipAction() {
-		const queue = this.state.actionQueueManager.getQueue();
-		const currentAction = queue.find(a => this.state.actionQueueManager.isInFocus(a));
-		
-		if (currentAction && currentAction.isSkippable()) {
-			// Play skip animation using the same mechanism as regular actions
-			this.state.actionQueueManager.skipAction(currentAction)
-				.then(() => this.onQueueUpdate());
-		}
-	}
-
+	onClickSkipButton() {if (this.state.actionQueueManager.isCurrentActionSkippable()) {this.state.actionQueueManager.skipCurrentAction()}}
 	onClickUndoButton(e){//top level undo button
 		//get the action to undo
 		var lastState = Core.globalState.history.getLastState();
@@ -143,7 +127,7 @@ class MissionControl extends BaseComponent{
 				this.categorizeTransactions(txnsToCategorize,allocs)
 			]).then(() => {
 				Core.globalState.history.popState();
-				this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})
+				this.state.actionQueueManager.onQueueUpdate()
 			})
 		}
 	}
@@ -172,9 +156,9 @@ class MissionControl extends BaseComponent{
 		else{return <StyledHomeContainer>
 				<ActionZoneContainer style={this.state.actionQueueManager.hasActions()?{height:'20rem',opacity:1}:{height:0,opacity:0}}>
 					<ActionButtonsContainer>
-						<ActionButton alt="skip" className="material-symbols-rounded" onClick={this.handleSkipAction}
-							disabled={!this.state.actionQueueManager.getQueue().find(a => this.state.actionQueueManager.isInFocus(a))?.isSkippable()}>
-						arrow_forward_ios</ActionButton><ActionButton alt="undo" style={{transformOrigin: "60% 53%"}} className="material-symbols-rounded" onClick={this.onClickUndoButton}>replay</ActionButton>
+						<ActionButton alt="skip" className="material-symbols-rounded" onClick={this.onClickSkipButton} disabled={!this.state.actionQueueManager.isCurrentActionSkippable()}>
+						arrow_forward_ios</ActionButton>
+						<ActionButton alt="undo" style={{transformOrigin: "60% 53%"}} className="material-symbols-rounded" onClick={this.onClickUndoButton}>replay</ActionButton>
 					</ActionButtonsContainer>
 					{this.state.actionQueueManager.renderComponent()}
 				</ActionZoneContainer>
