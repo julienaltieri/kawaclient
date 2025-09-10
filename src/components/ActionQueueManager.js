@@ -48,16 +48,25 @@ export default class ActionQueueManager{
 		while(consumingActionIndexes.indexOf(newIndex)>-1 && newIndex<this.queue.length){newIndex++}	//deternime index of next card to enter 
 		if(this.queue[newIndex]){promises.push(this.queue[newIndex].willEnterInFocus())}		//trigger entrance animation
 
-		//run the promises (skip actions don't get filtered out)
+		//run the promises 
 		return Promise.all(promises).then(() => {
-			this.queue = this.queue.filter(a => actions.indexOf(a)==-1)//.sort(utils.sorters.asc(a => a.getSortValue()));
-			if(skip){// Find the empty state action index and Insert skipped actions just before the empty state action
-				const emptyStateIndex = this.queue.findIndex(a => a instanceof EmptyStateAction);
-				const insertIndex = emptyStateIndex === -1 ? this.queue.length : emptyStateIndex;
-				this.queue.splice(insertIndex, 0, ...actions);
+			if(skip){// Rotate the queue
+				this.rotateQueue()
 				actions.forEach(a => a.resetAnimationState())
+			}else{
+				this.queue = this.queue.filter(a => actions.indexOf(a)==-1)
 			}
 		}).then(() => {actions.map(a => a.setVisible(true))}).then(() => this.onQueueUpdate())
+	}
+	rotateQueue(){ //moves the first action to the end of the queue
+		if(this.queue.length<=2){return} //nothing to rotate	
+		const first = this.queue.shift();  // remove first element
+		  this.queue.splice(this.queue.length - 1, 0, first);
+	}	
+	unSkip(){ //unskip the last skipped action (moves the last action to the front of the queue)
+		const beforeLast = this.queue.splice(this.queue.length - 2, 1)[0]; // remove element before last
+		beforeLast.startsOutOfTheWay = true; // it will start out of the way
+		this.insertActions([beforeLast])
 	}
 	isInFocus(action){return this.queue.filter(a => a.isVisible)[0]?.id == action.id} //focus logic
 

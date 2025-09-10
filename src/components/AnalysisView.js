@@ -663,7 +663,7 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 			maxPlottedIndex: expenseAnalysis.length
 		}
 		this.data = res;
-		console.log(res)
+		//console.log(res)
 		return res
 	}
 

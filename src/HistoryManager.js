@@ -1,7 +1,8 @@
 import utils from './utils'
 
 export const ActionTypes = {
-	TransactionUpdate: "TransactionUpdate"
+	TransactionUpdate: "TransactionUpdate",
+	ActionSkip: "ActionSkip"
 }
 
 class HistoryManager{
@@ -15,6 +16,11 @@ class HistoryManager{
 		this.pushState({
 			action: ActionTypes.TransactionUpdate,
 			transactions: transactionsInPreviousState
+		})
+	}
+	recordActionSkip(){
+		this.pushState({
+			action: ActionTypes.ActionSkip,
 		})
 	}
 	snapshot = (object) => utils.getObjectClone(object)

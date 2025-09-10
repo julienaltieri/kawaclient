@@ -89,7 +89,7 @@ class MissionControl extends BaseComponent{
 		return Core.undoCategorizations(txns).then(() => {
 			var startingId = this.state.actionQueueManager.getNextAvailableId();
 			let ids = txns.map(txn => txn.transactionId)
-			let toConsume = this.state.actionQueueManager.getQueue().filter(a => !!a.transaction && ids.indexOf(a.transaction.transactionId)>-1 && a.constructor.name==TransactionTypeClarificationAction.name)
+			let toConsume = this.getQueue().filter(a => !!a.transaction && ids.indexOf(a.transaction.transactionId)>-1 && a.constructor.name==TransactionTypeClarificationAction.name)
 			let toInsert = txns.map((t,i) => new CategorizeAction(startingId+i,this,true,t,this.onCategorizeActionConcluded)).reverse();
 			return Promise.all([this.state.actionQueueManager.consumeActions(toConsume),this.state.actionQueueManager.insertActions(toInsert)])
 		})
@@ -108,7 +108,12 @@ class MissionControl extends BaseComponent{
 	getCurrentAction(){return this.state.actionQueueManager.getCurrentAction()}
 
 	//UI Callbacks
-	onClickSkipButton() {if (this.state.actionQueueManager.isCurrentActionSkippable()) {this.state.actionQueueManager.skipCurrentAction()}}
+	onClickSkipButton() {
+		if (this.state.actionQueueManager.isCurrentActionSkippable()) {
+			Core.globalState.history.recordActionSkip();
+			this.state.actionQueueManager.skipCurrentAction()
+		}
+	}
 	onClickUndoButton(e){//top level undo button
 		//get the action to undo
 		var lastState = Core.globalState.history.getLastState();
@@ -118,10 +123,10 @@ class MissionControl extends BaseComponent{
 		e.target.style.transition = "transform 1.5s"; e.target.style.transform = "rotate(-1080deg)";
 		setTimeout(() => {e.target.style.transition = ""; e.target.style.transform = ""},1500)
 		
-		//call server
-		var txnsToCategorize = lastState.transactions.filter(t => t.categorized).map(t => GenericTransaction.MakeGTFFromObject(t));
-		var allocs = txnsToCategorize.map((t,i) => t.streamAllocation);
 		if(lastState.action == ActionTypes.TransactionUpdate){
+			//call server
+			var txnsToCategorize = lastState.transactions.filter(t => t.categorized).map(t => GenericTransaction.MakeGTFFromObject(t));
+			var allocs = txnsToCategorize.map((t,i) => t.streamAllocation);
 			return Promise.all([
 				this.uncategorizeTransactions(lastState.transactions.filter(t => !t.categorized).map(t => GenericTransaction.MakeGTFFromObject(t))),
 				this.categorizeTransactions(txnsToCategorize,allocs)
@@ -129,7 +134,9 @@ class MissionControl extends BaseComponent{
 				Core.globalState.history.popState();
 				this.state.actionQueueManager.onQueueUpdate()
 			})
-		}
+		}else if(lastState.action == ActionTypes.ActionSkip){
+			this.state.actionQueueManager.unSkip();
+			Core.globalState.history.popState();		}
 	}
 	onCategorizeActionConcluded(action, txnsToCategorize, streamAllocation){//categorization card concluded
 		//streamAllocations is an array of allocations. All txnsToCategorize will be allocated using the allocation array
