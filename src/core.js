@@ -388,6 +388,7 @@ class Core{
 		var amz = this.getUserData().amazonOrderHistory.sort(utils.sorters.desc(am => new Date(am.date)))
 		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
 		//quit here if no new work to be done	
+		let categorizedTransactionsToUpdate = getRemainingAmazonTransactions().filter(t =>  t.categorized)
 		if(!amz || getRemainingAmazonTransactions().length==0 || getRemainingAmazonTransactions().length<=this.globalState.remainingAmazonTransactionsCount)return
 		var getAttributedAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
 		var absAmountsMatch = (a,b) => (Math.abs(Math.abs(a) - Math.abs(b))<0.000001) //by doing so we avoid javascript rounding and precision errors
@@ -427,7 +428,15 @@ class Core{
 		//brag about how great this algorithm is
 		var total = this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.streamAllocation).filter(t => t.amount <0),totalMatched = total.filter(t => !!t.amazonOrderDetails).filter(t => !t.streamAllocation).filter(t => t.amount <0)
 		console.log("Uncategorized Amazon transactions matched: "+(100*(totalMatched.length/total.length).toFixed(4))+"% ("+totalMatched.length+"/"+total.length+")")
-		
+		//if some of the mathched transaction are already categorized, we should save them with the amazon details
+		console.log("Unmatched Categorized Amazon transactions remaining: "+categorizedTransactionsToUpdate.length)
+		categorizedTransactionsToUpdate = categorizedTransactionsToUpdate.filter(t => !!t.amazonOrderDetails)
+		if(categorizedTransactionsToUpdate.length > 0){
+			console.log("updating "+categorizedTransactionsToUpdate.length+" categorized transactions with amazon details")
+			this.categorizeTransactionsAllocationsTupples(categorizedTransactionsToUpdate
+				.map(t => ({transaction:t,streamAllocation:t.streamAllocation})))
+				.then(()=> console.log("update complete"))
+		}
 	}
 }
  
