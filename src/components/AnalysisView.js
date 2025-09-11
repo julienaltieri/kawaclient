@@ -174,6 +174,8 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.changeExpectationAmount = this.changeExpectationAmount.bind(this)
 		this.changeExpectationPosition = this.changeExpectationPosition.bind(this)
 		this.deleteExpectation = this.deleteExpectation.bind(this)
+
+		this.isZeroSumStream = this.props.analysis.stream.getCurrentExpectedAmount() === 0
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -219,13 +221,21 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			prevExp = h.amount;
 			return res;
 		})
-		let elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
+		let elements = [];
+		if(this.isZeroSumStream){
+			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => 
+				<PeriodReportTransactionFeedView isZeroSumStream={true} key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} 
+					handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)} reconciliation={this.props.reconciliation}/>
+			))
+		}else{
+			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
 			<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
 			...expChanges?.sort(utils.sorters.desc(r => r.startDate)).filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
 				.map((h,k) => <ExpectationChangePannel key={100*(i+1)+k} expChangeData={h} report={r} analysis={this.props.analysis} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}
 					onRequestToRemove={() => this.deleteExpectation(h.origin)}/>
 				),
-		])))
+			])))
+		}
 		return (<FlipMove style={{width: "100%"}}>{elements}</FlipMove>)
 	}
 }
@@ -358,16 +368,32 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 		else return this.props.analysis.getNetAmount()
 	}
 	getReportDateString(){return this.props.analysis.getReportingPeriodString()}
+	isTransactionMatched(transaction){
+		return this.props.reconciliation?.matches?.filter(m => m.debit.transactionId==transaction.transactionId || m.credit.transactionId==transaction.transactionId)[0]
+	}
 	render(){
 		return (<FlexColumn style={{alignItems:"stretch",height:"auto", marginBottom:"0.5rem"}}>
 				<TransactionFeedHeaderViewContainer>
 					<EllipsisText style={{width: "6rem"}}>{this.getReportDateString()}</EllipsisText>
 					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,undefined,undefined,Core.getPreferredCurrency())}</div>
 				</TransactionFeedHeaderViewContainer>
-				{this.props.analysis.transactions.sort(utils.sorters.desc(t => t.getDisplayDate())).map((t,i) => (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
-					<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
-					<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</div>
-				</MiniTransactionContainer>))}
+				{this.props.analysis.transactions
+					.sort(utils.sorters.desc(t => t.getDisplayDate()))
+					.filter(t => {
+						let isMatched = this.isTransactionMatched(t) //if a zero sum stream, only show unmatched transactions
+						return !(this.props.isZeroSumStream && isMatched?.credit.transactionId==t.transactionId)
+					})
+					.map((t,i) => {
+						let isMatched = this.isTransactionMatched(t)
+						return (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
+							{this.props.isZeroSumStream?<EllipsisText style={{fontSize:"0.7rem",width: "14%",
+								color: isMatched ? DS.getStyle().positive : t.moneyInForStream(this.props.analysis.stream) < 0 ? DS.getStyle().warning : DS.getStyle().bodyTextSecondary
+							}}>●</EllipsisText>:null}
+							<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
+							<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</div>
+						</MiniTransactionContainer>)
+					})
+				}
 		</FlexColumn>)
 	}
 }	

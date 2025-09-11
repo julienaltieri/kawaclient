@@ -13,7 +13,7 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	render(){
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>
 			<CompactMiniGraph refresh={this.state.minigraphLastRefresh} shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
-			<StreamAnalysisTransactionFeedView analysis={this.props.analysis} onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+			<StreamAnalysisTransactionFeedView analysis={this.props.analysis} reconciliation={this.props.reconciliation} onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
 		</ObsPeriodViewContainer>
 	}
 }

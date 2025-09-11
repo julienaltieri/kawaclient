@@ -13,6 +13,7 @@ import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
 import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
+import { matches } from "lodash";
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -190,7 +191,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 class TerminalStreamCard extends StreamAuditView{
 	constructor(props){
 		super(props);
-		this.state = {detailView:false}
+		this.state = {detailView:false,reconciliation:[]}
 		this.handleClick = this.handleClick.bind(this)
 	}
 	getTitle(){return this.props.stream.name}
@@ -214,12 +215,14 @@ class TerminalStreamCard extends StreamAuditView{
 		})
 		let unmatched = [...debits,...orphanCredits]
 		console.log({matches: matches, unmatched: unmatched, balance: utils.sum(unmatched.map(t => t.moneyInForStream(this.props.stream)))})
+		return {matches: matches, unmatched: unmatched}
 	}
 	handleClick(){
 		//console.log(this.getStreamAnalysis())
-		this.findUnmatched(this.getStreamAnalysis().transactions)
-		this.updateState({detailView:!this.state.detailView})}
-	render(){		
+		let reconciliation = this.findUnmatched(this.getStreamAnalysis().transactions)
+		this.updateState({detailView:!this.state.detailView,reconciliation:reconciliation})
+	}
+	render(){
 		return (<DS.component.ContentTile style={{height:"14rem",maxWidth: "10.5rem",width: "calc(50% - 2rem)"}}>
 			<TSCardHeader>{/*Title*/}
 				<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
@@ -229,8 +232,8 @@ class TerminalStreamCard extends StreamAuditView{
 			</TSCardHeader>
 			<TSCardContent style={{transform: "scale(1)"}}>{/*transform here is needed to get the positioning of annotations tooltips to work*/}
 				{this.state.detailView?
-					<StreamObservationPeriodView analysis={this.getStreamAnalysis({subReportingPeriod:this.props.stream.getReportingPeriod()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
-					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()}/>}
+					<StreamObservationPeriodView reconciliation={this.state.reconciliation} analysis={this.getStreamAnalysis({subReportingPeriod:this.props.stream.getReportingPeriod()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} />}
 			</TSCardContent>
 			<TSFooter>{/*Switch link*/}
 				<StyledLink onClick={this.handleClick}>{this.state.detailView?"Hide":"See"} details</StyledLink>
