@@ -81,7 +81,7 @@ class MasterStreamAuditView extends StreamAuditView{
 class MacroCompoundStreamAuditView extends StreamAuditView{
 	constructor(props) {
 		super(props);
-		this.state = { isCollapsed: false };
+		this.state = { isCollapsed: true };
 		this.toggleCollapse = this.toggleCollapse.bind(this);
 	}
 
@@ -138,7 +138,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 class CompoundStreamAuditView extends StreamAuditView{
 	constructor(props) {
 		super(props);
-		this.state = { isCollapsed: false };
+		this.state = { isCollapsed: true };
 		this.toggleCollapse = this.toggleCollapse.bind(this);
 	}
 
