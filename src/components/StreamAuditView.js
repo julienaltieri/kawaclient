@@ -202,18 +202,61 @@ class TerminalStreamCard extends StreamAuditView{
 			else {debits.push(t)}
 		})
 		let matches = [], orphanCredits = [];
-		credits.sort(utils.sorters.desc(t => t.amount))
+
+		//direct match
+		credits.sort(utils.sorters.asc(ct => ct.date.getTime()))
 		let debitAmounts = debits.map(t => t.moneyOutForStream(this.props.stream)) 
 		credits.forEach(ct => {
 			let j = debitAmounts.indexOf(ct.moneyInForStream(this.props.stream))
 			let debit = debits[j]
-			if(j>-1 && (debit.date.getTime() <= ct.date.getTime() + timeIntervals.oneWeek )){//match
-				matches.push({credit: ct, debit: debit})
+			if(j>-1 && (debit.date.getTime() <= ct.date.getTime() + timeIntervals.oneWeek * 4 )){//match
+				matches.push({credit: [ct], debit: [debit]})
 				debits.splice(j,1)
 				debitAmounts.splice(j,1)
 			}else{orphanCredits.push(ct)}
 		})
-		let unmatched = [...debits,...orphanCredits]
+		//one debit to many refunds
+		credits = orphanCredits
+		orphanCredits = []
+		let orphanDebits = []
+		debits.forEach(dt => {
+			let possibleCredits = credits.filter(ct => ct.moneyInForStream(this.props.stream)<= -dt.moneyInForStream(this.props.stream))
+			possibleCredits.sort(utils.sorters.asc(ct => ct.date.getTime()))
+			if(possibleCredits.length>0){
+				let combinations = utils.combine(possibleCredits,2)
+					.filter(combi => Math.abs(
+						utils.sum([...combi.map(c => c.moneyInForStream(this.props.stream)),...[dt.moneyInForStream(this.props.stream)]]))<0.001
+					)
+				if(combinations.length>0){
+					let bestCombination = combinations.sort(utils.sorters.asc(combi => utils.sum(combi.map(c => c.date.getTime()))))[0] //pick the one with the earliest dates
+					matches.push({credit:bestCombination,debit:[dt]});	
+					//remove matched credits from consideration
+					bestCombination.forEach(c => {
+						let j = credits.indexOf(c)
+						if(j>-1){credits.splice(j,1)}
+					})	
+				}else{orphanDebits.push(dt)}
+			}else{orphanDebits.push(dt)}
+		})
+
+		//one credit to many debits
+		debits = orphanDebits;
+		orphanDebits = []
+		credits.sort(utils.sorters.asc(ct => ct.date.getTime())).forEach(ct => {
+			let possibleDebits = debits.filter(dt => -dt.moneyOutForStream(this.props.stream)<= ct.moneyInForStream(this.props.stream) )
+			possibleDebits.sort(utils.sorters.asc(dt => dt.date.getTime()))
+			if(possibleDebits.length>0){
+				let combinations = utils.combine(possibleDebits,2).filter(combi => Math.abs(
+					utils.sum([...combi.map(c => c.moneyInForStream(this.props.stream)),...[ct.moneyInForStream(this.props.stream)]]))<0.001
+				)
+				if(combinations.length>0){
+					let bestCombination = combinations.sort(utils.sorters.asc(combi => utils.sum(combi.map(c => c.date.getTime()))))[0] //pick the one with the earliest dates
+					matches.push({credit:[ct],debit:bestCombination});
+				}else{orphanCredits.push(ct)}
+			}else{orphanCredits.push(ct)}
+		})
+
+		let unmatched = [...orphanDebits,...orphanCredits]
 		console.log({matches: matches, unmatched: unmatched, balance: utils.sum(unmatched.map(t => t.moneyInForStream(this.props.stream)))})
 		return {matches: matches, unmatched: unmatched}
 	}

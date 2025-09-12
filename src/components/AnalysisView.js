@@ -369,8 +369,13 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 	}
 	getReportDateString(){return this.props.analysis.getReportingPeriodString()}
 	isTransactionMatched(transaction){
-		return this.props.reconciliation?.matches?.filter(m => m.debit.transactionId==transaction.transactionId || m.credit.transactionId==transaction.transactionId)[0]
+		return this.props.reconciliation?.matches?.filter(m => 
+			m.debit.map(a => a.transactionId).indexOf(transaction.transactionId)>-1
+		|| m.credit.map(a => a.transactionId).indexOf(transaction.transactionId)>-1
+		)[0]
 	}
+	getDotColor(t,isMatched){ return isMatched ? DS.getStyle().positive : t.moneyInForStream(this.props.analysis.stream) < 0 ? DS.getStyle().warning : DS.getStyle().bodyTextSecondary }
+	getDotAltText(t,isMatched){ return isMatched ? "Refund complete" : t.moneyInForStream(this.props.analysis.stream) < 0 ? "Refund pending" : "Unmatched refund" }
 	render(){
 		return (<FlexColumn style={{alignItems:"stretch",height:"auto", marginBottom:"0.5rem"}}>
 				<TransactionFeedHeaderViewContainer>
@@ -381,13 +386,13 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 					.sort(utils.sorters.desc(t => t.getDisplayDate()))
 					.filter(t => {
 						let isMatched = this.isTransactionMatched(t) //if a zero sum stream, only show unmatched transactions
-						return !(this.props.isZeroSumStream && isMatched?.credit.transactionId==t.transactionId)
+						return !(this.props.isZeroSumStream && isMatched?.credit.map(a => a.transactionId).indexOf(t.transactionId)>-1)
 					})
 					.map((t,i) => {
 						let isMatched = this.isTransactionMatched(t)
 						return (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
-							{this.props.isZeroSumStream?<EllipsisText style={{fontSize:"0.7rem",width: "14%",
-								color: isMatched ? DS.getStyle().positive : t.moneyInForStream(this.props.analysis.stream) < 0 ? DS.getStyle().warning : DS.getStyle().bodyTextSecondary
+							{this.props.isZeroSumStream?<EllipsisText title={this.getDotAltText(t,isMatched)}
+								style={{fontSize:"0.7rem",width: "0.8rem","flexShrink":0,color: this.getDotColor(t,isMatched)
 							}}>●</EllipsisText>:null}
 							<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
 							<div style={{fontSize:"0.7rem",display:"block"}}>{utils.formatCurrencyAmount(t.streamAllocation.filter(a => a.streamId==this.props.stream.id)[0]?.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</div>
