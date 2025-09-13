@@ -174,8 +174,6 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.changeExpectationAmount = this.changeExpectationAmount.bind(this)
 		this.changeExpectationPosition = this.changeExpectationPosition.bind(this)
 		this.deleteExpectation = this.deleteExpectation.bind(this)
-
-		this.isZeroSumStream = this.props.analysis.stream.getCurrentExpectedAmount() === 0
 	}
 	handleClickOnTransaction(txn){
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
@@ -222,9 +220,9 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			return res;
 		})
 		let elements = [];
-		if(this.isZeroSumStream){
+		if(this.props.reconciliation){
 			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => 
-				<PeriodReportTransactionFeedView isZeroSumStream={true} key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} 
+				<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} 
 					handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)} reconciliation={this.props.reconciliation}/>
 			))
 		}else{
@@ -386,12 +384,12 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 					.sort(utils.sorters.desc(t => t.getDisplayDate()))
 					.filter(t => {
 						let isMatched = this.isTransactionMatched(t) //if a zero sum stream, only show unmatched transactions
-						return !(this.props.isZeroSumStream && isMatched?.credit.map(a => a.transactionId).indexOf(t.transactionId)>-1)
+						return !(this.props.reconciliation && isMatched?.credit.map(a => a.transactionId).indexOf(t.transactionId)>-1)
 					})
 					.map((t,i) => {
 						let isMatched = this.isTransactionMatched(t)
 						return (<MiniTransactionContainer onClick={(e)=> this.props.handleClickOnTransaction(t)} key={i}>
-							{this.props.isZeroSumStream?<EllipsisText title={this.getDotAltText(t,isMatched)}
+							{this.props.reconciliation?<EllipsisText title={this.getDotAltText(t,isMatched)}
 								style={{fontSize:"0.7rem",width: "0.8rem","flexShrink":0,color: this.getDotColor(t,isMatched)
 							}}>●</EllipsisText>:null}
 							<EllipsisText style={{fontSize:"0.7rem",width: "60%"}}>{t.description}</EllipsisText>
