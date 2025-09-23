@@ -53,7 +53,8 @@ class MissionControl extends BaseComponent{
 			this.updateState({fetching: false,availableTransactions:res})
 		})
 	}
-	onQueueUpdate(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})}
+	onQueueUpdate(){return this.reRender()}
+	reRender(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})}
 	addBankConnectionCards(){
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {
@@ -72,8 +73,11 @@ class MissionControl extends BaseComponent{
 		}));
 		var tupples = txns.map((t,i) => {return {transaction:t,streamAllocation:streamAllocations[i]}})
 		var actionsToConsume = this.state.actionQueueManager.getQueue().filter(a => a.transaction && txnsIds.indexOf(a.transaction.id)>-1);
-		return Promise.all([this.state.actionQueueManager.consumeActions(actionsToConsume),Core.categorizeTransactionsAllocationsTupples(tupples)])
-		.then(([,cats]) => this.insertClarificationActionsIfNeeded(cats))
+
+		return Promise.all([
+			this.state.actionQueueManager.consumeActions(actionsToConsume),
+			Core.categorizeTransactionsAllocationsTupples(tupples)
+		]).then(([,cats]) => this.insertClarificationActionsIfNeeded(cats))
 	}
 	insertClarificationActionsIfNeeded(cats){
 		let startingId = this.state.actionQueueManager.getNextAvailableId();

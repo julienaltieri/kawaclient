@@ -55,6 +55,7 @@ class Stream{
     this.endDate = (!isNaN(new Date(json.endDate)))?new Date(json.endDate):undefined;
     this.isSavings = json.isSavings;
     this.isInterestIncome = json.isInterestIncome;
+    this.isUnderInterestIncomeCompoundStream = json.isUnderInterestIncomeCompoundStream; //true if this stream is a child of an interest income compound stream (used to exclude interest income from budgeting calculations)
     this.annotations = json.annotations || [];
     //this.terminalStreams = [this]
   }
@@ -170,7 +171,7 @@ export const invalidateStreamMap = () => {
 export class CompoundStream extends Stream{
   constructor(json){
     super(json);
-    this.children = (json.children?json.children.filter(c => !c.children || c.children.length>0).map(c => c.children ? new CompoundStream(c): new TerminalStream(c)):[]);
+    this.children = (json.children?json.children.filter(c => !c.children || c.children.length>0).map(c => c.children ? new CompoundStream({...c,...{isUnderInterestIncomeCompoundStream:this.isInterestIncome||this.isUnderInterestIncomeCompoundStream}}): new TerminalStream({...c,...{isUnderInterestIncomeCompoundStream:this.isInterestIncome }})):[]);
     this.period = (json.period || Period.longestPeriod(this.children.map(c => c.period)));
     this.setPeriod = json.period;
     this.isRoot = json.isRoot;
@@ -361,8 +362,10 @@ export class GenericTransaction{
     else {return (utils.or(s.getAllTerminalStreams(),ss => this.isAllocatedToStream(ss)))}
   }
   isUnderInterestIncomeCompoundStream(){
-    let as = Core.getStreamById(this.streamAllocation[0]?.streamId).getAncestors()
-    return utils.or(as, s => s.isInterestIncomeStream() && !s.isTerminal())
+    let s = Core.getStreamById(this.streamAllocation[0]?.streamId)
+    return s?.isUnderInterestIncomeCompoundStream && !s.isTerminal()
+   // let as = Core.getStreamById(this.streamAllocation[0]?.streamId).getAncestors()
+   // return utils.or(as, s => s.isInterestIncomeStream() && !s.isTerminal())
   }
   getTransactionHash(){
     return this.description.replace(/\s\s+/g, ' ').split(" ").slice(0,3).reduce(utils.reducers.stringConcat(undefined," "),"")+"::"+

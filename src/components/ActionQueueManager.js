@@ -14,7 +14,7 @@ const disappearAnimationTime = 300;
 export default class ActionQueueManager{
 	constructor(onQueueUpdate){
 		this.queue = [new EmptyStateAction(0,this)]
-		this.onQueueUpdate = onQueueUpdate || (() => {}); //callback to trigger when the queue updates	
+		this.onQueueUpdate = onQueueUpdate || Promise.resolve(); //callback to trigger when the queue updates	
 	}
 
 	//convenience
@@ -32,7 +32,7 @@ export default class ActionQueueManager{
 			return {action:a,index:utils.searchInsertAsc(sortedActionSortingValues,a.getSortValue())}
 		}).sort(utils.sorters.desc(insert => insert.index))
 		inserts.forEach(insert => this.queue.splice(insert.index,0,insert.action))
-		this.onQueueUpdate()
+		return this.onQueueUpdate()
 	}
 	//actions must be in the queue, skip (boolean) indicates whether to treat the actions as skipped (not removed from the queue)
 	consumeActions(actions,skip){
