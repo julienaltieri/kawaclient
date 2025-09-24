@@ -14,71 +14,50 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 		this.isZeroSumStream = this.props.analysis.stream.getCurrentExpectedAmount() === 0
 	}
 	findUnmatched(txnArr){//used for reconciliation 
-		let debits = [], credits = [];
+		let debits = [], credits = [],  matches = []
 		let stream = this.props.analysis.stream;
 
+		//separate credits from debits and sort them by date
 		txnArr.forEach(t => {
 			if(t.amount>0){credits.push(t)}
 			else {debits.push(t)}
 		})
-		let matches = [], orphanCredits = [];
+		debits = debits.sort(utils.sorters.asc(bt => bt.date.getTime()))
+		credits = credits.sort(utils.sorters.asc(bt => bt.date.getTime()))
 
-		//direct match
-		credits.sort(utils.sorters.asc(ct => ct.date.getTime()))
-		let debitAmounts = debits.map(t => t.moneyOutForStream(stream)) 
-		credits.forEach(ct => {
-			let j = debitAmounts.indexOf(ct.moneyInForStream(stream))
-			let debit = debits[j]
-			if(j>-1 && (debit.date.getTime() <= ct.date.getTime() + timeIntervals.oneWeek * 4 )){//match
-				matches.push({credit: [ct], debit: [debit]})
-				debits.splice(j,1)
-				debitAmounts.splice(j,1)
-			}else{orphanCredits.push(ct)}
-		})
-		//one debit to many refunds
-		credits = orphanCredits
-		orphanCredits = []
-		let orphanDebits = []
-		debits.forEach(dt => {
-			let possibleCredits = credits.filter(ct => ct.moneyInForStream(stream)<= -dt.moneyInForStream(stream))
-			possibleCredits.sort(utils.sorters.asc(ct => ct.date.getTime()))
-			if(possibleCredits.length>0){
-				let combinations = utils.combine(possibleCredits,2)
-					.filter(combi => Math.abs(
-						utils.sum([...combi.map(c => c.moneyInForStream(stream)),...[dt.moneyInForStream(stream)]]))<0.001
-					)
-				if(combinations.length>0){
-					let bestCombination = combinations.sort(utils.sorters.asc(combi => utils.sum(combi.map(c => c.date.getTime()))))[0] //pick the one with the earliest dates
-					matches.push({credit:bestCombination,debit:[dt]});	
-					//remove matched credits from consideration
-					bestCombination.forEach(c => {
-						let j = credits.indexOf(c)
-						if(j>-1){credits.splice(j,1)}
-					})	
-				}else{orphanDebits.push(dt)}
-			}else{orphanDebits.push(dt)}
-		})
+		function computeMatches(o){//{elements,matchPool,matchMemory,poolFilter,oneToMany?,poolDateFilter}
+			if(stream.isSavings || stream.isInterestIncome){return}
+			let toRemove = [], getKeyForTransaction = (t) => t.moneyInForStream(stream)>0?"credit":"debit"
+			o.elements.forEach(at => {
+				let pool = o.matchPool.filter(bt => o.poolDateFilter(at,bt))//apply date conditions
+				let possibleMatches = (o.oneToMany?utils.combine(pool,2):pool.map(t => [t]))
+					.sort(utils.sorters.asc(arr => utils.sum(arr.map(c => c.date.getTime()))))//sort by earlier dates first
+					.filter(bt => Math.abs(utils.sum([at,...bt],t => t.moneyInForStream(stream)))<0.001)//must be zero sum
+				let matchedCandidate = possibleMatches[0] // default candidate is the first possible combo
+				if(!matchedCandidate || matchedCandidate.length==0){return}
+				matches.push({ [getKeyForTransaction(at)]: [at] , [getKeyForTransaction(matchedCandidate[0])]: matchedCandidate});
+				o.matchPool.splice(0,o.matchPool.length,...o.matchPool.filter(bt => !matchedCandidate.includes(bt)))
+				toRemove.push(at.transactionId)
+			})
+			o.elements.splice(0, o.elements.length, ...o.elements.filter(ct => !toRemove.includes(ct.transactionId)))//remove matched elements
+		}
 
-		//one credit to many debits
-		debits = orphanDebits;
-		orphanDebits = []
-		credits.sort(utils.sorters.asc(ct => ct.date.getTime())).forEach(ct => {
-			let possibleDebits = debits.filter(dt => -dt.moneyOutForStream(stream)<= ct.moneyInForStream(stream) )
-			possibleDebits.sort(utils.sorters.asc(dt => dt.date.getTime()))
-			if(possibleDebits.length>0){
-				let combinations = utils.combine(possibleDebits,2).filter(combi => Math.abs(
-					utils.sum([...combi.map(c => c.moneyInForStream(stream)),...[ct.moneyInForStream(stream)]]))<0.001
-				)
-				if(combinations.length>0){
-					let bestCombination = combinations.sort(utils.sorters.asc(combi => utils.sum(combi.map(c => c.date.getTime()))))[0] //pick the one with the earliest dates
-					matches.push({credit:[ct],debit:bestCombination});
-				}else{orphanCredits.push(ct)}
-			}else{orphanCredits.push(ct)}
-		})
+		//tests gradual longer window
+		function match(weekWindows,reverseTiming){
+			weekWindows.forEach(i => {
+				let filter = (ct,dt) => (reverseTiming?(ct.date.getTime() < dt.date.getTime()):(ct.date.getTime() >= dt.date.getTime()) 
+				&& (reverseTiming?-1:1)*(ct.date.getTime() - dt.date.getTime()) <= (timeIntervals.oneWeek * i))
+				computeMatches({elements: credits, matchPool: debits, oneToMany: false, poolDateFilter: (a,b) => filter(a,b)}) //credit <> debit
+				computeMatches({elements: credits, matchPool: debits, oneToMany: true, poolDateFilter: (a,b) => filter(a,b)}) //credit <> [...debit]
+				computeMatches({elements: debits, matchPool: credits, oneToMany: true, poolDateFilter: (a,b) => filter(b,a)}) //debit <> [...credit]
+			})
+		}
+		match([1,5,8,16],false);//start with forward order (credits refund debits)
+		match([1,5,8,16],true);//for the rest, try reverse order (credits have to be paid afterwards)
 
-		let unmatched = [...orphanDebits,...orphanCredits]
-		console.log({matches: matches, unmatched: unmatched, balance: utils.sum(unmatched.map(t => t.moneyInForStream(stream)))})
-		return {matches: matches, unmatched: unmatched}
+		let res = {matches: matches, unmatched: [...credits,...debits]}
+		//console.log(res)
+		return res
 	}
 	render(){
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>

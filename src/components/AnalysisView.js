@@ -175,7 +175,11 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.changeExpectationPosition = this.changeExpectationPosition.bind(this)
 		this.deleteExpectation = this.deleteExpectation.bind(this)
 	}
+	getReconciledTransactionsFromTransaction(txn){
+		return this.props.reconciliation?.matches.filter(m => m.debit.find(t => t.transactionId === txn.transactionId))|| []
+	}
 	handleClickOnTransaction(txn){
+		console.log(this.getReconciledTransactionsFromTransaction(txn))
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
 				let txnToUpdate = [txn]
@@ -227,7 +231,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 			))
 		}else{
 			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
-			<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
+			<PeriodReportTransactionFeedView key={2000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
 			...expChanges?.sort(utils.sorters.desc(r => r.startDate)).filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
 				.map((h,k) => <ExpectationChangePannel key={100*(i+1)+k} expChangeData={h} report={r} analysis={this.props.analysis} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}
 					onRequestToRemove={() => this.deleteExpectation(h.origin)}/>
