@@ -13,9 +13,9 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 		this.state = {minigraphLastRefresh:new Date()}
 		this.isZeroSumStream = this.props.analysis.stream.getCurrentExpectedAmount() === 0
 	}
+	
 	findUnmatched(txnArr){//used for reconciliation 
-		let debits = [], credits = [],  matches = []
-		let stream = this.props.analysis.stream;
+		let debits = [], credits = [],  matches = [], stream = this.props.analysis.stream;
 
 		//separate credits from debits and sort them by date
 		txnArr.forEach(t => {
@@ -25,7 +25,12 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 		debits = debits.sort(utils.sorters.asc(bt => bt.date.getTime()))
 		credits = credits.sort(utils.sorters.asc(bt => bt.date.getTime()))
 
-		function computeMatches(o){//{elements,matchPool,matchMemory,poolFilter,oneToMany?,poolDateFilter}
+		//helper matching function taking in a config object with the following options:
+		// elements - list of elements to try to match against other transactions
+		// matchPool - pool of candidates for elements to be matched against 
+		// oneToMany - wether or not we want to try matching one to many, instead of one to one 
+		// poolDateFilter - what needs to be true on dates to be consider for matching
+		function computeMatches(o){
 			if(stream.isSavings || stream.isInterestIncome){return}
 			let toRemove = [], getKeyForTransaction = (t) => t.moneyInForStream(stream)>0?"credit":"debit"
 			o.elements.forEach(at => {
@@ -42,7 +47,7 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 			o.elements.splice(0, o.elements.length, ...o.elements.filter(ct => !toRemove.includes(ct.transactionId)))//remove matched elements
 		}
 
-		//tests gradual longer window
+		//main exeuction function, testing gradual longer time windows in weeks
 		function match(weekWindows,reverseTiming){
 			weekWindows.forEach(i => {
 				let filter = (ct,dt) => (reverseTiming?(ct.date.getTime() < dt.date.getTime()):(ct.date.getTime() >= dt.date.getTime()) 
@@ -52,6 +57,8 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 				computeMatches({elements: debits, matchPool: credits, oneToMany: true, poolDateFilter: (a,b) => filter(b,a)}) //debit <> [...credit]
 			})
 		}
+
+		//actual matching execution
 		match([1,5,8,16],false);//start with forward order (credits refund debits)
 		match([1,5,8,16],true);//for the rest, try reverse order (credits have to be paid afterwards)
 
@@ -59,6 +66,7 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 		//console.log(res)
 		return res
 	}
+	
 	render(){
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>
 			<CompactMiniGraph refresh={this.state.minigraphLastRefresh} shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
