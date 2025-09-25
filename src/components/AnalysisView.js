@@ -176,10 +176,10 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		this.deleteExpectation = this.deleteExpectation.bind(this)
 	}
 	getReconciledTransactionsFromTransaction(txn){
-		return this.props.reconciliation?.matches.filter(m => m.debit.find(t => t.transactionId === txn.transactionId))|| []
+		return this.props.reconciliation?.matches.filter(m => m.debit.find(t => t.transactionId === txn.transactionId))
 	}
 	handleClickOnTransaction(txn){
-		console.log(this.getReconciledTransactionsFromTransaction(txn))
+		txn.reconciliation = this.getReconciledTransactionsFromTransaction(txn)
 		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
 				let txnToUpdate = [txn]

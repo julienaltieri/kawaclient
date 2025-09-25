@@ -197,50 +197,64 @@ export class TransactionView extends BaseComponent{
 		var amznghbrs = this.getAmazonNeighbors();
 		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
-		return(<DS.component.ContentTile  style={{opacity:this.props.animationIconVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",
-	padding:"1.5rem", transition: "opacity "+disappearAnimationTime/1000+"s ease", alignItems: "center" }}>
-			{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
-				<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
-					{amz.items.map((it,i) => 
-						<div  key={i}  style={{
-							marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
-							transition:"margin-left 0.5s ease",
-							filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
-							height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
-							<DS.component.Image src={it.image}/>
-						</div>
-					)}
-				</div>
-				{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
-					<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
-					<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
-				</div>):""}
-				</div>
-			):""}
-			<TxInfoContainer>{/*regular transaction*/}
-				{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-					<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
+		return(<div>
+			<DS.component.ContentTile  style={{opacity:this.props.animationIconVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",
+		padding:"1.5rem", transition: "opacity "+disappearAnimationTime/1000+"s ease", alignItems: "center" }}>
+				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
+					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
+						{amz.items.map((it,i) => 
+							<div  key={i}  style={{
+								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
+								transition:"margin-left 0.5s ease",
+								filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
+								height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
+								<DS.component.Image src={it.image}/>
+							</div>
+						)}
+					</div>
+					{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
+						<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
+						<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
+						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
+					</div>):""}
+					</div>
+				):""}
+				<TxInfoContainer>{/*regular transaction*/}
+					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
+						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
 
-				<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
-					this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
-				{amz?<div>
-					<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
-					<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
-					:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
-				}
-			</TxInfoContainer>
-			<Spacer/>
-			<div>
-				<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
-				{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
-					<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
-						<span>{utils.formatDateShort(n.date)}</span>
-						<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
-					</div>)}</div>:""}
-			</div>
-		</DS.component.ContentTile>
+					<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
+						this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
+					{amz?<div>
+						<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
+						<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
+						:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
+					}
+				</TxInfoContainer>
+				<Spacer/>
+				<div>
+					<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
+					{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
+						<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
+							<span>{utils.formatDateShort(n.date)}</span>
+							<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
+						</div>)}</div>:""}
+				</div>
+			</DS.component.ContentTile>
+			{this.props.transaction.reconciliation?<div>{this.renderReconciliation()}</div>:""}
+		</div>
 	)}
+	renderReconciliation(){
+		return(<div >
+			{this.props.transaction.reconciliation[0]?this.props.transaction.reconciliation[0].credit.map((t,i) => <DS.component.ListItem key={3000+i} noHover size="xs" style={{justifyContent: "space-between"}}>
+				<span style={{flexShrink: 1,flexBasis: "auto",textOverflow: "ellipsis",textWrap: "nowrap",overflow: "hidden",paddingRight:"0.5rem"}}><span style={{color: DS.getStyle().positive}}>●</span> Refunded on {utils.formatDateShort(t.date)} · {t.description}</span>
+				<span style={{flexShrink: 0,flexBasis: "auto"}}>{utils.formatCurrencyAmount(t.amount,undefined,undefined,false,Core.getPreferredCurrency())}</span>
+			</DS.component.ListItem>):<DS.component.ListItem key={0} noHover size="xs" style={{justifyContent: "space-between"}}>
+				<span><span style={{color: DS.getStyle().warning}}>● </span> Awaiting refund</span>
+				<span></span>
+			</DS.component.ListItem>}
+		</div>)
+	}
 }
 
 const fadeInAnimation = keyframes`${fadeIn}`;

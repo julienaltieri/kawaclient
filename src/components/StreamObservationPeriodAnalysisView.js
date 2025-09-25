@@ -63,7 +63,6 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 		match([1,5,8,16],true);//for the rest, try reverse order (credits have to be paid afterwards)
 
 		let res = {matches: matches, unmatched: [...credits,...debits]}
-		//console.log(res)
 		return res
 	}
 	
