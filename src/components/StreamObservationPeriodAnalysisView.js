@@ -11,7 +11,7 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	constructor(props){
 		super(props)
 		this.state = {minigraphLastRefresh:new Date()}
-		this.isZeroSumStream = this.props.analysis.stream.getCurrentExpectedAmount() === 0
+		this.isZeroSumStream = this.props.analysis.stream.isZeroSumStream
 	}
 	
 	findUnmatched(txnArr){//used for reconciliation 

@@ -13,6 +13,7 @@ import {format} from './AnalysisView'
 import MiniGraph from './MiniGraph'
 import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
+import {ModalTemplates} from '../ModalManager.js'
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -186,23 +187,126 @@ class CompoundStreamAuditView extends StreamAuditView{
 	}
 }
 
+//Stream Details Modal Component
+class StreamDetailsModalView extends BaseComponent{
+	constructor(props){
+		super(props);
+		const { stream, analysis } = props;
+		const currentAmount = stream.getExpectedAmountAtDate(valueForDisplay(analysis));
+		this.originalState = {
+			name: stream.name,
+			amount: currentAmount,
+			period: stream.period,
+			isSavings: stream.isSavings,
+			isInterestIncome: stream.isInterestIncome,
+			isZeroSumStream: stream.isZeroSumStream
+		};
+		this.state = { ...this.originalState };
+		props.controller.state.modalContentState = {...props.controller.state.modalContentState,...this.state}
+		this.handleNameChange = this.handleNameChange.bind(this);
+		this.handleAmountChange = this.handleAmountChange.bind(this);
+		this.handlePeriodChange = this.handlePeriodChange.bind(this);
+		this.handleSavingsChange = this.handleSavingsChange.bind(this);
+		this.handleInterestChange = this.handleInterestChange.bind(this);
+		this.handleZeroSumChange = this.handleZeroSumChange.bind(this);
+	}
+	
+	componentDidMount(){this.updateSaveButtonState()}
+	hasChanges(){return Object.keys(this.originalState).some(key => this.state[key] !== this.originalState[key])}
+	updateSaveButtonState(){if(this.props.controller){this.props.controller.setPrimaryButtonDisabled(!this.hasChanges())}}
+	updateContentState(changes){
+		this.props.controller.state.modalContentState = {...this.props.controller.state.modalContentState,...changes}
+		this.updateState(changes).then(() => this.updateSaveButtonState())
+	}
+	
+	handleNameChange(e) { this.updateContentState({name: e.target.value})}
+	handleAmountChange(e) { this.updateContentState({amount: parseFloat(e.target.value) || 0})}
+	handlePeriodChange(e) { this.updateContentState({period: e.target.value})}
+	handleSavingsChange(e) { this.updateContentState({isSavings: e.target.value === 'is'})}
+	handleInterestChange(e) { this.updateContentState({isInterestIncome: e.target.value === 'is'})}
+	handleZeroSumChange(e) { this.updateContentState({isZeroSumStream: e.target.value === 'is'})}
+	
+	render(){
+		const { name, amount, period, isSavings, isInterestIncome, isZeroSumStream } = this.state;
+		
+		return <DS.component.SentenceWrapper>
+			The stream named <DS.component.Input type="text" value={name} onChange={this.handleNameChange} autoSize inline /> should expect <DS.component.Input type="number" value={amount} onChange={this.handleAmountChange} autoSize inline /> every <DS.component.DropDown value={period} onChange={this.handlePeriodChange} autoSize inline>
+				{Object.keys(Period).map(p => <option key={p} value={p}>{Period[p].unitName}</option>)}
+			</DS.component.DropDown>. This stream <DS.component.DropDown value={isSavings ? 'is' : 'is not'} onChange={this.handleSavingsChange} autoSize inline>
+				<option value="is">is</option>
+				<option value="is not">is not</option>
+			</DS.component.DropDown> a savings stream, <DS.component.DropDown value={isInterestIncome ? 'is' : 'is not'} onChange={this.handleInterestChange} autoSize inline>
+				<option value="is">is</option>
+				<option value="is not">is not</option>
+			</DS.component.DropDown> an interest income stream, and <DS.component.DropDown value={isZeroSumStream ? 'is' : 'is not'} onChange={this.handleZeroSumChange} autoSize inline>
+				<option value="is">is</option>
+				<option value="is not">is not</option>
+			</DS.component.DropDown> a transaction-neutral stream for tracking reimbursements.
+		</DS.component.SentenceWrapper>
+	}
+}
+
 //Level 3: A tile representing the state of a stream for the current period
 class TerminalStreamCard extends StreamAuditView{
 	constructor(props){
 		super(props);
 		this.state = {detailView:false,reconciliation:[]}
 		this.handleClick = this.handleClick.bind(this)
+		this.handleTitleClick = this.handleTitleClick.bind(this)
 	}
 	getTitle(){return this.props.stream.name}
 	
 	handleClick(){this.updateState({detailView:!this.state.detailView})}
+	
+	handleTitleClick(){
+		Core.presentModal(ModalTemplates.ModalWithComponent(`Edit stream`,
+			<StreamDetailsModalView stream={this.props.stream} analysis={this.getStreamAnalysis()} />,
+			[{name:"Cancel"},{name:"Save",primary:true}]
+		)).then(r => {
+			if(r.buttonIndex === 1){
+				// Get the updated state from the modal
+				const updatedState = r.state;
+				const stream = this.props.stream;
+				
+				// Update the stream properties
+				stream.name = updatedState.name;
+				stream.isSavings = updatedState.isSavings || false;
+				stream.isInterestIncome = updatedState.isInterestIncome || false;
+				stream.isZeroSumStream = updatedState.isZeroSumStream || false;
+				stream.period = updatedState.period;
+				
+				// Update the expected amount if it changed
+				if(updatedState.amount !== stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))){
+					// Update the expected amount history
+					const currentDate = new Date();
+					const currentAmount = stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()));
+					
+					// Add new expected amount entry
+					stream.expAmountHistory = stream.expAmountHistory || [];
+					stream.expAmountHistory.push({
+						amount: updatedState.amount,
+						startDate: currentDate.toISOString()
+					});
+				}
+				// Save the changes
+				Core.saveStreams().then(() => {
+					console.log("Stream saved successfully");
+					// Trigger a refresh if there's a callback
+					//TODO
+				}).catch(err => {console.error("Failed to save stream:", err);});
+			}
+		}).catch(() => {console.log("Modal dismissed")})
+	}
+	
 	render(){
 		return (<DS.component.ContentTile style={{height:"14rem",maxWidth: "10.5rem",width: "calc(50% - 2rem)"}}>
 			<TSCardHeader>{/*Title*/}
-				<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
-				<div style={{fontSize:"0.8rem",color:DS.getStyle().bodyTextSecondary}}>{
-					format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
-					} per {Period[this.props.stream.period].unitName}</div>
+				<ClickableTitleContainer onClick={this.handleTitleClick}>
+					<AuditViewTitle>{this.getTitle()}</AuditViewTitle>
+					<div style={{fontSize:"0.8rem",color:DS.getStyle().bodyTextSecondary}}>{
+						format((this.props.analysis.isSavings()?-1:1)*this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),true,!(this.props.analysis.isIncome()||this.props.analysis.isSavings()))
+						} per {Period[this.props.stream.period].unitName}</div>
+				</ClickableTitleContainer>
 			</TSCardHeader>
 			<TSCardContent style={{transform: "scale(1)"}}>{/*transform here is needed to get the positioning of annotations tooltips to work*/}
 				{this.state.detailView?
@@ -367,6 +471,17 @@ const StreamAuditCellContainer = styled.div`
 	overflow: hidden;
 	opacity: ${props => props.isCollapsed ? '0' : '1'};
 	transition: max-height 0.2s ${transitionStyle}, opacity 0.2s ${transitionStyle};
+	-webkit-tap-highlight-color: transparent;
+	user-select: none;
+`
+
+
+const ClickableTitleContainer = styled.div`
+	cursor: pointer;
+	transition: opacity 0.2s ease;
+	&:hover {
+		opacity: 0.7;
+	}
 	-webkit-tap-highlight-color: transparent;
 	user-select: none;
 `

@@ -55,6 +55,7 @@ class Stream{
     this.endDate = (!isNaN(new Date(json.endDate)))?new Date(json.endDate):undefined;
     this.isSavings = json.isSavings;
     this.isInterestIncome = json.isInterestIncome;
+    this.isZeroSumStream = json.isZeroSumStream;
     this.isUnderInterestIncomeCompoundStream = json.isUnderInterestIncomeCompoundStream; //true if this stream is a child of an interest income compound stream (used to exclude interest income from budgeting calculations)
     this.annotations = json.annotations || [];
     //this.terminalStreams = [this]
