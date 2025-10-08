@@ -11,9 +11,12 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	constructor(props){
 		super(props)
 		this.state = {minigraphLastRefresh:new Date()}
-		this.isZeroSumStream = this.props.analysis.stream.isZeroSumStream
 	}
 	
+	get isZeroSumStream() {
+        return this.props.analysis.stream.isZeroSumStream;
+    }
+
 	findUnmatched(txnArr){//used for reconciliation 
 		let debits = [], credits = [],  matches = [], stream = this.props.analysis.stream;
 
@@ -69,7 +72,12 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	render(){
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>
 			<CompactMiniGraph refresh={this.state.minigraphLastRefresh} shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
-			<StreamAnalysisTransactionFeedView analysis={this.props.analysis} reconciliation={this.isZeroSumStream?this.findUnmatched(this.props.analysis.transactions):undefined} onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
+			<StreamAnalysisTransactionFeedView 
+				analysis={this.props.analysis} 
+				reconciliation={this.isZeroSumStream?this.findUnmatched(this.props.analysis.transactions):undefined} 
+				onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} 
+				onCategorizationUpdate={this.props.onCategorizationUpdate}
+				onStreamDefinitionChange={this.props.onStreamDefinitionChange}/>
 		</ObsPeriodViewContainer>
 	}
 }

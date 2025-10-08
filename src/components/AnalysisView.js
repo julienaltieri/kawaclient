@@ -151,7 +151,7 @@ export class TerminalStreamCurrentReportPeriodView extends GenericPeriodReportVi
 	render(){
 		return <FlexColumn style={{justifyContent: "center"}} onMouseOver={this.onMouseOver} onMouseOut={this.onMouseOut}>
 			<div style={{width:"90%"}}>
-				<TimeAndMoneyProgressView hovering={this.state.hovering} analysis={this.props.analysis}/>
+				<TimeAndMoneyProgressView hovering={this.state.hovering} analysis={this.props.analysis} />
 			</div>
 			<FlexColumn style={{position:"absolute",justifyContent: "center"}}>
 				<div style={{color:this.getMainColor(),fontSize:"1.3rem",fontFamily:"Barlow",marginBottom:"0.2rem"}}>{
@@ -190,7 +190,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 					//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
 					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
 				}
-				this.props.onCategorizationUpdate(txnToUpdate,allocs)
+				this.props.onContentStateChange(txnToUpdate,allocs)
 			}
 		}).catch(e => {})
 	}
@@ -227,11 +227,13 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		if(this.props.reconciliation){
 			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => 
 				<PeriodReportTransactionFeedView key={1000*(1+i)} analysis={r} stream={this.props.analysis.stream} 
-					handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)} reconciliation={this.props.reconciliation}/>
+					handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)} 
+					reconciliation={this.props.reconciliation}/>
 			))
 		}else{
 			elements = utils.flatten(this.props.analysis.getPeriodReports().sort(utils.sorters.desc(r => r.reportingDate)).map((r,i) => ([
-			<PeriodReportTransactionFeedView key={2000*(1+i)} analysis={r} stream={this.props.analysis.stream} handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
+			<PeriodReportTransactionFeedView key={2000*(1+i)} analysis={r} stream={this.props.analysis.stream} 
+				handleClickOnTransaction={(e) => this.handleClickOnTransaction(e)}/>,
 			...expChanges?.sort(utils.sorters.desc(r => r.startDate)).filter(h => h.startDate >= r.reportingStartDate && h.startDate < r.reportingDate)
 				.map((h,k) => <ExpectationChangePannel key={100*(i+1)+k} expChangeData={h} report={r} analysis={this.props.analysis} onRequestChangeAmount={(newAmount) => this.changeExpectationAmount(newAmount,h.origin)} onRequestChangePosition={(delta) => this.changeExpectationPosition(delta,r,h.origin)}
 					onRequestToRemove={() => this.deleteExpectation(h.origin)}/>

@@ -17,14 +17,14 @@ import { GenericTransaction } from "../model.js";
 class MissionControl extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.onQueueUpdate = this.onQueueUpdate.bind(this);
+		this.reRender = this.reRender.bind(this);
 		this.state = {...this.state,
 			fetching:true,
 			instanceMaxDate: new Date(),
 			instanceMinDate: AppConfig.transactionFetchMinDate,
 			availableTransactions: [],
 			streamTree: Core.getMasterStream(),
-			actionQueueManager : new ActionQueueManager(this.onQueueUpdate)
+			actionQueueManager : new ActionQueueManager(this.reRender)
 		}
 
 		//binds
@@ -53,8 +53,8 @@ class MissionControl extends BaseComponent{
 			this.updateState({fetching: false,availableTransactions:res})
 		})
 	}
-	onQueueUpdate(){return this.reRender()}
-	reRender(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)})}
+	reRender(){
+		return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)}
 	addBankConnectionCards(){
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {
@@ -136,7 +136,7 @@ class MissionControl extends BaseComponent{
 				this.categorizeTransactions(txnsToCategorize,allocs)
 			]).then(() => {
 				Core.globalState.history.popState();
-				this.state.actionQueueManager.onQueueUpdate()
+				this.reRender()
 			})
 		}else if(lastState.action == ActionTypes.ActionSkip){
 			this.state.actionQueueManager.unSkip();
@@ -150,14 +150,14 @@ class MissionControl extends BaseComponent{
 		var txnsSnapshot = Core.globalState.history.snapshot(txnsToUpdate);
 		this.categorizeTransactions(txnsToUpdate,streamAllocations).then(() => {
 			Core.globalState.history.recordTransactionUpdate(txnsSnapshot);
-			this.onQueueUpdate().then(refreshLiveRenderComponents)
+			this.reRender()
 		})
 	}
 	onRequestedToUncategorizeFromAuditView(txns){//uncategorize button from audit view
 		var txnsSnapshot = Core.globalState.history.snapshot(txns);
 		this.uncategorizeTransactions(txns).then(() => {
 			Core.globalState.history.recordTransactionUpdate(txnsSnapshot);
-			this.onQueueUpdate().then(refreshLiveRenderComponents)
+			this.reRender()
 		})
 	}
 
@@ -176,6 +176,7 @@ class MissionControl extends BaseComponent{
 				<div style={{width:"100%",display: "flex",flexDirection: "column",alignItems: "stretch"}}>
 					<AuditView  auditedTransactions={this.state.availableTransactions} stream={this.state.streamTree} 
 								onCategorizationUpdate={this.onCategorizationUpdate} 
+								onStreamDefinitionChange={this.reRender}
 								onRequestedToUncategorize={this.onRequestedToUncategorizeFromAuditView}
 								rerenderCount={this.state.rerenderCount}/></div>{/*rerenderCount is here because AuditView is expensive and uses React's memoization, which only rerenders when props change*/}
 			</StyledHomeContainer>

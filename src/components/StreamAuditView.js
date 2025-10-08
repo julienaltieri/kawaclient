@@ -57,6 +57,7 @@ class MasterAuditView extends StreamAuditView{
 				return <MacroCompoundStreamAuditView stream={s} key={i+1} auditedTransactions={this.getTransactionsForStream(s)}
 	 				onCategorizationUpdate={this.props.onCategorizationUpdate}
 	 				onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
+	 				onStreamDefinitionChange={this.props.onStreamDefinitionChange}
 		 		/>})}
 		</AuditViewContainer>)
 	}
@@ -113,6 +114,7 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 							analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
 							onCategorizationUpdate={this.props.onCategorizationUpdate}
+							onStreamDefinitionChange={this.props.onStreamDefinitionChange}
 						/>)}
 					</RowLayout>:
 					<ColumnLayout>
@@ -121,12 +123,14 @@ class MacroCompoundStreamAuditView extends StreamAuditView{
 							analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
 							onCategorizationUpdate={this.props.onCategorizationUpdate}
+							onStreamDefinitionChange={this.props.onStreamDefinitionChange}
 						/>)}</RowLayout>
 						{getStreamsForDisplay(this.props.stream.children.filter(c => !c.isTerminal()),this.getStreamAnalysis()).map((s,i) => <CompoundStreamAuditView 
 							auditedTransactions={this.getTransactionsForStream(s)}
 							title={s.name} analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 							onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
 							onCategorizationUpdate={this.props.onCategorizationUpdate}
+							onStreamDefinitionChange={this.props.onStreamDefinitionChange}
 						/>)}
 					</ColumnLayout>
 				}
@@ -180,6 +184,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 						analysis={this.getStreamAnalysis().getCurrentPeriodReport()} stream={s} key={i}
 						onRequestedToUncategorize={this.props.onRequestedToUncategorize} 
 						onCategorizationUpdate={this.props.onCategorizationUpdate}
+						onStreamDefinitionChange={this.props.onStreamDefinitionChange}
 					/>)}
  				</RowLayout>
  			</StreamAuditCellContainer>
@@ -291,8 +296,7 @@ class TerminalStreamCard extends StreamAuditView{
 				// Save the changes
 				Core.saveStreams().then(() => {
 					console.log("Stream saved successfully");
-					// Trigger a refresh if there's a callback
-					//TODO
+					this.props.onStreamDefinitionChange();
 				}).catch(err => {console.error("Failed to save stream:", err);});
 			}
 		}).catch(() => {console.log("Modal dismissed")})
@@ -310,8 +314,10 @@ class TerminalStreamCard extends StreamAuditView{
 			</TSCardHeader>
 			<TSCardContent style={{transform: "scale(1)"}}>{/*transform here is needed to get the positioning of annotations tooltips to work*/}
 				{this.state.detailView?
-					<StreamObservationPeriodView analysis={this.getStreamAnalysis({subReportingPeriod:this.props.stream.getReportingPeriod()})} onCategorizationUpdate={this.props.onCategorizationUpdate}/>
-					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} />}
+					<StreamObservationPeriodView analysis={this.getStreamAnalysis({subReportingPeriod:this.props.stream.getReportingPeriod()})} 
+						onCategorizationUpdate={this.props.onCategorizationUpdate} 
+						onStreamDefinitionChange={this.props.onStreamDefinitionChange}/>
+					:<TerminalStreamCurrentReportPeriodView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} onStreamDefinitionChange={this.props.onStreamDefinitionChange} />}
 			</TSCardContent>
 			<TSFooter>{/*Switch link*/}
 				<StyledLink onClick={this.handleClick}>{this.state.detailView?"Hide":"See"} details</StyledLink>
