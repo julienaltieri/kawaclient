@@ -53,8 +53,7 @@ class MissionControl extends BaseComponent{
 			this.updateState({fetching: false,availableTransactions:res})
 		})
 	}
-	reRender(){
-		return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)}
+	reRender(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)}
 	addBankConnectionCards(){
 		var startingId = this.state.actionQueueManager.getNextAvailableId();
 		this.state.actionQueueManager.insertActions(Core.getErroredBankConnections().map((co,i) => {

@@ -213,7 +213,12 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		return this.save()
 	}
 	
-	save(){return Promise.all([this.props.onMinigraphUpdateRequested(),this.updateState({refresh: new Date()}),Core.saveStreams()])}
+	save(){return Promise.all([
+		this.props.onMinigraphUpdateRequested(),
+		this.updateState({refresh: new Date()}),
+		Core.saveStreams(),
+		this.props.onStreamDefinitionChange()
+	])}
 
 
 	render(){
@@ -299,7 +304,7 @@ class ExpectationChangePannel extends BaseComponent{
 				enable: !this.isOldest(),
 				onSelect: () => Core.presentModal(ModalTemplates.ModalWithComponent("Are you sure?",<DS.component.SentenceWrapper>Remove this change in expected amount to{format(this.props.expChangeData.newAmount)}starting from {this.props.expChangeData.startDate.toLocaleDateString()}?</DS.component.SentenceWrapper>)).then(({state,buttonIndex}) => {
 					if(buttonIndex==1){//primary button
-						return this.props.onRequestToRemove()//TODO
+						return this.props.onRequestToRemove()
 					}else{return Promise.resolve()}
 				}).catch(e => {})
 			}

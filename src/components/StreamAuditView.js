@@ -282,15 +282,11 @@ class TerminalStreamCard extends StreamAuditView{
 				
 				// Update the expected amount if it changed
 				if(updatedState.amount !== stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))){
-					// Update the expected amount history
-					const currentDate = new Date();
-					const currentAmount = stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()));
-					
 					// Add new expected amount entry
 					stream.expAmountHistory = stream.expAmountHistory || [];
 					stream.expAmountHistory.push({
 						amount: updatedState.amount,
-						startDate: currentDate.toISOString()
+						startDate: new Date()
 					});
 				}
 				// Save the changes
