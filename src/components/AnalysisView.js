@@ -190,7 +190,7 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 					//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
 					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
 				}
-				this.props.onContentStateChange(txnToUpdate,allocs)
+				this.props.onCategorizationUpdate(txnToUpdate,allocs)
 			}
 		}).catch(e => {})
 	}
