@@ -383,13 +383,26 @@ export class StreamAllocationOptionView extends BaseComponent{
 		this.updateState({allocations:[...this.state.allocations]},this.postStateUpdateCallback);
 	}
 	handleOnInput(e,i){
+		// For number inputs, we can't use setSelectionRange, so just sanitize the value
+		var input = e.target;
+		var originalValue = input.value;
+		
 		var shouldInsertMinus = this.firstTimeMinusAttempt && this.props.transaction.amount<0;//if amount is negative and this is the first attempt
-		if(e.target.value == ""){shouldInsertMinus = false;this.firstTimeMinusAttempt = false}
-		if(e.target.value.charCodeAt(0)=="+".charCodeAt(0)){shouldInsertMinus = false;this.firstTimeMinusAttempt = false}//if inserting a +, don't force the minus
-		if(e.target.value.charCodeAt(0)=="-".charCodeAt(0)){shouldInsertMinus = false;}//if already a -, no need
-    	if(shouldInsertMinus){e.target.value="-"+e.target.value}
-
-    	e.target.value = e.target.value.replace(/^\.|[^-?\d\.]|\.(?=.*\.)|^0+(?=\d)/g, '').replace(/(\..*?)\..*/g, '$1');
+		if(originalValue == ""){shouldInsertMinus = false;this.firstTimeMinusAttempt = false}
+		if(originalValue.charCodeAt(0)=="+".charCodeAt(0)){shouldInsertMinus = false;this.firstTimeMinusAttempt = false}//if inserting a +, don't force the minus
+		if(originalValue.charCodeAt(0)=="-".charCodeAt(0)){shouldInsertMinus = false;}//if already a -, no need
+		
+		var valueToProcess = originalValue;
+		if(shouldInsertMinus){valueToProcess = "-" + valueToProcess}
+		
+		// Apply sanitization regex
+		var sanitized = valueToProcess.replace(/^\.|[^-?\d\.]|\.(?=.*\.)|^0+(?=\d)/g, '').replace(/(\..*?)\..*/g, '$1');
+		
+		// Update input value if changed
+		if(sanitized !== originalValue){
+			var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+			nativeSetter.call(input, sanitized);
+		}
 	}
 	handleStreamSelected(e,i){
 		var s = Core.getStreamById(e.target.selectedOptions[0].getAttribute("sid"))
