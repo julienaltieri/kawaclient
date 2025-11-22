@@ -8,6 +8,7 @@ import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
+import dateformat from 'dateformat'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -30,11 +31,21 @@ class Core{
 			history: HistoryManager
 		}
 		//this.queryParamsReceivedListeners = []
+		// expose search helpers attached to this Core instance (bound methods)
+		this.search = {
+			searchTransactions: this.searchTransactions ? this.searchTransactions.bind(this) : null,
+			searchStream: this.searchStream ? this.searchStream.bind(this) : null
+		}
 	}
 
-	//lifecycle
 	init(){
-		window.appGlobals = {globalState: this.globalState}
+		window.appGlobals = {
+			globalState: this.globalState,
+			// delegate search operations to Core instance methods (keeps single source of truth)
+			searchTransactions: (...args) => this.search.searchTransactions(...args),
+			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
+			searchStream: (...args) => this.search.searchStream(...args)
+		};
 		this.globalState.Period = Period;
 		
 		//register amazon history handler
@@ -250,6 +261,63 @@ class Core{
 		.then(txns => txns.filter(a => a.categorized).filter(a => matchesSearchTerms(searchStringArray,a.description)))
 		function matchesSearchTerms(arr,s){return utils.or(arr, a => s.indexOf(a)>-1)}
 	}
+
+		// Search helpers moved to Core methods so they can be reused programmatically
+	searchTransactions({ amount, description, tolerance = 0.001, fromDate, toDate, limit = 50 } = {}){
+		const txns = (this.globalState.queriedTransactions && this.globalState.queriedTransactions.transactions) || [];
+		const descLower = description ? String(description).toLowerCase() : null;
+		const matches = txns.filter(t => {
+			if (amount != null) {
+				const txnAmount = Number(t.amount);
+				if (Number.isNaN(txnAmount) || Math.abs(txnAmount - Number(amount)) > tolerance) return false;
+			}
+			if (descLower) {
+				const txnDesc = (t.description || '').toString().toLowerCase();
+				if (!txnDesc.includes(descLower)) return false;
+			}
+			if (fromDate) {
+				const fd = (fromDate instanceof Date) ? fromDate : new Date(fromDate);
+				const txnDate = t.date instanceof Date ? t.date : new Date(t.date);
+				if (txnDate < fd) return false;
+			}
+			if (toDate) {
+				const td = (toDate instanceof Date) ? toDate : new Date(toDate);
+				const txnDate = t.date instanceof Date ? t.date : new Date(t.date);
+				if (txnDate > td) return false;
+			}
+			return true;
+		}).slice(0, limit);
+
+		// enrich results with a user-friendly payload attached to each transaction
+		matches.forEach(t => {
+			try{
+				const txnDate = t.date instanceof Date ? t.date : new Date(t.date);
+				const formattedDate = dateformat(txnDate, 'mmm dS, yyyy');
+				const rawAlloc = t.streamAllocation || t.allocations || t.allocation || [];
+				const streamAllocations = (Array.isArray(rawAlloc) ? rawAlloc : []).map(a => {
+					const streamId = a.streamId || (a.stream && a.stream.id) || a.stream_id || null;
+					const amountAllocated = Number(a.amount ?? a.value ?? a.allocated ?? 0);
+					const streamName = a.streamName || (a.stream && a.stream.name) || (streamId ? (this.getStreamById(streamId)?.name || '') : '');
+					return {streamId, amountAllocated, streamName};
+				});
+				const allocationSentence = streamAllocations.length>0 ? streamAllocations.map(sa => `${utils.formatCurrencyAmount(sa.amountAllocated,0,false,undefined,this.getPreferredCurrency())} allocated to ${sa.streamName}`).join(', ') : 'no allocations';
+				const friendlyDescription = `${formattedDate} - ${t.description || ''} - ${allocationSentence}`;
+				// attach userFriendlyResult as an array with a single enriched object (keeps extensibility)
+				t.userFriendlyResult = [{
+					transaction: t,
+					transactionDescription: t.description || '',
+					totalAmount: Number(t.amount),
+					formattedDate,
+					streamAllocations,
+					friendlyDescription
+				}];
+			}catch(e){console.warn('Failed to build userFriendlyResult for transaction', e)}
+		});
+
+		return {userFriendlyResults: matches.map(t => t.userFriendlyResult[0].friendlyDescription),matches:matches};
+	}
+
+
 	undoCategorizationBySearchTermLastThreeMonths(searchString){return this.searchCategorizedTransactionLastThreeMonths(searchString).then(cats => instance.undoCategorizations(cats))}
 	undoCategorizations(cats){
 		if(!cats || cats.length==0)return Promise.resolve();
