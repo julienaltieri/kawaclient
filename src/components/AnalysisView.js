@@ -389,7 +389,7 @@ class PeriodReportTransactionFeedView extends GenericPeriodReportView{
 		return (<FlexColumn style={{alignItems:"stretch",height:"auto", marginBottom:"0.5rem"}}>
 				<TransactionFeedHeaderViewContainer>
 					<EllipsisText style={{width: "6rem"}}>{this.getReportDateString()}</EllipsisText>
-					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,undefined,undefined,Core.getPreferredCurrency())}</div>
+					<div style={{color:this.getMainColor()}}>{utils.formatCurrencyAmount(this.getAggregateAmount(),2,undefined,!this.props.analysis.stream.isZeroSumStream,Core.getPreferredCurrency())}</div>
 				</TransactionFeedHeaderViewContainer>
 				{this.props.analysis.transactions
 					.sort(utils.sorters.desc(t => t.getDisplayDate()))
