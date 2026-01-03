@@ -18,7 +18,7 @@ export default class UserData {
     this.masterStream = new CompoundStream(json.masterStream);
     this.userId = json.userId;
     this.timeZoneOffset = json.timeZoneOffset;
-    this.amazonOrderHistory = json.amazonOrderHistory;
+    //this.amazonOrderHistory = json.amazonOrderHistory;
     this.bankConnections = json.bankConnections;
     this.savingAccounts = json.savingAccounts;
     this.preferredCurrency = json.preferredCurrency || currencies.USD;

@@ -36,7 +36,10 @@ class MissionControl extends BaseComponent{
 		this.onClickSkipButton = this.onClickSkipButton.bind(this);
 
 	}
-	componentDidMount(){this.loadData()}
+	componentDidMount(){
+		Core.registerOnAmazonReconciliationComplete(() => {this.updateState({refresh: new Date()})});
+		this.loadData()
+	}
 	loadData(){
 		return Promise.all([
 			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {

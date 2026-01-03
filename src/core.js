@@ -56,6 +56,7 @@ class Core{
 			  	var data = JSON.parse(decodeURI(e.data.slice(17)));
 				this.globalState.amzHistorySaving = true
 			  	ApiCaller.saveAmazonOrderHistory(data.map(ord => ({...ord,id:ord.orderNumber}))).then((r) => {
+					this.globalState.amzOrderHistory = r
 		  			this.refreshAmazonTransactions()
 		  			this.globalState.amzHistorySaving = false
 			  	})
@@ -99,9 +100,18 @@ class Core{
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
 	loadData(forceReload = false){
+		
+		
 		if(forceReload || !this.globalState.userData){	
 			this.fetchingUserDataPromise = ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})
-			return this.fetchingUserDataPromise
+			let amzFetchPromise = ApiCaller.getAmazonOrderHistory(new Date(new Date().getFullYear() - 2, reportingConfig.startingMonth-1, reportingConfig.startingDay), new Date())
+				.then(amz => this.globalState.amzOrderHistory = amz)
+			return Promise.all([this.fetchingUserDataPromise, amzFetchPromise]).then(() => {
+				//return the same promise type as fetching user data
+				return this.fetchingUserDataPromise
+			})
+
+				
 		}
 		else return Promise.resolve()
 	}
@@ -452,15 +462,14 @@ class Core{
 	}
 	isMobile(){return window.innerHeight > window.innerWidth}
 	isAmazonTransaction(t){return amazonRegex.test(t.description.toLowerCase()) && !amazonExcludeRegex.test(t.description.toLowerCase())}
+	registerOnAmazonReconciliationComplete(callback) {this.onAmazonReconciliationComplete = callback}
 	refreshAmazonTransactions(){
-		// Fetch Amazon orders for the determined period
-		ApiCaller.getAmazonOrderHistory(new Date(new Date().getFullYear() - 2, reportingConfig.startingMonth-1, reportingConfig.startingDay), new Date())
-			.then(amz => { this._performAmazonReconciliation(amz)})
-			.catch(err => { console.warn('Failed to fetch Amazon order history:', err)});// Continue gracefully without Amazon order data
+		this._performAmazonReconciliation(this.globalState.amzOrderHistory)
+		if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete()}
 	}
 
 	_performAmazonReconciliation(amz){
-		console.log(amz)
+		//console.log(amz)
 		// Helper functions for convenience
 		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
 		
