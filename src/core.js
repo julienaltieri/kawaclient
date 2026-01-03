@@ -9,6 +9,7 @@ import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
+import { reportingConfig } from './processors/ReportingCore.js'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -48,13 +49,13 @@ class Core{
 		};
 		this.globalState.Period = Period;
 		
+
 		//register amazon history handler
 		var amazonHistoryHandler = function(e) {
-			if(!!this.getUserData() && e && e.data && e.data.substring && e.data.substring(0,17)== "kawaAmazonOrders-" && this.globalState.amzHistorySaving == false){
+			if( e && e.data && e.data.substring && e.data.substring(0,17)== "kawaAmazonOrders-" && this.globalState.amzHistorySaving == false){
 			  	var data = JSON.parse(decodeURI(e.data.slice(17)));
 				this.globalState.amzHistorySaving = true
-			  	ApiCaller.saveAmazonOrderHistory(data).then((r) => {
-		  			this.getUserData().amazonOrderHistory = r.newHistory
+			  	ApiCaller.saveAmazonOrderHistory(data.map(ord => ({...ord,id:ord.orderNumber}))).then((r) => {
 		  			this.refreshAmazonTransactions()
 		  			this.globalState.amzHistorySaving = false
 			  	})
@@ -452,12 +453,21 @@ class Core{
 	isMobile(){return window.innerHeight > window.innerWidth}
 	isAmazonTransaction(t){return amazonRegex.test(t.description.toLowerCase()) && !amazonExcludeRegex.test(t.description.toLowerCase())}
 	refreshAmazonTransactions(){
-		//helper functions can convenience
-		var amz = this.getUserData().amazonOrderHistory.sort(utils.sorters.desc(am => new Date(am.date)))
+		// Fetch Amazon orders for the determined period
+		ApiCaller.getAmazonOrderHistory(new Date(new Date().getFullYear() - 2, reportingConfig.startingMonth-1, reportingConfig.startingDay), new Date())
+			.then(amz => { this._performAmazonReconciliation(amz)})
+			.catch(err => { console.warn('Failed to fetch Amazon order history:', err)});// Continue gracefully without Amazon order data
+	}
+
+	_performAmazonReconciliation(amz){
+		console.log(amz)
+		// Helper functions for convenience
 		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
-		//quit here if no new work to be done	
+		
+		// Quit here if no new work to be done	
 		let categorizedTransactionsToUpdate = getRemainingAmazonTransactions().filter(t =>  t.categorized)
 		if(!amz || getRemainingAmazonTransactions().length==0 || getRemainingAmazonTransactions().length<=this.globalState.remainingAmazonTransactionsCount)return
+		
 		var getAttributedAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
 		var absAmountsMatch = (a,b) => (Math.abs(Math.abs(a) - Math.abs(b))<0.000001) //by doing so we avoid javascript rounding and precision errors
 		var dateMatch = (order,transaction) => (new Date(order.date)<=new Date(transaction.date.getTime()+timeIntervals.oneDay*1) && new Date(order.date) >= new Date(transaction.date.getTime()-timeIntervals.oneDay*35))

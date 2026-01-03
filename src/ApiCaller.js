@@ -7,6 +7,7 @@ const API = {
 	validateToken: 								AppConfig.serverURL + "/validateToken",
 	getUserData: 								AppConfig.serverURL + "/api" + "/getUserData",
 	saveAmazonOrderHistory: 					AppConfig.serverURL + "/api" + "/saveAmazonOrderHistory",
+	getAmazonOrderHistory: 						AppConfig.serverURL + "/api" + "/getAmazonOrderHistory",
 	updateMasterStream: 						AppConfig.serverURL + "/api" + "/updateMasterStream",
 	getTransactionsBetweenDates: 				AppConfig.serverURL + "/api" + "/getTransactionsBetweenDates",
 	refreshCategorizationBetweenDates: 			AppConfig.serverURL + "/api" + "/refreshCategorizationBetweenDates",
@@ -70,6 +71,18 @@ class ApiCaller{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({
 				history: history //valid json representation of all stream (will be saved in userData)
+			})
+		})
+		return this.sendRequest(request)
+	}
+
+	//Retrieve Amazon order history for a specified date range
+	getAmazonOrderHistory(startDate, endDate){
+		const request = new Request(API.getAmazonOrderHistory,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({
+				startDate: startDate,
+				endDate: endDate
 			})
 		})
 		return this.sendRequest(request)
