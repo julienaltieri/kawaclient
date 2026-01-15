@@ -160,7 +160,8 @@ class StreamAnalysis extends Analysis{
 			net: this.getNetAmount(),
 			expected: this.getExpected(),
 			expectedAtMaturity: this.getExpectedAtMaturity(),
-			leftover: this.getLeftOver()
+			leftover: this.getLeftOver(),
+			includedReports: this.getMaturePeriodReports()
 		}
 	}
 

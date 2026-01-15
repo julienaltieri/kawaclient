@@ -3,7 +3,7 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import Core from '../core.js';
 import CategorizeAction from './CategorizeAction.js';
-import AuditView from './StreamAuditView'
+import AuditView, {getAnalysisStartDate} from './StreamAuditView'
 import AppConfig from '../AppConfig'
 import ActionQueueManager from './ActionQueueManager'
 import {ActionTypes} from '../HistoryManager.js'
@@ -13,6 +13,7 @@ import {refreshLiveRenderComponents} from './AnalysisView'
 import utils from '../utils'
 import PageLoader from './PageLoader'
 import { GenericTransaction } from "../model.js";
+import {relativeDates} from '../Time'
 
 class MissionControl extends BaseComponent{
 	constructor(props){
@@ -21,7 +22,7 @@ class MissionControl extends BaseComponent{
 		this.state = {...this.state,
 			fetching:true,
 			instanceMaxDate: new Date(),
-			instanceMinDate: AppConfig.transactionFetchMinDate,
+			instanceMinDate:  relativeDates.oneYearAgo(), //new Date(Math.min(AppConfig.transactionFetchMinDate, getAnalysisStartDate())),
 			availableTransactions: [],
 			streamTree: Core.getMasterStream(),
 			actionQueueManager : new ActionQueueManager(this.reRender)
@@ -41,20 +42,20 @@ class MissionControl extends BaseComponent{
 		this.loadData()
 	}
 	loadData(){
-		return Promise.all([
-			Core.getTransactionsBetweenDates(this.state.instanceMinDate, this.state.instanceMaxDate)?.then(res => {
+		
+		return Core.loadData().then(() => Promise.all([
+			Core.getTransactionsBetweenDates(new Date(Math.min(AppConfig.transactionFetchMinDate, getAnalysisStartDate())), this.state.instanceMaxDate)?.then(res => {
 				var txns = res.filter(t => !t.categorized).sort(utils.sorters.asc(t => t.getDisplayDate().getTime()));
 				var startingId = this.state.actionQueueManager.getNextAvailableId();
 				this.state.actionQueueManager.insertActions(txns.map((t,i) => new CategorizeAction(startingId+i+1,this,false,t,this.onCategorizeActionConcluded)).reverse());
 				this.insertClarificationActionsIfNeeded(res.filter(t => t.categorized))
 				return res
 			}),
-			Core.checkBankConnectionsStatus()?.then(() => this.addBankConnectionCards()),
-			Core.loadData()
+			Core.checkBankConnectionsStatus()?.then(() => this.addBankConnectionCards())
 		]).then(([res,o]) => {
 			this.props.refresh()
 			this.updateState({fetching: false,availableTransactions:res})
-		})
+		}))
 	}
 	reRender(){return this.updateState({rerender:true,rerenderCount:(this.state.rerenderCount+1||0)}).then(refreshLiveRenderComponents)}
 	addBankConnectionCards(){

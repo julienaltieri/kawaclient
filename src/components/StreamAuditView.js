@@ -30,6 +30,8 @@ const getAnalysisDate = () => {
 //if we're in the first period of the observation period, show the graph from the previous period
 let getPreviousAnalysisDate = () => reportingConfig.observationPeriod.previousDate(getAnalysisDate());
 let shouldShowContextForObservationPeriodTransition = () => ((new Date() - getPreviousAnalysisDate())< 2*reportingConfig.observationPeriod.subdivision.getTimeIntervalFromDate(getPreviousAnalysisDate()))
+//return the start date of the resulting analysis based on wether or not to show context for observation period transition
+export const getAnalysisStartDate = () => (!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly).previousDate(getAnalysisDate())
 
 
 const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(getAnalysisDate(),s,txns,observationPeriod,subReportingPeriod))
@@ -261,7 +263,18 @@ class TerminalStreamCard extends StreamAuditView{
 	}
 	getTitle(){return this.props.stream.name}
 	
-	handleClick(){this.updateState({detailView:!this.state.detailView})}
+	handleClick(){
+		this.updateState({detailView:!this.state.detailView})
+		
+		
+		//pretty print the stats object for the stream analysis of this stream
+		const stats = this.getStreamAnalysis().stats;
+		console.log(`Stream Analysis Stats: ${this.props.stream.name}`);
+		console.log(`- Average per period: ${stats.avgByPeriods}`);
+		console.log(`- Expected Amount: ${stats.expected}`);
+		console.log(`- Total Amount: ${stats.total}`);
+		console.log(`- Included Reports:`,stats.includedReports);
+	}
 	
 	handleTitleClick(){
 		Core.presentModal(ModalTemplates.ModalWithComponent(`Edit stream`,
