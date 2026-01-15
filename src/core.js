@@ -56,7 +56,7 @@ class Core{
 			  	var data = JSON.parse(decodeURI(e.data.slice(17)));
 				this.globalState.amzHistorySaving = true
 			  	ApiCaller.saveAmazonOrderHistory(data.map(ord => ({...ord,id:ord.orderNumber}))).then((r) => {
-					this.globalState.amzOrderHistory = r
+					this.globalState.amzOrderHistory = r.newHistory
 		  			this.refreshAmazonTransactions()
 		  			this.globalState.amzHistorySaving = false
 			  	})
