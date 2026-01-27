@@ -193,7 +193,7 @@ export class Period {
 	 * @returns {Period} A Period-like object representing the custom range
 	 */
 	static createRangePeriod(startDate, endDate, subdivisionPeriod = Period.yearly) {
-		const period = new Period("custom","period",endDate.getTime() - startDate.getTime(),subdivisionPeriod,{});
+		const period = new Period(Period.periodName.custom,"period",endDate.getTime() - startDate.getTime(),subdivisionPeriod,{});
 		period.startDate = startDate;
 		period.endDate = endDate;
 		return period;

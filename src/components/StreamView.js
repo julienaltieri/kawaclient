@@ -563,7 +563,7 @@ class TerminalStreamView extends GenericEditableStreamView{
 							style={{textAlign:"right",border:this.state.newStreamAmountErrorState?"1px solid "+DS.getStyle().alert:""}}></DS.component.Input>
 					<div>&nbsp;/&nbsp;</div>
 					<DS.component.DropDown inline autoSize noMargin name="period" id="period" defaultValue={this.props.stream.period} onChange={(e)=>{}}>
-						{Object.keys(Period.periodName).map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
+						{Object.keys(Period.periodName).filter(p => p !== "custom").map((val) => (<option key={val} value={val}>{Period[val].unitName}</option>))}
 					</DS.component.DropDown>
 					<GridButtonContainer style={{marginRight:"-1rem",marginLeft:"0.5rem"}}>
 						<div onClick={(e)=>this.onEditConfirm(e)} style={{marginBottom:"0.2rem"}}>✓</div>
