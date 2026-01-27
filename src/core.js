@@ -9,7 +9,7 @@ import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
-import { reportingConfig } from './processors/ReportingCore.js'
+import { reportingConfig, getStreamAnalysis } from './processors/ReportingCore.js'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -45,7 +45,10 @@ class Core{
 			// delegate search operations to Core instance methods (keeps single source of truth)
 			searchTransactions: (...args) => this.search.searchTransactions(...args),
 			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
-			searchStream: (...args) => this.search.searchStream(...args)
+			searchStream: (...args) => this.search.searchStream(...args),
+			// stream analysis helper
+			getStreamPeriodReports: (streamName, startDate, endDate, period) => 
+				this.getStreamPeriodReports(streamName, startDate, endDate, period)
 		};
 		this.globalState.Period = Period;
 		
@@ -100,8 +103,6 @@ class Core{
 		document.getElementsByTagName('html')[0].classList.add(DesignSystem.isDarkMode()?"backgroundPatternDark":"backgroundPatternLight");
 	}
 	loadData(forceReload = false){
-		
-		
 		if(forceReload || !this.globalState.userData){	
 			this.fetchingUserDataPromise = ApiCaller.getUserData().then(ud => {this.globalState.userData = new UserData(ud)})
 			let amzFetchPromise = ApiCaller.getAmazonOrderHistory(new Date(new Date().getFullYear() - 2, reportingConfig.startingMonth-1, reportingConfig.startingDay), new Date())
@@ -110,8 +111,6 @@ class Core{
 				//return the same promise type as fetching user data
 				return this.fetchingUserDataPromise
 			})
-
-				
 		}
 		else return Promise.resolve()
 	}
@@ -136,6 +135,37 @@ class Core{
 	getStreamByName(name){
 		if(!this.getUserData())return console.log("user data weren't ready")
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
+	}
+	
+	getStreamPeriodReports(streamName, startDate, endDate, period) {
+		const stream = this.getStreamByName(streamName);
+		if (!stream) {
+			return Promise.reject(`Stream "${streamName}" not found`);
+		}
+		
+		const reportingPeriod = period || Period[stream.period];
+		
+		return this.getTransactionsBetweenDates(startDate, endDate)
+			.then(txns => {
+				const streamTransactions = txns.filter(t => t.categorized && t.isAllocatedToStream(stream));
+				
+				// Find the end date of the period containing startDate
+				let periodEndDate = new Date(startDate.getFullYear(), reportingConfig.startingMonth - 1, reportingConfig.startingDay);
+				if (periodEndDate <= startDate) {
+					periodEndDate = reportingPeriod.nextDate(periodEndDate);
+				}
+				
+				// Count periods from periodEndDate to endDate, then add 1 for the period containing startDate
+				let reportingDate = periodEndDate;
+				let periodCount = 1; // Start with 1 to include the period containing startDate
+				while (reportingDate < endDate) {
+					reportingDate = reportingPeriod.nextDate(reportingDate);
+					periodCount++;
+				}
+				
+				const analysis = getStreamAnalysis(reportingDate, stream, streamTransactions, reportingPeriod, undefined, periodCount);
+				return analysis.getPeriodReports();
+			});
 	}
 	getUserData(){return this.globalState.userData}
 	saveBankAccountSettings(){return this.getUserData().savingAccounts?ApiCaller.saveBankAccountSettings(this.getUserData().savingAccounts):Promise.resolve()}
@@ -327,7 +357,21 @@ class Core{
 
 		return {userFriendlyResults: matches.map(t => t.userFriendlyResult[0].friendlyDescription),matches:matches};
 	}
-
+	//search streams by either id or name and return that stream
+	searchStream(identifier) {
+		if (!identifier) return null;
+		
+		// Try to find by ID first
+		const streamById = this.getStreamById(identifier);
+		if (streamById) return streamById;
+		
+		// Fall back to search by name
+		const streamByName = this.getStreamByName(identifier);
+		if (streamByName) return streamByName;
+		
+		// Not found
+		return null;
+	}
 
 	undoCategorizationBySearchTermLastThreeMonths(searchString){return this.searchCategorizedTransactionLastThreeMonths(searchString).then(cats => instance.undoCategorizations(cats))}
 	undoCategorizations(cats){

@@ -15,8 +15,8 @@ export const analysisRootDateForYear = y => createDate(y,reportingConfig.startin
 export const getAnalysisRootDate = () => analysisRootDateForYear(new Date().getFullYear()-1);//analysis starting date is Dec 21 GMT
 
 //note: it is expected that txns are categorized transactions. 
-export const getStreamAnalysis = function(reportingDate,stream,txns,reportingPeriod,subReportingPeriodOverride){ //single stream Streamanalysis
-	return new StreamAnalysis(stream,txns,reportingDate,reportingPeriod,subReportingPeriodOverride || Period[stream.period])// the stream's period is also the frequency at which it wants to be reported
+export const getStreamAnalysis = function(reportingDate,stream,txns,reportingPeriod,subReportingPeriodOverride,periodCount){ //single stream Streamanalysis
+	return new StreamAnalysis(stream,txns,reportingDate,reportingPeriod,subReportingPeriodOverride || Period[stream.period],periodCount)// the stream's period is also the frequency at which it wants to be reported
 }
 export const getMultiStreamAnalysis = function(reportingDate,streams,txns,reportingPeriod,subReportingPeriodOverride){ //stream array Streamanalysis,
 	return new MultiStreamAnalysis(streams,txns,reportingDate,reportingPeriod,subReportingPeriodOverride || Period.monthly)
@@ -150,10 +150,36 @@ it confronts expectations of that stream with transactions that actually happene
 rather, it is responsible for aggregation over time, and expectations to a horizon. Depth Streamanalysis (slice of time, stream-deep) is achieved via Reports.
 */
 class StreamAnalysis extends Analysis{
-	constructor(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod){
+	constructor(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod,customPeriodCount){
 		super(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod);
 		this.streamName = stream.name;//convenience for debugging
-		this.periodReports = this.getReportingSchedule().map(date => new PeriodAnalysis(stream,this.transactions,date,this.subReportingPeriod,this));
+		// If custom period count is provided, generate that many periods backwards from analysisDate
+		if (customPeriodCount && customPeriodCount > 0) {
+			// Calculate the actual start date for all periods
+			let periodStartDate = analysisDate;
+			for (let i = 0; i < customPeriodCount - 1; i++) {
+				periodStartDate = this.reportingPeriod.previousDate(periodStartDate);
+			}
+			// Re-filter transactions to include all periods
+			this.reportingStartDate = this.reportingPeriod.previousDate(periodStartDate);
+			let ancestors = (stream)?stream.getAncestors():undefined
+			this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.getDisplayDate().getTime() && t.getDisplayDate().getTime() <= analysisDate.getTime()
+				&& (!stream || t.isAllocatedToStream(this.stream))
+				&& (AppConfig.featureFlags.includeInterestInBudgeting || (
+					!t.isUnderInterestIncomeCompoundStream() || !stream 
+					|| utils.or([this.stream,...ancestors], as => !as.isTerminal() && as.isInterestIncomeStream())
+				))
+			);
+			
+			this.periodReports = [];
+			let currentDate = analysisDate;
+			for (let i = 0; i < customPeriodCount; i++) {
+				this.periodReports.unshift(new PeriodAnalysis(stream,this.transactions,currentDate,this.subReportingPeriod,this));
+				currentDate = this.reportingPeriod.previousDate(currentDate);
+			}
+		} else {
+			this.periodReports = this.getReportingSchedule().map(date => new PeriodAnalysis(stream,this.transactions,date,this.subReportingPeriod,this));
+		}
 		this.stats = {
 			avgByPeriods: (this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true))/this.getMaturePeriodReports().length,
 			total: this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true),
