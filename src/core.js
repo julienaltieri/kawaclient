@@ -47,8 +47,8 @@ class Core{
 			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
 			searchStream: (...args) => this.search.searchStream(...args),
 			// stream analysis helper
-			getStreamPeriodReports: (streamName, startDate, endDate, period) => 
-				this.getStreamPeriodReports(streamName, startDate, endDate, period)
+			getStreamPeriodAnalysis: (streamName, startDate, endDate, period) => 
+				this.getStreamPeriodAnalysis(streamName, startDate, endDate, period)
 		};
 		this.globalState.Period = Period;
 		
@@ -137,35 +137,16 @@ class Core{
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
 	}
 	
-	getStreamPeriodReports(streamName, startDate, endDate, period) {
+	getStreamPeriodAnalysis(streamName, startDate, endDate, subReportingPeriod = Period.yearly) {
 		const stream = this.getStreamByName(streamName);
-		if (!stream) {
-			return Promise.reject(`Stream "${streamName}" not found`);
-		}
-		
-		const reportingPeriod = period || Period[stream.period];
+		if (!stream) {return Promise.reject(`Stream "${streamName}" not found`);}
 		
 		return this.getTransactionsBetweenDates(startDate, endDate)
-			.then(txns => {
-				const streamTransactions = txns.filter(t => t.categorized && t.isAllocatedToStream(stream));
-				
-				// Find the end date of the period containing startDate
-				let periodEndDate = new Date(startDate.getFullYear(), reportingConfig.startingMonth - 1, reportingConfig.startingDay);
-				if (periodEndDate <= startDate) {
-					periodEndDate = reportingPeriod.nextDate(periodEndDate);
-				}
-				
-				// Count periods from periodEndDate to endDate, then add 1 for the period containing startDate
-				let reportingDate = periodEndDate;
-				let periodCount = 1; // Start with 1 to include the period containing startDate
-				while (reportingDate < endDate) {
-					reportingDate = reportingPeriod.nextDate(reportingDate);
-					periodCount++;
-				}
-				
-				const analysis = getStreamAnalysis(reportingDate, stream, streamTransactions, reportingPeriod, undefined, periodCount);
-				return analysis.getPeriodReports();
-			});
+		.then(txns => { return getStreamAnalysis(endDate, stream, 
+			txns.filter(t => t.categorized && t.isAllocatedToStream(stream)), 
+			Period.createRangePeriod(startDate, endDate, subReportingPeriod),
+			subReportingPeriod //overrides otherwise it will take the stream's subreporting period
+		);});
 	}
 	getUserData(){return this.globalState.userData}
 	saveBankAccountSettings(){return this.getUserData().savingAccounts?ApiCaller.saveBankAccountSettings(this.getUserData().savingAccounts):Promise.resolve()}

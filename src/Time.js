@@ -1,3 +1,4 @@
+import { startCase } from 'lodash';
 import utils from './utils'
 
 
@@ -68,6 +69,8 @@ export class Period {
 		}
 	}
 	getTimeSubdivisionsCount = (startDate,subdivision = this.subdivision.name) => this.relationships[subdivision] || /*Math.round*/(this.getTimeIntervalFromDate(startDate)/Period[subdivision].getTimeIntervalFromDate(startDate))
+
+	
 	nextDate = (date,backwards = false) => {
 		var b = backwards?-1:1;
 		if(this.timeInterval){return new Date(date.getTime()+b*this.timeInterval)}
@@ -134,8 +137,10 @@ export class Period {
 			if(a.getDate()<=daysInMonth/2){a.setDate(1)}
 			else{a.setDate(Math.floor(daysInMonth/2))}
 			return a
-		} 
-		a.setDate(1); //for all else
+		}else if (this.name == Period.periodName.custom){
+			return new Date(date.getFullYear(), date.getMonth(), 1);
+		}
+		a.setDate(1);//else
 
 
 		//cases that affect months
@@ -167,7 +172,8 @@ export class Period {
 		bimonthly: 	"bimonthly",
 		quarterly:  "quarterly",
 		yearly: 	"yearly",
-		biyearly: 	"biyearly"
+		biyearly: 	"biyearly",
+		custom: 	"custom"
 	}
 	static daily = 			new Period(Period.periodName.daily,			"day",  		timeIntervals.oneDay,	 		Period.daily, 	{"daily":1,"weekly":1/7,"biweekly":1/14})
 	static weekly = 		new Period(Period.periodName.weekly,		"week",   		timeIntervals.oneWeek,	 		Period.daily, 	{"daily":7,"weekly":1,"biweekly":1/2})
@@ -179,6 +185,19 @@ export class Period {
 	static yearly = 	 	new Period(Period.periodName.yearly,		"year"	,		undefined,						Period.monthly, {"semimonthly":24,"monthly":12, "bimonthly":6,  "quarterly":4,	"yearly":1})
 	static biyearly = 	 	new Period(Period.periodName.biyearly,		"2 years",		undefined,						Period.monthly, {"semimonthly":48,"monthly":24, "bimonthly":12,  "quarterly":8,	"yearly":2})
 
+	/**
+	 * Create a custom range Period extension that represents an arbitrary date range
+	 * @param {Date} startDate - The start of the range
+	 * @param {Date} endDate - The end of the range
+	 * @param {Period} subdivisionPeriod - The period to use for subdividing the range (e.g., Period.yearly)
+	 * @returns {Period} A Period-like object representing the custom range
+	 */
+	static createRangePeriod(startDate, endDate, subdivisionPeriod = Period.yearly) {
+		const period = new Period("custom","period",endDate.getTime() - startDate.getTime(),subdivisionPeriod,{});
+		period.startDate = startDate;
+		period.endDate = endDate;
+		return period;
+	}
 
 	static longestPeriod = arr => arr.sort(utils.sorters.desc(p => p.getTimeIntervalFromDate(new Date())))[0]
 	static shortestPeriod = arr => arr.sort(utils.sorters.asc(p => p.getTimeIntervalFromDate(new Date())))[0]

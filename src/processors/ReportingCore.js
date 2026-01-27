@@ -150,36 +150,16 @@ it confronts expectations of that stream with transactions that actually happene
 rather, it is responsible for aggregation over time, and expectations to a horizon. Depth Streamanalysis (slice of time, stream-deep) is achieved via Reports.
 */
 class StreamAnalysis extends Analysis{
-	constructor(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod,customPeriodCount){
+	constructor(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod){
 		super(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod);
 		this.streamName = stream.name;//convenience for debugging
-		// If custom period count is provided, generate that many periods backwards from analysisDate
-		if (customPeriodCount && customPeriodCount > 0) {
-			// Calculate the actual start date for all periods
-			let periodStartDate = analysisDate;
-			for (let i = 0; i < customPeriodCount - 1; i++) {
-				periodStartDate = this.reportingPeriod.previousDate(periodStartDate);
-			}
-			// Re-filter transactions to include all periods
-			this.reportingStartDate = this.reportingPeriod.previousDate(periodStartDate);
-			let ancestors = (stream)?stream.getAncestors():undefined
-			this.transactions = transactions.filter(t => 	this.reportingStartDate.getTime() < t.getDisplayDate().getTime() && t.getDisplayDate().getTime() <= analysisDate.getTime()
-				&& (!stream || t.isAllocatedToStream(this.stream))
-				&& (AppConfig.featureFlags.includeInterestInBudgeting || (
-					!t.isUnderInterestIncomeCompoundStream() || !stream 
-					|| utils.or([this.stream,...ancestors], as => !as.isTerminal() && as.isInterestIncomeStream())
-				))
-			);
-			
-			this.periodReports = [];
-			let currentDate = analysisDate;
-			for (let i = 0; i < customPeriodCount; i++) {
-				this.periodReports.unshift(new PeriodAnalysis(stream,this.transactions,currentDate,this.subReportingPeriod,this));
-				currentDate = this.reportingPeriod.previousDate(currentDate);
-			}
-		} else {
-			this.periodReports = this.getReportingSchedule().map(date => new PeriodAnalysis(stream,this.transactions,date,this.subReportingPeriod,this));
-		}
+
+		if (reportingPeriod.name == Period.periodName.custom) {//calculate starting date for custom range (latest root date before custom start)		
+			this.reportingStartDate = analysisRootDateForYear(reportingPeriod.startDate.getFullYear());
+			if(this.reportingStartDate > reportingPeriod.startDate){this.reportingStartDate = this.subReportingPeriod.previousDate(this.reportingStartDate)}
+		} 
+
+	    this.periodReports = this.getReportingSchedule().map(date => new PeriodAnalysis(stream,this.transactions,date,this.subReportingPeriod,this));
 		this.stats = {
 			avgByPeriods: (this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true))/this.getMaturePeriodReports().length,
 			total: this.isSavings()?this.getMovedToSavings(true):this.getNetAmount(true),
