@@ -92,6 +92,14 @@ It is responsible to report the statistics on a set of transactions for this tim
 It is meant to be narrow in time, but go stream-deep: stats are based on a bottom up calculation of children streams.
 */
 class PeriodAnalysis extends Analysis{ 
+
+	/**
+	 * @param {Stream} stream
+	 * @param {Transaction[]} transactions
+	 * @param {Date} reportingDate
+	 * @param {Period} reportingPeriod
+	 * @param {PeriodAnalysis} parentStreamAnalysis
+	 */
 	constructor(stream,transactions,reportingDate,reportingPeriod,parentStreamAnalysis){
 		super(stream,transactions,reportingDate,reportingPeriod,reportingPeriod.subdivision);
 		this.parentStreamAnalysis = parentStreamAnalysis;
@@ -150,6 +158,13 @@ it confronts expectations of that stream with transactions that actually happene
 rather, it is responsible for aggregation over time, and expectations to a horizon. Depth Streamanalysis (slice of time, stream-deep) is achieved via Reports.
 */
 class StreamAnalysis extends Analysis{
+	/**
+	 * @param {Stream} stream Stream to be used for this analysis
+	 * @param {Transaction[]} transactions Transactions to be considered for this analysis
+	 * @param {Date} analysisDate Should be the end date of the analysis (analysis is in the past of that date)
+	 * @param {Period} reportingPeriod Period object representing the range the analysis covers
+	 * @param {Period} subReportingPeriod Period object representing the size of each report
+	 */
 	constructor(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod){
 		super(stream,transactions,analysisDate,reportingPeriod,subReportingPeriod);
 		this.streamName = stream.name;//convenience for debugging

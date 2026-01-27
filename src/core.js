@@ -47,8 +47,8 @@ class Core{
 			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
 			searchStream: (...args) => this.search.searchStream(...args),
 			// stream analysis helper
-			getStreamPeriodAnalysis: (streamName, startDate, endDate, period) => 
-				this.getStreamPeriodAnalysis(streamName, startDate, endDate, period)
+			getCustomAnalysis: (streamName, startDate, endDate, period) => 
+				this.getCustomAnalysis(streamName, startDate, endDate, period)
 		};
 		this.globalState.Period = Period;
 		
@@ -136,16 +136,16 @@ class Core{
 		if(!this.getUserData())return console.log("user data weren't ready")
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
 	}
-	
-	getStreamPeriodAnalysis(streamName, startDate, endDate, subReportingPeriod = Period.yearly) {
+
+	getCustomAnalysis(streamName, startDate, endDate, subReportingPeriodName = Period.periodName.yearly) {
 		const stream = this.getStreamByName(streamName);
 		if (!stream) {return Promise.reject(`Stream "${streamName}" not found`);}
 		
 		return this.getTransactionsBetweenDates(startDate, endDate)
 		.then(txns => { return getStreamAnalysis(endDate, stream, 
 			txns.filter(t => t.categorized && t.isAllocatedToStream(stream)), 
-			Period.createRangePeriod(startDate, endDate, subReportingPeriod),
-			subReportingPeriod //overrides otherwise it will take the stream's subreporting period
+			Period.createRangePeriod(startDate, endDate, Period[subReportingPeriodName]),
+			Period[subReportingPeriodName] //overrides otherwise it will take the stream's subreporting period
 		);});
 	}
 	getUserData(){return this.globalState.userData}
