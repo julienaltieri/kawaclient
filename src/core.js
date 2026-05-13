@@ -525,11 +525,18 @@ class Core{
 				.then(()=> console.log("update complete"))
 		}
 	}
+	
+	searchStream(identifier) {
+		// Search by ID first (exact match)
+		let stream = this.getStreamById(identifier);
+		if (stream) return stream;
+		else return this.getStreamByName(identifier)
+	}
+
 }
  
 const instance = new Core();
 
-export default instance 
+export default instance
 
 
- 
