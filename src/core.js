@@ -9,7 +9,7 @@ import HistoryManager, {ActionTypes} from './HistoryManager.js'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
-import { reportingConfig, getStreamAnalysis } from './processors/ReportingCore.js'
+import { reportingConfig } from './processors/ReportingCore.js'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -37,21 +37,6 @@ class Core{
 			searchTransactions: this.searchTransactions ? this.searchTransactions.bind(this) : null,
 			searchStream: this.searchStream ? this.searchStream.bind(this) : null
 		}
-	}
-
-	init(){
-		window.appGlobals = {
-			globalState: this.globalState,
-			// delegate search operations to Core instance methods (keeps single source of truth)
-			searchTransactions: (...args) => this.search.searchTransactions(...args),
-			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
-			searchStream: (...args) => this.search.searchStream(...args),
-			// stream analysis helper
-			getCustomAnalysis: (streamName, startDate, endDate, period) => 
-				this.getCustomAnalysis(streamName, startDate, endDate, period)
-		};
-		this.globalState.Period = Period;
-		
 
 		//register amazon history handler
 		var amazonHistoryHandler = function(e) {
@@ -62,11 +47,27 @@ class Core{
 					this.globalState.amzOrderHistory = r.newHistory
 		  			this.refreshAmazonTransactions()
 		  			this.globalState.amzHistorySaving = false
+					this.app?.updateState({refresh:new Date()})
 			  	})
 			}
 			return true
 		}
 		window.addEventListener('message', amazonHistoryHandler.bind(this),false);
+
+	}
+
+	init(){
+		window.appGlobals = {
+			globalState: this.globalState,
+			// delegate search operations to Core instance methods (keeps single source of truth)
+			searchTransactions: (...args) => this.search.searchTransactions(...args),
+			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
+			searchStream: (...args) => this.search.searchStream(...args)
+		};
+		this.globalState.Period = Period;
+		
+
+		
 		window.matchMedia('(prefers-color-scheme: dark)').addListener((e) => {
 			instance.app.updateState({refresh:new Date()})
 		});
@@ -135,18 +136,6 @@ class Core{
 	getStreamByName(name){
 		if(!this.getUserData())return console.log("user data weren't ready")
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
-	}
-
-	getCustomAnalysis(streamName, startDate, endDate, subReportingPeriodName = Period.periodName.yearly) {
-		const stream = this.getStreamByName(streamName);
-		if (!stream) {return Promise.reject(`Stream "${streamName}" not found`);}
-		
-		return this.getTransactionsBetweenDates(startDate, endDate)
-		.then(txns => { return getStreamAnalysis(endDate, stream, 
-			txns.filter(t => t.categorized && t.isAllocatedToStream(stream)), 
-			Period.createRangePeriod(startDate, endDate, Period[subReportingPeriodName]),
-			Period[subReportingPeriodName] //overrides otherwise it will take the stream's subreporting period
-		);});
 	}
 	getUserData(){return this.globalState.userData}
 	saveBankAccountSettings(){return this.getUserData().savingAccounts?ApiCaller.saveBankAccountSettings(this.getUserData().savingAccounts):Promise.resolve()}
@@ -338,21 +327,7 @@ class Core{
 
 		return {userFriendlyResults: matches.map(t => t.userFriendlyResult[0].friendlyDescription),matches:matches};
 	}
-	//search streams by either id or name and return that stream
-	searchStream(identifier) {
-		if (!identifier) return null;
-		
-		// Try to find by ID first
-		const streamById = this.getStreamById(identifier);
-		if (streamById) return streamById;
-		
-		// Fall back to search by name
-		const streamByName = this.getStreamByName(identifier);
-		if (streamByName) return streamByName;
-		
-		// Not found
-		return null;
-	}
+
 
 	undoCategorizationBySearchTermLastThreeMonths(searchString){return this.searchCategorizedTransactionLastThreeMonths(searchString).then(cats => instance.undoCategorizations(cats))}
 	undoCategorizations(cats){
