@@ -482,6 +482,45 @@ class Core{
 		var dateMatch = (order,transaction) => (new Date(order.date)<=new Date(transaction.date.getTime()+timeIntervals.oneDay*1) && new Date(order.date) >= new Date(transaction.date.getTime()-timeIntervals.oneDay*35))
 		var getUnattributedAmzItems = () => {var orderNumberConsumed = getAttributedAmazonTransactions().map(t => t.amazonOrderDetails.orderNumber);return amz.filter(am => orderNumberConsumed.indexOf(am.orderNumber)==-1 && am.orderAmount!=null && am.orderAmount!=0)}
 
+		// PASS 0: Transaction-level match (highest confidence)
+		// Uses order.transactions to match individual card charges directly,
+		// even when they don't equal orderAmount (split shipments, backorders, etc.).
+		// This also solves the "orphan sibling" problem: charges that don't individually
+		// match orderAmount are now matched one-by-one as each appears in the bank feed.
+		// NOTE: iterates ALL orders (not getUnattributedAmzItems) so partially-attributed
+		// orders can still accept more charges for their remaining transactions.
+		{
+			const consumedTxnKeys = new Set(); // prevent one txn entry from matching multiple bank transactions
+
+			amz.filter(am => am.transactions && am.transactions.length > 0).forEach(order => {
+				order.transactions.forEach(txn => {
+					if (!txn.amount || !txn.date) return;
+					const txnDate = new Date(txn.date);
+					if (isNaN(txnDate.getTime())) return;
+
+					const txnKey = `${order.orderNumber}::${txn.amount}::${txn.date}`;
+					if (consumedTxnKeys.has(txnKey)) return;
+
+					// Find the closest-in-date unmatched bank transaction with exact amount
+					const match = getRemainingAmazonTransactions()
+						.filter(bankTxn => absAmountsMatch(txn.amount, Math.abs(bankTxn.amount)))
+						.sort((a, b) => Math.abs(a.date - txnDate) - Math.abs(b.date - txnDate)) // closest date first
+						.find(bankTxn => Math.abs(bankTxn.date - txnDate) <= timeIntervals.oneDay * 3);
+
+					if (match) {
+						console.log("Transaction-Level Match Found:", match);
+						match.amazonOrderDetails = {
+							...order,
+							algo: "transactionLevelMatch",
+							matchedTxnDate: txn.date,
+							matchedTxnLast4: txn.last4 || ''
+						};
+						consumedTxnKeys.add(txnKey);
+					}
+				});
+			});
+		}
+
 		//try direct match (transaction = 1 order)
 		getRemainingAmazonTransactions().map(t => {
 			var directItemMatch = amz.filter(am => dateMatch(am,t) && absAmountsMatch(am.orderAmount,t.amount))[0]
