@@ -468,16 +468,20 @@ class Core{
 		if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete()}
 	}
 
-	_performAmazonReconciliation(amz){
+	_performAmazonReconciliation(amz, _testTransactions = null){
 		//console.log(amz)
+		// When _testTransactions is provided (test mode), use it as the transaction source.
+		// This avoids any mutation of globalState and keeps the footprint minimal.
+		var txnSource = _testTransactions ? { transactions: _testTransactions } : this.globalState.queriedTransactions;
+
 		// Helper functions for convenience
-		var getRemainingAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
+		var getRemainingAmazonTransactions = () => txnSource.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
 		
 		// Quit here if no new work to be done	
 		let categorizedTransactionsToUpdate = getRemainingAmazonTransactions().filter(t =>  t.categorized)
 		if(!amz || getRemainingAmazonTransactions().length==0 || getRemainingAmazonTransactions().length<=this.globalState.remainingAmazonTransactionsCount)return
 		
-		var getAttributedAmazonTransactions = () => this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
+		var getAttributedAmazonTransactions = () => txnSource.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
 		var absAmountsMatch = (a,b) => (Math.abs(Math.abs(a) - Math.abs(b))<0.000001) //by doing so we avoid javascript rounding and precision errors
 		var dateMatch = (order,transaction) => (new Date(order.date)<=new Date(transaction.date.getTime()+timeIntervals.oneDay*1) && new Date(order.date) >= new Date(transaction.date.getTime()-timeIntervals.oneDay*35))
 		var getUnattributedAmzItems = () => {var orderNumberConsumed = getAttributedAmazonTransactions().map(t => t.amazonOrderDetails.orderNumber);return amz.filter(am => orderNumberConsumed.indexOf(am.orderNumber)==-1 && am.orderAmount!=null && am.orderAmount!=0)}
@@ -505,10 +509,10 @@ class Core{
 					const match = getRemainingAmazonTransactions()
 						.filter(bankTxn => absAmountsMatch(txn.amount, Math.abs(bankTxn.amount)))
 						.sort((a, b) => Math.abs(a.date - txnDate) - Math.abs(b.date - txnDate)) // closest date first
-						.find(bankTxn => Math.abs(bankTxn.date - txnDate) <= timeIntervals.oneDay * 3);
+					.find(bankTxn => Math.abs(bankTxn.date - txnDate) <= timeIntervals.oneDay * 2);
 
 					if (match) {
-						console.log("Transaction-Level Match Found:", match);
+						//console.log("Transaction-Level Match Found:", match);
 						match.amazonOrderDetails = {
 							...order,
 							algo: "transactionLevelMatch",
@@ -553,9 +557,9 @@ class Core{
 		this.globalState.remainingAmazonTransactionsCount = getRemainingAmazonTransactions().length
 		//brag about how great this algorithm is
 		var total = this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.streamAllocation).filter(t => t.amount <0),totalMatched = total.filter(t => !!t.amazonOrderDetails).filter(t => !t.streamAllocation).filter(t => t.amount <0)
-		console.log("Uncategorized Amazon transactions matched: "+(100*(totalMatched.length/total.length).toFixed(4))+"% ("+totalMatched.length+"/"+total.length+")")
+		//console.log("Uncategorized Amazon transactions matched: "+(100*(totalMatched.length/total.length).toFixed(4))+"% ("+totalMatched.length+"/"+total.length+")")
 		//if some of the mathched transaction are already categorized, we should save them with the amazon details
-		console.log("Unmatched Categorized Amazon transactions remaining: "+categorizedTransactionsToUpdate.length)
+		//console.log("Unmatched Categorized Amazon transactions remaining: "+categorizedTransactionsToUpdate.length)
 		categorizedTransactionsToUpdate = categorizedTransactionsToUpdate.filter(t => !!t.amazonOrderDetails)
 		if(categorizedTransactionsToUpdate.length > 0){
 			console.log("updating "+categorizedTransactionsToUpdate.length+" categorized transactions with amazon details")
