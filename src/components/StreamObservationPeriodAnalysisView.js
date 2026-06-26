@@ -4,6 +4,8 @@ import {CompactMiniGraph} from './MiniGraph'
 import {GenericStreamAnalysisView, StreamAnalysisTransactionFeedView} from './AnalysisView'
 import utils from '../utils'
 import {timeIntervals} from '../Time'
+import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits } from '../transactionMatching'
+import Core from '../core'
 
 
 
@@ -11,71 +13,61 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	constructor(props){
 		super(props)
 		this.state = {minigraphLastRefresh:new Date()}
+		this._processedSplitIds = new Set()
 	}
-	
+
 	get isZeroSumStream() {
         return this.props.analysis.stream.isZeroSumStream;
     }
 
-	findUnmatched(txnArr){//used for reconciliation 
-		let debits = [], credits = [],  matches = [], stream = this.props.analysis.stream;
+	componentDidMount() { this._applyAmazonReturnSplitsIfNeeded() }
 
-		//separate credits from debits and sort them by date
-		txnArr.forEach(t => {
-			if(t.amount>0){credits.push(t)}
-			else {debits.push(t)}
-		})
-		debits = debits.sort(utils.sorters.asc(bt => bt.date.getTime()))
-		credits = credits.sort(utils.sorters.asc(bt => bt.date.getTime()))
-
-		//helper matching function taking in a config object with the following options:
-		// elements - list of elements to try to match against other transactions
-		// matchPool - pool of candidates for elements to be matched against 
-		// oneToMany - wether or not we want to try matching one to many, instead of one to one 
-		// poolDateFilter - what needs to be true on dates to be consider for matching
-		function computeMatches(o){
-			if(stream.isSavings || stream.isInterestIncome){return}
-			let toRemove = [], getKeyForTransaction = (t) => t.moneyInForStream(stream)>0?"credit":"debit"
-			o.elements.forEach(at => {
-				let pool = o.matchPool.filter(bt => o.poolDateFilter(at,bt))//apply date conditions
-				let possibleMatches = (o.oneToMany?utils.combine(pool,2):pool.map(t => [t]))
-					.sort(utils.sorters.asc(arr => utils.sum(arr.map(c => c.date.getTime()))))//sort by earlier dates first
-					.filter(bt => Math.abs(utils.sum([at,...bt],t => t.moneyInForStream(stream)))<0.001)//must be zero sum
-				let matchedCandidate = possibleMatches[0] // default candidate is the first possible combo
-				if(!matchedCandidate || matchedCandidate.length==0){return}
-				matches.push({ [getKeyForTransaction(at)]: [at] , [getKeyForTransaction(matchedCandidate[0])]: matchedCandidate});
-				o.matchPool.splice(0,o.matchPool.length,...o.matchPool.filter(bt => !matchedCandidate.includes(bt)))
-				toRemove.push(at.transactionId)
-			})
-			o.elements.splice(0, o.elements.length, ...o.elements.filter(ct => !toRemove.includes(ct.transactionId)))//remove matched elements
-		}
-
-		//main exeuction function, testing gradual longer time windows in weeks
-		function match(weekWindows,reverseTiming){
-			weekWindows.forEach(i => {
-				let filter = (ct,dt) => (reverseTiming?(ct.date.getTime() < dt.date.getTime()):(ct.date.getTime() >= dt.date.getTime()) 
-				&& (reverseTiming?-1:1)*(ct.date.getTime() - dt.date.getTime()) <= (timeIntervals.oneWeek * i))
-				computeMatches({elements: credits, matchPool: debits, oneToMany: false, poolDateFilter: (a,b) => filter(a,b)}) //credit <> debit
-				computeMatches({elements: credits, matchPool: debits, oneToMany: true, poolDateFilter: (a,b) => filter(a,b)}) //credit <> [...debit]
-				computeMatches({elements: debits, matchPool: credits, oneToMany: true, poolDateFilter: (a,b) => filter(b,a)}) //debit <> [...credit]
-			})
-		}
-
-		//actual matching execution
-		match([1,5,8,16],false);//start with forward order (credits refund debits)
-		match([1,5,8,16],true);//for the rest, try reverse order (credits have to be paid afterwards)
-
-		let res = {matches: matches, unmatched: [...credits,...debits]}
-		return res
+	componentDidUpdate(prevProps) {
+		if (prevProps.analysis !== this.props.analysis) { this._applyAmazonReturnSplitsIfNeeded() }
 	}
-	
+
+	_applyAmazonReturnSplitsIfNeeded() {
+		if (!this.isZeroSumStream) return
+		const { transactions, stream } = this.props.analysis
+		const { unmatched } = reconcileZeroSumStreamTransactions(transactions, stream)
+		const unmatchedAmazonCredits = unmatched.filter(t => t.amount > 0 && t.amazonOrderDetails)
+		if (unmatchedAmazonCredits.length === 0) return
+
+		const allTransactions = Core.globalState.queriedTransactions?.transactions || []
+		const candidates = suggestAmazonReturnSplits(unmatchedAmazonCredits, allTransactions, stream)
+			.filter(({ debit }) => !this._processedSplitIds.has(debit.transactionId))
+		if (candidates.length === 0) return
+
+		candidates.forEach(({ debit }) => this._processedSplitIds.add(debit.transactionId))
+
+		const tupples = candidates.map(({ debit, splitAmount }) => ({
+			transaction: debit,
+			streamAllocation: [
+				{ streamId: stream.id, amount: -splitAmount, type: 'value' },
+				{ streamId: debit.streamAllocation[0].streamId, amount: -(Math.abs(debit.amount) - splitAmount), type: 'value' }
+			]
+		}))
+
+		Core.categorizeTransactionsAllocationsTupples(tupples).then(() => {
+			candidates.forEach(({ credits, debit }) =>
+				console.log(`[Amazon Return Split] Auto-split charge ${debit.transactionId} ($${debit.amount}) to fund ${credits.length} refund(s): ${credits.map(c => `${c.transactionId} ($${c.amount})`).join(', ')}`)
+			)
+			this.props.onStreamDefinitionChange?.()
+		})
+	}
+
 	render(){
+		const { transactions, stream } = this.props.analysis
+		const reconciliation = this.isZeroSumStream
+			? reconcileZeroSumStreamTransactions(transactions, stream)
+			: undefined
+
 		return <ObsPeriodViewContainer style={{paddingRight: '0.4rem'}}>
 			<CompactMiniGraph refresh={this.state.minigraphLastRefresh} shouldOverrideOverflow={true} analysis={this.props.analysis} stream={this.props.analysis.stream}/>
-			<StreamAnalysisTransactionFeedView 
-				analysis={this.props.analysis} 
-				reconciliation={this.isZeroSumStream?this.findUnmatched(this.props.analysis.transactions):undefined} 
-				onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})} 
+			<StreamAnalysisTransactionFeedView
+				analysis={this.props.analysis}
+				reconciliation={reconciliation}
+				onMinigraphUpdateRequested={() => this.updateState({minigraphLastRefresh:new Date()})}
 				onCategorizationUpdate={this.props.onCategorizationUpdate}
 				onStreamDefinitionChange={this.props.onStreamDefinitionChange}/>
 		</ObsPeriodViewContainer>

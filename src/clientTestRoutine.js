@@ -1,4 +1,4 @@
-import { runAmazonTransactionTests } from './tests/amazonTransactionsTest'
+import { runTransactionMatchingTests } from './tests/transactionMatchingTest'
 import ApiCaller from './ApiCaller'
 import Core from './core'
 import {ModalTemplates} from './ModalManager.js'
@@ -12,7 +12,7 @@ const reporter = require('./processors/ReportingCore')
 class TestRoutine{
 
 	static start(){
-		runAmazonTransactionTests()
+		runTransactionMatchingTests()
 		var globals = window.appGlobals;
 		var sd = new Date("Wed Jun 19 2022 00:00:00 GMT-0800 (Pacific Standard Time)");
 		var ed = new Date("Tue Jun 20 2022 01:00:00 GMT-0800 (Pacific Standard Time)");
