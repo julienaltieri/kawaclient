@@ -370,6 +370,248 @@ function test5_firstChargeAlreadyMatched_secondChargeMatchedNow() {
 	})
 }
 
+/**
+ * Test 6 – Partial Amazon refund gets linked to the original order
+ *
+ * Scenario:
+ *   • Bank debit of -$68 (AMZN Mktp US) is matched to Amazon order 111-0000006-0000006
+ *     via a transaction-level match (orderAmount $68, one charge entry of $68 on the same date)
+ *   • 14 days later, Amazon issues a partial refund: a bank credit of +$22 (AMZN Mktp US)
+ *     appears in the feed. The order also has a -$22.00 refund entry in transactions[].
+ *
+ * Expected (unified Pass 0):
+ *   • The -$68 debit is matched via the +$68 charge entry (algo: "transactionLevelMatch")
+ *   • The +$22 credit is matched via the -$22 refund entry (same algo — same mechanism)
+ */
+function test6_partialRefund_getsLinkedToOriginalOrder() {
+	runTest('Test 6 – Partial refund (+$22) gets linked to original -$68 order', assert => {
+		const purchaseDate    = daysAgo(20)
+		const refundDate      = daysAgo(6)   // 14 days after purchase
+		const purchaseDateStr = toAmazonDateString(purchaseDate)
+		const refundDateStr   = toAmazonDateString(refundDate)
+
+		// The original purchase debit
+		const mockBankDebit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: -68.00, date: purchaseDate, id: 'test6-txn-debit'
+		})
+		// The partial refund credit (positive bank amount)
+		const mockBankCredit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: 22.00, date: refundDate, id: 'test6-txn-credit'
+		})
+
+		const mockOrders = [{
+			accountName: 'TestAccount',
+			orderNumber: '111-0000006-0000006',
+			orderAmount: 68.00,
+			date: purchaseDateStr,
+			items: [{ itemDescription: 'Some product', image: '' }],
+			transactions: [
+				// charge entry: positive amount in order data matches negative bank debit
+				{ amount: 68.00, date: purchaseDateStr, description: 'AMZN Mktp US', last4: '1234' },
+				// refund entry: negative amount in order data matches positive bank credit
+				{ amount: -22.00, date: refundDateStr, description: 'AMZN Mktp US', last4: '1234' }
+			]
+		}]
+
+		Core.globalState.remainingAmazonTransactionsCount = undefined
+		withStub(Core, 'categorizeTransactionsAllocationsTupples', () => Promise.resolve(), () => {
+			Core._performAmazonReconciliation(mockOrders, [mockBankDebit, mockBankCredit])
+		})
+
+		// The debit should be matched as normal
+		assert(mockBankDebit.amazonOrderDetails !== undefined, 'debit amazonOrderDetails is set', mockBankDebit.amazonOrderDetails)
+		assert(mockBankDebit.amazonOrderDetails?.orderNumber === '111-0000006-0000006', `debit orderNumber matches (got: "${mockBankDebit.amazonOrderDetails?.orderNumber}")`)
+		assert(mockBankDebit.amazonOrderDetails?.algo === 'transactionLevelMatch', `debit algo === "transactionLevelMatch" (got: "${mockBankDebit.amazonOrderDetails?.algo}")`)
+
+		// The credit (refund) should also be linked to the same order via the unified Pass 0
+		assert(mockBankCredit.amazonOrderDetails !== undefined, 'credit (refund) amazonOrderDetails is set', mockBankCredit.amazonOrderDetails)
+		assert(mockBankCredit.amazonOrderDetails?.orderNumber === '111-0000006-0000006', `credit orderNumber matches (got: "${mockBankCredit.amazonOrderDetails?.orderNumber}")`)
+		assert(mockBankCredit.amazonOrderDetails?.algo === 'transactionLevelMatch', `credit algo === "transactionLevelMatch" (got: "${mockBankCredit.amazonOrderDetails?.algo}")`)
+	})
+}
+
+/**
+ * Test 7 – Refund posts after the original debit is already categorized & mapped to an order
+ *
+ * Scenario:
+ *   • The original -$68 Amazon debit was categorized (assigned to a stream) in a previous
+ *     session. It already has amazonOrderDetails pointing to order 111-0000007-0000007.
+ *   • A new +$22 partial refund credit posts now (uncategorized, no amazonOrderDetails).
+ *
+ * This mirrors the real-world flow:
+ *   User buys something → debit gets categorized → refund arrives later.
+ *
+ * Expected (unified Pass 0):
+ *   • The categorized debit retains its existing amazonOrderDetails (untouched)
+ *   • The refund credit is matched via the -$22 refund entry in order.transactions[]
+ *   • The credit's algo is "transactionLevelMatch"
+ */
+function test7_refundPostsAfterDebitAlreadyCategorizedAndMapped() {
+	runTest('Test 7 – Refund posts after debit is already categorized & mapped to order', assert => {
+		const purchaseDate    = daysAgo(30)
+		const refundDate      = daysAgo(5)   // refund posts ~25 days after purchase
+		const purchaseDateStr = toAmazonDateString(purchaseDate)
+		const refundDateStr   = toAmazonDateString(refundDate)
+
+		const orderStub = {
+			accountName: 'TestAccount',
+			orderNumber: '111-0000007-0000007',
+			orderAmount: 68.00,
+			date: purchaseDateStr,
+			items: [{ itemDescription: 'Some product', image: '' }],
+			transactions: [
+				// charge entry (positive in order data)
+				{ amount: 68.00, date: purchaseDateStr, description: 'AMZN Mktp US', last4: '1234' },
+				// refund entry (negative in order data — new parser convention)
+				{ amount: -22.00, date: refundDateStr, description: 'AMZN Mktp US', last4: '1234' }
+			]
+		}
+
+		// The debit is already categorized and has amazonOrderDetails from a prior run
+		const mockBankDebit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: -68.00, date: purchaseDate, id: 'test7-txn-debit'
+		})
+		mockBankDebit.categorized = true
+		mockBankDebit.transactionId = 'test7-txn-debit-cat'
+		mockBankDebit.streamAllocation = [{ streamId: 'some-stream-id', amount: -68.00, type: 'value' }]
+		mockBankDebit.amazonOrderDetails = {
+			...orderStub,
+			algo: 'transactionLevelMatch',
+			matchedTxnDate: purchaseDateStr,
+			matchedTxnLast4: '1234'
+		}
+
+		// The refund credit: freshly posted, uncategorized, no amazonOrderDetails yet
+		const mockBankCredit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: 22.00, date: refundDate, id: 'test7-txn-credit'
+		})
+
+		Core.globalState.remainingAmazonTransactionsCount = undefined
+		withStub(Core, 'categorizeTransactionsAllocationsTupples', () => Promise.resolve(), () => {
+			Core._performAmazonReconciliation([orderStub], [mockBankDebit, mockBankCredit])
+		})
+
+		// Debit should be untouched (already correctly mapped)
+		assert(mockBankDebit.amazonOrderDetails?.orderNumber === '111-0000007-0000007', `debit still attributed to same order (got: "${mockBankDebit.amazonOrderDetails?.orderNumber}")`)
+		assert(mockBankDebit.amazonOrderDetails?.algo === 'transactionLevelMatch', `debit algo unchanged (got: "${mockBankDebit.amazonOrderDetails?.algo}")`)
+
+		// Credit (refund) should be linked to the same order via Pass 0 (unified)
+		assert(mockBankCredit.amazonOrderDetails !== undefined, 'credit (refund) amazonOrderDetails is set', mockBankCredit.amazonOrderDetails)
+		assert(mockBankCredit.amazonOrderDetails?.orderNumber === '111-0000007-0000007', `credit orderNumber matches (got: "${mockBankCredit.amazonOrderDetails?.orderNumber}")`)
+		assert(mockBankCredit.amazonOrderDetails?.algo === 'transactionLevelMatch', `credit algo === "transactionLevelMatch" (got: "${mockBankCredit.amazonOrderDetails?.algo}")`)
+	})
+}
+
+/**
+ * Test 8 – Amazon credit with NO negative entries in order.transactions[] → stays unmatched
+ *
+ * Scenario:
+ *   • Order has only positive charge entries (current real-world state: parser doesn't capture refunds)
+ *   • A +$22 Amazon credit appears in the bank feed
+ *
+ * Expected:
+ *   • The credit has NO amazonOrderDetails — without an explicit refund entry in order.transactions[]
+ *     there is no unambiguous data to match against (guards against false positives)
+ */
+function test8_creditWithNoRefundEntryInOrder_staysUnmatched() {
+	runTest('Test 8 – Amazon credit stays unmatched when order has no negative transactions[] entries', assert => {
+		const purchaseDate    = daysAgo(20)
+		const refundDate      = daysAgo(5)
+		const purchaseDateStr = toAmazonDateString(purchaseDate)
+
+		const mockBankDebit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: -68.00, date: purchaseDate, id: 'test8-txn-debit'
+		})
+		const mockBankCredit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: 22.00, date: refundDate, id: 'test8-txn-credit'
+		})
+
+		const mockOrders = [{
+			accountName: 'TestAccount',
+			orderNumber: '111-0000008-0000008',
+			orderAmount: 68.00,
+			date: purchaseDateStr,
+			items: [{ itemDescription: 'Some product', image: '' }],
+			transactions: [
+				// Only a charge entry — no refund entry (negative amount) present
+				{ amount: 68.00, date: purchaseDateStr, description: 'AMZN Mktp US', last4: '1234' }
+			]
+		}]
+
+		Core.globalState.remainingAmazonTransactionsCount = undefined
+		withStub(Core, 'categorizeTransactionsAllocationsTupples', () => Promise.resolve(), () => {
+			Core._performAmazonReconciliation(mockOrders, [mockBankDebit, mockBankCredit])
+		})
+
+		// Debit should be matched normally
+		assert(mockBankDebit.amazonOrderDetails !== undefined, 'debit is matched', mockBankDebit.amazonOrderDetails)
+		assert(mockBankDebit.amazonOrderDetails?.orderNumber === '111-0000008-0000008', `debit orderNumber matches (got: "${mockBankDebit.amazonOrderDetails?.orderNumber}")`)
+
+		// Credit must NOT be matched — no refund entry exists in order data
+		assert(mockBankCredit.amazonOrderDetails === undefined, 'credit stays unmatched (no refund entry in order data)', mockBankCredit.amazonOrderDetails)
+	})
+}
+
+/**
+ * Test 9 – Multiple orders, none with refund entries → credit stays unmatched (no false positive)
+ *
+ * Scenario:
+ *   • Two unrelated orders, each with only positive charge entries
+ *   • Both orders have charges that precede the credit date
+ *   • A +$22 Amazon credit in the bank feed
+ *
+ * Expected:
+ *   • The credit is NOT matched to either order — without explicit refund data
+ *     in order.transactions[], any assignment would be a false positive
+ */
+function test9_multipleOrders_noRefundEntries_creditStaysUnmatched() {
+	runTest('Test 9 – Multiple orders with no refund entries → credit stays unmatched (no false positive)', assert => {
+		const date1           = daysAgo(30)
+		const date2           = daysAgo(15)
+		const refundDate      = daysAgo(3)
+		const dateStr1        = toAmazonDateString(date1)
+		const dateStr2        = toAmazonDateString(date2)
+
+		// Two orders, both charged before the refund date, neither has a refund entry
+		const orderA = {
+			accountName: 'TestAccount', orderNumber: '111-0000009-A', orderAmount: 37.09,
+			date: dateStr1, items: [],
+			transactions: [
+				{ amount: 37.09, date: dateStr1, description: 'AMZN Mktp US', last4: '1234' }
+			]
+		}
+		const orderB = {
+			accountName: 'TestAccount', orderNumber: '111-0000009-B', orderAmount: 55.00,
+			date: dateStr2, items: [],
+			transactions: [
+				{ amount: 55.00, date: dateStr2, description: 'AMZN Mktp US', last4: '5678' }
+			]
+		}
+
+		const mockDebitA = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: -37.09, date: date1, id: 'test9-txn-A'
+		})
+		const mockDebitB = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: -55.00, date: date2, id: 'test9-txn-B'
+		})
+		const mockBankCredit = makeMockBankTransaction({
+			description: 'AMZN Mktp US', amount: 22.00, date: refundDate, id: 'test9-txn-credit'
+		})
+
+		Core.globalState.remainingAmazonTransactionsCount = undefined
+		withStub(Core, 'categorizeTransactionsAllocationsTupples', () => Promise.resolve(), () => {
+			Core._performAmazonReconciliation([orderA, orderB], [mockDebitA, mockDebitB, mockBankCredit])
+		})
+
+		// Both debits should be matched
+		assert(mockDebitA.amazonOrderDetails?.orderNumber === '111-0000009-A', `debitA matched to order A (got: "${mockDebitA.amazonOrderDetails?.orderNumber}")`)
+		assert(mockDebitB.amazonOrderDetails?.orderNumber === '111-0000009-B', `debitB matched to order B (got: "${mockDebitB.amazonOrderDetails?.orderNumber}")`)
+
+		// Credit must NOT be matched — no order has a refund entry
+		assert(mockBankCredit.amazonOrderDetails === undefined, 'credit stays unmatched — no refund entry in any order', mockBankCredit.amazonOrderDetails)
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -380,5 +622,9 @@ export function runAmazonTransactionTests() {
 	test3_oneChargePosted_oneChargePending()
 	test4_giftCardSplitPayment_onlyCardChargeMatchable()
 	test5_firstChargeAlreadyMatched_secondChargeMatchedNow()
+	test6_partialRefund_getsLinkedToOriginalOrder()
+	test7_refundPostsAfterDebitAlreadyCategorizedAndMapped()
+	test8_creditWithNoRefundEntryInOrder_staysUnmatched()
+	test9_multipleOrders_noRefundEntries_creditStaysUnmatched()
 	console.groupEnd()
 }

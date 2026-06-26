@@ -41,7 +41,8 @@ class Core{
 		//register amazon history handler
 		var amazonHistoryHandler = function(e) {
 			if( e && e.data && e.data.substring && e.data.substring(0,17)== "kawaAmazonOrders-" && this.globalState.amzHistorySaving == false){
-			  	var data = JSON.parse(decodeURI(e.data.slice(17)));
+			  	console.log("received kawaAmazonOrders message");
+				var data = JSON.parse(decodeURI(e.data.slice(17)));
 				this.globalState.amzHistorySaving = true
 			  	ApiCaller.saveAmazonOrderHistory(data.map(ord => ({...ord,id:ord.orderNumber}))).then((r) => {
 					this.globalState.amzOrderHistory = r.newHistory
@@ -475,11 +476,14 @@ class Core{
 		var txnSource = _testTransactions ? { transactions: _testTransactions } : this.globalState.queriedTransactions;
 
 		// Helper functions for convenience
-		var getRemainingAmazonTransactions = () => txnSource.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails /*&& !t.streamAllocation*/).filter(t => t.amount <0).sort(utils.sorters.desc(t => t.date));
-		
-		// Quit here if no new work to be done	
+		// Unified: all unmatched Amazon bank transactions (both debits and credits).
+		var getRemainingUnmatchedAmazonTxns = () => txnSource.transactions.filter(this.isAmazonTransaction).filter(t => !t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
+		// Debit-only view: used by the lower-confidence passes (directMatch, sameDate, combo).
+		var getRemainingAmazonTransactions = () => getRemainingUnmatchedAmazonTxns().filter(t => t.amount < 0);
+
+		// Quit here if no new work to be done
 		let categorizedTransactionsToUpdate = getRemainingAmazonTransactions().filter(t =>  t.categorized)
-		if(!amz || getRemainingAmazonTransactions().length==0 || getRemainingAmazonTransactions().length<=this.globalState.remainingAmazonTransactionsCount)return
+		if(!amz || getRemainingUnmatchedAmazonTxns().length == 0 || getRemainingUnmatchedAmazonTxns().length <= (this.globalState.remainingAmazonTransactionsCount || 0))return
 		
 		var getAttributedAmazonTransactions = () => txnSource.transactions.filter(this.isAmazonTransaction).filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date));
 		var absAmountsMatch = (a,b) => (Math.abs(Math.abs(a) - Math.abs(b))<0.000001) //by doing so we avoid javascript rounding and precision errors
@@ -487,32 +491,41 @@ class Core{
 		var getUnattributedAmzItems = () => {var orderNumberConsumed = getAttributedAmazonTransactions().map(t => t.amazonOrderDetails.orderNumber);return amz.filter(am => orderNumberConsumed.indexOf(am.orderNumber)==-1 && am.orderAmount!=null && am.orderAmount!=0)}
 
 		// PASS 0: Transaction-level match (highest confidence)
-		// Uses order.transactions to match individual card charges directly,
-		// even when they don't equal orderAmount (split shipments, backorders, etc.).
-		// This also solves the "orphan sibling" problem: charges that don't individually
-		// match orderAmount are now matched one-by-one as each appears in the bank feed.
+		// Unified match for both charges and refunds using order.transactions[] entries.
+		// Sign convention:
+		//   Bank debit (charge): negative amount  e.g. -$68
+		//   Bank credit (refund): positive amount  e.g. +$22
+		//   order.transactions[].amount: positive for charges (+$68), negative for refunds (-$22)
+		// Match condition (symmetrical): bankTxn.amount + txn.amount ≈ 0
+		//   Charge:  (-68) + 68  = 0  ✓
+		//   Refund:  (+22) + (-22) = 0  ✓
+		// Pending exception: order txn with no date → match on amount only (date skipped).
 		// NOTE: iterates ALL orders (not getUnattributedAmzItems) so partially-attributed
-		// orders can still accept more charges for their remaining transactions.
+		// orders can still accept more entries for their remaining transactions.
 		{
-			const consumedTxnKeys = new Set(); // prevent one txn entry from matching multiple bank transactions
+			const consumedTxnKeys = new Set(); // prevent one order txn entry from matching multiple bank txns
 
 			amz.filter(am => am.transactions && am.transactions.length > 0).forEach(order => {
 				order.transactions.forEach(txn => {
-					if (!txn.amount || !txn.date) return;
-					const txnDate = new Date(txn.date);
-					if (isNaN(txnDate.getTime())) return;
+					if (!txn.amount) return; // nothing to match
+					const isPending = !txn.date;
+					const txnDate = isPending ? null : new Date(txn.date);
+					if (!isPending && isNaN(txnDate.getTime())) return; // date present but invalid — skip
 
 					const txnKey = `${order.orderNumber}::${txn.amount}::${txn.date}`;
 					if (consumedTxnKeys.has(txnKey)) return;
 
-					// Find the closest-in-date unmatched bank transaction with exact amount
-					const match = getRemainingAmazonTransactions()
-						.filter(bankTxn => absAmountsMatch(txn.amount, Math.abs(bankTxn.amount)))
-						.sort((a, b) => Math.abs(a.date - txnDate) - Math.abs(b.date - txnDate)) // closest date first
-					.find(bankTxn => Math.abs(bankTxn.date - txnDate) <= timeIntervals.oneDay * 2);
+					// Sum ≈ 0: covers charges (negative bank + positive order) and refunds (positive bank + negative order)
+					const amountMatches = bankTxn => Math.abs(bankTxn.amount + txn.amount) < 0.000001;
+					const candidates = getRemainingUnmatchedAmazonTxns().filter(amountMatches);
+
+					const match = isPending
+						? candidates[0] // pending: first amount-match suffices (no date available)
+						: candidates
+							.sort((a, b) => Math.abs(a.date - txnDate) - Math.abs(b.date - txnDate)) // closest date first
+							.find(bankTxn => Math.abs(bankTxn.date - txnDate) <= timeIntervals.oneDay * 2);
 
 					if (match) {
-						//console.log("Transaction-Level Match Found:", match);
 						match.amazonOrderDetails = {
 							...order,
 							algo: "transactionLevelMatch",
@@ -553,8 +566,8 @@ class Core{
 				if(comboMatch)g.forEach((t,i) => t.amazonOrderDetails = {...comboMatch,algo:"multipleDaysAppart", part: i})
 			})
 		}
-		//keep track of last job state to avoid re-processing
-		this.globalState.remainingAmazonTransactionsCount = getRemainingAmazonTransactions().length
+		//keep track of last job state to avoid re-processing (unified count covers both debits and credits)
+		this.globalState.remainingAmazonTransactionsCount = getRemainingUnmatchedAmazonTxns().length
 		//brag about how great this algorithm is
 		var total = this.globalState.queriedTransactions.transactions.filter(this.isAmazonTransaction).filter(t => !t.streamAllocation).filter(t => t.amount <0),totalMatched = total.filter(t => !!t.amazonOrderDetails).filter(t => !t.streamAllocation).filter(t => t.amount <0)
 		//console.log("Uncategorized Amazon transactions matched: "+(100*(totalMatched.length/total.length).toFixed(4))+"% ("+totalMatched.length+"/"+total.length+")")
