@@ -250,7 +250,7 @@ export class TransactionView extends BaseComponent{
 				<span style={{flexShrink: 1,flexBasis: "auto",textOverflow: "ellipsis",textWrap: "nowrap",overflow: "hidden",paddingRight:"0.5rem"}}><span style={{color: DS.getStyle().positive}}>●</span> Refunded on {utils.formatDateShort(t.date)} · {t.description}</span>
 				<span style={{flexShrink: 0,flexBasis: "auto"}}>{utils.formatCurrencyAmount(t.amount,undefined,undefined,false,Core.getPreferredCurrency())}</span>
 			</DS.component.ListItem>):<DS.component.ListItem key={0} noHover size="xs" style={{justifyContent: "space-between"}}>
-				<span><span style={{color: DS.getStyle().warning}}>● </span> Awaiting refund</span>
+				<span><span style={{color: this.props.transaction.amount>0?DS.getStyle().bodyTextSecondary:DS.getStyle().warning}}>● </span> {this.props.transaction.amount>0?"Missing matching debit":"Awaiting refund"}</span>
 				<span></span>
 			</DS.component.ListItem>}
 		</div>)

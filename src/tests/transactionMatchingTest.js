@@ -812,6 +812,72 @@ function testZS4_multipleRefundsForSameOrder_splitNeeded_currentlyFailing() {
 	})
 }
 
+/**
+ * Test ZS-5 – Refund in zero-sum stream whose original charge is from a prior year (not present)
+ *
+ * Scenario: an item was bought in December 2025 (prior year) and returned in June 2026.
+ * The original -$55.75 charge debit is NOT in the current transaction set (it's from the
+ * prior reporting year). Only the +$26.23 refund credit is present, sitting in the zero-sum stream.
+ *
+ * Expected behavior:
+ *   -1- Amazon reconciliation STILL attaches amazonOrderDetails to the refund credit, using the
+ *       order's negative refund entry (Pass 0 transaction-level match) — no debit required.
+ *   -2- Zero-sum reconciliation finds 0 matches (the credit is correctly stranded).
+ *   -3- suggestAmazonReturnSplits returns 0 candidates — there is no debit to split.
+ */
+function testZS5_refundWithoutOriginalDebit_orderStillAttachedToRefund() {
+	runTest('Test ZS-5 – Refund without original debit (prior-year charge): order still attached to refund', assert => {
+		const stream = makeMockZeroSumStream()
+
+		// Order spans the year boundary: charge in Dec 2025, refund in June 2026
+		const mockOrders = [{
+			accountName: 'Fanny',
+			orderNumber: '112-9999999-0000005',
+			orderAmount: 55.75,
+			date: 'December 15, 2025',
+			items: [{ itemDescription: 'Some prior-year product', image: '' }],
+			transactions: [
+				{ amount:  55.75, date: 'December 15, 2025', description: 'AMZN Mktp US', last4: '9076' },
+				{ amount: -26.23, date: 'June 19, 2026',     description: 'AMZN Mktp US', last4: '9076' }
+			]
+		}]
+
+		// Only the +$26.23 refund credit is present (the original charge is from the prior year)
+		const credit = makeMockHybridTransaction({
+			description: 'Refund: Amazon', amount: 26.23, date: new Date('2026-06-19T00:00:00.000Z'), id: 'zs5-credit'
+		})
+
+		// Step 1: Amazon reconciliation attaches the order to the refund via the negative refund entry
+		Core.globalState.remainingAmazonTransactionsCount = undefined
+		withStub(Core, 'categorizeTransactionsAllocationsTupples', () => Promise.resolve(), () => {
+			Core._performAmazonReconciliation(mockOrders, [credit])
+		})
+
+		assert(
+			credit.amazonOrderDetails?.orderNumber === '112-9999999-0000005',
+			`refund linked to Amazon order even without the original debit (got: "${credit.amazonOrderDetails?.orderNumber}")`,
+			credit.amazonOrderDetails
+		)
+		assert(
+			credit.amazonOrderDetails?.algo === 'transactionLevelMatch',
+			`algo === "transactionLevelMatch" (got: "${credit.amazonOrderDetails?.algo}")`,
+			credit.amazonOrderDetails
+		)
+
+		// Step 2: zero-sum reconciliation — the credit is stranded (0 matches is correct)
+		const { matches, unmatched } = reconcileZeroSumStreamTransactions([credit], stream)
+
+		assert(matches.length === 0, `0 zero-sum matches expected (got: ${matches.length})`, matches)
+		assert(unmatched.length === 1, `1 unmatched expected (got: ${unmatched.length})`, unmatched)
+
+		// Step 3: suggestAmazonReturnSplits returns 0 candidates — no debit available to split
+		const unmatchedAmazonCredits = unmatched.filter(t => t.amount > 0 && t.amazonOrderDetails)
+		const candidates = suggestAmazonReturnSplits(unmatchedAmazonCredits, [credit], stream)
+
+		assert(candidates.length === 0, `0 split candidates expected — no debit to split (got: ${candidates.length})`, candidates)
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -835,6 +901,7 @@ export function runTransactionMatchingTests() {
 	testZS2_oneToOneMatch_linkedToSameAmazonOrder()
 	testZS3_amazonRefundStranded_correctlyUnmatched_splitCandidateIdentified()
 	testZS4_multipleRefundsForSameOrder_splitNeeded_currentlyFailing()
+	testZS5_refundWithoutOriginalDebit_orderStillAttachedToRefund()
 	console.groupEnd()
 
 	console.groupEnd()
