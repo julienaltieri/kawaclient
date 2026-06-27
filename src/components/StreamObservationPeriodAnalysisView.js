@@ -4,8 +4,7 @@ import {CompactMiniGraph} from './MiniGraph'
 import {GenericStreamAnalysisView, StreamAnalysisTransactionFeedView} from './AnalysisView'
 import utils from '../utils'
 import {timeIntervals} from '../Time'
-import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits } from '../transactionMatching'
-import Core from '../core'
+import { reconcileZeroSumStreamTransactions } from '../transactionMatching'
 
 
 
@@ -13,48 +12,11 @@ export class StreamObservationPeriodView extends GenericStreamAnalysisView{
 	constructor(props){
 		super(props)
 		this.state = {minigraphLastRefresh:new Date()}
-		this._processedSplitIds = new Set()
 	}
 
 	get isZeroSumStream() {
         return this.props.analysis.stream.isZeroSumStream;
     }
-
-	componentDidMount() { this._applyAmazonReturnSplitsIfNeeded() }
-
-	componentDidUpdate(prevProps) {
-		if (prevProps.analysis !== this.props.analysis) { this._applyAmazonReturnSplitsIfNeeded() }
-	}
-
-	_applyAmazonReturnSplitsIfNeeded() {
-		if (!this.isZeroSumStream) return
-		const { transactions, stream } = this.props.analysis
-		const { unmatched } = reconcileZeroSumStreamTransactions(transactions, stream)
-		const unmatchedAmazonCredits = unmatched.filter(t => t.amount > 0 && t.amazonOrderDetails)
-		if (unmatchedAmazonCredits.length === 0) return
-
-		const allTransactions = Core.globalState.queriedTransactions?.transactions || []
-		const candidates = suggestAmazonReturnSplits(unmatchedAmazonCredits, allTransactions, stream)
-			.filter(({ debit }) => !this._processedSplitIds.has(debit.transactionId))
-		if (candidates.length === 0) return
-
-		candidates.forEach(({ debit }) => this._processedSplitIds.add(debit.transactionId))
-
-		const tupples = candidates.map(({ debit, splitAmount }) => ({
-			transaction: debit,
-			streamAllocation: [
-				{ streamId: stream.id, amount: -splitAmount, type: 'value' },
-				{ streamId: debit.streamAllocation[0].streamId, amount: -(Math.abs(debit.amount) - splitAmount), type: 'value' }
-			]
-		}))
-
-		Core.categorizeTransactionsAllocationsTupples(tupples).then(() => {
-			candidates.forEach(({ credits, debit }) =>
-				console.log(`[Amazon Return Split] Auto-split charge ${debit.transactionId} ($${debit.amount}) to fund ${credits.length} refund(s): ${credits.map(c => `${c.transactionId} ($${c.amount})`).join(', ')}`)
-			)
-			this.props.onStreamDefinitionChange?.()
-		})
-	}
 
 	render(){
 		const { transactions, stream } = this.props.analysis

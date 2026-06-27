@@ -10,7 +10,7 @@ import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
 import { reportingConfig } from './processors/ReportingCore.js'
-import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions } from './transactionMatching'
+import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions, reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits } from './transactionMatching'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -467,7 +467,49 @@ class Core{
 	registerOnAmazonReconciliationComplete(callback) {this.onAmazonReconciliationComplete = callback}
 	refreshAmazonTransactions(){
 		this._performAmazonReconciliation(this.globalState.amzOrderHistory)
-		if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete()}
+		this.applyAmazonReturnSplitsIfNeeded().then(didSplit => {
+			if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete(didSplit)}
+		})
+	}
+
+	applyAmazonReturnSplitsIfNeeded() {
+		const allTransactions = this.globalState.queriedTransactions?.transactions || []
+		if (!allTransactions.length) return Promise.resolve(false)
+
+		const zeroSumStreams = []
+		const collect = (stream) => {
+			if (stream.isZeroSumStream) zeroSumStreams.push(stream)
+			stream.children?.forEach(collect)
+		}
+		collect(this.getMasterStream())
+
+		const categorizedTransactions = allTransactions.filter(t => t.categorized)
+		const allCandidates = []
+		zeroSumStreams.forEach(stream => {
+			const streamTxns = categorizedTransactions.filter(t => t.moneyInForStream(stream) !== 0)
+			const { unmatched } = reconcileZeroSumStreamTransactions(streamTxns, stream)
+			const unmatchedAmazonCredits = unmatched.filter(t => t.amount > 0 && t.amazonOrderDetails)
+			if (!unmatchedAmazonCredits.length) return
+			suggestAmazonReturnSplits(unmatchedAmazonCredits, categorizedTransactions, stream)
+				.forEach(c => allCandidates.push({ ...c, stream }))
+		})
+
+		if (!allCandidates.length) return Promise.resolve(false)
+
+		const tupples = allCandidates.map(({ debit, splitAmount, stream }) => ({
+			transaction: debit,
+			streamAllocation: [
+				{ streamId: stream.id, amount: -splitAmount, type: 'value' },
+				{ streamId: debit.streamAllocation[0].streamId, amount: -(Math.abs(debit.amount) - splitAmount), type: 'value' }
+			]
+		}))
+
+		return this.categorizeTransactionsAllocationsTupples(tupples).then(() => {
+			allCandidates.forEach(({ credits, debit }) =>
+				console.log(`[Amazon Return Split] Auto-split charge ${debit.transactionId} ($${debit.amount}) to fund ${credits.length} refund(s): ${credits.map(c => `${c.transactionId} ($${c.amount})`).join(', ')}`)
+			)
+			return true
+		})
 	}
 
 	_performAmazonReconciliation(amz, _testTransactions = null){

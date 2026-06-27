@@ -38,9 +38,12 @@ class MissionControl extends BaseComponent{
 
 	}
 	componentDidMount(){
-		Core.registerOnAmazonReconciliationComplete(() => {this.updateState({refresh: new Date()})});
+		Core.registerOnAmazonReconciliationComplete((didSplit) => {
+			if(didSplit){this.reRender()} else {this.updateState({refresh: new Date()})}
+		});
 		this.loadData()
 	}
+
 	loadData(){
 		
 		return Core.loadData().then(() => Promise.all([
