@@ -6,3 +6,4 @@
 !/public/**
 !package.json
 !.gitignore
+!.env.production
