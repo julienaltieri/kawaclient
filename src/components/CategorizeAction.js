@@ -13,6 +13,17 @@ import React from 'react';
 //const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
 
+//Post-tax price of each item of an amazon order, aligned with amz.items. The scraper stores nominal (pre-tax)
+//itemPrice plus its own postTaxPrice estimate, but those are rounded independently and drift from the order
+//total, so when the whole order is priced we re-spread tax+shipping here and the labels add up to the
+//transaction amount exactly. Entries are undefined when the order-details page hasn't been scraped yet.
+const getAmazonItemPostTaxPrices = (amz) => {
+	var items = amz?.items || [];
+	var nominalPrices = items.map(it => it.itemPrice);
+	if(items.length && amz.orderAmount>0 && nominalPrices.every(pr => pr>0))return utils.allocateProportionally(nominalPrices,amz.orderAmount)
+	return items.map(it => it.postTaxPrice || it.itemPrice) //partially priced order: show what the scraper had, item by item
+}
+
 //exist scene animation
 const checkmarkGrowAnimation = 500;
 const disappearAnimationTime = 300;
@@ -195,6 +206,7 @@ export class TransactionView extends BaseComponent{
 		var amz = this.getAmazonData();
 		var isCompound = this.isAmazon() && amz.items.length>1;
 		var amznghbrs = this.getAmazonNeighbors();
+		var itemPostTaxPrices = getAmazonItemPostTaxPrices(amz);
 		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 		return(<div>
@@ -207,8 +219,10 @@ export class TransactionView extends BaseComponent{
 								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
 								transition:"margin-left 0.5s ease",
 								filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
+								position:"relative",
 								height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
 								<DS.component.Image src={it.image}/>
+								{itemPostTaxPrices[i]>0?<ItemPriceLabel>{utils.formatCurrencyAmount(itemPostTaxPrices[i],2,true,true,Core.getPreferredCurrency())}</ItemPriceLabel>:""}
 							</div>
 						)}
 					</div>
@@ -256,6 +270,21 @@ export class TransactionView extends BaseComponent{
 		</div>)
 	}
 }
+
+//price tag sitting in the bottom-right corner of an amazon item picture. The picture tile is always white
+//(in both themes), so the chip is dark in both.
+const ItemPriceLabel = styled.div`
+	position: absolute;
+	bottom: 0;
+	right: 0;
+	background: rgba(0, 0, 0, 0.65);
+	color: white;
+	font-size: 0.6rem;
+	font-weight: 600;
+	line-height: 1;
+	padding: 0.2rem 0.25rem;
+	border-radius: ${DS.borderRadiusSmall} 0 0 0;
+`
 
 const fadeInAnimation = keyframes`${fadeIn}`;
 const FadeInWrap = styled.div`

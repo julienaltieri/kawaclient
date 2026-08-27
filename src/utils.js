@@ -133,6 +133,23 @@ exports.formatCurrencyAmount = function(n,fixed = 2,noMinusSign = false, noPlusS
 }
 exports.parseDollarsAmount = (a) => currency(a)
 
+//Splits `total` across `weights` proportionally, rounded to cents, so the parts sum back to `total` exactly.
+//Plain rounding drifts by a cent or two on multi-part splits, so the leftover cents are handed out
+//largest-remainder style (biggest fractional part first). Weights must be non-negative.
+exports.allocateProportionally = function(weights,total){
+	var weightSum = weights.reduce((a,b) => a+b,0)
+	if(!(weightSum>0))return weights.map(() => 0)
+	var totalCents = Math.round(total*100)
+	var exact = weights.map(w => w/weightSum*totalCents)
+	var cents = exact.map(e => Math.floor(e))
+	var leftover = totalCents - cents.reduce((a,b) => a+b,0)
+	exact.map((e,i) => ({i:i,frac:e-cents[i]}))
+		.sort(exports.sorters.desc(o => o.frac))
+		.slice(0,Math.max(leftover,0))
+		.forEach(o => cents[o.i]++)
+	return cents.map(c => c/100)
+}
+
 
 exports.makeMapFromId = function(arr,f){
 	if(!f)throw new Error("function makeMapFromId requires to pass an accessor function.")
