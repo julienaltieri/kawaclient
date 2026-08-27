@@ -13,16 +13,46 @@ import React from 'react';
 //const checkmark = require('../assets/checkmark.svg').default;
 const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
 
-//Post-tax price of each item of an amazon order, aligned with amz.items. The scraper stores nominal (pre-tax)
-//itemPrice plus its own postTaxPrice estimate, but those are rounded independently and drift from the order
-//total, so when the whole order is priced we re-spread tax+shipping here and the labels add up to the
-//transaction amount exactly. Entries are undefined when the order-details page hasn't been scraped yet.
-const getAmazonItemPostTaxPrices = (amz) => {
+//Post-tax price of each item of an amazon order, aligned with amz.items, spread so the set sums to `total`
+//exactly. The scraper stores nominal (pre-tax) itemPrice plus its own postTaxPrice estimate, but those are
+//rounded independently and drift, so when the whole order is priced we re-spread tax+shipping here.
+//`total` is the order total for the carousel labels, and the transaction amount when splitting - an order
+//can be billed as several charges, so the two aren't always the same number.
+//Entries are undefined when the order-details page hasn't been scraped yet, so callers show nothing rather
+//than something wrong.
+export const getAmazonItemPrices = (amz,total) => {
 	var items = amz?.items || [];
 	var nominalPrices = items.map(it => it.itemPrice);
-	if(items.length && amz.orderAmount>0 && nominalPrices.every(pr => pr>0))return utils.allocateProportionally(nominalPrices,amz.orderAmount)
+	if(items.length && total>0 && nominalPrices.every(pr => pr>0))return utils.allocateProportionally(nominalPrices,total)
 	return items.map(it => it.postTaxPrice || it.itemPrice) //partially priced order: show what the scraper had, item by item
 }
+
+//True when this transaction can be split item by item: an amazon order of several items that all carry a price.
+//Unpriced orders (amazon fresh, digital) fall back to the amount-based split.
+export const canSplitAmazonByItem = (transaction) => {
+	var amz = transaction?.amazonOrderDetails;
+	if(!(amz?.items?.length>1))return false
+	var prices = getAmazonItemPrices(amz,Math.abs(transaction.amount));
+	//the prices have to add up to the transaction being split, or the allocations wouldn't balance
+	return utils.and(prices,pr => pr>0) && Math.abs(utils.sum(prices)-Math.abs(transaction.amount))<0.005
+}
+
+//The white product tile: item picture with its post-tax price in the bottom-right corner. Shared by the
+//carousel on the transaction view and the rows of the item-wise split, which is why the caller owns the
+//outer styling (the carousel slides its first cell, the split rows clip theirs).
+export const AmazonItemImage = (props) => (
+	//the tile is an explicit square and never flexes: without a width its flex base comes from the
+	//picture's intrinsic size, which stretches the tile and eats the room the stream field wants.
+	//product shots are square, so the picture is contained rather than cropped to fill.
+	<div style={{
+			position:"relative",display:"flex",justifyContent:"center",background:"white",
+			height:props.size+"rem",width:props.size+"rem",minWidth:props.size+"rem",flexShrink:0,
+			filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
+			...props.style}}>
+		<DS.component.Image src={props.item.image} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+		{props.price>0?<ItemPriceLabel>{utils.formatCurrencyAmount(props.price,2,true,true,Core.getPreferredCurrency())}</ItemPriceLabel>:""}
+	</div>
+)
 
 //exist scene animation
 const checkmarkGrowAnimation = 500;
@@ -206,7 +236,7 @@ export class TransactionView extends BaseComponent{
 		var amz = this.getAmazonData();
 		var isCompound = this.isAmazon() && amz.items.length>1;
 		var amznghbrs = this.getAmazonNeighbors();
-		var itemPostTaxPrices = getAmazonItemPostTaxPrices(amz);
+		var itemPostTaxPrices = getAmazonItemPrices(amz,amz?.orderAmount);
 		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 		return(<div>
@@ -215,15 +245,9 @@ export class TransactionView extends BaseComponent{
 				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
 					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
 						{amz.items.map((it,i) => 
-							<div  key={i}  style={{
+							<AmazonItemImage key={i} item={it} price={itemPostTaxPrices[i]} size={6} style={{
 								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
-								transition:"margin-left 0.5s ease",
-								filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
-								position:"relative",
-								height:"6rem",minWidth:"6rem",display:"flex",justifyContent:"center",background:"white"}}>
-								<DS.component.Image src={it.image}/>
-								{itemPostTaxPrices[i]>0?<ItemPriceLabel>{utils.formatCurrencyAmount(itemPostTaxPrices[i],2,true,true,Core.getPreferredCurrency())}</ItemPriceLabel>:""}
-							</div>
+								transition:"margin-left 0.5s ease"}}/>
 						)}
 					</div>
 					{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
@@ -271,8 +295,8 @@ export class TransactionView extends BaseComponent{
 	}
 }
 
-//price tag sitting in the bottom-right corner of an amazon item picture. The picture tile is always white
-//(in both themes), so the chip is dark in both.
+//price tag sitting in the bottom-right corner of an amazon item picture (see AmazonItemImage). The picture
+//tile is always white in both themes, so the chip is dark in both.
 const ItemPriceLabel = styled.div`
 	position: absolute;
 	bottom: 0;

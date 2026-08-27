@@ -5,7 +5,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, getAmazonItemPrices, canSplitAmazonByItem} from './components/CategorizeAction'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
@@ -63,9 +63,17 @@ export const ModalTemplates = {
 		</div>,buttonArray)(that)
 	},
 	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs) => (that) => {
+		//an amazon order is always split by item, never by amount - the prices are already known.
+		//two cases keep the amount-based view: orders with no per-item prices (amazon fresh, digital),
+		//and editing a split that already exists. The second is deliberate: streamAllocation records
+		//stream and amount only, so once several items have been summed into one allocation there is
+		//nothing to map back onto items. Splitting by item is therefore the initial allocation only,
+		//until the model records which items went where - which is a backend change.
+		const splitByItem = canSplitAmazonByItem(transaction) && !transaction.streamAllocation?.length;
+		const AllocationView = splitByItem?AmazonItemAllocationView:StreamAllocationOptionView;
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<StreamAllocationOptionView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs}/>
+			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs}/>
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
@@ -339,6 +347,118 @@ const MainContent = styled.div`
 	flex-grow:1;
 	
 `
+
+//Splits an amazon transaction item by item. Same shape as StreamAllocationOptionView - same TransactionView
+//on top, same ul of Rows below, same {streamId,amount,type} array handed to Confirm - but the amount per row
+//is the item's own post-tax price rather than something typed, so the row reads "<picture> Goes to <stream>".
+export class AmazonItemAllocationView extends BaseComponent{
+	constructor(props){
+		super(props)
+		var amz = props.transaction.amazonOrderDetails;
+		this.state = {
+			controller: props.controller,
+			amz: amz,
+			//prices are spread onto this transaction's amount, not the order total: an order can be billed
+			//as several charges, and the allocations have to sum to the one being split.
+			prices: getAmazonItemPrices(amz,Math.abs(props.transaction.amount)),
+			assignments: amz.items.map(() => undefined),
+			pickOrder: [],//streamIds in the order they were picked, most recent last
+			allocations: []
+		}
+		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
+		this.setPrimaryButtonDisabled(true);
+	}
+	postStateUpdateCallback(){
+		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
+		this.validate();
+	}
+	setPrimaryButtonDisabled(b){this.state.controller.setPrimaryButtonDisabled(b)}
+	validate(){
+		this.setPrimaryButtonDisabled(//every item needs a stream, and every stream needs to still exist
+			!utils.and(this.state.assignments,streamId => !!streamId)
+			|| !utils.and(this.state.allocations,al => Core.getMasterStream().hasTerminalChild(al.streamId) && !isNaN(al.amount) && al.amount!=0)
+		);
+	}
+	handleStreamSelected(e,i){
+		var s = Core.getStreamById(e.target.selectedOptions[0].getAttribute("sid"))
+		this.assignItem(i,s.id)
+	}
+	assignItem(i,streamId){
+		var assignments = [...this.state.assignments], pickOrder = [...this.state.pickOrder];
+		var previous = assignments[i];
+		if(previous){//drop the stale entry first, so a stream nothing points at anymore stops being suggested
+			var at = pickOrder.lastIndexOf(previous);
+			if(at>-1)pickOrder.splice(at,1)
+		}
+		assignments[i] = streamId;
+		pickOrder.push(streamId);
+		this.updateState({assignments:assignments,pickOrder:pickOrder,allocations:this.buildAllocations(assignments)},this.postStateUpdateCallback)
+	}
+	buildAllocations(assignments){
+		//several items in the same stream make one allocation, not one each
+		var sign = this.props.transaction.amount<0?-1:1;
+		var streamIds = [], totals = {};
+		assignments.forEach((streamId,i) => {
+			if(!streamId)return
+			if(!(streamId in totals)){totals[streamId] = 0;streamIds.push(streamId)}
+			totals[streamId] += this.state.prices[i]
+		})
+		return streamIds.map(streamId => ({streamId:streamId,amount:sign*Math.round(totals[streamId]*100)/100,type:"value"}))
+	}
+	//streams already used on this transaction, most recently picked first
+	getStreamsUsedSoFar(){
+		var used = [];
+		for(var i=this.state.pickOrder.length-1;i>=0;i--){
+			if(used.indexOf(this.state.pickOrder[i])==-1)used.push(this.state.pickOrder[i])
+		}
+		return used
+	}
+	getAvailableStreams(){
+		return Core.getMasterStream().getAllTerminalStreams()
+			.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
+			.sort(utils.sorters.asc(s => s.name.charCodeAt()))
+	}
+	getDropDownLabelForStreamId(id){
+		var s = Core.getStreamById(id);
+		return s.isActiveNow()?s.name:s.name+" (old)"
+	}
+	renderStreamOption(s,key){return <option key={key} sid={s.id}>{this.getDropDownLabelForStreamId(s.id)}</option>}
+	//streams already used on this transaction float to the top of the list: splitting an order usually means
+	//sending the next item to somewhere the previous one already went.
+	renderStreamOptions(){
+		var available = this.getAvailableStreams();
+		var used = this.getStreamsUsedSoFar().map(id => available.find(s => s.id==id)).filter(s => !!s);
+		var rest = available.filter(s => used.indexOf(s)==-1);
+		if(!used.length)return rest.map((s,j) => this.renderStreamOption(s,j))
+		return [
+			<optgroup key="used" label="Already in this order">{used.map((s,j) => this.renderStreamOption(s,"u"+j))}</optgroup>,
+			<optgroup key="rest" label="All streams">{rest.map((s,j) => this.renderStreamOption(s,"r"+j))}</optgroup>
+		]
+	}
+	render(){
+		return(<div>
+			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
+				<TransactionView transaction={this.props.transaction}/>
+			</div>
+			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
+				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
+					{this.state.amz.items.map((it,i) => <DS.component.Row key={i}>
+						<AmazonItemImage item={it} price={this.state.prices[i]} size={3} style={{
+							overflow:"hidden",borderRadius: DS.borderRadiusSmall,
+							alignSelf:"center",marginBottom:"0.5rem"}}/>
+						<StyledSpendReceive>Goes to</StyledSpendReceive>
+						<DS.component.DropDown
+							value={(this.state.assignments[i])?this.getDropDownLabelForStreamId(this.state.assignments[i]):'DEFAULT'}
+							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
+							<option value='DEFAULT' disabled hidden> </option>
+							{this.renderStreamOptions()}
+						</DS.component.DropDown>
+					</DS.component.Row>)}
+				</ul>
+			</div>
+		</div>)
+	}
+}
 
 export class StreamAllocationOptionView extends BaseComponent{
 	constructor(props){
