@@ -178,8 +178,18 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 	getReconciledTransactionsFromTransaction(txn){
 		return this.props.reconciliation?.matches.filter(m => m.debit.find(t => t.transactionId === txn.transactionId))
 	}
+	//The refund strip under the transaction tile is a statement about THIS zero-sum stream: either the
+	//refunds that cancelled the charge, or that none has arrived yet. It only means anything for a
+	//transaction that takes part in the stream, so anything else gets no strip at all rather than an
+	//"awaiting refund" line about a stream it was never in. Navigating between the charges of an amazon
+	//order lands on exactly those transactions, which is what made this visible.
+	takesPartInReconciliation(txn){
+		if(!this.props.reconciliation || !txn?.categorized)return false
+		return txn.moneyInForStream(this.props.analysis.stream) !== 0
+	}
 	handleClickOnTransaction(txn){
-		txn.reconciliation = this.getReconciledTransactionsFromTransaction(txn)
+		//assigned either way: leaving a previous transaction's strip on the object would show it here
+		txn.reconciliation = this.takesPartInReconciliation(txn)?this.getReconciledTransactionsFromTransaction(txn):undefined
 		//quick navigation between the charges of one amazon order: close this dialog and reopen it on the
 		//sibling charge. Without it the only way to reach the other charge is to find it in the feed, and
 		//since the charges of an order look alike, knowing which one you found is the whole difficulty.
