@@ -655,12 +655,18 @@ const FadeInWrap = styled.div`
 `
 
 
+//The checkmark played over the card as it leaves. It is decoration and nothing in it is ever aimed at, but
+//it is absolutely positioned over the card and only ever hidden by opacity - which stops it being seen and
+//not being hit. A 5rem circle sat over the middle of the tile the whole time, so a tap that landed inside it
+//went to the checkmark instead of whatever it looked like it was on: taps on the item name worked or did not
+//depending on which part of the words the finger found.
 const AnimationSymbolContainer = styled.div`
     width: calc(100% - ${ActionStyles.cardRemSpacing}rem);
     position: absolute;
     margin-top: 1.5rem;
     transition: opacity ${disappearAnimationTime/1000}s ease, transform ${checkmarkGrowAnimation/1000}s cubic-bezier(0.49, 1.62, 0.58, 0.93);
     opacity: 0;
+    pointer-events: none;
     display: flex;
     justify-content: center;
 `
