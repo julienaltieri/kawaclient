@@ -17,7 +17,7 @@
  */
 
 import Core from '../core'
-import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits } from '../transactionMatching'
+import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -705,8 +705,8 @@ function testZS3_amazonRefundStranded_correctlyUnmatched_splitCandidateIdentifie
 		assert(candidates[0]?.credits?.[0]?.id === 'zs3-credit', 'candidate credits[0] is zs3-credit', candidates[0])
 		assert(candidates[0]?.debit?.id === 'zs3-debit', 'candidate debit is zs3-debit', candidates[0])
 		assert(
-			Math.abs((candidates[0]?.splitAmount ?? NaN) - 26.23) < 0.001,
-			`splitAmount is 26.23 (got: ${candidates[0]?.splitAmount})`,
+			Math.abs((candidates[0]?.amount ?? NaN) - 26.23) < 0.001,
+			`amount is 26.23 (got: ${candidates[0]?.amount})`,
 			candidates[0]
 		)
 
@@ -719,8 +719,8 @@ function testZS3_amazonRefundStranded_correctlyUnmatched_splitCandidateIdentifie
 		assert(multiCandidates.length === 1, `1 candidate for 2 credits + 1 debit (got: ${multiCandidates.length})`, multiCandidates)
 		assert(multiCandidates[0]?.credits?.length === 2, `candidate covers 2 credits (got: ${multiCandidates[0]?.credits?.length})`, multiCandidates[0])
 		assert(
-			Math.abs((multiCandidates[0]?.splitAmount ?? NaN) - 36.23) < 0.001,
-			`splitAmount is 36.23 ($26.23 + $10.00) (got: ${multiCandidates[0]?.splitAmount})`,
+			Math.abs((multiCandidates[0]?.amount ?? NaN) - 36.23) < 0.001,
+			`amount is 36.23 ($26.23 + $10.00) (got: ${multiCandidates[0]?.amount})`,
 			multiCandidates[0]
 		)
 	})
@@ -805,8 +805,8 @@ function testZS4_multipleRefundsForSameOrder_splitNeeded_currentlyFailing() {
 		assert(candidates[0]?.debit?.id === 'zs4-debit', 'candidate debit is zs4-debit', candidates[0])
 		assert(candidates[0]?.credits?.length === 2, `candidate covers 2 credits (got: ${candidates[0]?.credits?.length})`, candidates[0])
 		assert(
-			Math.abs((candidates[0]?.splitAmount ?? NaN) - 14.00) < 0.001,
-			`splitAmount is $14 ($5 + $9) (got: ${candidates[0]?.splitAmount})`,
+			Math.abs((candidates[0]?.amount ?? NaN) - 14.00) < 0.001,
+			`amount is $14 ($5 + $9) (got: ${candidates[0]?.amount})`,
 			candidates[0]
 		)
 	})
@@ -878,6 +878,448 @@ function testZS5_refundWithoutOriginalDebit_orderStillAttachedToRefund() {
 	})
 }
 
+/**
+ * Test ZS-17 - Order billed as two charges, refund matches one of them exactly
+ *
+ * Real scenario: an Amazon order arrives as two separate bank transactions (two shipments, or a
+ * card/gift-card split), and only one of them is later refunded. Both charges carry the order
+ * number, so counting candidates calls it ambiguous - but it is not: the refund equals one of them
+ * exactly, so there is only one possible source.
+ */
+function testZS17_twoChargesOneRefundedExactly() {
+	runTest('Test ZS-17 - Order billed as two charges: exact-amount refund resolves the charge', assert => {
+		const stream = makeMockZeroSumStream()
+		const order = { orderNumber: 'order-zs17' }
+
+		const charge1 = makeMockHybridTransaction({ description: 'Amazon', amount: -43.89, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs17-charge1', streamAmount: 0 })
+		const charge2 = makeMockHybridTransaction({ description: 'Amazon', amount: -30.00, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs17-charge2', streamAmount: 0 })
+		const credit  = makeMockHybridTransaction({ description: 'Refund: Amazon', amount: 43.89, date: new Date('2026-08-16T00:00:00.000Z'), id: 'zs17-credit' })
+		;[charge1, charge2].forEach(t => { t.streamAllocation = [{ streamId: 'stream-A-id', amount: t.amount, type: 'value' }] })
+		;[charge1, charge2, credit].forEach(t => { t.amazonOrderDetails = { ...order } })
+
+		const candidates = suggestAmazonReturnSplits([credit], [charge1, charge2, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected - two charges is not ambiguous here (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs17-charge1', `the exactly-matching charge is chosen (got: "${candidates[0]?.debit?.id}")`, candidates[0])
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-18 - Order billed as two charges, only one large enough to have funded the refund
+ *
+ * No exact match, but the smaller charge cannot possibly be the source, so the larger one is the
+ * only candidate left and gets split.
+ */
+function testZS18_twoChargesOnlyOneCanFundTheRefund() {
+	runTest('Test ZS-18 - Order billed as two charges: only the feasible one is split', assert => {
+		const stream = makeMockZeroSumStream()
+		const order = { orderNumber: 'order-zs18' }
+
+		const big   = makeMockHybridTransaction({ description: 'Amazon', amount: -100.00, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs18-big', streamAmount: 0 })
+		const small = makeMockHybridTransaction({ description: 'Amazon', amount: -5.00, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs18-small', streamAmount: 0 })
+		const credit = makeMockHybridTransaction({ description: 'Refund: Amazon', amount: 50.00, date: new Date('2026-06-16T00:00:00.000Z'), id: 'zs18-credit' })
+		;[big, small].forEach(t => { t.streamAllocation = [{ streamId: 'stream-A-id', amount: t.amount, type: 'value' }] })
+		;[big, small, credit].forEach(t => { t.amazonOrderDetails = { ...order } })
+
+		const candidates = suggestAmazonReturnSplits([credit], [big, small, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs18-big', `the only charge large enough is chosen (got: "${candidates[0]?.debit?.id}")`, candidates[0])
+		assert(candidates[0]?.mode === 'split', `mode is "split" (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-19 - Order billed as two charges, either could have funded the refund: refuse
+ *
+ * The complement of ZS-17 and ZS-18. Narrowing by amount must not become guessing: when two
+ * charges could equally be the source, no candidate is produced and the refund stays stranded.
+ */
+function testZS19_twoChargesGenuinelyAmbiguous() {
+	runTest('Test ZS-19 - Two charges that could equally have funded the refund: no candidate', assert => {
+		const stream = makeMockZeroSumStream()
+		const order = { orderNumber: 'order-zs19' }
+
+		const a = makeMockHybridTransaction({ description: 'Amazon', amount: -100.00, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs19-a', streamAmount: 0 })
+		const b = makeMockHybridTransaction({ description: 'Amazon', amount: -90.00, date: new Date('2026-05-09T00:00:00.000Z'), id: 'zs19-b', streamAmount: 0 })
+		const credit = makeMockHybridTransaction({ description: 'Refund: Amazon', amount: 20.00, date: new Date('2026-06-16T00:00:00.000Z'), id: 'zs19-credit' })
+		;[a, b].forEach(t => { t.streamAllocation = [{ streamId: 'stream-A-id', amount: t.amount, type: 'value' }] })
+		;[a, b, credit].forEach(t => { t.amazonOrderDetails = { ...order } })
+
+		const candidates = suggestAmazonReturnSplits([credit], [a, b, credit], stream)
+
+		assert(candidates.length === 0, `0 candidates expected - refuse rather than guess (got: ${candidates.length})`, candidates)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Generic (non-Amazon) refund matching
+//
+// Every scenario below is taken from a real row of the user's Returns stream export.
+// ---------------------------------------------------------------------------
+
+// A categorized transaction for the generic rail. `streamAmount` is what it reports for the refund
+// stream: 0 means "not reconciled into it yet", which is what makes a charge eligible. `allocations`
+// is the list of per-stream amounts, which must sum to `amount`; it defaults to a single share.
+function makeMockRefundTransaction({ description, amount, date, id, streamAmount = 0, allocations }) {
+	return {
+		description,
+		amount,
+		date: date instanceof Date ? date : new Date(date),
+		id,
+		transactionId: id,
+		categorized: true,
+		streamAllocation: (allocations || [amount]).map((a, i) => ({ streamId: 'stream-' + i, amount: a, type: 'value' })),
+		moneyInForStream(_stream) { return streamAmount }
+	}
+}
+
+function makeMockRefundStream() {
+	return { id: 'test-returns', isZeroSumStream: true, isSavings: false, isInterestIncome: false }
+}
+
+/**
+ * Test ZS-6 - Merchant keys survive punctuation, truncation and reference codes
+ *
+ * The normaliser is what the whole generic rail rests on, so it is asserted directly:
+ * apostrophes ("Carter's"), the "Refund: " prefix, multi-word names, bank truncation
+ * ("Amazon Reta*" for "Amazon Retail") and trailing reference codes.
+ */
+function testZS6_merchantKeyNormalisation() {
+	runTest('Test ZS-6 - Merchant key normalisation and prefix matching', assert => {
+		assert(getMerchantKey("Refund: Carter's") === 'carters', `"Refund: Carter's" -> carters (got: "${getMerchantKey("Refund: Carter's")}")`)
+		assert(getMerchantKey('Refund: Sports Basement') === 'sportsbasement', `multi-word name (got: "${getMerchantKey('Refund: Sports Basement')}")`)
+		assert(getMerchantKey('CVS') === 'cvs', `3-letter merchant survives (got: "${getMerchantKey('CVS')}")`)
+		assert(getMerchantKey('Refund: Amazon Reta* B89as59y1') === 'amazonreta', `reference code dropped (got: "${getMerchantKey('Refund: Amazon Reta* B89as59y1')}")`)
+
+		assert(merchantKeysMatch('cvs', 'cvs'), 'CVS matches itself - a 3-char key is not rejected')
+		assert(merchantKeysMatch('amazonreta', 'amazonretail'), 'truncated key prefix-matches the full one')
+		assert(!merchantKeysMatch('atmfeereimbursement', 'chasepaloaltocaus'), 'unrelated descriptions do not match')
+		assert(!merchantKeysMatch('', 'target'), 'an empty key matches nothing')
+	})
+}
+
+/**
+ * Test ZS-7 - Exact-amount refund moves the whole charge (real: CVS, 2026-07-04)
+ *
+ * Scenario: -$20.75 CVS charge and a +$20.75 "Refund: CVS" credit posted the SAME DAY.
+ * Expected: one candidate, mode "move" - the charge belongs in the refund stream outright,
+ * and the same-day case must not be excluded by the date test.
+ */
+function testZS7_exactRefundMovesWholeCharge() {
+	runTest('Test ZS-7 - Exact-amount refund, same day: whole charge is moved', assert => {
+		const stream = makeMockRefundStream()
+		const debit  = makeMockRefundTransaction({ description: 'CVS', amount: -20.75, date: '2026-07-04T00:00:00.000Z', id: 'zs7-debit' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: CVS', amount: 20.75, date: '2026-07-04T00:00:00.000Z', id: 'zs7-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs7-debit', 'candidate charge is the CVS debit', candidates[0])
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+		assert(Math.abs((candidates[0]?.amount ?? NaN) - 20.75) < 0.001, `amount is 20.75 (got: ${candidates[0]?.amount})`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-8 - Partial refund splits the most recent matching charge (real: Lululemon, 2026-06)
+ *
+ * Scenario: a -$204.14 Lululemon charge on 06-16 and an older -$150 Lululemon charge on 05-02,
+ * then a +$107.56 "Refund: Lululemon" credit on 06-26.
+ * Expected: mode "split" against the MORE RECENT charge, per the agreed selection rule.
+ */
+function testZS8_partialRefundSplitsMostRecentCharge() {
+	runTest('Test ZS-8 - Partial refund splits the most recent matching charge', assert => {
+		const stream = makeMockRefundStream()
+		const older  = makeMockRefundTransaction({ description: 'Lululemon', amount: -150.00, date: '2026-05-02T00:00:00.000Z', id: 'zs8-older' })
+		const recent = makeMockRefundTransaction({ description: 'Lululemon', amount: -204.14, date: '2026-06-16T00:00:00.000Z', id: 'zs8-recent' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: Lululemon', amount: 107.56, date: '2026-06-26T00:00:00.000Z', id: 'zs8-credit' })
+
+		const candidates = suggestRefundMatches([credit], [older, recent, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs8-recent', `most recent charge chosen (got: "${candidates[0]?.debit?.id}")`, candidates[0])
+		assert(candidates[0]?.mode === 'split', `mode is "split" (got: "${candidates[0]?.mode}")`, candidates[0])
+		assert(Math.abs((candidates[0]?.amount ?? NaN) - 107.56) < 0.001, `amount is 107.56 (got: ${candidates[0]?.amount})`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-9 - Two identical charges, one refund: exact amount beats recency (real: Quince)
+ *
+ * Scenario (mirrors 2026-05-03 / 2026-06-04 / 2026-07-08): a -$350.98 charge and a later
+ * -$219.50 charge, then a +$219.50 refund. Recency alone would pick the -$219.50 charge here
+ * too, so the test also asserts the reverse ordering: an exact match that is NOT the most
+ * recent still wins, because amount equality is stronger evidence than proximity.
+ */
+function testZS9_exactAmountBeatsRecency() {
+	runTest('Test ZS-9 - Exact-amount charge wins over a more recent inexact one', assert => {
+		const stream = makeMockRefundStream()
+		const exact  = makeMockRefundTransaction({ description: 'Quince', amount: -219.50, date: '2026-06-04T00:00:00.000Z', id: 'zs9-exact' })
+		const newer  = makeMockRefundTransaction({ description: 'Quince', amount: -350.98, date: '2026-06-20T00:00:00.000Z', id: 'zs9-newer' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: Quince', amount: 219.50, date: '2026-07-08T00:00:00.000Z', id: 'zs9-credit' })
+
+		const candidates = suggestRefundMatches([credit], [exact, newer, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs9-exact', `exact-amount charge chosen over the newer one (got: "${candidates[0]?.debit?.id}")`, candidates[0])
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-10 - The 90-day window is enforced (real: Refund: Columbia with no charge in range)
+ *
+ * Scenario: the charge sits one day beyond maxDaysBetweenChargeAndRefund.
+ * Expected: 0 candidates. A refund whose charge is out of range stays stranded rather than
+ * being fitted to whatever happens to be nearby.
+ */
+function testZS10_windowIsEnforced() {
+	runTest('Test ZS-10 - Charge beyond the 90-day window yields no candidate', assert => {
+		const stream = makeMockRefundStream()
+		const within = new Date('2026-07-31T00:00:00.000Z').getTime() - 24 * 3600 * 1000 * refundMatchingConfig.maxDaysBetweenChargeAndRefund
+		const justInside  = makeMockRefundTransaction({ description: 'Columbia', amount: -54.95, date: new Date(within), id: 'zs10-inside' })
+		const justOutside = makeMockRefundTransaction({ description: 'Columbia', amount: -54.95, date: new Date(within - 24 * 3600 * 1000), id: 'zs10-outside' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: Columbia', amount: 54.95, date: '2026-07-31T00:00:00.000Z', id: 'zs10-credit' })
+
+		const outsideOnly = suggestRefundMatches([credit], [justOutside, credit], stream)
+		assert(outsideOnly.length === 0, `0 candidates when the only charge is out of window (got: ${outsideOnly.length})`, outsideOnly)
+
+		const insideOnly = suggestRefundMatches([credit], [justInside, credit], stream)
+		assert(insideOnly.length === 1, `1 candidate at exactly the window boundary (got: ${insideOnly.length})`, insideOnly)
+	})
+}
+
+/**
+ * Test ZS-11 - A merchant seen on another zero-sum stream is never routed
+ *
+ * Scenario: a credit card tracked on its own zero-sum stream. Its payments look exactly like
+ * refunds - a credit that cancels an earlier debit of the same name - but they are not, so the
+ * exclusion list must stop them, however well the amount and date line up.
+ */
+function testZS11_merchantOnAnotherZeroSumStreamIsExcluded() {
+	runTest('Test ZS-11 - Merchant seen on a non-refund zero-sum stream is excluded', assert => {
+		const stream = makeMockRefundStream()
+		const debit  = makeMockRefundTransaction({ description: 'Robinhood Card', amount: -300.00, date: '2026-06-01T00:00:00.000Z', id: 'zs11-debit' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: Robinhood Card', amount: 300.00, date: '2026-06-10T00:00:00.000Z', id: 'zs11-credit' })
+
+		const withoutExclusion = suggestRefundMatches([credit], [debit, credit], stream)
+		assert(withoutExclusion.length === 1, `matches when nothing is excluded (got: ${withoutExclusion.length})`, withoutExclusion)
+
+		const withExclusion = suggestRefundMatches([credit], [debit, credit], stream, {
+			excludedMerchantKeys: [getMerchantKey('Robinhood Card Payment')]
+		})
+		assert(withExclusion.length === 0, `0 candidates once the merchant is seen elsewhere (got: ${withExclusion.length})`, withExclusion)
+	})
+}
+
+/**
+ * Test ZS-12 - Amazon never enters the generic rail
+ *
+ * Amazon is owned by the order-number rail. Its bank descriptions are far too generic to pair
+ * on - the real data has several unmatched "Refund: Amazon" credits and many "Amazon" charges
+ * within any 90-day window - so an unmatched Amazon refund must stay stranded here rather than
+ * be fitted to the nearest Amazon charge.
+ */
+function testZS12_amazonIsExcludedFromGenericRail() {
+	runTest('Test ZS-12 - Amazon descriptions are excluded from the generic rail', assert => {
+		const stream = makeMockRefundStream()
+		const isAmazon = (d) => /amz|amazon/i.test(d || '')
+		const debit  = makeMockRefundTransaction({ description: 'Amazon', amount: -43.89, date: '2026-05-09T00:00:00.000Z', id: 'zs12-debit' })
+		const credit = makeMockRefundTransaction({ description: 'Refund: Amazon', amount: 43.89, date: '2026-08-16T00:00:00.000Z', id: 'zs12-credit' })
+		credit.date = new Date('2026-05-15T00:00:00.000Z')
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream, { isExcludedDescription: isAmazon })
+		assert(candidates.length === 0, `0 candidates - Amazon is left to the order-number rail (got: ${candidates.length})`, candidates)
+
+		// and a credit already linked to an order is skipped even without the predicate
+		const linked = makeMockRefundTransaction({ description: 'Refund: Something', amount: 43.89, date: '2026-05-15T00:00:00.000Z', id: 'zs12-linked' })
+		linked.amazonOrderDetails = { orderNumber: 'order-zs12' }
+		const other = makeMockRefundTransaction({ description: 'Something', amount: -43.89, date: '2026-05-09T00:00:00.000Z', id: 'zs12-other' })
+		const linkedCandidates = suggestRefundMatches([linked], [other, linked], stream)
+		assert(linkedCandidates.length === 0, `0 candidates for a credit carrying amazonOrderDetails (got: ${linkedCandidates.length})`, linkedCandidates)
+	})
+}
+
+/**
+ * Test ZS-13 - A refund credit with no "Refund:" marker still matches (real: Carter's)
+ *
+ * Two of the real non-Amazon refunds arrive described simply "Carter's". The credit already
+ * being categorized into the refund stream is the assertion that it is a refund, so the marker
+ * is stripped when present and never required.
+ */
+function testZS13_missingRefundMarkerStillMatches() {
+	runTest('Test ZS-13 - Credit with no "Refund:" prefix still matches its charge', assert => {
+		const stream = makeMockRefundStream()
+		const debit  = makeMockRefundTransaction({ description: "Carter's", amount: -122.96, date: '2026-06-05T00:00:00.000Z', id: 'zs13-debit' })
+		const credit = makeMockRefundTransaction({ description: "Carter's", amount: 40.63, date: '2026-07-02T00:00:00.000Z', id: 'zs13-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.mode === 'split', `mode is "split" (got: "${candidates[0]?.mode}")`, candidates[0])
+		assert(Math.abs((candidates[0]?.amount ?? NaN) - 40.63) < 0.001, `amount is 40.63 (got: ${candidates[0]?.amount})`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-14 - Guards: already-reconciled, already-split, and refunds exceeding the charge
+ */
+function testZS14_guards() {
+	runTest('Test ZS-14 - Charges already in the stream, already split, or too small are skipped', assert => {
+		const stream = makeMockRefundStream()
+		const credit = makeMockRefundTransaction({ description: 'Refund: Target', amount: 16.35, date: '2026-06-20T00:00:00.000Z', id: 'zs14-credit' })
+
+		const alreadyInStream = makeMockRefundTransaction({ description: 'Target', amount: -70.35, date: '2026-05-18T00:00:00.000Z', id: 'zs14-in', streamAmount: -16.35 })
+		assert(suggestRefundMatches([credit], [alreadyInStream, credit], stream).length === 0, 'a charge already reconciled into the stream is skipped')
+
+		const tooSmall = makeMockRefundTransaction({ description: 'Target', amount: -10.00, date: '2026-05-18T00:00:00.000Z', id: 'zs14-small' })
+		assert(suggestRefundMatches([credit], [tooSmall, credit], stream).length === 0, 'a refund larger than the charge is not matched to it')
+
+		// a charge big enough overall, but split so finely that no single share could have funded it
+		const noShareBigEnough = makeMockRefundTransaction({ description: 'Target', amount: -70.35, date: '2026-05-18T00:00:00.000Z', id: 'zs14-fine', allocations: [-14.07, -14.07, -14.07, -14.07, -14.07] })
+		assert(suggestRefundMatches([credit], [noShareBigEnough, credit], stream).length === 0, 'no single share large enough to fund the refund is skipped')
+
+		const eligible = makeMockRefundTransaction({ description: 'Target', amount: -70.35, date: '2026-05-18T00:00:00.000Z', id: 'zs14-ok' })
+		assert(suggestRefundMatches([credit], [eligible, credit], stream).length === 1, 'the same charge with no guard tripped does match')
+	})
+}
+
+/**
+ * Test ZS-20 - The charge was already split across streams (real: Columbia, 2026-07)
+ *
+ * Scenario: a -$122.03 Columbia charge already split into $87.03 of Repair/replacements and $35.00
+ * of Emile, then a +$54.95 "Refund: Columbia" credit ten days later.
+ *
+ * A charge being split is not a reason to skip it - the refund came out of one of its shares. Only
+ * the $87.03 share is large enough, so it funds the refund and the $35.00 share is left alone.
+ */
+function testZS20_chargeAlreadySplitAcrossStreams() {
+	runTest('Test ZS-20 - Refund is funded from the share of an already-split charge', assert => {
+		const stream = makeMockRefundStream()
+		const debit = makeMockRefundTransaction({
+			description: 'Columbia', amount: -122.03, date: '2026-07-21T00:00:00.000Z', id: 'zs20-debit',
+			allocations: [-87.03, -35.00]
+		})
+		const credit = makeMockRefundTransaction({ description: 'Refund: Columbia', amount: 54.95, date: '2026-07-31T00:00:00.000Z', id: 'zs20-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected - a split charge is still eligible (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs20-debit', 'the Columbia charge is the candidate', candidates[0])
+		assert(
+			Math.abs((candidates[0]?.sourceAllocation?.amount ?? NaN) - (-87.03)) < 0.001,
+			`funded from the -87.03 share, the only one big enough (got: ${candidates[0]?.sourceAllocation?.amount})`,
+			candidates[0]
+		)
+		assert(candidates[0]?.mode === 'split', `mode is "split" - the share is only partly consumed (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-21 - Where several shares could fund the refund, the smallest one does
+ *
+ * The refund came out of one part of the purchase, and the tightest share that can hold it is the
+ * least disruptive reading: it leaves the larger shares of the charge untouched.
+ */
+function testZS21_smallestSufficientShareFundsTheRefund() {
+	runTest('Test ZS-21 - The smallest share large enough funds the refund', assert => {
+		const stream = makeMockRefundStream()
+		const debit = makeMockRefundTransaction({
+			description: 'Quince', amount: -160.00, date: '2026-06-01T00:00:00.000Z', id: 'zs21-debit',
+			allocations: [-100.00, -60.00]
+		})
+		const credit = makeMockRefundTransaction({ description: 'Refund: Quince', amount: 55.00, date: '2026-06-20T00:00:00.000Z', id: 'zs21-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(
+			Math.abs((candidates[0]?.sourceAllocation?.amount ?? NaN) - (-60.00)) < 0.001,
+			`funded from the -60.00 share, not the -100.00 one (got: ${candidates[0]?.sourceAllocation?.amount})`,
+			candidates[0]
+		)
+	})
+}
+
+/**
+ * Test ZS-22 - A refund that consumes a whole share is a "move" of that share
+ *
+ * The share is fully refunded, so nothing of it remains. The writer must not leave a zero-amount
+ * allocation behind - that is junk, and it also blocks the charge from any later reconciliation.
+ */
+function testZS22_refundConsumingAWholeShare() {
+	runTest('Test ZS-22 - Refund equal to one share of a split charge is a move of that share', assert => {
+		const stream = makeMockRefundStream()
+		const debit = makeMockRefundTransaction({
+			description: 'Columbia', amount: -122.03, date: '2026-07-21T00:00:00.000Z', id: 'zs22-debit',
+			allocations: [-87.03, -35.00]
+		})
+		const credit = makeMockRefundTransaction({ description: 'Refund: Columbia', amount: 35.00, date: '2026-07-31T00:00:00.000Z', id: 'zs22-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(
+			Math.abs((candidates[0]?.sourceAllocation?.amount ?? NaN) - (-35.00)) < 0.001,
+			`funded from the -35.00 share (got: ${candidates[0]?.sourceAllocation?.amount})`,
+			candidates[0]
+		)
+		assert(candidates[0]?.mode === 'move', `mode is "move" - the share is consumed whole (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-15 - One charge cannot fund two refunds in the same pass
+ *
+ * Two credits of the same merchant both point at one charge. The first to claim it (the oldest)
+ * consumes it; the second must find nothing rather than double-allocating the same charge.
+ */
+function testZS15_oneChargeIsNotClaimedTwice() {
+	runTest('Test ZS-15 - A charge consumed by one refund is not offered to the next', assert => {
+		const stream = makeMockRefundStream()
+		const debit   = makeMockRefundTransaction({ description: 'Quince', amount: -350.98, date: '2026-05-03T00:00:00.000Z', id: 'zs15-debit' })
+		const first   = makeMockRefundTransaction({ description: 'Refund: Quince', amount: 100.00, date: '2026-05-25T00:00:00.000Z', id: 'zs15-first' })
+		const second  = makeMockRefundTransaction({ description: 'Refund: Quince', amount: 100.00, date: '2026-06-10T00:00:00.000Z', id: 'zs15-second' })
+
+		const candidates = suggestRefundMatches([second, first], [debit, first, second], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.credits?.[0]?.id === 'zs15-first', `the oldest refund claims the charge (got: "${candidates[0]?.credits?.[0]?.id}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-16 - Amazon regression: a refund covering the whole charge now moves it
+ *
+ * Previously this went through the split path and wrote a second allocation of -0, which also
+ * marked the charge as split and disqualified it from any later reconciliation.
+ */
+function testZS16_amazonFullRefundMovesRatherThanSplits() {
+	runTest('Test ZS-16 - Amazon full refund produces mode "move", not a -0 split', assert => {
+		const stream = makeMockZeroSumStream()
+		const order = { orderNumber: 'order-zs16', orderAmount: 36.16, date: 'April 27, 2025', accountName: 'TestAccount', items: [] }
+
+		const debit = makeMockHybridTransaction({
+			description: 'Amazon', amount: -36.16, date: new Date('2025-04-27T00:00:00.000Z'), id: 'zs16-debit', streamAmount: 0
+		})
+		debit.streamAllocation = [{ streamId: 'stream-A-id', amount: -36.16, type: 'value' }]
+		debit.amazonOrderDetails = { ...order }
+
+		const credit = makeMockHybridTransaction({
+			description: 'Refund: Amazon', amount: 36.16, date: new Date('2025-05-16T00:00:00.000Z'), id: 'zs16-credit'
+		})
+		credit.amazonOrderDetails = { ...order }
+
+		const candidates = suggestAmazonReturnSplits([credit], [debit, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+		assert(Math.abs((candidates[0]?.amount ?? NaN) - 36.16) < 0.001, `amount is 36.16 (got: ${candidates[0]?.amount})`, candidates[0])
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -902,6 +1344,26 @@ export function runTransactionMatchingTests() {
 	testZS3_amazonRefundStranded_correctlyUnmatched_splitCandidateIdentified()
 	testZS4_multipleRefundsForSameOrder_splitNeeded_currentlyFailing()
 	testZS5_refundWithoutOriginalDebit_orderStillAttachedToRefund()
+	testZS16_amazonFullRefundMovesRatherThanSplits()
+	testZS17_twoChargesOneRefundedExactly()
+	testZS18_twoChargesOnlyOneCanFundTheRefund()
+	testZS19_twoChargesGenuinelyAmbiguous()
+	console.groupEnd()
+
+	console.group('Generic Refund Matching')
+	testZS6_merchantKeyNormalisation()
+	testZS7_exactRefundMovesWholeCharge()
+	testZS8_partialRefundSplitsMostRecentCharge()
+	testZS9_exactAmountBeatsRecency()
+	testZS10_windowIsEnforced()
+	testZS11_merchantOnAnotherZeroSumStreamIsExcluded()
+	testZS12_amazonIsExcludedFromGenericRail()
+	testZS13_missingRefundMarkerStillMatches()
+	testZS14_guards()
+	testZS15_oneChargeIsNotClaimedTwice()
+	testZS20_chargeAlreadySplitAcrossStreams()
+	testZS21_smallestSufficientShareFundsTheRefund()
+	testZS22_refundConsumingAWholeShare()
 	console.groupEnd()
 
 	console.groupEnd()

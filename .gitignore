@@ -7,3 +7,5 @@
 !package.json
 !.gitignore
 !.env.production
+!/documentation/
+!/documentation/**

@@ -206,7 +206,8 @@ class StreamDetailsModalView extends BaseComponent{
 			period: stream.period,
 			isSavings: stream.isSavings,
 			isInterestIncome: stream.isInterestIncome,
-			isZeroSumStream: stream.isZeroSumStream
+			isZeroSumStream: stream.isZeroSumStream,
+			isRefundStream: Core.getRefundStream()?.id === stream.id
 		};
 		this.state = { ...this.originalState };
 		props.controller.state.modalContentState = {...props.controller.state.modalContentState,...this.state}
@@ -216,6 +217,7 @@ class StreamDetailsModalView extends BaseComponent{
 		this.handleSavingsChange = this.handleSavingsChange.bind(this);
 		this.handleInterestChange = this.handleInterestChange.bind(this);
 		this.handleZeroSumChange = this.handleZeroSumChange.bind(this);
+		this.handleRefundStreamChange = this.handleRefundStreamChange.bind(this);
 	}
 	
 	componentDidMount(){this.updateSaveButtonState()}
@@ -231,10 +233,11 @@ class StreamDetailsModalView extends BaseComponent{
 	handlePeriodChange(e) { this.updateContentState({period: e.target.value})}
 	handleSavingsChange(e) { this.updateContentState({isSavings: e.target.value === 'is'})}
 	handleInterestChange(e) { this.updateContentState({isInterestIncome: e.target.value === 'is'})}
-	handleZeroSumChange(e) { this.updateContentState({isZeroSumStream: e.target.value === 'is'})}
+	handleZeroSumChange(e) { this.updateContentState({isZeroSumStream: e.target.value === 'is', ...(e.target.value === 'is' ? {} : {isRefundStream: false})})}
+	handleRefundStreamChange(e) { this.updateContentState({isRefundStream: e.target.value === 'is'})}
 	
 	render(){
-		const { name, amount, period, isSavings, isInterestIncome, isZeroSumStream } = this.state;
+		const { name, amount, period, isSavings, isInterestIncome, isZeroSumStream, isRefundStream } = this.state;
 		
 		return <DS.component.SentenceWrapper>
 			The stream named <DS.component.Input type="text" value={name} onChange={this.handleNameChange} autoSize inline /> should expect <DS.component.Input type="number" value={amount} onChange={this.handleAmountChange} autoSize inline /> every <DS.component.DropDown value={period} onChange={this.handlePeriodChange} autoSize inline>
@@ -249,6 +252,12 @@ class StreamDetailsModalView extends BaseComponent{
 				<option value="is">is</option>
 				<option value="is not">is not</option>
 			</DS.component.DropDown> a transaction-neutral stream for tracking reimbursements.
+			{isZeroSumStream && " It"}
+			{isZeroSumStream && <DS.component.DropDown value={isRefundStream ? 'is' : 'is not'} onChange={this.handleRefundStreamChange} autoSize inline>
+				<option value="is">is</option>
+				<option value="is not">is not</option>
+			</DS.component.DropDown>}
+			{isZeroSumStream && " the stream refunds get reconciled into."}
 		</DS.component.SentenceWrapper>
 	}
 }
@@ -292,6 +301,15 @@ class TerminalStreamCard extends StreamAuditView{
 				stream.isInterestIncome = updatedState.isInterestIncome || false;
 				stream.isZeroSumStream = updatedState.isZeroSumStream || false;
 				stream.period = updatedState.period;
+
+				//the refund stream is a single-valued user preference, not a stream property: designating
+				//this one clears whichever stream held it before.
+				const prefs = Core.getUserData().userPreferences;
+				const wasRefundStream = prefs.refundStreamId === stream.id;
+				const isRefundStream = (updatedState.isRefundStream && stream.isZeroSumStream) || false;
+				if(isRefundStream){prefs.refundStreamId = stream.id}
+				else if(wasRefundStream){delete prefs.refundStreamId}
+				if(isRefundStream !== wasRefundStream){Core.saveUserPreferences().catch(err => console.error("Failed to save refund stream preference:",err))}
 				
 				// Update the expected amount if it changed
 				if(updatedState.amount !== stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))){

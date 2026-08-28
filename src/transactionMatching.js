@@ -71,16 +71,88 @@ export function reconcileZeroSumStreamTransactions(txnArr, stream) {
 	return { matches, unmatched: [...credits, ...debits] }
 }
 
+// ---------------------------------------------------------------------------
+// Refund matching - deciding which charge a stranded refund credit belongs to
+//
+// Two rails, in descending order of confidence:
+//   Amazon  - credit and charge carry the same order number. Unambiguous.
+//   Generic - merchant name, amount and proximity. Heuristic, and deliberately narrower.
+//
+// Both emit the same candidate shape so that one writer can apply either:
+//   { credits: [txn,...], debit: txn, amount: number, mode: "move" | "split" }
+// "move" means the refund covers the whole charge, so the charge belongs in the zero-sum stream
+// outright; "split" means only part of it does.
+// ---------------------------------------------------------------------------
+
+/* Tunables for the generic rail. Amazon never comes through it: an order number is far stronger
+   evidence than anything below, and "Amazon" as a description is too generic to match on. */
+export const refundMatchingConfig = {
+	maxDaysBetweenChargeAndRefund: 90,	//longest gap seen in real data is 37 days, so this is generous
+	refundDescriptionPatterns: [/^\s*refunds?\s*[:\-]\s*/i],	//stripped before comparing; never required
+	minMerchantKeyLength: 3,			//"CVS" is a real merchant, so this cannot go higher
+	amountTolerance: 0.005
+}
+
 /**
- * Finds unmatched Amazon refund credits in a zero-sum stream whose corresponding charge
- * was never split to include the refunded portion (the common pattern: buy → categorize →
- * return later → put refund(s) in zero-sum stream but forget to revisit the original charge).
+ * "Refund: Carter's #123" -> "carters123". Lowercased alphanumerics with every separator removed,
+ * so that punctuation ("Carter's" vs "Carters") and bank truncation don't defeat the comparison.
+ * Tokens mixing letters and digits are dropped: those are reference codes, not merchant names.
+ */
+export function getMerchantKey(description) {
+	let s = description || ''
+	refundMatchingConfig.refundDescriptionPatterns.forEach(p => { s = s.replace(p, '') })
+	return s.toLowerCase()
+		.split(/[^a-z0-9]+/)
+		.filter(w => !!w)
+		.filter(w => !(/[a-z]/.test(w) && /[0-9]/.test(w)))
+		.join('')
+}
+
+/**
+ * Two descriptions name the same merchant when one key is a prefix of the other. Prefix rather than
+ * equality because banks truncate ("Amazon Reta*" for "Amazon Retail") and append store numbers.
+ * The minimum length stops a degenerate short key from matching everything.
+ */
+export function merchantKeysMatch(a, b) {
+	if (!a || !b) return false
+	if (a.length < refundMatchingConfig.minMerchantKeyLength) return false
+	if (b.length < refundMatchingConfig.minMerchantKeyLength) return false
+	return a.startsWith(b) || b.startsWith(a)
+}
+
+/**
+ * The allocation a refund should be taken out of: the **smallest share still large enough to
+ * contain it**.
  *
- * Supports multiple refunds for the same order: if there are N credits and exactly 1 debit,
- * the debit is split so the total refund amount moves to the zero-sum stream.
- * Ambiguous only when there are 2+ eligible charge debits for the same order.
+ * A charge is often already split across streams - $122.03 at Columbia as $87.03 of
+ * Repair/replacements and $35.00 of Emile - and the refund came out of one of those parts, not out
+ * of the transaction as a whole. Taking it from the tightest share that can hold it is the least
+ * disruptive reading and is usually the only one that fits at all.
  *
- * Returns: [{ credits: [...], debit, splitAmount }]
+ * Returns undefined when no single share can fund the refund, which disqualifies the charge.
+ */
+export function getFundingAllocation(debit, amount) {
+	return (debit.streamAllocation || [])
+		.filter(al => Math.abs(al.amount) + refundMatchingConfig.amountTolerance >= amount)
+		.sort(utils.sorters.asc(al => Math.abs(al.amount)))[0]
+}
+
+/* Whether the refund consumes its funding share entirely ("move") or only part of it ("split").
+   Purely descriptive - the writer rebuilds the allocation list either way - but a full consumption
+   must not leave a zero-amount allocation behind, which is what the writer uses this to avoid. */
+function getRefundMode(amount, sourceAllocation) {
+	return Math.abs(Math.abs(sourceAllocation.amount) - amount) < refundMatchingConfig.amountTolerance ? "move" : "split"
+}
+
+/**
+ * Amazon rail. Finds refund credits in a zero-sum stream whose charge was never revisited (the
+ * common pattern: buy -> categorize -> return later -> file the refund but forget the charge).
+ *
+ * Supports several refunds against one order: N credits resolve in a single write. An order billed
+ * as several charges is resolved by amount - exact match first, then the only charge that can fund
+ * it. Ambiguous only when two charges could equally have funded the refund.
+ *
+ * `allTransactions` must contain categorized transactions only - moneyInForStream throws otherwise.
  */
 export function suggestAmazonReturnSplits(unmatchedCredits, allTransactions, stream) {
     const candidates = []
@@ -95,26 +167,89 @@ export function suggestAmazonReturnSplits(unmatchedCredits, allTransactions, str
     })
 
     Object.entries(creditsByOrder).forEach(([orderNumber, credits]) => {
-        // Find the charge debit(s) for this order that are NOT yet in the zero-sum stream
+        const amount = credits.reduce((sum, c) => sum + Math.abs(c.amount), 0)
+
+        // Charge debits for this order that are not yet in the zero-sum stream and hold a share
+        // large enough to have funded the refund.
         const debitCandidates = allTransactions.filter(t =>
             !credits.includes(t) &&
             t.amazonOrderDetails?.orderNumber === orderNumber &&
             t.amount < 0 &&
             t.moneyInForStream(stream) === 0 &&
-            t.streamAllocation?.length === 1  // only debits that haven't been split already
+            !!getFundingAllocation(t, amount)
         )
 
-        if (debitCandidates.length !== 1) return  // 0 or 2+ charge debits → ambiguous, skip
+        // Narrow by amount before declaring ambiguity. An order billed as several charges (card +
+        // gift card, or two shipments) is the ordinary case, and having two charge debits does not
+        // make it ambiguous: a refund that exactly matches one of them, or that only one of them
+        // could have funded, has exactly one possible source.
+        const exact = debitCandidates.filter(d => Math.abs(Math.abs(d.amount) - amount) < refundMatchingConfig.amountTolerance)
+        const debit = exact.length === 1 ? exact[0] : (debitCandidates.length === 1 ? debitCandidates[0] : undefined)
 
-        const debit = debitCandidates[0]
-        const splitAmount = credits.reduce((sum, c) => sum + Math.abs(c.amount), 0)
+        // Nothing could have funded it, or two charges equally could - refuse rather than guess
+        if (!debit) return
 
-        if (splitAmount > Math.abs(debit.amount) + 0.001) return  // total refunds exceed charge → invalid
-
-        candidates.push({ credits, debit, splitAmount })
+        const sourceAllocation = getFundingAllocation(debit, amount)
+        candidates.push({ credits, debit, amount, sourceAllocation, mode: getRefundMode(amount, sourceAllocation) })
     })
 
     return candidates
+}
+
+/**
+ * Generic rail. Finds the charge that a non-Amazon refund credit is paying back, using merchant
+ * name, amount and proximity.
+ *
+ * The credit must already be categorized into `refundStream`: that categorization is the user's
+ * assertion that the transaction is a refund, which is why no "Refund:" marker is required - real
+ * data shows the marker missing often enough that requiring it would lose a fifth of the matches.
+ *
+ * `allTransactions` must contain categorized transactions only.
+ *
+ * options.excludedMerchantKeys   - keys seen on a zero-sum stream that isn't the refund stream
+ * options.isExcludedDescription  - predicate for descriptions this rail must not touch (Amazon)
+ */
+export function suggestRefundMatches(unmatchedCredits, allTransactions, refundStream, options = {}) {
+	const { excludedMerchantKeys = [], isExcludedDescription = () => false } = options
+	const candidates = [], consumedDebits = []
+	const maxGap = timeIntervals.oneDay * refundMatchingConfig.maxDaysBetweenChargeAndRefund
+
+	// Sorted most recent first: where several charges could fund a partial refund, the latest wins
+	const eligibleDebits = allTransactions.filter(t =>
+		t.amount < 0 &&
+		t.moneyInForStream(refundStream) === 0 &&	//not already reconciled into the refund stream
+		!isExcludedDescription(t.description)
+	).sort(utils.sorters.desc(t => t.date.getTime()))
+
+	unmatchedCredits
+		.filter(c => c.amount > 0
+			&& !c.amazonOrderDetails				//the order-number rail owns these
+			&& !c.pairedTransferTransactionId		//a tagged transfer is a card payment, not a merchant refund
+			&& !isExcludedDescription(c.description))
+		.sort(utils.sorters.asc(c => c.date.getTime()))	//oldest refund claims its charge first
+		.forEach(credit => {
+			const key = getMerchantKey(credit.description)
+			if (key.length < refundMatchingConfig.minMerchantKeyLength) return
+			if (excludedMerchantKeys.some(k => merchantKeysMatch(key, k))) return
+
+			const pool = eligibleDebits.filter(d =>
+				consumedDebits.indexOf(d) === -1 &&
+				merchantKeysMatch(key, getMerchantKey(d.description)) &&
+				credit.date.getTime() >= d.date.getTime() &&	//same-day refunds are real, so this is >= not >
+				credit.date.getTime() - d.date.getTime() <= maxGap &&
+				!!getFundingAllocation(d, credit.amount)		//some share of it is large enough to fund the refund
+			)
+			if (!pool.length) return
+
+			// An exact-amount charge is much stronger evidence than a merely recent one
+			const exact = pool.find(d => Math.abs(Math.abs(d.amount) - credit.amount) < refundMatchingConfig.amountTolerance)
+			const debit = exact || pool[0]
+			const sourceAllocation = getFundingAllocation(debit, credit.amount)
+			consumedDebits.push(debit)
+			candidates.push({ credits: [credit], debit, amount: credit.amount, sourceAllocation, mode: getRefundMode(credit.amount, sourceAllocation) })
+		})
+
+	return candidates
 }
 
 

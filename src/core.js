@@ -1,6 +1,6 @@
 import utils from './utils'
 import Cookies from 'js-cookie'
-import ApiCaller, {API} from './ApiCaller'
+import ApiCaller from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream,invalidateStreamMap} from './model'
 import ModalManager, {ModalController, ModalTemplates, ModalWorkflowController} from './ModalManager.js'
 import Navigation, {NavRoutes} from './components/Navigation'
@@ -10,7 +10,7 @@ import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
 import { reportingConfig } from './processors/ReportingCore.js'
-import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions, reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits } from './transactionMatching'
+import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions, reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig, getFundingAllocation } from './transactionMatching'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -47,7 +47,7 @@ class Core{
 				this.globalState.amzHistorySaving = true
 			  	ApiCaller.saveAmazonOrderHistory(data.map(ord => ({...ord,id:ord.orderNumber}))).then((r) => {
 					this.globalState.amzOrderHistory = r.newHistory
-		  			this.refreshAmazonTransactions()
+		  			this.refreshTransactionReconciliation()
 		  			this.globalState.amzHistorySaving = false
 					this.app?.updateState({refresh:new Date()})
 			  	})
@@ -64,7 +64,9 @@ class Core{
 			// delegate search operations to Core instance methods (keeps single source of truth)
 			searchTransactions: (...args) => this.search.searchTransactions(...args),
 			findTransaction: (opts) => this.search.searchTransactions(...[opts])[0],
-			searchStream: (...args) => this.search.searchStream(...args)
+			searchStream: (...args) => this.search.searchStream(...args),
+			exportStreamTransactionsToCSV: (streamName) => this.exportStreamTransactionsToCSV(streamName),
+			explainRefundReconciliation: () => this.explainRefundReconciliation()
 		};
 		this.globalState.Period = Period;
 		
@@ -180,7 +182,7 @@ class Core{
 						maxDate: new Date(Math.max(end,this.globalState.queriedTransactions.maxDate || new Date())),
 						transactions: mergeTxns(this.globalState.queriedTransactions.transactions, result) //result will always overrides existing transactions if they exist - not perfect but likely will handle most cases
 					}
-					this.refreshAmazonTransactions()
+					this.refreshTransactionReconciliation()
 					res(this.globalState.queriedTransactions.transactions.filter(t => t.date >= start && t.date <= end))
 				})
 			}
@@ -465,14 +467,37 @@ class Core{
 	isMobile(){return window.innerHeight > window.innerWidth}
 	isAmazonTransaction(t){return amazonRegex.test(t.description.toLowerCase()) && !amazonExcludeRegex.test(t.description.toLowerCase())}
 	registerOnAmazonReconciliationComplete(callback) {this.onAmazonReconciliationComplete = callback}
-	refreshAmazonTransactions(){
+	refreshTransactionReconciliation(){
 		this._performAmazonReconciliation(this.globalState.amzOrderHistory)
-		this.applyAmazonReturnSplitsIfNeeded().then(didSplit => {
-			if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete(didSplit)}
+		this.applyRefundReconciliationIfNeeded().then(didWrite => {
+			if(this.onAmazonReconciliationComplete){this.onAmazonReconciliationComplete(didWrite)}
 		})
 	}
 
-	applyAmazonReturnSplitsIfNeeded() {
+	//The stream the user designated as their refund stream, if any. Without it the generic
+	//(non-Amazon) refund rail stays inert - that is the interlock against unwanted writes.
+	getRefundStream(){
+		const id = this.getUserData()?.userPreferences?.refundStreamId
+		return id ? this.getStreamById(id) : undefined
+	}
+
+	//Merchant keys already seen on a zero-sum stream that isn't the refund stream - a credit card
+	//being paid off, typically. Those credits are not merchant refunds, so the generic rail must
+	//never route them, however well their amounts and dates line up.
+	getMerchantKeysOnOtherZeroSumStreams(categorizedTransactions, zeroSumStreams, refundStream){
+		const others = zeroSumStreams.filter(s => s.id !== refundStream.id)
+		if(!others.length) return []
+		const keys = new Set()
+		categorizedTransactions.forEach(t => {
+			if(others.some(s => t.moneyInForStream(s) !== 0)){
+				const k = getMerchantKey(t.description)
+				if(k) keys.add(k)
+			}
+		})
+		return [...keys]
+	}
+
+	applyRefundReconciliationIfNeeded() {
 		const allTransactions = this.globalState.queriedTransactions?.transactions || []
 		if (!allTransactions.length) return Promise.resolve(false)
 
@@ -484,31 +509,117 @@ class Core{
 		collect(this.getMasterStream())
 
 		const categorizedTransactions = allTransactions.filter(t => t.categorized)
+		const refundStream = this.getRefundStream()
 		const allCandidates = []
+
 		zeroSumStreams.forEach(stream => {
 			const streamTxns = categorizedTransactions.filter(t => t.moneyInForStream(stream) !== 0)
 			const { unmatched } = reconcileZeroSumStreamTransactions(streamTxns, stream)
-			const unmatchedAmazonCredits = unmatched.filter(t => t.amount > 0 && t.amazonOrderDetails)
-			if (!unmatchedAmazonCredits.length) return
-			suggestAmazonReturnSplits(unmatchedAmazonCredits, categorizedTransactions, stream)
-				.forEach(c => allCandidates.push({ ...c, stream }))
+			//filter on t.amount, not on the stream amount: a debit can carry a positive allocation
+			//when a refund was netted inside a later purchase, and that is not a refund credit.
+			const unmatchedCredits = unmatched.filter(t => t.amount > 0)
+			if (!unmatchedCredits.length) return
+
+			//Amazon rail first, on every zero-sum stream: an order number is the strongest link there is
+			suggestAmazonReturnSplits(unmatchedCredits.filter(t => t.amazonOrderDetails), categorizedTransactions, stream)
+				.forEach(c => allCandidates.push({ ...c, stream, rail: 'amazon' }))
+
+			//Generic rail, only on the designated refund stream and only on what Amazon didn't claim
+			if (refundStream && stream.id === refundStream.id) {
+				const claimed = allCandidates.reduce((acc, c) => acc.concat(c.credits), [])
+				suggestRefundMatches(unmatchedCredits.filter(t => claimed.indexOf(t) === -1), categorizedTransactions, stream, {
+					excludedMerchantKeys: this.getMerchantKeysOnOtherZeroSumStreams(categorizedTransactions, zeroSumStreams, refundStream),
+					//Amazon is owned by the order-number rail. Matched or not, its descriptions are far
+					//too generic to pair on, so this rail leaves them alone entirely.
+					isExcludedDescription: (d) => amazonRegex.test((d || '').toLowerCase())
+				}).forEach(c => allCandidates.push({ ...c, stream, rail: 'generic' }))
+			}
 		})
 
 		if (!allCandidates.length) return Promise.resolve(false)
 
-		const tupples = allCandidates.map(({ debit, splitAmount, stream }) => ({
-			transaction: debit,
-			streamAllocation: [
-				{ streamId: stream.id, amount: -splitAmount, type: 'value' },
-				{ streamId: debit.streamAllocation[0].streamId, amount: -(Math.abs(debit.amount) - splitAmount), type: 'value' }
-			]
-		}))
+		//Rebuild the charge's allocations, taking the refund out of the one share that funded it and
+		//leaving every other share untouched. A charge split across streams keeps its other parts.
+		const tupples = allCandidates.map(({ debit, amount, sourceAllocation, stream }) => {
+			const refundPortion = utils.round2Decimals(-amount)
+			const streamAllocation = []
+			debit.streamAllocation.forEach(al => {
+				if (al !== sourceAllocation) { streamAllocation.push({ streamId: al.streamId, amount: al.amount, type: 'value' }); return }
+				streamAllocation.push({ streamId: stream.id, amount: refundPortion, type: 'value' })
+				//the remainder is derived by subtraction rather than rounded independently, so the
+				//allocations always sum back to the transaction amount (the server rejects them otherwise).
+				//A refund that consumes its whole share leaves nothing behind - writing a zero-amount
+				//allocation would be junk that also blocks the charge from any later reconciliation.
+				const remainder = utils.round2Decimals(al.amount - refundPortion)
+				if (Math.abs(remainder) >= refundMatchingConfig.amountTolerance) { streamAllocation.push({ streamId: al.streamId, amount: remainder, type: 'value' }) }
+			})
+			return { transaction: debit, streamAllocation }
+		})
 
 		return this.categorizeTransactionsAllocationsTupples(tupples).then(() => {
-			allCandidates.forEach(({ credits, debit }) =>
-				console.log(`[Amazon Return Split] Auto-split charge ${debit.transactionId} ($${debit.amount}) to fund ${credits.length} refund(s): ${credits.map(c => `${c.transactionId} ($${c.amount})`).join(', ')}`)
+			allCandidates.forEach(({ credits, debit, mode, rail }) =>
+				console.log(`[Refund Reconciliation/${rail}] ${mode === 'move' ? 'Moved' : 'Split'} charge ${debit.transactionId} ($${debit.amount}) to fund ${credits.length} refund(s): ${credits.map(c => `${c.transactionId} ($${c.amount})`).join(', ')}`)
 			)
 			return true
+		})
+	}
+
+	/* Console utility: explains why each stranded refund credit did not get a charge matched to it.
+	   Usage: appGlobals.explainRefundReconciliation()
+	   Only covers the transactions currently loaded in the client (queriedTransactions). It reports
+	   the guards rather than re-deciding, so what it prints is what the rails actually saw. */
+	explainRefundReconciliation(){
+		const all = this.globalState.queriedTransactions?.transactions || []
+		const categorized = all.filter(t => t.categorized)
+		const refundStream = this.getRefundStream()
+
+		console.log(`refundStreamId: ${this.getUserData()?.userPreferences?.refundStreamId || "(NOT SET - the generic rail is inert)"}`
+			+ (refundStream ? ` -> "${refundStream.name}"` : " -> (no stream with that id)"))
+		console.log(`${all.length} transactions loaded (${categorized.length} categorized), oldest ${this.globalState.queriedTransactions?.minDate?.toDateString()}`)
+		if(!refundStream)return
+
+		const zeroSumStreams = []
+		const collect = (st) => {if(st.isZeroSumStream)zeroSumStreams.push(st); st.children?.forEach(collect)}
+		collect(this.getMasterStream())
+		console.log(`zero-sum streams: ${zeroSumStreams.map(st => st.name).join(", ") || "(none)"}`)
+
+		const excludedKeys = this.getMerchantKeysOnOtherZeroSumStreams(categorized, zeroSumStreams, refundStream)
+		const streamTxns = categorized.filter(t => t.moneyInForStream(refundStream) !== 0)
+		const {unmatched} = reconcileZeroSumStreamTransactions(streamTxns, refundStream)
+		const credits = unmatched.filter(t => t.amount > 0)
+		console.log(`${credits.length} stranded refund credit(s) in "${refundStream.name}"`)
+
+		credits.forEach(credit => {
+			const isAmz = !!credit.amazonOrderDetails
+			const key = getMerchantKey(credit.description)
+			console.groupCollapsed(`${credit.date.toDateString()}  +${credit.amount}  ${credit.description}`
+				+ (isAmz ? `  [order ${credit.amazonOrderDetails.orderNumber}]` : `  [key "${key}"]`))
+
+			if(!isAmz && key.length < refundMatchingConfig.minMerchantKeyLength){console.log(`BLOCKED: merchant key "${key}" is shorter than ${refundMatchingConfig.minMerchantKeyLength} characters`)}
+			if(!isAmz && excludedKeys.some(k => merchantKeysMatch(key,k))){console.log(`BLOCKED: "${key}" also appears on a zero-sum stream that is not the refund stream`)}
+
+			let considered = 0
+			categorized.filter(t => t.amount < 0).forEach(d => {
+				//only report charges this credit could plausibly be about, or the log is unreadable
+				if(isAmz){if(d.amazonOrderDetails?.orderNumber !== credit.amazonOrderDetails.orderNumber)return}
+				else{
+					if(amazonRegex.test((d.description||'').toLowerCase()))return
+					if(!merchantKeysMatch(key, getMerchantKey(d.description)))return
+				}
+				considered++
+				const why = []
+				if(d.moneyInForStream(refundStream) !== 0){why.push("already in the refund stream")}
+				if(!getFundingAllocation(d, credit.amount)){why.push(`no single share is large enough to fund this refund (shares: ${d.streamAllocation.map(al => al.amount).join(", ")})`)}
+				if(!isAmz){
+					if(credit.date.getTime() < d.date.getTime()){why.push("posted after the refund")}
+					const gap = Math.round((credit.date.getTime() - d.date.getTime())/timeIntervals.oneDay)
+					if(gap > refundMatchingConfig.maxDaysBetweenChargeAndRefund){why.push(`${gap} days before the refund (limit ${refundMatchingConfig.maxDaysBetweenChargeAndRefund})`)}
+				}
+				console.log(`${d.date.toDateString()}  ${d.amount}  ${d.description}  ->  ${why.length?why.join("; "):"ELIGIBLE"}`)
+			})
+			if(considered === 0){console.log(isAmz?"no other loaded transaction carries this order number":`no loaded charge matches merchant key "${key}"`)}
+			else if(isAmz){console.log("(2+ ELIGIBLE charges and none matching the refund amount exactly = ambiguous, so nothing is written)")}
+			console.groupEnd()
 		})
 	}
 
@@ -542,6 +653,62 @@ class Core{
 		let stream = this.getStreamById(identifier);
 		if (stream) return stream;
 		else return this.getStreamByName(identifier)
+	}
+
+	//returns a map of userInstitutionAccountId (account hash) -> friendly account name
+	getAccountDisplayNameMap(){
+		return Promise.all([
+			ApiCaller.bankGetAccountsForUser().catch(e => {console.warn("Couldn't fetch bank accounts",e);return []}),
+			ApiCaller.bankGetItemStatuses().catch(e => {console.warn("Couldn't fetch bank connections",e);return []})
+		]).then(([items,connections]) => {
+			let connectionsById = utils.makeMapFromId(connections||[], c => c.itemId)
+			let res = {}
+			;(items||[]).forEach(item => (item.accounts||[]).forEach(a => {
+				res[a.hash] = [connectionsById[item.itemId]?.name, a.name, a.mask?"**"+a.mask:undefined].filter(o => !!o).join(" ")
+			}))
+			return res
+		})
+	}
+
+	/* Console utility: exports every transaction visible in a stream (exact name match) as CSV.
+	   Usage: appGlobals.exportStreamTransactionsToCSV("Groceries")
+	   Only covers the transactions currently loaded in the client (queriedTransactions). */
+	exportStreamTransactionsToCSV(streamName){
+		let candidates = (this.getUserData()?.getAllStreams()||[]).filter(s => s.name == streamName)
+		if(candidates.length == 0){console.warn(`No stream found with name "${streamName}"`);return Promise.resolve("")}
+		if(candidates.length > 1){console.warn(`${candidates.length} streams are named "${streamName}". Exporting the first one (id: ${candidates[0].id})`)}
+		let stream = candidates[0]
+		let streamTerminalIds = stream.getAllTerminalStreams().map(s => s.id)
+		let currency = this.getPreferredCurrency()
+
+		let txns = (this.globalState.queriedTransactions?.transactions || [])
+			.filter(t => t.categorized && t.isAllocatedToStream(stream))
+			.sort(utils.sorters.asc(t => t.getDisplayDate()))
+
+		return this.getAccountDisplayNameMap().then(accountNames => {
+			let header = ["Date","Description","Amount allocated to "+stream.name+" ("+currency+")","Total transaction amount ("+currency+")","Account"]
+			let rows = txns.map(t => {
+				//raw allocation to this stream, used to detect splits (the money-in amount can be 0 for transfers)
+				let allocatedRaw = utils.sum(t.streamAllocation.filter(al => streamTerminalIds.indexOf(al.streamId)>-1), al => al.amount)
+				let isSplit = Math.abs(Math.abs(t.amount) - Math.abs(allocatedRaw)) > 0.005
+				return [
+					dateformat(t.getDisplayDate(),'yyyy-mm-dd'),
+					(t.description||'').replace(/\s\s+/g,' ').trim(),
+					utils.round2Decimals(t.moneyInForStream(stream)).toFixed(2),
+					isSplit?utils.round2Decimals(t.amount).toFixed(2):"",
+					accountNames[t.userInstitutionAccountId] || t.userInstitutionAccountId || ""
+				]
+			})
+			let csv = [header,...rows].map(r => r.map(csvEscape).join(",")).join("\n")
+			console.log(csv)
+			console.log(`↑ ${txns.length} transaction(s) exported for stream "${stream.name}"`)
+			return csv
+		})
+
+		function csvEscape(v){
+			let s = (v==undefined || v==null)?"":String(v)
+			return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s
+		}
 	}
 
 }
