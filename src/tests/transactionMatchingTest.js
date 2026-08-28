@@ -1271,6 +1271,71 @@ function testZS22_refundConsumingAWholeShare() {
 }
 
 /**
+ * Test ZS-23 - A fully refunded charge moves whole, however many shares it was split into
+ *
+ * Real scenario, Amazon order #112-7078452-6127462: billed as two charges, -$4.06 and -$12.06.
+ * The -$12.06 one was booked as $8.00 of Repair/replacements and $4.06 of Medical, then refunded
+ * in full at +$12.06.
+ *
+ * Two things have to hold at once for this to resolve. No single share of the -$12.06 charge is
+ * large enough to fund a $12.06 refund, so share-based funding alone would disqualify it - but the
+ * whole purchase came back, so the whole charge moves. And the order has two charge debits, which
+ * is not ambiguous here: the -$4.06 one could not have funded a $12.06 refund at all, leaving one
+ * candidate.
+ *
+ * This runs on the Amazon rail because that is where it belongs - the generic rail excludes every
+ * Amazon description on purpose.
+ */
+function testZS23_fullyRefundedSplitChargeMovesWhole() {
+	runTest('Test ZS-23 - Fully refunded charge moves whole even when split across streams', assert => {
+		const stream = makeMockZeroSumStream()
+		const order = { orderNumber: '112-7078452-6127462' }
+
+		const smallCharge = makeMockHybridTransaction({ description: 'Amazon', amount: -4.06, date: new Date('2026-07-14T00:00:00.000Z'), id: 'zs23-small', streamAmount: 0 })
+		smallCharge.streamAllocation = [{ streamId: 'stream-A-id', amount: -4.06, type: 'value' }]
+
+		const splitCharge = makeMockHybridTransaction({ description: 'Amazon', amount: -12.06, date: new Date('2026-07-23T00:00:00.000Z'), id: 'zs23-split', streamAmount: 0 })
+		splitCharge.streamAllocation = [{ streamId: 'repair', amount: -8.00, type: 'value' }, { streamId: 'medical', amount: -4.06, type: 'value' }]
+
+		const credit = makeMockHybridTransaction({ description: 'Refund: Amazon', amount: 12.06, date: new Date('2026-08-16T00:00:00.000Z'), id: 'zs23-credit' })
+		;[smallCharge, splitCharge, credit].forEach(t => { t.amazonOrderDetails = { ...order } })
+
+		const candidates = suggestAmazonReturnSplits([credit], [smallCharge, splitCharge, credit], stream)
+
+		assert(candidates.length === 1, `1 candidate expected (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.debit?.id === 'zs23-split', `the -12.06 charge is chosen; -4.06 could not have funded it (got: "${candidates[0]?.debit?.id}")`, candidates[0])
+		assert(candidates[0]?.fundsWholeTransaction === true, 'the whole transaction funds the refund, not one share', candidates[0])
+		assert(candidates[0]?.sourceAllocation === undefined, 'no single funding share is nominated', candidates[0])
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+	})
+}
+
+/**
+ * Test ZS-24 - The same whole-transaction rule on the generic rail, and its limit
+ *
+ * A non-Amazon charge split across two streams and refunded in full moves whole; a refund larger
+ * than the whole charge is still refused.
+ */
+function testZS24_genericFullRefundOfSplitCharge() {
+	runTest('Test ZS-24 - Generic rail: fully refunded split charge moves whole', assert => {
+		const stream = makeMockRefundStream()
+		const debit = makeMockRefundTransaction({
+			description: 'Sports Basement', amount: -12.06, date: '2026-07-23T00:00:00.000Z', id: 'zs24-debit',
+			allocations: [-8.00, -4.06]
+		})
+		const credit = makeMockRefundTransaction({ description: 'Refund: Sports Basement', amount: 12.06, date: '2026-08-16T00:00:00.000Z', id: 'zs24-credit' })
+
+		const candidates = suggestRefundMatches([credit], [debit, credit], stream)
+		assert(candidates.length === 1, `1 candidate expected - neither share alone could fund it (got: ${candidates.length})`, candidates)
+		assert(candidates[0]?.fundsWholeTransaction === true, 'the whole transaction funds the refund', candidates[0])
+		assert(candidates[0]?.mode === 'move', `mode is "move" (got: "${candidates[0]?.mode}")`, candidates[0])
+
+		const tooBig = makeMockRefundTransaction({ description: 'Refund: Sports Basement', amount: 20.00, date: '2026-08-16T00:00:00.000Z', id: 'zs24-toobig' })
+		assert(suggestRefundMatches([tooBig], [debit, tooBig], stream).length === 0, 'a refund exceeding the whole charge is refused')
+	})
+}
+
+/**
  * Test ZS-15 - One charge cannot fund two refunds in the same pass
  *
  * Two credits of the same merchant both point at one charge. The first to claim it (the oldest)
@@ -1348,6 +1413,7 @@ export function runTransactionMatchingTests() {
 	testZS17_twoChargesOneRefundedExactly()
 	testZS18_twoChargesOnlyOneCanFundTheRefund()
 	testZS19_twoChargesGenuinelyAmbiguous()
+	testZS23_fullyRefundedSplitChargeMovesWhole()
 	console.groupEnd()
 
 	console.group('Generic Refund Matching')
@@ -1364,6 +1430,7 @@ export function runTransactionMatchingTests() {
 	testZS20_chargeAlreadySplitAcrossStreams()
 	testZS21_smallestSufficientShareFundsTheRefund()
 	testZS22_refundConsumingAWholeShare()
+	testZS24_genericFullRefundOfSplitCharge()
 	console.groupEnd()
 
 	console.groupEnd()

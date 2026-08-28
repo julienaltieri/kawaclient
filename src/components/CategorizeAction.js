@@ -237,7 +237,11 @@ export class TransactionView extends BaseComponent{
 		var isCompound = this.isAmazon() && amz.items.length>1;
 		var amznghbrs = this.getAmazonNeighbors();
 		var itemPostTaxPrices = getAmazonItemPrices(amz,amz?.orderAmount);
-		var totalAmount = amz?utils.sum(amznghbrs,t=> t.amount):this.props.transaction.amount;
+		//always the transaction being shown, never the order's net. Summing the order's transactions
+		//was defensible while they were all charges, but a refund carries the same orderNumber, so the
+		//sum silently became "what the order cost after returns" - a number that matches neither the
+		//allocations below it nor any real transaction. The per-transaction breakdown gives the context.
+		var totalAmount = this.props.transaction.amount;
 		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
 		return(<div>
 			<DS.component.ContentTile  style={{opacity:this.props.animationIconVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",

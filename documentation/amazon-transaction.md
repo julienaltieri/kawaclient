@@ -127,7 +127,11 @@ Two reasons, and both matter:
 Where it surfaces:
 
 - **`TransactionView`** — the item carousel, each picture carrying its post-tax price bottom-right
-  (`AmazonItemImage`, shared by both views).
+  (`AmazonItemImage`, shared by both views). The headline amount is **the transaction's own**, with
+  the order's other transactions listed beneath it. It used to be their sum, which read as "what the
+  order cost" only for as long as they were all charges — once refunds started carrying the same
+  order number the sum became the order's net after returns, matching neither the allocations shown
+  below it nor any real transaction.
 - **`AmazonItemAllocationView`** ([`ModalManager.js:354`](../src/ModalManager.js#L354)) — Split, for
   an Amazon order, asks *which stream* rather than *how much*. One row per item — picture, "Goes to",
   stream — emitting the same `{streamId, amount, type:"value"}` array as the amount-based view, with

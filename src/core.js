@@ -10,7 +10,7 @@ import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
 import { reportingConfig } from './processors/ReportingCore.js'
-import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions, reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig, getFundingAllocation } from './transactionMatching'
+import { reconcileAmazonTransactions, getUnmatchedAmazonTransactions, reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig, getRefundFunding } from './transactionMatching'
 const amazonRegex = new RegExp(/amz|amazon/,"i")
 const amazonExcludeRegex = new RegExp(/amazon web services|amazon\.fr|amazon\.co\.uk|foreign|amazon prime/,"i")
 export const amazonConfig = {include:amazonRegex,exclude:amazonExcludeRegex}
@@ -540,7 +540,11 @@ class Core{
 
 		//Rebuild the charge's allocations, taking the refund out of the one share that funded it and
 		//leaving every other share untouched. A charge split across streams keeps its other parts.
-		const tupples = allCandidates.map(({ debit, amount, sourceAllocation, stream }) => {
+		const tupples = allCandidates.map(({ debit, amount, sourceAllocation, fundsWholeTransaction, stream }) => {
+			//the whole charge came back, so all of it moves - however many streams it was split across
+			if (fundsWholeTransaction) return { transaction: debit, streamAllocation: [
+				{ streamId: stream.id, amount: debit.amount, type: 'value' }
+			]}
 			const refundPortion = utils.round2Decimals(-amount)
 			const streamAllocation = []
 			debit.streamAllocation.forEach(al => {
@@ -609,7 +613,7 @@ class Core{
 				considered++
 				const why = []
 				if(d.moneyInForStream(refundStream) !== 0){why.push("already in the refund stream")}
-				if(!getFundingAllocation(d, credit.amount)){why.push(`no single share is large enough to fund this refund (shares: ${d.streamAllocation.map(al => al.amount).join(", ")})`)}
+				if(!getRefundFunding(d, credit.amount)){why.push(`neither the whole charge nor any single share of it can fund this refund (shares: ${d.streamAllocation.map(al => al.amount).join(", ")})`)}
 				if(!isAmz){
 					if(credit.date.getTime() < d.date.getTime()){why.push("posted after the refund")}
 					const gap = Math.round((credit.date.getTime() - d.date.getTime())/timeIntervals.oneDay)

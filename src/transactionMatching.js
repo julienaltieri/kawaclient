@@ -121,27 +121,34 @@ export function merchantKeysMatch(a, b) {
 }
 
 /**
- * The allocation a refund should be taken out of: the **smallest share still large enough to
- * contain it**.
+ * Where a refund's money comes from inside a charge. Two shapes:
  *
- * A charge is often already split across streams - $122.03 at Columbia as $87.03 of
- * Repair/replacements and $35.00 of Emile - and the refund came out of one of those parts, not out
- * of the transaction as a whole. Taking it from the tightest share that can hold it is the least
- * disruptive reading and is usually the only one that fits at all.
+ *   {wholeTransaction:true} - the refund covers the entire charge, so every share of it moves to
+ *      the refund stream however many streams it was split across. A $12.06 charge booked as $8.00
+ *      of Repair and $4.06 of Medical, refunded in full, comes back in full.
+ *   {allocation}            - the refund covers part of the charge, and came out of one share of
+ *      it: the **smallest share still large enough to contain it**. A $122.03 Columbia charge
+ *      booked as $87.03 of Repair and $35.00 of Emile, refunded $54.95, comes out of the $87.03 -
+ *      the $35.00 share could not have produced it. Smallest-that-fits leaves the larger shares
+ *      alone and is usually the only share that fits at all.
  *
- * Returns undefined when no single share can fund the refund, which disqualifies the charge.
+ * Returns undefined when neither applies, which disqualifies the charge: the refund came from one
+ * part of the purchase, and spreading it across several shares is a guess with nothing behind it.
  */
-export function getFundingAllocation(debit, amount) {
-	return (debit.streamAllocation || [])
+export function getRefundFunding(debit, amount) {
+	if (Math.abs(Math.abs(debit.amount) - amount) < refundMatchingConfig.amountTolerance) return { wholeTransaction: true }
+	const allocation = (debit.streamAllocation || [])
 		.filter(al => Math.abs(al.amount) + refundMatchingConfig.amountTolerance >= amount)
 		.sort(utils.sorters.asc(al => Math.abs(al.amount)))[0]
+	return allocation ? { allocation } : undefined
 }
 
-/* Whether the refund consumes its funding share entirely ("move") or only part of it ("split").
-   Purely descriptive - the writer rebuilds the allocation list either way - but a full consumption
-   must not leave a zero-amount allocation behind, which is what the writer uses this to avoid. */
-function getRefundMode(amount, sourceAllocation) {
-	return Math.abs(Math.abs(sourceAllocation.amount) - amount) < refundMatchingConfig.amountTolerance ? "move" : "split"
+/* Whether the refund consumes what funds it entirely ("move") or only part of it ("split"). Purely
+   descriptive - the writer rebuilds the allocation list either way - but a full consumption must
+   not leave a zero-amount allocation behind, which is what the writer uses this to avoid. */
+function getRefundMode(amount, funding) {
+	if (funding.wholeTransaction) return "move"
+	return Math.abs(Math.abs(funding.allocation.amount) - amount) < refundMatchingConfig.amountTolerance ? "move" : "split"
 }
 
 /**
@@ -176,7 +183,7 @@ export function suggestAmazonReturnSplits(unmatchedCredits, allTransactions, str
             t.amazonOrderDetails?.orderNumber === orderNumber &&
             t.amount < 0 &&
             t.moneyInForStream(stream) === 0 &&
-            !!getFundingAllocation(t, amount)
+            !!getRefundFunding(t, amount)
         )
 
         // Narrow by amount before declaring ambiguity. An order billed as several charges (card +
@@ -189,8 +196,9 @@ export function suggestAmazonReturnSplits(unmatchedCredits, allTransactions, str
         // Nothing could have funded it, or two charges equally could - refuse rather than guess
         if (!debit) return
 
-        const sourceAllocation = getFundingAllocation(debit, amount)
-        candidates.push({ credits, debit, amount, sourceAllocation, mode: getRefundMode(amount, sourceAllocation) })
+        const funding = getRefundFunding(debit, amount)
+        candidates.push({ credits, debit, amount, sourceAllocation: funding.allocation,
+            fundsWholeTransaction: !!funding.wholeTransaction, mode: getRefundMode(amount, funding) })
     })
 
     return candidates
@@ -237,16 +245,17 @@ export function suggestRefundMatches(unmatchedCredits, allTransactions, refundSt
 				merchantKeysMatch(key, getMerchantKey(d.description)) &&
 				credit.date.getTime() >= d.date.getTime() &&	//same-day refunds are real, so this is >= not >
 				credit.date.getTime() - d.date.getTime() <= maxGap &&
-				!!getFundingAllocation(d, credit.amount)		//some share of it is large enough to fund the refund
+				!!getRefundFunding(d, credit.amount)		//the whole charge, or one share of it, can fund the refund
 			)
 			if (!pool.length) return
 
 			// An exact-amount charge is much stronger evidence than a merely recent one
 			const exact = pool.find(d => Math.abs(Math.abs(d.amount) - credit.amount) < refundMatchingConfig.amountTolerance)
 			const debit = exact || pool[0]
-			const sourceAllocation = getFundingAllocation(debit, credit.amount)
+			const funding = getRefundFunding(debit, credit.amount)
 			consumedDebits.push(debit)
-			candidates.push({ credits: [credit], debit, amount: credit.amount, sourceAllocation, mode: getRefundMode(credit.amount, sourceAllocation) })
+			candidates.push({ credits: [credit], debit, amount: credit.amount, sourceAllocation: funding.allocation,
+				fundsWholeTransaction: !!funding.wholeTransaction, mode: getRefundMode(credit.amount, funding) })
 		})
 
 	return candidates

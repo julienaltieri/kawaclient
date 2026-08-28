@@ -97,19 +97,27 @@ A candidate debit must satisfy the same guards on both rails:
   un-revisited charge;
 - one of its allocations is large enough to have funded the refund — see below.
 
-#### Which share of the charge funds the refund
+#### What inside the charge funds the refund
 
-A charge is frequently *already* split across streams before any refund arrives: $122.03 at
-Columbia booked as $87.03 of Repair/replacements and $35.00 of Emile. The refund came out of one of
-those shares, not out of the transaction as a whole, so `getFundingAllocation`
-([`transactionMatching.js`](../src/transactionMatching.js)) picks **the smallest share still large
-enough to contain the refund** — $87.03 here, since $35.00 could not have produced a $54.95 return.
+A charge is frequently *already* split across streams before any refund arrives. `getRefundFunding`
+([`transactionMatching.js`](../src/transactionMatching.js)) decides what pays for the return, and
+there are two answers:
 
-Smallest-that-fits, rather than largest or first, because it is the least disruptive reading: it
-leaves the bigger shares of the charge alone, and in practice it is usually the only share that fits
-at all. When no single share can fund the refund the charge is disqualified, even if its total would
-have covered it — the refund came from one part of the purchase, and splitting it back across
-several is a guess with no evidence behind it.
+**The whole transaction**, when the refund equals the charge. Everything came back, so every share
+of it moves to the refund stream regardless of how many streams it was split across — a $12.06
+Amazon charge booked as $8.00 of Repair/replacements and $4.06 of Medical, refunded in full, comes
+back in full. Nothing here reasons about shares at all, which matters because *no* individual share
+of that charge is large enough to fund a $12.06 refund.
+
+**One share**, when the refund is partial: the **smallest share still large enough to contain it**.
+A $122.03 Columbia charge booked as $87.03 of Repair/replacements and $35.00 of Emile, refunded
+$54.95, comes out of the $87.03 — the $35.00 share could not have produced it. Smallest-that-fits
+rather than largest or first, because it is the least disruptive reading: it leaves the bigger
+shares alone, and in practice it is usually the only share that fits at all.
+
+When neither applies the charge is disqualified. In particular a charge whose *total* covers the
+refund but whose every share is smaller is left alone: the refund came from one part of the
+purchase, and spreading it back across several is a guess with nothing behind it.
 
 This replaced an earlier `streamAllocation.length === 1` guard that skipped any already-split charge
 outright. That was wrong rather than merely narrow: a split charge is the *normal* state of a
@@ -191,9 +199,12 @@ on either rail's suggestions. It walks the stream tree for every `isZeroSumStrea
 the stream's categorised transactions, feeds what is left over to the Amazon rail and then the
 generic one, and rewrites the charge's allocations.
 
-The rewrite touches **only the funding share**. Every other share of the charge is copied across
-untouched, the refunded amount is moved out of the funding share into the zero-sum stream, and
-whatever is left of that share stays where it was:
+When the whole transaction funds the refund, the charge is replaced by a single allocation to the
+zero-sum stream and its previous split is discarded — all of it came back.
+
+Otherwise the rewrite touches **only the funding share**. Every other share of the charge is copied
+across untouched, the refunded amount is moved out of the funding share into the zero-sum stream,
+and whatever is left of that share stays where it was:
 
 | | Before | After |
 |---|---|---|
@@ -251,17 +262,18 @@ matching debit* on a credit.
 
 ### 6. Tests
 
-`ZS-1` … `ZS-22` in [`transactionMatchingTest.js`](../src/tests/transactionMatchingTest.js) are
+`ZS-1` … `ZS-24` in [`transactionMatchingTest.js`](../src/tests/transactionMatchingTest.js) are
 fully mocked and run in the browser console from `clientTestRoutine.js`.
 
-`ZS-1`…`ZS-5` and `ZS-16`…`ZS-19` cover the Amazon rail: the 1:1 match, the gift-card case, the
+`ZS-1`…`ZS-5`, `ZS-16`…`ZS-19` and `ZS-23` cover the Amazon rail: the 1:1 match, the gift-card case, the
 stranded refund, several refunds against one charge, the refund whose charge predates the loaded
 window, the full refund that must move rather than split, and the three multi-charge outcomes —
-resolved by exact amount, resolved by feasibility, and genuinely ambiguous. `ZS-6`…`ZS-15` and `ZS-20`…`ZS-22` cover the
-generic rail: key normalisation, the move and split outcomes, exact-amount-beats-recency,
+resolved by exact amount, resolved by feasibility, and genuinely ambiguous, plus the real order that
+needs both the multi-charge narrowing and the whole-transaction rule at once. `ZS-6`…`ZS-15`,
+`ZS-20`…`ZS-22` and `ZS-24` cover the generic rail: key normalisation, the move and split outcomes, exact-amount-beats-recency,
 the window boundary, both exclusions, the missing marker, the guards, one charge not being claimed
-twice, and the three funding-share outcomes — the already-split charge, the smallest sufficient
-share winning, and a share consumed whole.
+twice, and the funding outcomes — the already-split charge, the smallest sufficient share winning, a
+share consumed whole, and a fully refunded split charge moving whole.
 
 Every generic-rail scenario is taken from a real row of the user's refund-stream history rather than
 invented, and `ZS-3` is a real production Amazon order kept verbatim.
@@ -307,10 +319,12 @@ handled automatically — several refunds arriving together resolve in one pass,
 do not. Lifting this means deciding how much of the charge is still unrefunded, which needs a record
 of what an earlier pass already took, and there is nowhere to put one.
 
-**A refund comes out of one share of a purchase, never out of the purchase in aggregate.** That is
-the assumption behind picking a single funding allocation and refusing when none fits. It is what
-makes the arithmetic safe on a charge that was split for reasons unrelated to the return, and it is
-why a charge whose total covers the refund but whose every share is smaller is left alone.
+**A partial refund comes out of one share of a purchase, never out of the purchase in aggregate.**
+That is the assumption behind picking a single funding allocation and refusing when none fits. It is
+what makes the arithmetic safe on a charge that was split for reasons unrelated to the return, and
+it is why a charge whose total covers a partial refund but whose every share is smaller is left
+alone. A refund for the *whole* charge is exempt: there is nothing to attribute, so it takes
+everything.
 
 **Heuristics were chosen against real history, not from first principles.** Requiring a "Refund:"
 prefix, requiring the same account, and comparing merchant names word-for-word all look like obvious
