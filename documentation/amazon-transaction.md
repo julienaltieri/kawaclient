@@ -115,24 +115,55 @@ An order billed as several charges produces several bank transactions that are *
 same order number, same picture, same item list. Deciding how to categorise one of them means knowing
 which one it is.
 
-The tile already listed the order's other bank transactions by date and amount. Those rows are now
-**tappable**: tapping one closes the dialog and reopens it on that charge, and the row for the charge
-you are on is bold so you can see where you are. Nothing was added to the tile beyond that — it is
-crowded already, and navigation turned out to be the whole of what was needed.
+The tile names the order once across the top and then describes **one charge**: its item, its date,
+its amount, and beneath that the order's other bank transactions as `and $12.06 on 7/23/26`. Those
+sibling lines are the navigation: tapping one closes the dialog and reopens it on that charge.
+Nothing else was added — the tile is crowded already, and navigation turned out to be the whole of
+what was needed.
+
+**Tappable is signalled by bolding the amount and nothing else**, and the cue is derived from the same
+flag as the click handler, so a row cannot look openable while being inert. An earlier version put a
+dotted underline on the row's base style, which meant every sibling wore the cue whether or not it
+could be opened.
+
+Where tapping is allowed depends on where you are:
+
+| | sibling is uncategorized | sibling is already categorized |
+|---|---|---|
+| **in the queue** | inert | opens its dialog |
+| **inside a dialog** | opens the split view | opens its dialog |
+
+In the queue you are categorizing one transaction at a time, and jumping to a sibling mid-flow is
+what creates the awkward states — one charge split and the other not, one categorized while its
+sibling is still queued. An already categorized sibling is the exception because there is nothing in
+progress to disturb. Inside a dialog the restriction lifts: by then you are looking at one charge
+rather than working through a queue.
+
+**Where you land follows the target, not where you came from.** A categorized charge opens its own
+dialog; an uncategorized one opens the split view. That is what makes the round trip work in both
+directions, and it means the dialog can end up on a different transaction than the one it opened on —
+so it writes its allocations to the transaction it ended on, and only concludes the queue card's
+action when that is the card's own transaction.
 
 That navigation is the only practical way to move between the charges of one order: finding the
 sibling in the transaction feed runs straight back into the problem of telling them apart.
 
-An earlier version listed Amazon's payments-page entries alongside the bank transactions, to show
-charges that had been announced but not yet posted. It was removed: the ledger contains entries that
-never become bank transactions at all — the gift-card portion of a split payment, for one — so the
-union inflated the transaction count with lines that would stay "pending" forever.
+**Only *posted* charges are listed.** Amazon's payments-page ledger also contains entries that never
+become bank transactions at all — the gift-card portion of a split payment, for one — so listing it
+would show lines that stay "pending" forever and inflate what looks like the order's transaction
+count. The ledger is still *read*, but for resolution rather than display: see §7.
 
 ### 7. Which items did *this* charge pay for
 
 Amazon bills per shipment, so one order can arrive as several charges — while every one of them
 carries the whole order's item list. "The order's items" and "the items on this transaction" are not
 the same set, and nothing in the payload says which shipment an item went in.
+
+**Both the item mapping and the item prices are resolved for the whole order at once**, never for one
+charge on its own. Resolving charges independently produced two faults: one charge could scope to its
+items while its sibling could not, so moving between them changed the picture count for no visible
+reason; and the same item was priced differently depending on which charge was open — which means the
+price was never a property of the item.
 
 The order it reasons over is the **live** one from `globalState.amzOrderHistory`, not the copy on the
 transaction. `amazonOrderDetails` is persisted with the categorization and never re-attached once set
@@ -144,13 +175,46 @@ tags. `getAmazonOrderData` layers the live order over the stored copy, which sti
 metadata (`algo`, `matchedTxnDate`, `matchedTxnLast4`) the order itself does not carry, and remains
 the only source for an order older than the fetched window.
 
-`getAmazonChargeItems` infers it: spread the order total across the items, then look for the subset
-that sums to this charge. **Exactly one subset fitting is the answer; zero or several means we do not
-know**, and the caller falls back to the amount-based split. Ambiguity has to decline rather than
-pick, because the consequence of picking is a real product picture with someone else's price under
-it.
+#### The charge inventory, and whether it is complete
 
-This is what `canSplitAmazonByItem` now rests on. It used to compare the item prices against the
+Resolution runs over every charge the **order** has, not every charge the bank has posted. A charge
+still in transit is part of what the order was billed as, and leaving it out makes the items fail to
+account for the order — which would cost the charge that *did* post its own items, for no reason a
+reader could see.
+
+`transactions[]` (Amazon's payments page) is the only source that can be trusted to be exhaustive. If
+an order has none — it was matched by amount before the payments page was read — the fallback is what
+the bank posted, and that list **is not known to be complete**. The distinction is load-bearing: with
+an incomplete list, an item left unaccounted for might belong to a charge nobody can see, so the
+inferences that would read a leftover as a discount are switched off rather than guessed at.
+
+#### The two passes
+
+1. **At full price.** Price each item at its share of the order total, then find charges that match a
+   subset of them exactly. Those charges are settled as if no discount existed, and whatever is left
+   unclaimed absorbs the gap between the order and the bill. This is a gift card taken off a single
+   shipment: that slice gets re-priced and every other item keeps the price it really had.
+2. **Rescaled.** If pass 1 cannot account for every charge, re-price every item against what was
+   actually *billed* and match again. A discount spread across all the shipments lands here.
+
+Whichever pass accounts for every charge wins, pass 1 first; failing that pass 1's partial result
+stands, then pass 2's. Pass 2 and the absorption both require a complete charge inventory, so an
+order matched before its payments page was read stops at pass 1's exact matches.
+
+#### Refusing
+
+Item subsets are handed out **disjointly** — no item may be claimed by two charges — and the answer
+must be unique. **More than one equally good reading means we do not know**, and the caller falls back
+to the amount-based split. Ambiguity has to decline rather than pick, because the consequence of
+picking is a real product picture with someone else's price under it.
+
+Some orders are ambiguous combinatorially rather than incidentally: fourteen interchangeable refills
+billed as six shipments has more equally good readings than can be enumerated. The search carries a
+step budget and **running out is treated as ambiguity**, because that is what it means. The resolution
+is memoised per order — the key covers the item prices and the ledger, so the scraper backfilling
+prices invalidates it on its own.
+
+This is what `canSplitAmazonByItem` rests on. It used to compare the item prices against the
 transaction amount — but those prices come from `allocateProportionally(prices, transactionAmount)`,
 which sums to that amount *by construction*, so the check was a tautology that could never fail. The
 result was that splitting one charge of a two-charge order listed both items at prices that were
@@ -174,16 +238,23 @@ Two reasons, and both matter:
 
 Where it surfaces:
 
-- **`TransactionView`** — the item carousel, showing the items *this charge* paid for when they can
-  be determined and the whole order otherwise. Two independent rules govern it: the carousel appears
+- **`TransactionView`** — an Amazon charge reads as a **column**: the order named once across the
+  top, then the picture beside everything that belongs to this one charge. The row it replaced put a
+  fixed-height info column between the picture and the amount, with the description clamped so it
+  would fit; on a phone that left the description in a gutter and the amount crowded against it. Both
+  of those widths went away with the row that needed them, and what replaces them comes from the
+  design system rather than from numbers chosen to make one layout work.
+
+  The item carousel shows the items *this charge* paid for when they can be determined and the whole
+  order otherwise. Two independent rules govern it: the carousel appears
   only when the charge covers more than one item, and the per-item price tags appear only when the
   carousel does. A charge covering a single item already has that item's price on display — it is the
   transaction amount beside the picture — so a tag would only repeat it. Tying the tag to the
   carousel rather than to whether a price happens to be known is what keeps the two from drifting
   apart. (`AmazonItemImage` is shared with the split view, which always prices its rows: you cannot
   assign an item to a stream without knowing what it cost.) The headline amount is **the
-  transaction's own**, with the order's payment lines beneath it (§6). It used to be their sum, which read as "what the
-  order cost" only for as long as they were all charges — once refunds started carrying the same
+  transaction's own**, with the order's other charges beneath it (§6). It used to be their sum, which
+  read as "what the order cost" only for as long as they were all charges — once refunds started carrying the same
   order number the sum became the order's net after returns, matching neither the allocations shown
   below it nor any real transaction.
 - **`AmazonItemAllocationView`** ([`ModalManager.js:354`](../src/ModalManager.js#L354)) — Split, for
@@ -217,13 +288,14 @@ map back — editing an existing split therefore falls back to the amount-based 
 means teaching the model which items went where, which is a backend change and was deliberately
 deferred.
 
-**A charge's item list is inferred, and declines when it can't be sure.** Nothing in Amazon's payload
-maps items to shipments, so the subset that sums to the charge is the best available evidence. The
-rule is deliberately all-or-nothing: one fitting subset is used, anything else falls back to amounts.
-A guessed subset would be indistinguishable from a known one on screen, which is what makes guessing
-unacceptable here rather than merely imprecise. If the scraper ever exposes shipment grouping, this
-inference should be retired in favour of it — `items[]` is stored verbatim, so that needs no backend
-change.
+**Item mapping and item prices belong to the order, not to a charge.** Nothing in Amazon's payload
+maps items to shipments, so a disjoint assignment of subsets to the order's charges is the best
+available evidence — and it has to be computed over all of them at once, or the same item ends up
+with a different price depending on which charge is open. The rule is deliberately all-or-nothing:
+one unique reading is used, anything else falls back to amounts. A guessed subset would be
+indistinguishable from a known one on screen, which is what makes guessing unacceptable here rather
+than merely imprecise. If the scraper ever exposes shipment grouping, this inference should be
+retired in favour of it — `items[]` is stored verbatim, so that needs no backend change.
 
 **Matching is heuristic and ordered by confidence, never by convenience.** Each pass is narrower and
 more certain than the one after it, and no pass may overwrite an earlier pass's match. Loosening an
