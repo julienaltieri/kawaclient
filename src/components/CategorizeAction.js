@@ -71,34 +71,6 @@ export const canSplitAmazonByItem = (transaction) => {
 	return !!charge && charge.items.length>1
 }
 
-//The order's payment lines as the user should see them: the bank transactions matched to the order, plus the
-//entries on Amazon's payments page that haven't reached the bank yet. Returns
-//[{amount,date,transaction,pending,last4}] oldest first. `transaction` is undefined on a pending line, which
-//is why those can't be navigated to.
-//Sign convention: order.transactions[] amounts are positive for a charge, so they are negated here to read
-//like bank amounts (see documentation/amazon-transaction.md).
-export const getAmazonOrderLines = (transaction) => {
-	var amz = transaction?.amazonOrderDetails;
-	if(!amz)return []
-	var neighbors = Core.getTransactionsForOrderNumber(amz.orderNumber) || [];
-	var ledger = amz.transactions || [];
-	if(!ledger.length)return neighbors.map(t => ({amount:t.amount,date:t.date,transaction:t,pending:false,last4:""}))
-
-	var unclaimed = [...neighbors], lines = [];
-	ledger.forEach(entry => {
-		if(!entry.amount)return
-		//prefer the bank transaction pass 0 matched to this very entry, then any with the opposite amount
-		var pick = unclaimed.filter(t => Math.abs(t.amount+entry.amount)<0.005);
-		var matched = pick.filter(t => t.amazonOrderDetails?.matchedTxnDate===entry.date)[0] || pick[0];
-		if(matched)unclaimed.splice(unclaimed.indexOf(matched),1)
-		lines.push({amount:-entry.amount,date:matched?matched.date:(entry.date?new Date(entry.date):undefined),
-			transaction:matched,pending:!matched,last4:entry.last4||""})
-	})
-	//anything the ledger doesn't account for is still a real bank transaction, and still navigable
-	unclaimed.forEach(t => lines.push({amount:t.amount,date:t.date,transaction:t,pending:false,last4:""}))
-	return lines.sort(utils.sorters.asc(l => l.date?l.date.getTime():Number.MAX_SAFE_INTEGER))
-}
-
 //The white product tile: item picture with its post-tax price in the bottom-right corner. Shared by the
 //carousel on the transaction view and the rows of the item-wise split, which is why the caller owns the
 //outer styling (the carousel slides its first cell, the split rows clip theirs).
@@ -294,30 +266,22 @@ export class TransactionView extends BaseComponent{
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
 		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
 	}
-	//"Charge 2 of 3" - only meaningful once an order has produced more than one line
-	getChargeLabel(orderLines){
-		if(!(orderLines?.length>1))return ""
-		var at = orderLines.findIndex(l => l.transaction===this.props.transaction);
-		return at>-1?`Charge ${at+1} of ${orderLines.length}`:""
-	}
-	//One line of the order's payment history. A line backed by a bank transaction can be tapped to reopen the
-	//dialog on that transaction - the only way to tell two charges of one order apart and act on the right
-	//one. A line Amazon has announced but the bank hasn't posted has nothing to open, so it renders dimmed
-	//and italic and stays inert.
-	renderOrderLine(l,i){
-		var isCurrent = l.transaction===this.props.transaction;
-		var canNavigate = !!l.transaction && !isCurrent && !!this.props.onNavigateToTransaction;
-		return <div key={i} onClick={canNavigate?((e) => {e.stopPropagation();this.props.onNavigateToTransaction(l.transaction)}):undefined}
-			title={l.pending?"Not posted to the bank yet":(canNavigate?"Open this charge":undefined)}
+	//One of the order's other bank transactions. Same content as it has always shown - date and amount -
+	//with nothing added: this tile is crowded already. The only new thing is that it can be tapped to
+	//reopen the dialog on that charge, which is what makes two identical-looking charges of one order
+	//navigable at all. The current one is bold so you can see where you are.
+	renderNeighborLine(n){
+		var isCurrent = n===this.props.transaction || (!!n.transactionId && n.transactionId===this.props.transaction.transactionId);
+		var canNavigate = !isCurrent && !!this.props.onNavigateToTransaction;
+		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
+			onClick={canNavigate?((e) => {e.stopPropagation();this.props.onNavigateToTransaction(n)}):undefined}
 			style={{display:"flex", justifyContent:"space-between", marginTop:"0.2rem",
-				color: isCurrent?DS.getStyle().bodyText:DS.getStyle().bodyTextSecondary,
+				color: isCurrent?DS.getStyle().bodyText:"grey",
 				fontWeight: isCurrent?"bold":"normal",
-				fontStyle: l.pending?"italic":"normal",
-				opacity: l.pending?0.5:1,
 				cursor: canNavigate?"pointer":"default",
 				textDecoration: canNavigate?"underline dotted":"none"}}>
-			<span>{l.date?utils.formatDateShort(l.date):"pending"}{l.last4?" ****"+l.last4:""}</span>
-			<span>{utils.formatCurrencyAmount(l.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
+			<span>{utils.formatDateShort(n.date)}</span>
+			<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
 		</div>
 	}
 	render(){
@@ -327,7 +291,7 @@ export class TransactionView extends BaseComponent{
 		var shownItems = charge?charge.items:(amz?.items||[]);
 		var itemPostTaxPrices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
 		var isCompound = this.isAmazon() && shownItems.length>1;
-		var orderLines = this.isAmazon()?getAmazonOrderLines(this.props.transaction):[];
+		var amznghbrs = this.getAmazonNeighbors();
 		//always the transaction being shown, never the order's net. Summing the order's transactions
 		//was defensible while they were all charges, but a refund carries the same orderNumber, so the
 		//sum silently became "what the order cost after returns" - a number that matches neither the
@@ -354,9 +318,7 @@ export class TransactionView extends BaseComponent{
 				):""}
 				<TxInfoContainer>{/*regular transaction*/}
 					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div>
-						{/*without this an order billed as several charges looks identical on every one of them*/}
-						{this.getChargeLabel(orderLines)?<div style={{marginTop:"0.2rem",fontWeight:"bold"}}>{this.getChargeLabel(orderLines)}</div>:""}</div>):""}
+						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
 
 					<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
 						this.isAmazon()?getAmazonDescription(shownItems[this.state.selectedItemImage-1]?.itemDescription||""):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
@@ -369,7 +331,7 @@ export class TransactionView extends BaseComponent{
 				<Spacer/>
 				<div>
 					<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
-					{orderLines.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{orderLines.length} Transactions:{orderLines.map((l,i) => this.renderOrderLine(l,i))}</div>:""}
+					{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => this.renderNeighborLine(n))}</div>:""}
 				</div>
 			</DS.component.ContentTile>
 			{this.props.transaction.reconciliation?<div>{this.renderReconciliation()}</div>:""}

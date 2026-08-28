@@ -19,7 +19,7 @@
 import Core from '../core'
 import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
-import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderLines } from '../components/CategorizeAction'
+import { getAmazonChargeItems, canSplitAmazonByItem } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -1480,39 +1480,6 @@ function testAC4_unpricedOrder() {
 	})
 }
 
-/**
- * Test AC-5 - The order's payment lines: posted charges are navigable, announced ones are not
- *
- * The line list is the union of the bank transactions matched to the order and the entries on
- * Amazon's payments page. An entry Amazon has announced but the bank hasn't posted has no
- * transaction behind it, so there is nothing to open and the UI must not offer to.
- */
-function testAC5_orderPaymentLines() {
-	runTest('Test AC-5 - Order payment lines mark the unposted charge as having nothing to open', assert => {
-		const order = makeMockAmazonOrder({ transactions: [
-			{ amount: 4.06, date: 'July 14, 2026', last4: '9869' },
-			{ amount: 12.06, date: 'July 23, 2026', last4: '9869' },
-			{ amount: 20.00, date: 'August 20, 2026', last4: '9869' }   // announced, not on the bank yet
-		]})
-		const first  = makeMockChargeTransaction(-4.06, '2026-07-14', { ...order, matchedTxnDate: 'July 14, 2026' })
-		const second = makeMockChargeTransaction(-12.06, '2026-07-23', { ...order, matchedTxnDate: 'July 23, 2026' })
-
-		withStub(Core, 'getTransactionsForOrderNumber', () => [first, second], () => {
-			const lines = getAmazonOrderLines(second)
-
-			assert(lines.length === 3, `3 lines - two posted, one announced (got: ${lines.length})`, lines)
-			const pending = lines.filter(l => l.pending)
-			assert(pending.length === 1, `exactly one pending line (got: ${pending.length})`, lines)
-			assert(pending[0]?.transaction === undefined, 'the pending line has no transaction to navigate to', pending[0])
-			assert(Math.abs((pending[0]?.amount ?? NaN) + 20.00) < 0.005,
-				`the pending amount reads as a bank amount, i.e. negated (got: ${pending[0]?.amount})`, pending[0])
-			assert(lines.filter(l => l.transaction === second).length === 1, 'the charge being viewed is one of the lines', lines)
-			assert(lines[0].date <= lines[1].date, 'lines are oldest first', lines)
-			assert(lines.every(l => l.last4 === '9869'), 'each line carries the card it was billed to', lines)
-		})
-	})
-}
-
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -1566,7 +1533,6 @@ export function runTransactionMatchingTests() {
 	testAC2_oneChargeOfSeveral()
 	testAC3_ambiguousSubsetDeclines()
 	testAC4_unpricedOrder()
-	testAC5_orderPaymentLines()
 	console.groupEnd()
 
 	console.groupEnd()

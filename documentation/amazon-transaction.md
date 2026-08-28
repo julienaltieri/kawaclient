@@ -113,23 +113,20 @@ reconciled there too, by a separate rail that deliberately never touches Amazon 
 
 An order billed as several charges produces several bank transactions that are *identical* on screen:
 same order number, same picture, same item list. Deciding how to categorise one of them means knowing
-which one it is, and until recently nothing on the tile said.
+which one it is.
 
-`getAmazonOrderLines` ([`CategorizeAction.js`](../src/components/CategorizeAction.js)) builds the
-order's payment history as the union of two things: the bank transactions matched to the order, and
-the entries on Amazon's payments page. An entry with no bank transaction behind it is a charge Amazon
-has announced but the bank has not posted — it renders dimmed and italic and **cannot be tapped**,
-because there is nothing to open. Every other line can be, which closes the dialog and reopens it on
-that charge. That navigation is the only practical way to move between the charges of one order:
-finding the sibling in the transaction feed runs straight back into the problem of telling them
-apart.
+The tile already listed the order's other bank transactions by date and amount. Those rows are now
+**tappable**: tapping one closes the dialog and reopens it on that charge, and the row for the charge
+you are on is bold so you can see where you are. Nothing was added to the tile beyond that — it is
+crowded already, and navigation turned out to be the whole of what was needed.
 
-The tile also carries a `Charge 2 of 3` label and, per line, the card it was billed to
-(`matchedTxnLast4`), which is what separates a card charge from the gift-card portion of the same
-order.
+That navigation is the only practical way to move between the charges of one order: finding the
+sibling in the transaction feed runs straight back into the problem of telling them apart.
 
-Sign note: `order.transactions[]` amounts are positive for a charge, so they are negated when
-rendered as lines, to read the way bank amounts do.
+An earlier version listed Amazon's payments-page entries alongside the bank transactions, to show
+charges that had been announced but not yet posted. It was removed: the ledger contains entries that
+never become bank transactions at all — the gift-card portion of a split payment, for one — so the
+union inflated the transaction count with lines that would stay "pending" forever.
 
 ### 7. Which items did *this* charge pay for
 
