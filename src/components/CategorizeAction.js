@@ -236,6 +236,11 @@ const nameLineHeight = 1.25; //multiples of the font size
 const nameCollapsedLines = 2;
 const nameOpenAnimationTime = 300;
 
+//Everything in the tile that responds to a tap. Android paints a blue-grey box over a tapped element by
+//default, which reads as a button press on things that are text, and a tap that lands slightly long
+//starts selecting the words instead of doing what it was for.
+const tappableStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightColor:"transparent"};
+
 //exist scene animation
 const checkmarkGrowAnimation = 500;
 const disappearAnimationTime = 300;
@@ -437,7 +442,7 @@ const StyledWord = styled.div`
 export class TransactionView extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {selectedItemImage:1,nameOpen:false}
+		this.state = {selectedItemImage:1,nameOpen:false,nameClamped:true}
 		this.nameRef = React.createRef()
 	}
 	isAmazon(){return this.getAmazonData()}
@@ -449,28 +454,34 @@ export class TransactionView extends BaseComponent{
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
 		//the next item is a different name of a different length, so it starts closed rather than
 		//inheriting the height the last one was opened to
-		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet,nameOpen:false,nameHeight:undefined})
+		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet,nameOpen:false,nameClamped:true,nameHeight:undefined})
 	}
-	//Opening animates to the name's real height rather than to a cap: everything under the name moves with
-	//it, so a cap the text does not reach would keep pushing the amount down after the words had stopped.
-	//The height can only be measured with the clamp off, which is why opening takes two steps - unclamp,
-	//then animate to what the element turned out to be.
+	//The height it opens to is the name's real height, not a cap: everything under the name moves with it,
+	//so a cap the text does not reach would keep pushing the amount down after the words had stopped. That
+	//height can only be measured with the clamp off, which is why opening takes two steps - unclamp, then
+	//animate to what the element turned out to be.
+	//
+	//The clamp is tracked separately from the open/closed height because the two cannot change together in
+	//both directions. Closing has to keep the clamp OFF for the length of the animation: reapplying it at
+	//the same moment would shrink the text to two lines in a single frame, leaving the height transition
+	//with nothing left to hide and making the close look instant. It goes back on when the transition
+	//actually ends, which is also why there is no duration duplicated here to drift out of step.
 	toggleName(){
 		if(this.state.nameOpen)return this.updateState({nameOpen:false})
-		return this.updateState({nameOpen:true,nameHeight:undefined})
+		return this.updateState({nameClamped:false,nameOpen:true,nameHeight:undefined})
 			.then(() => this.updateState({nameHeight:this.nameRef.current?.scrollHeight}))
 	}
 	//Two lines, cut where the line ends with an ellipsis to say there is more, and tapping opens it.
 	//The ellipsis is the affordance: it appears only when something is actually hidden.
 	renderItemName(text){
-		var open = this.state.nameOpen;
 		var collapsed = nameCollapsedLines*nameLineHeight*DS.fontSize.body+"rem";
 		return <div ref={this.nameRef} onClick={(e) => {e.stopPropagation();this.toggleName()}}
-			title={open?undefined:text} style={{overflow:"hidden",cursor:"pointer",
-				maxHeight:(open && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
+			onTransitionEnd={() => {if(!this.state.nameOpen && !this.state.nameClamped)this.updateState({nameClamped:true})}}
+			title={this.state.nameOpen?undefined:text} style={{...tappableStyle,overflow:"hidden",
+				maxHeight:(this.state.nameOpen && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
 				transition:"max-height "+nameOpenAnimationTime/1000+"s ease"}}>
 			<DS.component.Label highlight style={{textWrap:"wrap",lineHeight:nameLineHeight,
-				...(open?{}:{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines,overflow:"hidden"})}}>{text}</DS.component.Label>
+				...(this.state.nameClamped?{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines,overflow:"hidden"}:{})}}>{text}</DS.component.Label>
 		</div>
 	}
 	//Dates, order identity and sibling charges are all supporting text: one size, one colour.
@@ -503,7 +514,8 @@ export class TransactionView extends BaseComponent{
 		var canNavigate = !!nav?.onNavigate && (nav.canNavigate?nav.canNavigate(n):true);
 		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
 			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
-			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",cursor:canNavigate?"pointer":"default"}}>
+			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",
+				...(canNavigate?tappableStyle:{cursor:"default"})}}>
 			and <span style={{textDecoration:canNavigate?"underline":"none"}}>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span> on {utils.formatDateShort(n.getDisplayDate())}
 		</div>
 	}
@@ -524,9 +536,9 @@ export class TransactionView extends BaseComponent{
 				)}
 			</div>
 			{showCarousel?(<div style={{display:"flex",justifyContent:"space-evenly",alignItems:"center",marginTop:DS.spacing.xxs+"rem"}}>
-				<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect:"none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
+				<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{...tappableStyle,color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
 				<span style={{...this.secondaryTextStyle()}}>{this.state.selectedItemImage}/{shownItems.length}</span>
-				<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect:"none",color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
+				<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{...tappableStyle,color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
 			</div>):""}
 		</div>
 	}
