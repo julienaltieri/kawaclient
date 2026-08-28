@@ -1519,6 +1519,181 @@ function testAC5_staleOrderSnapshotResolvedFromLiveHistory() {
 }
 
 // ---------------------------------------------------------------------------
+// AC-6 .. AC-13 - order-level resolution
+//
+// Which items a charge paid for, and what each item costs, are answers about the ORDER, not about one
+// charge. These cover the scenario axes that change the answer: whether Amazon's payments page tells us
+// the whole charge list, how many charges there are, whether they have all posted, and whether a gift
+// card or discount means the items cost more than the bill.
+// ---------------------------------------------------------------------------
+
+// $100 of items shipped in two parcels. `ledger` is the payments page as Amazon reports it, positive per
+// charge - omit it to model an order matched before the payments page was read.
+function makeTwoShipmentOrder(ledger) {
+	return {
+		orderNumber: 'order-two-shipments',
+		orderAmount: 100,
+		items: [
+			{ itemPrice: 30, itemDescription: 'Parcel A item', image: '' },
+			{ itemPrice: 70, itemDescription: 'Parcel B item', image: '' }
+		],
+		...(ledger ? { transactions: ledger.map(amount => ({ amount })) } : {})
+	}
+}
+
+/**
+ * Test AC-6 - Each charge of a two-shipment order scopes to its own shipment
+ *
+ * The payments page lists both charges, so the split is knowable and each charge shows only what it paid
+ * for, at the price it really cost.
+ */
+function testAC6_twoShipmentsEachScopeToTheirOwn() {
+	runTest('Test AC-6 - Each charge of a two-shipment order scopes to its own shipment', assert => {
+		const order = makeTwoShipmentOrder([30, 70])
+		const a = getAmazonChargeItems(makeMockChargeTransaction(-30, '2026-07-23', order))
+		const b = getAmazonChargeItems(makeMockChargeTransaction(-70, '2026-07-25', order))
+
+		assert(a?.items.length === 1 && a?.items[0].itemDescription === 'Parcel A item', 'the $30 charge holds parcel A', a)
+		assert(Math.abs((a?.prices[0] ?? NaN) - 30) < 0.005, `at its real price (got: ${a?.prices[0]})`, a)
+		assert(b?.items.length === 1 && b?.items[0].itemDescription === 'Parcel B item', 'the $70 charge holds parcel B', b)
+		assert(Math.abs((b?.prices[0] ?? NaN) - 70) < 0.005, `at its real price (got: ${b?.prices[0]})`, b)
+	})
+}
+
+/**
+ * Test AC-7 - A charge still in transit does not cost its sibling its items
+ *
+ * The bank has posted one of the two charges. The payments page still lists both, so the order accounts
+ * for itself and the posted charge resolves exactly as it would once its sibling lands. Reading only what
+ * the bank posted would leave $70 of items unaccounted for and scope nothing.
+ */
+function testAC7_unpostedSiblingStillResolves() {
+	runTest('Test AC-7 - A charge still in transit does not cost its sibling its items', assert => {
+		const order = makeTwoShipmentOrder([30, 70])
+		withStub(Core, 'getTransactionsForOrderNumber', () => [{ amount: -30 }], () => {
+			const a = getAmazonChargeItems(makeMockChargeTransaction(-30, '2026-07-23', order))
+			assert(a?.items.length === 1 && a?.items[0].itemDescription === 'Parcel A item',
+				`the posted charge still resolves (got: ${a?.items.length} items)`, a)
+		})
+	})
+}
+
+/**
+ * Test AC-8 - A gift card taken off one shipment is absorbed by that shipment
+ *
+ * $100 of items billed as $30 + $50. The $30 charge matches an item exactly, so it keeps the price that
+ * item really had; the $20 that never got billed lands on the shipment it was actually taken off. Spreading
+ * it across both would have re-priced an item nobody discounted.
+ */
+function testAC8_giftCardOnOneShipment() {
+	runTest('Test AC-8 - A gift card on one shipment is absorbed by that shipment', assert => {
+		const order = makeTwoShipmentOrder([30, 50])
+		const a = getAmazonChargeItems(makeMockChargeTransaction(-30, '2026-07-23', order))
+		const b = getAmazonChargeItems(makeMockChargeTransaction(-50, '2026-07-25', order))
+
+		assert(Math.abs((a?.prices[0] ?? NaN) - 30) < 0.005, `the untouched shipment keeps its real price (got: ${a?.prices[0]})`, a)
+		assert(b?.items[0]?.itemDescription === 'Parcel B item', 'the discounted shipment keeps its own item', b)
+		assert(Math.abs((b?.prices[0] ?? NaN) - 50) < 0.005, `and absorbs the gift card (got: ${b?.prices[0]})`, b)
+	})
+}
+
+/**
+ * Test AC-9 - A discount spread over every shipment re-prices every item
+ *
+ * $100 of items billed as $24 + $56. No charge matches any subset at full price, so the items are re-priced
+ * against what was actually billed and matched again - and then both charges resolve.
+ */
+function testAC9_discountSpreadOverShipments() {
+	runTest('Test AC-9 - A discount spread over every shipment re-prices every item', assert => {
+		const order = makeTwoShipmentOrder([24, 56])
+		const a = getAmazonChargeItems(makeMockChargeTransaction(-24, '2026-07-23', order))
+		const b = getAmazonChargeItems(makeMockChargeTransaction(-56, '2026-07-25', order))
+
+		assert(a?.items[0]?.itemDescription === 'Parcel A item' && Math.abs((a?.prices[0] ?? NaN) - 24) < 0.005,
+			`charge 1 resolves at its billed price (got: ${a?.prices[0]})`, a)
+		assert(b?.items[0]?.itemDescription === 'Parcel B item' && Math.abs((b?.prices[0] ?? NaN) - 56) < 0.005,
+			`charge 2 resolves at its billed price (got: ${b?.prices[0]})`, b)
+	})
+}
+
+/**
+ * Test AC-10 - A gift card on a single-charge order still covers every item
+ *
+ * One charge for the whole order, but $80 billed against $100 of items. Every item belongs to it, priced
+ * against the bill so the split adds up to what was actually taken.
+ */
+function testAC10_giftCardOnSingleCharge() {
+	runTest('Test AC-10 - A gift card on a single-charge order still covers every item', assert => {
+		const order = makeTwoShipmentOrder([80])
+		const c = getAmazonChargeItems(makeMockChargeTransaction(-80, '2026-07-23', order))
+
+		assert(c?.items.length === 2, `both items belong to it (got: ${c?.items.length})`, c)
+		assert(Math.abs(utils.sum(c?.prices || []) - 80) < 0.005,
+			`and the prices sum to what was billed (got: ${utils.sum(c?.prices || [])})`, c)
+	})
+}
+
+/**
+ * Test AC-11 - Without the payments page, a gap between order and bill is not read as a discount
+ *
+ * The same $80 charge with no payments page to confirm it is the only one. The missing $20 could equally be
+ * a second charge still in transit, so absorbing it would invent prices. Nothing is scoped.
+ */
+function testAC11_incompleteInventoryAbsorbsNothing() {
+	runTest('Test AC-11 - Without the payments page, order-to-bill gap is not read as a discount', assert => {
+		const order = makeTwoShipmentOrder()
+		withStub(Core, 'getTransactionsForOrderNumber', () => [{ amount: -80 }], () => {
+			assert(getAmazonChargeItems(makeMockChargeTransaction(-80, '2026-07-23', order)) === undefined,
+				'no answer is given while the charge list may be incomplete')
+		})
+	})
+}
+
+/**
+ * Test AC-12 - Interchangeable items across two charges decline rather than guess
+ *
+ * Three $10 items billed as $10 + $20. Every way of dealing them out fits, so which picture belongs to
+ * which charge is not knowable and neither charge claims any.
+ */
+function testAC12_interchangeableItemsDecline() {
+	runTest('Test AC-12 - Interchangeable items across two charges decline rather than guess', assert => {
+		const order = { orderNumber: 'order-ac12', orderAmount: 30, transactions: [{ amount: 10 }, { amount: 20 }],
+			items: [{ itemPrice: 10, itemDescription: 'A' }, { itemPrice: 10, itemDescription: 'B' }, { itemPrice: 10, itemDescription: 'C' }] }
+
+		assert(getAmazonChargeItems(makeMockChargeTransaction(-10, '2026-07-23', order)) === undefined, 'the $10 charge claims nothing')
+		assert(getAmazonChargeItems(makeMockChargeTransaction(-20, '2026-07-23', order)) === undefined, 'and neither does the $20 charge')
+	})
+}
+
+/**
+ * Test AC-13 - An item costs the same whichever charge is open, and belongs to only one
+ *
+ * The invariant the whole order-level resolution exists to hold. If prices moved with the charge you
+ * happened to open, the price was never a property of the item; if an item appeared on two charges, it
+ * would be categorized twice.
+ */
+function testAC13_pricesAreStableAndItemsUnshared() {
+	runTest('Test AC-13 - An item costs the same whichever charge is open, and belongs to only one', assert => {
+		const order = makeTwoShipmentOrder([30, 50])
+		const a = getAmazonChargeItems(makeMockChargeTransaction(-30, '2026-07-23', order))
+		const b = getAmazonChargeItems(makeMockChargeTransaction(-50, '2026-07-25', order))
+
+		const priceOf = (charge, description) => charge?.items.reduce((p, it, i) => it.itemDescription === description ? charge.prices[i] : p, undefined)
+		assert(priceOf(a, 'Parcel B item') === undefined && priceOf(b, 'Parcel A item') === undefined,
+			'no item is claimed by both charges', [a, b])
+		assert(Math.abs(utils.sum(a?.prices || []) - 30) < 0.005 && Math.abs(utils.sum(b?.prices || []) - 50) < 0.005,
+			'each charge\'s items sum exactly to it, with no rounding drift', [a?.prices, b?.prices])
+
+		// equal weights over an odd total: the largest-remainder spread must still land on the charge
+		const awkward = { orderNumber: 'order-ac13', orderAmount: 43.06, transactions: [{ amount: 43.06 }],
+			items: [1, 2, 3].map(n => ({ itemPrice: 12.99, itemDescription: 'x' + n })) }
+		const c = getAmazonChargeItems(makeMockChargeTransaction(-43.06, '2026-07-23', awkward))
+		assert(Math.abs(utils.sum(c?.prices || []) - 43.06) < 0.005,
+			`three equal items over an odd total still sum to the charge (got: ${utils.sum(c?.prices || [])})`, c)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
 export function runTransactionMatchingTests() {
@@ -1572,6 +1747,14 @@ export function runTransactionMatchingTests() {
 	testAC3_ambiguousSubsetDeclines()
 	testAC4_unpricedOrder()
 	testAC5_staleOrderSnapshotResolvedFromLiveHistory()
+	testAC6_twoShipmentsEachScopeToTheirOwn()
+	testAC7_unpostedSiblingStillResolves()
+	testAC8_giftCardOnOneShipment()
+	testAC9_discountSpreadOverShipments()
+	testAC10_giftCardOnSingleCharge()
+	testAC11_incompleteInventoryAbsorbsNothing()
+	testAC12_interchangeableItemsDecline()
+	testAC13_pricesAreStableAndItemsUnshared()
 	console.groupEnd()
 
 	console.groupEnd()

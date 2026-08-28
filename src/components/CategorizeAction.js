@@ -43,40 +43,165 @@ export const getAmazonOrderData = (transaction) => {
 	return live?{...stored,...live}:stored
 }
 
-//Beyond this many items the subset search below stops being worth running - and orders that large are also
-//the least likely to have a single clean subset.
+//Beyond these the subset search below stops being worth running - and orders that large are also the least
+//likely to resolve cleanly anyway.
 const maxItemsForChargeInference = 14;
+const maxChargesForOrderResolution = 6;
+const maxStepsForOrderResolution = 200000;
 
-//Which of the order's items THIS charge paid for, as {items,prices,indices} - or undefined when we can't tell.
+//The charges of an order as positive amounts, with whether that list is known to be the whole of them.
 //
-//Amazon bills per shipment, so one order can arrive as several bank charges while every one of them carries
-//the whole order's item list. "The order's items" and "the items on this transaction" are therefore not the
-//same set, and nothing in the payload says which shipment an item shipped in. So it is inferred: spread the
-//order total across its items, then look for the subset summing to this charge. Exactly one subset fitting
-//is the answer; zero or several means we don't know, and the caller falls back to amounts. Guessing here
-//would put fictional prices next to real product pictures.
-export const getAmazonChargeItems = (transaction) => {
-	var amz = getAmazonOrderData(transaction), items = amz?.items || [], target = Math.abs(transaction?.amount||0);
-	if(!items.length || !(target>0) || !(amz.orderAmount>0))return undefined
+//Completeness is the part that matters. Amazon's own payments page (order.transactions[], positive for a
+//charge and negative for a refund - see documentation/amazon-transaction.md) lists every charge whether or
+//not the bank has posted it yet, and only that list can be trusted to be exhaustive. Falling back to what
+//the bank posted misses anything still in transit, so an item left over may well belong to a charge we
+//simply cannot see - not to a discount. The inferences that would read a leftover as a discount are
+//switched off in that case rather than guessing.
+const getAmazonOrderCharges = (amz, alsoConsider) => {
+	var ledger = (amz?.transactions||[]).filter(t => t.amount>0).map(t => utils.round2Decimals(t.amount));
+	if(ledger.length)return {charges:ledger, complete:true}
+	var posted = (Core.getTransactionsForOrderNumber(amz?.orderNumber)||[])
+		.filter(t => t.amount<0).map(t => utils.round2Decimals(-t.amount));
+	//the transaction being looked at is a charge of this order by construction, so it belongs in the
+	//inventory even when the bank hasn't posted it (or when it is the credit that refunded it)
+	if(alsoConsider>0 && !posted.some(c => Math.abs(c-alsoConsider)<0.005))posted = posted.concat([alsoConsider]);
+	return {charges:posted, complete:false}
+}
+
+//Every way of handing disjoint item subsets to charges, keeping those that account for the most charges.
+//Returns {assign,count} - assign[i] is a bitmask of the items on charge i, 0 when that charge went unmatched.
+//Several assignments tying at the best count means the mapping is not knowable, and none is claimed: the
+//consequence of picking one would be a real product picture wearing another item's price.
+//
+//An order of interchangeable items - fourteen identical refills billed as six shipments - has combinatorially
+//many equally good readings, and enumerating them to discover that is hopeless. The walk is given a step
+//budget and running out is treated the same as ambiguity, because that is what it means: too many ways to
+//slice the order to call any of them the answer.
+const bestAssignment = (prices, charges) => {
+	var n = prices.length, full = (1<<n)-1;
+	//subset sums in one pass: a mask sums to itself-without-its-lowest-item, plus that item
+	var subsetSum = new Float64Array(full+1);
+	for(var mask=1;mask<=full;mask++){
+		var low = mask & -mask;
+		subsetSum[mask] = subsetSum[mask^low] + prices[31-Math.clz32(low)];
+	}
+	var candidates = charges.map(amount => {
+		var out = [];
+		for(var m=1;m<=full;m++){if(Math.abs(subsetSum[m]-amount)<0.005)out.push(m)}
+		return out
+	});
+	//the most constrained charge is placed first, so `best` climbs on the very first branch and the bound
+	//below prunes deep instead of shallow
+	var order = charges.map((c,i) => i).sort((x,y) => candidates[x].length-candidates[y].length);
+
+	//only two solutions are ever kept: one is the answer, two is already ambiguous and a third adds nothing
+	var best = -1, solutions = [], budget = maxStepsForOrderResolution;
+	(function walk(k,used,picked,matched){
+		if(budget-- < 0)return
+		if(matched+(order.length-k)<best)return                  //this branch can no longer beat what we have
+		if(k===order.length){
+			if(matched>best){best = matched;solutions.length = 0}
+			if(matched===best && solutions.length<2)solutions.push(picked.slice())
+			return
+		}
+		candidates[order[k]].forEach(mask => {
+			if(mask & used)return                                //an item cannot be on two charges
+			picked.push(mask);walk(k+1,used|mask,picked,matched+1);picked.pop()
+		});
+		picked.push(0);walk(k+1,used,picked,matched);picked.pop() //leave this charge unmatched
+	})(0,0,[],0);
+
+	var assign = charges.map(() => 0);
+	if(budget<0 || best<1 || solutions.length!==1)return {assign:assign, count:0}
+	order.forEach((i,k) => {assign[i] = solutions[0][k]});
+	return {assign:assign, count:best}
+}
+
+//Turns an assignment into the two answers the UI needs: which items each charge paid for, and what each item
+//costs. Matched items keep the price they matched at. When the charge list is known to be complete, whatever
+//is left unclaimed absorbs the gap between the order and the bill - that is where a gift card or a single
+//shipment's discount lands - and a lone leftover charge owns it. Without that guarantee nothing is absorbed
+//and unmatched charges simply stay unresolved.
+const settleAmazonOrder = (items, prices, charges, assign, absorb) => {
+	var claimed = assign.reduce((a,m) => a|m, 0);
+	var leftItems = items.map((it,i) => i).filter(i => !(claimed & (1<<i)));
+	var leftCharges = charges.filter((c,i) => !assign[i]);
+	var price = prices.slice();
+	if(absorb && leftItems.length && leftCharges.length){
+		var spread = utils.allocateProportionally(leftItems.map(i => prices[i]),utils.round2Decimals(utils.sum(leftCharges)));
+		leftItems.forEach((i,k) => {price[i] = spread[k]})
+	}
+	var map = charges.map((c,i) => {
+		if(assign[i])return items.map((it,k) => k).filter(k => assign[i] & (1<<k))
+		if(absorb && leftCharges.length===1 && leftItems.length)return leftItems
+		return undefined
+	});
+	return {charges:charges, map:map, price:price}
+}
+
+//Which items each charge of the order paid for, and what each item costs.
+//
+//Both answers belong to the ORDER, never to one charge on its own. Amazon bills per shipment, so an order
+//can arrive as several bank charges while every one of them carries the whole order's item list, and nothing
+//in the payload says which shipment an item went in. Resolving charges one at a time produces two faults:
+//one charge scopes to its items while its sibling cannot, so moving between them changes the picture count
+//for no visible reason; and the same item gets a different price depending on which charge is open, which
+//means the price was never a property of the item at all.
+//
+//So it is resolved once per order, in two passes:
+//  A. at full price - charges matching a subset exactly are settled as if no discount existed, and whatever
+//     is left over absorbs it. A gift card taken off one shipment lands here: that slice is re-priced and
+//     every other item keeps the price it really had.
+//  B. rescaled - if A cannot account for every charge, re-price every item against what was actually billed
+//     and match again. A discount spread across all the shipments lands here.
+//Whichever pass accounts for every charge wins, A first; failing that A's partial result stands; failing
+//that B's; failing that nothing is scoped. Pass B and the absorption both need the charge list to be
+//complete, so with only posted charges to go on the resolution stops at A's exact matches.
+const resolveAmazonOrder = (amz, alsoConsider) => {
+	var items = amz?.items || [];
+	if(!items.length || !(amz.orderAmount>0) || items.length>maxItemsForChargeInference)return undefined
 	var orderPrices = getAmazonItemPrices(amz,amz.orderAmount);
 	if(!utils.and(orderPrices,pr => pr>0))return undefined
-	var all = items.map((it,i) => i);
-	//the whole order billed as a single charge is the ordinary case and needs no search
-	if(Math.abs(utils.sum(orderPrices)-target)<0.005)return {items:items,prices:orderPrices,indices:all}
-	if(items.length>maxItemsForChargeInference)return undefined
 
-	var match = undefined;
-	for(var mask=1;mask<(1<<items.length);mask++){
-		var sum = 0;
-		for(var i=0;i<items.length;i++){if(mask & (1<<i))sum += orderPrices[i]}
-		if(Math.abs(sum-target)<0.005){
-			if(match!==undefined)return undefined //two subsets fit: ambiguous, so we don't know
-			match = mask;
-		}
-	}
-	if(match===undefined)return undefined
-	var indices = all.filter(i => !!(match & (1<<i)));
-	return {items:indices.map(i => items[i]),prices:indices.map(i => orderPrices[i]),indices:indices}
+	var inventory = getAmazonOrderCharges(amz,alsoConsider), charges = inventory.charges;
+	if(!charges.length || charges.length>maxChargesForOrderResolution)return undefined
+
+	var a = bestAssignment(orderPrices,charges);
+	if(!inventory.complete)return settleAmazonOrder(items,orderPrices,charges,a.assign,false)
+	if(a.count===charges.length)return settleAmazonOrder(items,orderPrices,charges,a.assign,true)
+
+	var scaled = getAmazonItemPrices(amz,utils.round2Decimals(utils.sum(charges)));
+	var b = bestAssignment(scaled,charges);
+	if(b.count===charges.length)return settleAmazonOrder(items,scaled,charges,b.assign,true)
+	if(a.count)return settleAmazonOrder(items,orderPrices,charges,a.assign,true)
+	if(b.count)return settleAmazonOrder(items,scaled,charges,b.assign,true)
+	return settleAmazonOrder(items,scaled,charges,charges.map(() => 0),true)
+}
+
+//The resolution is read on every render of the tile, the carousel and each row of the item-wise split, and
+//the subset search behind it is exponential, so it is kept until something it depends on changes. The key
+//carries every input, which means the scraper backfilling prices invalidates it on its own.
+const orderResolutions = new Map();
+const getAmazonOrderResolution = (amz, alsoConsider) => {
+	var key = [amz.orderNumber,amz.orderAmount,alsoConsider,
+		(amz.items||[]).map(it => it.itemPrice+"/"+it.postTaxPrice).join(","),
+		(amz.transactions||[]).map(t => t.amount).join(",")].join("|");
+	if(!orderResolutions.has(key))orderResolutions.set(key,resolveAmazonOrder(amz,alsoConsider));
+	return orderResolutions.get(key)
+}
+
+//Which of the order's items THIS charge paid for, as {items,prices,indices} - or undefined when we can't
+//tell. Reads the order-level resolution above and picks this transaction's charge out of it by amount;
+//charges sharing an amount would have made the assignment ambiguous and been refused there already.
+export const getAmazonChargeItems = (transaction) => {
+	var amz = getAmazonOrderData(transaction), target = Math.abs(transaction?.amount||0);
+	if(!amz || !(target>0))return undefined
+	var resolved = getAmazonOrderResolution(amz,target);
+	if(!resolved)return undefined
+	var at = resolved.charges.findIndex(c => Math.abs(c-target)<0.005);
+	var indices = at>-1?resolved.map[at]:undefined;
+	if(!indices || !indices.length)return undefined
+	return {items:indices.map(i => amz.items[i]),prices:indices.map(i => resolved.price[i]),indices:indices}
 }
 
 //True when this transaction can be split item by item: we know which items it paid for, and there is more
