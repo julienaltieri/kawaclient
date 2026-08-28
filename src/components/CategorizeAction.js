@@ -11,7 +11,6 @@ import Statistics from '../processors/Statistics';
 import React from 'react';
 
 //const checkmark = require('../assets/checkmark.svg').default;
-const getWords = (s) => s.replace(/[^a-zA-Z0-9]/g, " ").replace(/\s\s+/g, ' ').replace(/"|'/g, '').split(" ");
 
 //Post-tax price of each item of an amazon order, aligned with amz.items, spread so the set sums to `total`
 //exactly. The scraper stores nominal (pre-tax) itemPrice plus its own postTaxPrice estimate, but those are
@@ -521,10 +520,13 @@ export class TransactionView extends BaseComponent{
 			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
 				{this.renderAmazonPicture(shownItems,prices,showCarousel)}
 				<div style={{display:"flex",flexDirection:"column",flexGrow:1,minWidth:0}}>
-					{/*two lines and no more: item names vary in length, and letting one run to a third line
-					   moved the amount and the sibling charges down as the carousel was stepped through,
-					   so the tile jumped under the reader's thumb between one item and the next.*/}
-					<DS.component.Label highlight style={{textWrap:"wrap",display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden"}}>{getWords(shownItems[this.state.selectedItemImage-1]?.itemDescription||"").slice(0,5).join(" ")}</DS.component.Label>
+					{/*two lines and no more, cut mid-word with an ellipsis: item names vary in length, and
+					   letting one run to a third line moved the amount and the sibling charges down as the
+					   carousel was stepped through, so the tile jumped under the reader's thumb between one
+					   item and the next. The description used to be cut to its first five words instead,
+					   which truncated by a count that knows nothing about the width it has - it dropped
+					   words that would have fitted, and still ran to three lines when they were long.*/}
+					<DS.component.Label highlight style={{textWrap:"wrap",display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden"}}>{shownItems[this.state.selectedItemImage-1]?.itemDescription||""}</DS.component.Label>
 					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}
