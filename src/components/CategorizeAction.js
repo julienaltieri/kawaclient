@@ -270,11 +270,14 @@ export class TransactionView extends BaseComponent{
 	//with nothing added: this tile is crowded already. The only new thing is that it can be tapped to
 	//reopen the dialog on that charge, which is what makes two identical-looking charges of one order
 	//navigable at all. The current one is bold so you can see where you are.
+	//`navigation.canNavigate` lets the caller veto a row: a refund credit that has already been matched
+	//is represented by the debit it cancelled, so there is nothing to go and look at.
 	renderNeighborLine(n){
+		var nav = this.props.navigation;
 		var isCurrent = n===this.props.transaction || (!!n.transactionId && n.transactionId===this.props.transaction.transactionId);
-		var canNavigate = !isCurrent && !!this.props.onNavigateToTransaction;
+		var canNavigate = !isCurrent && !!nav?.onNavigate && (nav.canNavigate?nav.canNavigate(n):true);
 		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
-			onClick={canNavigate?((e) => {e.stopPropagation();this.props.onNavigateToTransaction(n)}):undefined}
+			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
 			style={{display:"flex", justifyContent:"space-between", marginTop:"0.2rem",
 				color: isCurrent?DS.getStyle().bodyText:"grey",
 				fontWeight: isCurrent?"bold":"normal",

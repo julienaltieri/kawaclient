@@ -187,14 +187,24 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 		if(!this.props.reconciliation || !txn?.categorized)return false
 		return txn.moneyInForStream(this.props.analysis.stream) !== 0
 	}
+	//A credit that has already been matched is represented by the debit it cancelled - the feed hides
+	//those rows for exactly that reason - so it is not somewhere to navigate to. It would also be
+	//mislabelled if opened: the strip looks for matches where the transaction is the debit, so a matched
+	//credit comes back empty and reads as "missing matching debit".
+	isMatchedCredit(txn){
+		return !!this.props.reconciliation?.matches.some(m => m.credit?.some(t => t.transactionId === txn.transactionId))
+	}
 	handleClickOnTransaction(txn){
 		//assigned either way: leaving a previous transaction's strip on the object would show it here
 		txn.reconciliation = this.takesPartInReconciliation(txn)?this.getReconciledTransactionsFromTransaction(txn):undefined
 		//quick navigation between the charges of one amazon order: close this dialog and reopen it on the
 		//sibling charge. Without it the only way to reach the other charge is to find it in the feed, and
 		//since the charges of an order look alike, knowing which one you found is the whole difficulty.
-		const navigate = (other) => Promise.resolve(Core.dismissModal()).then(() => this.handleClickOnTransaction(other))
-		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[],navigate)).then(({state,buttonIndex}) => {
+		const navigation = {
+			onNavigate: (other) => Promise.resolve(Core.dismissModal()).then(() => this.handleClickOnTransaction(other)),
+			canNavigate: (other) => !this.isMatchedCredit(other)
+		}
+		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[],navigation)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
 				let txnToUpdate = [txn]
 				let allocs = [state.allocations]

@@ -62,7 +62,7 @@ export const ModalTemplates = {
 			<TransactionsModalView controller={that.state.controller} transactions={transactions} />
 		</div>,buttonArray)(that)
 	},
-	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs,onNavigateToTransaction) => (that) => {
+	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs,navigation) => (that) => {
 		//an amazon order is always split by item, never by amount - the prices are already known.
 		//two cases keep the amount-based view: orders with no per-item prices (amazon fresh, digital),
 		//and editing a split that already exists. The second is deliberate: streamAllocation records
@@ -73,7 +73,7 @@ export const ModalTemplates = {
 		const AllocationView = splitByItem?AmazonItemAllocationView:StreamAllocationOptionView;
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs} onNavigateToTransaction={onNavigateToTransaction}/>
+			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs} navigation={navigation}/>
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
@@ -442,7 +442,7 @@ export class AmazonItemAllocationView extends BaseComponent{
 	render(){
 		return(<div>
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction} onNavigateToTransaction={this.props.onNavigateToTransaction}/>
+				<TransactionView transaction={this.props.transaction} navigation={this.props.navigation}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
@@ -550,7 +550,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 
 		return(<div>
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction} onNavigateToTransaction={this.props.onNavigateToTransaction}/>
+				<TransactionView transaction={this.props.transaction} navigation={this.props.navigation}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
