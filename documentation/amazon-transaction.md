@@ -247,6 +247,15 @@ Where it surfaces:
   of those widths went away with the row that needed them, and what replaces them comes from the
   design system rather than from numbers chosen to make one layout work.
 
+  The item name is capped at **two lines** and opens to its full height on tap. Names vary in length,
+  so letting one run to a third line moved the amount and the sibling charges as the carousel was
+  stepped through — the tile shifted under the reader's thumb between one item and the next. It is cut
+  where the line ends, with an ellipsis; an earlier version cut it to its first five words, which
+  truncates by a count that knows nothing about the width it has. The ellipsis is also the affordance:
+  it appears only when something is actually hidden. Opening animates to the name's measured height
+  rather than to a cap, because everything under it moves too and a cap the text never reaches would
+  keep pushing the amount down after the words had stopped.
+
   The item carousel shows the items *this charge* paid for when they can be determined and the whole
   order otherwise. Two independent rules govern it: the carousel appears
   only when the charge covers more than one item, and the per-item price tags appear only when the

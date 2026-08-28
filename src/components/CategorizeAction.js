@@ -228,6 +228,14 @@ export const AmazonItemImage = (props) => (
 	</div>
 )
 
+//The item name is capped at two lines and opens on tap, so its collapsed height has to be an exact
+//number rather than whatever the text happens to occupy. The app's reset sets line-height:1, which sets
+//wrapped lines solid and crops their descenders once the box is clipped, so the name declares its own
+//leading and the collapsed height is derived from it.
+const nameLineHeight = 1.25; //multiples of the font size
+const nameCollapsedLines = 2;
+const nameOpenAnimationTime = 300;
+
 //exist scene animation
 const checkmarkGrowAnimation = 500;
 const disappearAnimationTime = 300;
@@ -429,7 +437,8 @@ const StyledWord = styled.div`
 export class TransactionView extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {selectedItemImage:1}
+		this.state = {selectedItemImage:1,nameOpen:false}
+		this.nameRef = React.createRef()
 	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return getAmazonOrderData(this.props.transaction)}
@@ -438,7 +447,31 @@ export class TransactionView extends BaseComponent{
 		var offSet = (right)?1:-1;
 		var amzItemsCnt = (getAmazonChargeItems(this.props.transaction)?.items || getAmazonOrderData(this.props.transaction).items).length;
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
-		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
+		//the next item is a different name of a different length, so it starts closed rather than
+		//inheriting the height the last one was opened to
+		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet,nameOpen:false,nameHeight:undefined})
+	}
+	//Opening animates to the name's real height rather than to a cap: everything under the name moves with
+	//it, so a cap the text does not reach would keep pushing the amount down after the words had stopped.
+	//The height can only be measured with the clamp off, which is why opening takes two steps - unclamp,
+	//then animate to what the element turned out to be.
+	toggleName(){
+		if(this.state.nameOpen)return this.updateState({nameOpen:false})
+		return this.updateState({nameOpen:true,nameHeight:undefined})
+			.then(() => this.updateState({nameHeight:this.nameRef.current?.scrollHeight}))
+	}
+	//Two lines, cut where the line ends with an ellipsis to say there is more, and tapping opens it.
+	//The ellipsis is the affordance: it appears only when something is actually hidden.
+	renderItemName(text){
+		var open = this.state.nameOpen;
+		var collapsed = nameCollapsedLines*nameLineHeight*DS.fontSize.body+"rem";
+		return <div ref={this.nameRef} onClick={(e) => {e.stopPropagation();this.toggleName()}}
+			title={open?undefined:text} style={{overflow:"hidden",cursor:"pointer",
+				maxHeight:(open && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
+				transition:"max-height "+nameOpenAnimationTime/1000+"s ease"}}>
+			<DS.component.Label highlight style={{textWrap:"wrap",lineHeight:nameLineHeight,
+				...(open?{}:{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines,overflow:"hidden"})}}>{text}</DS.component.Label>
+		</div>
 	}
 	//Dates, order identity and sibling charges are all supporting text: one size, one colour.
 	secondaryTextStyle(){return {fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}
@@ -520,13 +553,13 @@ export class TransactionView extends BaseComponent{
 			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
 				{this.renderAmazonPicture(shownItems,prices,showCarousel)}
 				<div style={{display:"flex",flexDirection:"column",flexGrow:1,minWidth:0}}>
-					{/*two lines and no more, cut mid-word with an ellipsis: item names vary in length, and
-					   letting one run to a third line moved the amount and the sibling charges down as the
-					   carousel was stepped through, so the tile jumped under the reader's thumb between one
-					   item and the next. The description used to be cut to its first five words instead,
-					   which truncated by a count that knows nothing about the width it has - it dropped
-					   words that would have fitted, and still ran to three lines when they were long.*/}
-					<DS.component.Label highlight style={{textWrap:"wrap",display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden"}}>{shownItems[this.state.selectedItemImage-1]?.itemDescription||""}</DS.component.Label>
+					{/*two lines and no more until it is asked for: item names vary in length, and letting one
+					   run to a third line moved the amount and the sibling charges down as the carousel was
+					   stepped through, so the tile jumped under the reader's thumb between one item and the
+					   next. The description used to be cut to its first five words instead, which truncated
+					   by a count that knows nothing about the width it has - it dropped words that would
+					   have fitted, and still ran to three lines when they were long.*/}
+					{this.renderItemName(shownItems[this.state.selectedItemImage-1]?.itemDescription||"")}
 					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}
