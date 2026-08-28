@@ -27,6 +27,22 @@ export const getAmazonItemPrices = (amz,total) => {
 	return items.map(it => it.postTaxPrice || it.itemPrice) //partially priced order: show what the scraper had, item by item
 }
 
+//The order behind a transaction, preferring the live copy over the one frozen onto it.
+//amazonOrderDetails is persisted with the categorization and never re-attached once set
+//(getUnmatchedAmazonTransactions skips transactions that already have it), so every transaction keeps
+//the order as it looked when IT was first matched. The scraper backfills item prices afterwards, so two
+//charges of one order can disagree about whether their items have prices at all - which surfaces as one
+//charge showing a single item and its sibling showing the whole carousel with no price tags. Reading the
+//live order makes every transaction of an order render the same thing. The stored copy stays underneath
+//because it carries the match metadata (algo, matchedTxnDate, matchedTxnLast4) the order itself lacks,
+//and because an order older than the fetched window won't be in the live history at all.
+export const getAmazonOrderData = (transaction) => {
+	var stored = transaction?.amazonOrderDetails;
+	if(!stored)return stored
+	var live = Core.getAmazonOrder(stored.orderNumber);
+	return live?{...stored,...live}:stored
+}
+
 //Beyond this many items the subset search below stops being worth running - and orders that large are also
 //the least likely to have a single clean subset.
 const maxItemsForChargeInference = 14;
@@ -40,7 +56,7 @@ const maxItemsForChargeInference = 14;
 //is the answer; zero or several means we don't know, and the caller falls back to amounts. Guessing here
 //would put fictional prices next to real product pictures.
 export const getAmazonChargeItems = (transaction) => {
-	var amz = transaction?.amazonOrderDetails, items = amz?.items || [], target = Math.abs(transaction?.amount||0);
+	var amz = getAmazonOrderData(transaction), items = amz?.items || [], target = Math.abs(transaction?.amount||0);
 	if(!items.length || !(target>0) || !(amz.orderAmount>0))return undefined
 	var orderPrices = getAmazonItemPrices(amz,amz.orderAmount);
 	if(!utils.and(orderPrices,pr => pr>0))return undefined
@@ -219,7 +235,7 @@ class CategorizeActionCard extends ActionCard{
 		}).catch(e => {})
 	}
 	isAmazon(){return this.getAmazonData()}
-	getAmazonData(){return this.props.transaction.amazonOrderDetails}
+	getAmazonData(){return getAmazonOrderData(this.props.transaction)}
 	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.getDisplayDate()))}
 	getAvailableStreams(){return Core.getMasterStream().getAllTerminalStreams().filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date())).sort(utils.sorters.asc(s => s.name.charCodeAt()))}
 	getStreamString(s){return s.name+(!s.isActiveNow()?" (old)":"")}
@@ -258,11 +274,11 @@ export class TransactionView extends BaseComponent{
 		this.state = {selectedItemImage:1}
 	}
 	isAmazon(){return this.getAmazonData()}
-	getAmazonData(){return this.props.transaction.amazonOrderDetails}
+	getAmazonData(){return getAmazonOrderData(this.props.transaction)}
 	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.getDisplayDate()))}
 	handleAmzItemArrowClicked(e,right){
 		var offSet = (right)?1:-1;
-		var amzItemsCnt = (getAmazonChargeItems(this.props.transaction)?.items || this.props.transaction.amazonOrderDetails.items).length;
+		var amzItemsCnt = (getAmazonChargeItems(this.props.transaction)?.items || getAmazonOrderData(this.props.transaction).items).length;
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
 		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
 	}
@@ -327,7 +343,7 @@ export class TransactionView extends BaseComponent{
 				):""}
 				<TxInfoContainer>{/*regular transaction*/}
 					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
+						<div style={{marginTop:"0.2rem"}}>#{amz.orderNumber}</div></div>):""}
 
 					<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
 						this.isAmazon()?getAmazonDescription(shownItems[this.state.selectedItemImage-1]?.itemDescription||""):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>

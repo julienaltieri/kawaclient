@@ -460,6 +460,8 @@ class Core{
 
 
 	//amazon transactions matching
+	//The order as last scraped, which is not necessarily the copy frozen onto any given transaction.
+	getAmazonOrder(orderNumber){return (this.globalState.amzOrderHistory||[]).filter(o => o.orderNumber==orderNumber)[0]}
 	getTransactionsForOrderNumber(orderNumber){
 		var txns = this.globalState.queriedTransactions.transactions.filter(t => !!t.amazonOrderDetails).sort(utils.sorters.desc(t => t.date))
 		return txns.filter(t => t.amazonOrderDetails.orderNumber==orderNumber)

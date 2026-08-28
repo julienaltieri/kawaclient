@@ -5,7 +5,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView, AmazonItemImage, getAmazonChargeItems, canSplitAmazonByItem} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData} from './components/CategorizeAction'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
@@ -354,7 +354,7 @@ const MainContent = styled.div`
 export class AmazonItemAllocationView extends BaseComponent{
 	constructor(props){
 		super(props)
-		var amz = props.transaction.amazonOrderDetails;
+		var amz = getAmazonOrderData(props.transaction);
 		//only the items THIS charge paid for. An order billed as several charges carries the whole order's
 		//item list on each of them, so asking the user to place every item while splitting one charge asks
 		//about things this transaction never paid for - and prices them wrongly on top.

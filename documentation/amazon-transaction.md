@@ -134,6 +134,16 @@ Amazon bills per shipment, so one order can arrive as several charges — while 
 carries the whole order's item list. "The order's items" and "the items on this transaction" are not
 the same set, and nothing in the payload says which shipment an item went in.
 
+The order it reasons over is the **live** one from `globalState.amzOrderHistory`, not the copy on the
+transaction. `amazonOrderDetails` is persisted with the categorization and never re-attached once set
+(`getUnmatchedAmazonTransactions` skips transactions that already have it), so each transaction keeps
+the order as it looked when *that* transaction was first matched — and the scraper backfills item
+prices afterwards. Two charges of one order could therefore disagree about whether their own items
+have prices, showing one charge as a single item and its sibling as the whole carousel with no price
+tags. `getAmazonOrderData` layers the live order over the stored copy, which still supplies the match
+metadata (`algo`, `matchedTxnDate`, `matchedTxnLast4`) the order itself does not carry, and remains
+the only source for an order older than the fetched window.
+
 `getAmazonChargeItems` infers it: spread the order total across the items, then look for the subset
 that sums to this charge. **Exactly one subset fitting is the answer; zero or several means we do not
 know**, and the caller falls back to the amount-based split. Ambiguity has to decline rather than

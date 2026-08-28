@@ -19,7 +19,7 @@
 import Core from '../core'
 import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
-import { getAmazonChargeItems, canSplitAmazonByItem } from '../components/CategorizeAction'
+import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -1480,6 +1480,44 @@ function testAC4_unpricedOrder() {
 	})
 }
 
+/**
+ * Test AC-5 - A stale order snapshot on a transaction is resolved from the live history
+ *
+ * `amazonOrderDetails` is persisted with the categorization and never re-attached once set, so each
+ * transaction of an order keeps the order as it looked when THAT transaction was first matched. The
+ * scraper backfills item prices later, so two charges of one order can disagree about whether their
+ * items have prices at all - which showed up as one charge displaying a single item and its sibling
+ * displaying the whole carousel with no price tags.
+ *
+ * Reading the live order fixes it, while the stored copy still supplies the match metadata the order
+ * itself does not carry.
+ */
+function testAC5_staleOrderSnapshotResolvedFromLiveHistory() {
+	runTest('Test AC-5 - Stale order snapshot on a transaction is resolved from the live order', assert => {
+		// what the credit carries: matched before the scraper had item prices
+		const stale = {
+			orderNumber: 'order-charge-inference', orderAmount: 16.12, algo: 'transactionLevelMatch',
+			items: [{ itemDescription: 'Amazon Basics Epsom Salt' }, { itemDescription: 'Other thing' }]
+		}
+		const credit = makeMockChargeTransaction(12.06, '2026-08-16', stale)
+
+		withStub(Core, 'getAmazonOrder', () => undefined, () => {
+			assert(getAmazonChargeItems(credit) === undefined,
+				'with only the stale copy, the items have no prices and nothing can be inferred')
+		})
+
+		withStub(Core, 'getAmazonOrder', () => makeMockAmazonOrder(), () => {
+			const resolved = getAmazonOrderData(credit)
+			assert(resolved?.items[0]?.itemPrice === 4.06, `the live order's priced items win (got: ${resolved?.items[0]?.itemPrice})`, resolved)
+			assert(resolved?.algo === 'transactionLevelMatch', 'the stored copy still supplies the match metadata', resolved)
+
+			const charge = getAmazonChargeItems(credit)
+			assert(charge?.items.length === 1, `the single item is inferred again (got: ${charge?.items.length})`, charge)
+			assert(charge?.items[0]?.itemDescription === 'Other thing', `and it is the right one (got: "${charge?.items[0]?.itemDescription}")`, charge)
+		})
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -1533,6 +1571,7 @@ export function runTransactionMatchingTests() {
 	testAC2_oneChargeOfSeveral()
 	testAC3_ambiguousSubsetDeclines()
 	testAC4_unpricedOrder()
+	testAC5_staleOrderSnapshotResolvedFromLiveHistory()
 	console.groupEnd()
 
 	console.groupEnd()
