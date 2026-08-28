@@ -347,11 +347,45 @@ class CategorizeActionCard extends ActionCard{
 		})
 	}
 	resetAnimationState(){return this.updateState({animationIconVisible:false,visible:true,isSaving:false,moveOutOfTheWay:this.props.startsOutOfTheWay,useSkipIcon:false})}
-	onSplitClicked(){
-		Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Split",undefined,undefined,this.props.transaction,this.state.recStreams)).then(({state,buttonIndex}) => {
-			if(buttonIndex==1){
-				this.props.parentAction.onActionConcluded(this.props.parentAction,[this.props.transaction],state.allocations)
-			}
+	//In the queue you are categorizing one transaction at a time, so the order's other charges are shown
+	//but inert: jumping to a sibling mid-categorization is what creates the awkward states - one charge
+	//split and the other not, one categorized while its sibling is still in the queue. The exception is a
+	//sibling that has ALREADY been categorized: there is nothing in progress to disturb, so it opens. Once
+	//you are inside a dialog the restriction lifts, because by then you are looking at one charge rather
+	//than working through a queue.
+	getNavigation(insideDialog){
+		return {
+			canNavigate: (other) => insideDialog || !!other.categorized,
+			onNavigate: (other) => Promise.resolve(Core.dismissModal()).then(() => this.openCharge(other))
+		}
+	}
+	//Where tapping a sibling lands follows the target, not where you came from: an already categorized
+	//charge opens its own dialog, an uncategorized one opens the split view. That is what lets you go back
+	//and forth between the two.
+	openCharge(transaction){
+		return transaction.categorized?this.onEditClicked(transaction):this.onSplitClicked(transaction)
+	}
+	//The refund strip is a statement about one zero-sum stream's analysis, and the queue has no stream in
+	//view, so there is none to show here. Clearing it is what stops a strip left on the transaction by a
+	//previous visit to the analysis view from turning up in the queue's dialog.
+	openDialog(title,transaction,streamRecs){
+		transaction.reconciliation = undefined;
+		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions(title,undefined,undefined,transaction,streamRecs,this.getNavigation(true)))
+	}
+	onEditClicked(transaction){
+		return this.openDialog("Edit",transaction,[]).then(({state,buttonIndex}) => {
+			if(buttonIndex==1)this.props.appContext.onCategorizationUpdate([transaction],[state.allocations])
+		}).catch(e => {})
+	}
+	//The dialog can be navigated onto another charge of the same order, so what gets written has to be the
+	//transaction it ended up on rather than the one this card was built for. Only a split of THIS card's
+	//transaction concludes the card's action; a sibling is saved on its own and the card stays where it is.
+	onSplitClicked(transaction){
+		var target = transaction || this.props.transaction;
+		return this.openDialog("Split",target,this.state.recStreams).then(({state,buttonIndex}) => {
+			if(buttonIndex!=1)return
+			if(target===this.props.transaction)this.props.parentAction.onActionConcluded(this.props.parentAction,[target],state.allocations)
+			else this.props.appContext.onCategorizationUpdate([target],[state.allocations])
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
 	showMoreStreamContextualMenu(event){
@@ -370,7 +404,7 @@ class CategorizeActionCard extends ActionCard{
 			<AnimationSymbolContainer style={{opacity:this.state.animationIconVisible?1:0,transform:"scale("+(this.state.animationIconVisible?1:0.5)+")"}}>
 				<AnimationSymbol>{this.state.useSkipIcon?<Chevron/>:<Check/>}</AnimationSymbol>
 			</AnimationSymbolContainer>
-			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction}/>
+			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction} navigation={this.getNavigation(false)}/>
 
 			{/*stream suggestions*/}
 			{this.state.fetching?<div></div>:
@@ -407,82 +441,115 @@ export class TransactionView extends BaseComponent{
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
 		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
 	}
-	//One of the order's other bank transactions. Same content as it has always shown - date and amount -
-	//with nothing added: this tile is crowded already. The only new thing is that it can be tapped to
-	//reopen the dialog on that charge, which is what makes two identical-looking charges of one order
-	//navigable at all. The current one is bold so you can see where you are.
-	//`navigation.canNavigate` lets the caller veto a row: a refund credit that has already been matched
-	//is represented by the debit it cancelled, so there is nothing to go and look at.
-	renderNeighborLine(n){
-		var nav = this.props.navigation;
-		var isCurrent = n===this.props.transaction || (!!n.transactionId && n.transactionId===this.props.transaction.transactionId);
-		var canNavigate = !isCurrent && !!nav?.onNavigate && (nav.canNavigate?nav.canNavigate(n):true);
-		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
-			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
-			style={{display:"flex", justifyContent:"space-between", marginTop:"0.2rem",
-				color: isCurrent?DS.getStyle().bodyText:"grey",
-				fontWeight: isCurrent?"bold":"normal",
-				cursor: canNavigate?"pointer":"default",
-				textDecoration: canNavigate?"underline dotted":"none"}}>
-			<span>{utils.formatDateShort(n.date)}</span>
-			<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
+	//Dates, order identity and sibling charges are all supporting text: one size, one colour.
+	secondaryTextStyle(){return {fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}
+	//True when a row of the order's transactions is the one being shown.
+	isCurrentTransaction(n){
+		return n===this.props.transaction || (!!n.transactionId && n.transactionId===this.props.transaction.transactionId)
+	}
+	//One line naming the order, kept to a single row because it is the only thing on the tile that is about
+	//the whole order rather than this one charge. The order number is shortened to its last group - the
+	//leading digits repeat across every order on an account and carry nothing - with the whole of it on the
+	//title attribute for when it has to be looked up somewhere else.
+	renderAmazonIdentity(amz){
+		var ordered = amz.date?new Date(amz.date):undefined;
+		return <div key="identity" title={"Amazon order #"+amz.orderNumber} style={{...this.secondaryTextStyle(),
+				whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+			{(amz.accountName?amz.accountName+"'s ":"")+"Amazon order #"+(amz.orderNumber+"").split("-").pop()
+				+(ordered?" from "+utils.formatDateShort(ordered):"")}
 		</div>
 	}
-	render(){
+	//Another charge of the same order: "and $12.06 on 7/23/26", sitting under this charge's own amount and
+	//aligned with it so the two read as one column of money. Tappable is signalled by bolding the amount and
+	//nothing else, and the cue comes off the same flag as the handler - a row can never look openable while
+	//being inert. `navigation` is what decides: in the queue only an already categorized charge opens,
+	//inside a dialog any of them does, and a caller can veto individual rows on top of that.
+	renderSiblingLine(n){
+		var nav = this.props.navigation;
+		var canNavigate = !!nav?.onNavigate && (nav.canNavigate?nav.canNavigate(n):true);
+		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
+			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
+			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",cursor:canNavigate?"pointer":"default"}}>
+			and <span style={{fontWeight:canNavigate?"bold":"normal"}}>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span> on {utils.formatDateShort(n.getDisplayDate())}
+		</div>
+	}
+	//The product picture, with the carousel under it when this charge covers more than one item.
+	//Two rules, kept independent of each other on purpose:
+	//  the carousel appears only when this charge covers more than one item;
+	//  the per-item price tags appear only when the carousel does.
+	//A charge covering one item has that item's price on display already - it is the transaction amount
+	//beside the picture - so a tag would only repeat it. Tying the tag to the carousel rather than to
+	//whether a price happens to be known is what stops the two from drifting apart.
+	renderAmazonPicture(shownItems,prices,showCarousel){
+		return <div style={{marginRight:DS.spacing.xs+"rem",flexShrink:0}}>
+			<div style={{position:"relative",display:"flex",width:DS.spacing.xl+"rem",overflow:"hidden",borderRadius:DS.borderRadiusSmall}}>
+				{shownItems.map((it,i) =>
+					<AmazonItemImage key={i} item={it} price={showCarousel?prices[i]:undefined} size={DS.spacing.xl} style={{
+						marginLeft:(i==0?-(this.state.selectedItemImage-1)*DS.spacing.xl+"rem":0),
+						transition:"margin-left 0.5s ease"}}/>
+				)}
+			</div>
+			{showCarousel?(<div style={{display:"flex",justifyContent:"space-evenly",alignItems:"center",marginTop:DS.spacing.xxs+"rem"}}>
+				<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect:"none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
+				<span style={{...this.secondaryTextStyle()}}>{this.state.selectedItemImage}/{shownItems.length}</span>
+				<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect:"none",color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
+			</div>):""}
+		</div>
+	}
+	//An amazon charge reads as a column: the order named once across the top, then the picture beside
+	//everything that belongs to this particular charge - its item, its date, its amount, and the order's
+	//other charges. Laying it out this way is what gave the description and the amount room on a phone;
+	//the fixed 5rem info column and the 8rem name clamp that used to hold the row together are what made
+	//it cramped, and neither is needed once the tile is a column.
+	renderAmazonTile(){
 		var amz = this.getAmazonData();
 		//the items this charge actually paid for when we can tell them apart; otherwise the whole order
-		var charge = this.isAmazon()?getAmazonChargeItems(this.props.transaction):undefined;
+		var charge = getAmazonChargeItems(this.props.transaction);
 		var shownItems = charge?charge.items:(amz?.items||[]);
-		var itemPostTaxPrices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
-		//Two rules, kept independent of each other on purpose:
-		//  the carousel appears only when this charge covers more than one item;
-		//  the per-item price tags appear only when the carousel does.
-		//A charge covering one item has that item's price on display already - it is the transaction
-		//amount beside the picture - so a tag would only repeat it. Tying the tag to the carousel rather
-		//than to whether a price happens to be known is what stops the two from drifting apart.
-		var showCarousel = this.isAmazon() && shownItems.length>1;
-		var amznghbrs = this.getAmazonNeighbors();
-		//always the transaction being shown, never the order's net. Summing the order's transactions
-		//was defensible while they were all charges, but a refund carries the same orderNumber, so the
-		//sum silently became "what the order cost after returns" - a number that matches neither the
-		//allocations below it nor any real transaction. The per-transaction breakdown gives the context.
-		var totalAmount = this.props.transaction.amount;
-		const getAmazonDescription = (description) => getWords(description).slice(0,5).join(" ");
-		return(<div>
-			<DS.component.ContentTile  style={{opacity:this.props.animationIconVisible?0:1, textAlign: "center", flexDirection: "row", margin:0, boxShadow: "0px 6px 10px #00000023", boxSizing: "border-box",
-		padding:"1.5rem", transition: "opacity "+disappearAnimationTime/1000+"s ease", alignItems: "center" }}>
-				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
-					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
-						{shownItems.map((it,i) => 
-							<AmazonItemImage key={i} item={it} price={showCarousel?itemPostTaxPrices[i]:undefined} size={6} style={{
-								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
-								transition:"margin-left 0.5s ease"}}/>
-						)}
-					</div>
-					{showCarousel?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
-						<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
-						<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{shownItems.length}</span>
-						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
-					</div>):""}
-					</div>
-				):""}
-				<TxInfoContainer>{/*regular transaction*/}
-					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-						<div style={{marginTop:"0.2rem"}}>#{amz.orderNumber}</div></div>):""}
-
-					<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
-						this.isAmazon()?getAmazonDescription(shownItems[this.state.selectedItemImage-1]?.itemDescription||""):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
-					{amz?<div>
-						<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
-						<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
-						:<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
-					}
-				</TxInfoContainer>
-				<Spacer/>
-				<div>
-					<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
-					{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => this.renderNeighborLine(n))}</div>:""}
+		var prices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
+		var showCarousel = shownItems.length>1;
+		var siblings = (this.getAmazonNeighbors()||[]).filter(n => !this.isCurrentTransaction(n));
+		//always the transaction being shown, never the order's net. Summing the order's transactions was
+		//defensible while they were all charges, but a refund carries the same orderNumber, so the sum
+		//silently became "what the order cost after returns" - a number matching neither the allocations
+		//below it nor any real transaction. The sibling lines give the context instead.
+		var amount = this.props.transaction.amount;
+		return(<React.Fragment>
+			{this.renderAmazonIdentity(amz)}
+			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
+				{this.renderAmazonPicture(shownItems,prices,showCarousel)}
+				<div style={{display:"flex",flexDirection:"column",flexGrow:1,minWidth:0}}>
+					<DS.component.Label highlight style={{textWrap:"wrap"}}>{getWords(shownItems[this.state.selectedItemImage-1]?.itemDescription||"").slice(0,5).join(" ")}</DS.component.Label>
+					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
+					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
+					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}
 				</div>
+			</div>
+		</React.Fragment>)
+	}
+	//Everything that is not an amazon order: a description, a date and an amount, in the row they have
+	//always been in.
+	renderRegularTile(){
+		var txn = this.props.transaction;
+		return(<React.Fragment>
+			<TxInfoContainer>
+				<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
+					txn.description.indexOf("Amazon")>-1 && txn.amount>0?"Amazon Refund":txn.description}</DS.component.Label>
+				<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(txn.getDisplayDate())}</div>
+			</TxInfoContainer>
+			<Spacer/>
+			<AmountDiv positive={txn.amount>0}>{utils.formatCurrencyAmount(txn.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
+		</React.Fragment>)
+	}
+	render(){
+		return(<div>
+			<DS.component.ContentTile style={{opacity:this.props.animationIconVisible?0:1, margin:0, boxSizing:"border-box",
+					boxShadow:"0px 6px 10px #00000023", padding:DS.spacing.s+"rem",
+					transition:"opacity "+disappearAnimationTime/1000+"s ease",
+					...(this.isAmazon()
+						?{flexDirection:"column",alignItems:"stretch",textAlign:"left",gap:DS.spacing.xs+"rem"}
+						:{flexDirection:"row",alignItems:"center",textAlign:"center"})}}>
+				{this.isAmazon()?this.renderAmazonTile():this.renderRegularTile()}
 			</DS.component.ContentTile>
 			{this.props.transaction.reconciliation?<div>{this.renderReconciliation()}</div>:""}
 		</div>
