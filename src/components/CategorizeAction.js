@@ -448,21 +448,23 @@ export class TransactionView extends BaseComponent{
 		return n===this.props.transaction || (!!n.transactionId && n.transactionId===this.props.transaction.transactionId)
 	}
 	//One line naming the order, kept to a single row because it is the only thing on the tile that is about
-	//the whole order rather than this one charge. The order number is shortened to its last group - the
-	//leading digits repeat across every order on an account and carry nothing - with the whole of it on the
-	//title attribute for when it has to be looked up somewhere else.
+	//the whole order rather than this one charge. It has to earn that row against a phone's width, so both
+	//halves are cut to what actually distinguishes one order from another: the last three digits of the
+	//order number - enough to tell two orders apart, and the leading digits repeat across an account
+	//anyway - and a month and day without the year. The whole order number stays on the title attribute for
+	//when it has to be looked up somewhere else.
 	renderAmazonIdentity(amz){
 		var ordered = amz.date?new Date(amz.date):undefined;
 		return <div key="identity" title={"Amazon order #"+amz.orderNumber} style={{...this.secondaryTextStyle(),
 				whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-			{(amz.accountName?amz.accountName+"'s ":"")+"Amazon order #"+(amz.orderNumber+"").split("-").pop()
-				+(ordered?" from "+utils.formatDateShort(ordered):"")}
+			{(amz.accountName?amz.accountName+"'s ":"")+"Amazon order #"+(amz.orderNumber+"").slice(-3)
+				+(ordered?" from "+utils.formatDateMonthDay(ordered):"")}
 		</div>
 	}
 	//Another charge of the same order: "and $12.06 on 7/23/26", sitting under this charge's own amount and
-	//aligned with it so the two read as one column of money. Tappable is signalled by bolding the amount and
-	//nothing else, and the cue comes off the same flag as the handler - a row can never look openable while
-	//being inert. `navigation` is what decides: in the queue only an already categorized charge opens,
+	//aligned with it so the two read as one column of money. Tappable is signalled by underlining the amount
+	//and nothing else, and the cue comes off the same flag as the handler - a row can never look openable
+	//while being inert. `navigation` is what decides: in the queue only an already categorized charge opens,
 	//inside a dialog any of them does, and a caller can veto individual rows on top of that.
 	renderSiblingLine(n){
 		var nav = this.props.navigation;
@@ -470,7 +472,7 @@ export class TransactionView extends BaseComponent{
 		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
 			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
 			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",cursor:canNavigate?"pointer":"default"}}>
-			and <span style={{fontWeight:canNavigate?"bold":"normal"}}>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span> on {utils.formatDateShort(n.getDisplayDate())}
+			and <span style={{textDecoration:canNavigate?"underline":"none"}}>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span> on {utils.formatDateShort(n.getDisplayDate())}
 		</div>
 	}
 	//The product picture, with the carousel under it when this charge covers more than one item.
@@ -519,7 +521,10 @@ export class TransactionView extends BaseComponent{
 			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
 				{this.renderAmazonPicture(shownItems,prices,showCarousel)}
 				<div style={{display:"flex",flexDirection:"column",flexGrow:1,minWidth:0}}>
-					<DS.component.Label highlight style={{textWrap:"wrap"}}>{getWords(shownItems[this.state.selectedItemImage-1]?.itemDescription||"").slice(0,5).join(" ")}</DS.component.Label>
+					{/*two lines and no more: item names vary in length, and letting one run to a third line
+					   moved the amount and the sibling charges down as the carousel was stepped through,
+					   so the tile jumped under the reader's thumb between one item and the next.*/}
+					<DS.component.Label highlight style={{textWrap:"wrap",display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden"}}>{getWords(shownItems[this.state.selectedItemImage-1]?.itemDescription||"").slice(0,5).join(" ")}</DS.component.Label>
 					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}

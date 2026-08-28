@@ -115,16 +115,18 @@ An order billed as several charges produces several bank transactions that are *
 same order number, same picture, same item list. Deciding how to categorise one of them means knowing
 which one it is.
 
-The tile names the order once across the top and then describes **one charge**: its item, its date,
+The tile names the order once across the top — `Fanny's Amazon order #818 from Aug 24`, both halves
+cut to what distinguishes one order from another, with the full order number on the `title` — and
+then describes **one charge**: its item, its date,
 its amount, and beneath that the order's other bank transactions as `and $12.06 on 7/23/26`. Those
 sibling lines are the navigation: tapping one closes the dialog and reopens it on that charge.
 Nothing else was added — the tile is crowded already, and navigation turned out to be the whole of
 what was needed.
 
-**Tappable is signalled by bolding the amount and nothing else**, and the cue is derived from the same
-flag as the click handler, so a row cannot look openable while being inert. An earlier version put a
-dotted underline on the row's base style, which meant every sibling wore the cue whether or not it
-could be opened.
+**Tappable is signalled by underlining the amount and nothing else**, and the cue is derived from the
+same flag as the click handler, so a row cannot look openable while being inert. An earlier version
+put a dotted underline on the row's base style, which meant every sibling wore the cue whether or not
+it could be opened — the fix was to move the cue onto the amount, not to abandon the underline.
 
 Where tapping is allowed depends on where you are:
 

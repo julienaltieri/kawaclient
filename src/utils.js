@@ -220,6 +220,9 @@ exports.pivot = (columns, data, belongingTest) => {
 
 exports.combine = function(a, min) {var fn = function(n, src, got, all) {if (n == 0) {if (got.length > 0) {all[all.length] = got};return};for (var j = 0; j < src.length; j++) {fn(n - 1, src.slice(j + 1), got.concat([src[j]]), all)};return};var all = [];for (var i = min; i < a.length; i++) {fn(i, a, [], all)};all.push(a);return all}
 exports.formatDateShort = (d) => (d.getMonth()+1)+"/"+d.getDate()+"/"+(d.getFullYear()-2000)
+//"Jul 7", for supporting lines where the year is either obvious from the transaction beside it or not
+//worth the width it costs.
+exports.formatDateMonthDay = (d) => d.toLocaleDateString('en-US',{month:'short',day:'numeric'})
 
 //returns the insert index of value in array.map(accessor)
 exports.searchInsertAsc = function(array, value, accessor = a => a) {
