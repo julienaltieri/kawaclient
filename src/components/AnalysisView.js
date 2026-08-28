@@ -180,7 +180,11 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 	}
 	handleClickOnTransaction(txn){
 		txn.reconciliation = this.getReconciledTransactionsFromTransaction(txn)
-		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
+		//quick navigation between the charges of one amazon order: close this dialog and reopen it on the
+		//sibling charge. Without it the only way to reach the other charge is to find it in the feed, and
+		//since the charges of an order look alike, knowing which one you found is the whole difficulty.
+		const navigate = (other) => Promise.resolve(Core.dismissModal()).then(() => this.handleClickOnTransaction(other))
+		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[],navigate)).then(({state,buttonIndex}) => {
 			if(buttonIndex==1){
 				let txnToUpdate = [txn]
 				let allocs = [state.allocations]

@@ -17,7 +17,9 @@
  */
 
 import Core from '../core'
+import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
+import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderLines } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -1386,6 +1388,132 @@ function testZS16_amazonFullRefundMovesRatherThanSplits() {
 }
 
 // ---------------------------------------------------------------------------
+// Amazon charge inference
+//
+// An order billed as several charges carries the whole order's item list on every one of them.
+// These cover working out which items a given charge actually paid for, and how the order's
+// payment history is presented so two charges of one order can be told apart.
+// ---------------------------------------------------------------------------
+
+// The real order #112-7078452-6127462 shape: $16.12 of items billed as $4.06 + $12.06
+function makeMockAmazonOrder(extra = {}) {
+	return {
+		orderNumber: 'order-charge-inference',
+		orderAmount: 16.12,
+		items: [
+			{ itemPrice: 4.06, itemDescription: 'Amazon Basics Epsom Salt', image: '' },
+			{ itemPrice: 12.06, itemDescription: 'Other thing', image: '' }
+		],
+		...extra
+	}
+}
+
+function makeMockChargeTransaction(amount, dateString, order) {
+	return { amount, date: new Date(dateString), transactionId: dateString + amount, amazonOrderDetails: order }
+}
+
+/**
+ * Test AC-1 - A whole order billed as one charge still covers every item
+ *
+ * The ordinary case, and the one that must not regress: charge amount equals the order total, so
+ * every item belongs to it and the item-wise split is offered exactly as before.
+ */
+function testAC1_wholeOrderOnOneCharge() {
+	runTest('Test AC-1 - Whole order on one charge covers every item', assert => {
+		const txn = makeMockChargeTransaction(-16.12, '2026-07-23', makeMockAmazonOrder())
+		const charge = getAmazonChargeItems(txn)
+
+		assert(!!charge, 'a subset is found', charge)
+		assert(charge?.items.length === 2, `both items belong to it (got: ${charge?.items.length})`, charge)
+		assert(Math.abs(utils.sum(charge?.prices || []) - 16.12) < 0.005, 'the prices sum to the charge', charge)
+		assert(canSplitAmazonByItem(txn) === true, 'the item-wise split is offered')
+	})
+}
+
+/**
+ * Test AC-2 - One charge of several covers only its own items
+ *
+ * The bug this was written for: the $12.06 charge used to open a split dialog listing BOTH items,
+ * re-priced onto $12.06 - roughly $3.05 and $9.01, neither of which is a real price, and one of
+ * which was billed on the other charge entirely.
+ */
+function testAC2_oneChargeOfSeveral() {
+	runTest('Test AC-2 - One charge of several covers only the items it paid for', assert => {
+		const txn = makeMockChargeTransaction(-12.06, '2026-07-23', makeMockAmazonOrder())
+		const charge = getAmazonChargeItems(txn)
+
+		assert(charge?.items.length === 1, `1 item on this charge (got: ${charge?.items.length})`, charge)
+		assert(charge?.items[0]?.itemDescription === 'Other thing', `the right item (got: "${charge?.items[0]?.itemDescription}")`, charge)
+		assert(Math.abs((charge?.prices[0] ?? NaN) - 12.06) < 0.005, `priced at the charge, not a re-spread fiction (got: ${charge?.prices[0]})`, charge)
+		assert(canSplitAmazonByItem(txn) === false, 'no item-wise split for a single-item charge - there is nothing to divide')
+	})
+}
+
+/**
+ * Test AC-3 - Two subsets that both fit means we do not know
+ *
+ * Two $5 items and a $5 charge: either could be the one. Inference must decline rather than pick,
+ * because the consequence of picking is a real product picture with someone else's price on it.
+ */
+function testAC3_ambiguousSubsetDeclines() {
+	runTest('Test AC-3 - Ambiguous item subset declines rather than guessing', assert => {
+		const order = { orderNumber: 'order-ac3', orderAmount: 20.00, items: [
+			{ itemPrice: 5, itemDescription: 'A' }, { itemPrice: 5, itemDescription: 'B' }, { itemPrice: 10, itemDescription: 'C' }] }
+		const txn = makeMockChargeTransaction(-5.00, '2026-07-23', order)
+
+		assert(getAmazonChargeItems(txn) === undefined, 'two subsets fit, so no answer is given')
+		assert(canSplitAmazonByItem(txn) === false, 'falls back to the amount-based split')
+	})
+}
+
+/**
+ * Test AC-4 - An order with no item prices supports no inference
+ *
+ * Amazon Fresh and digital orders never get per-item prices, and they keep the amount-based split.
+ */
+function testAC4_unpricedOrder() {
+	runTest('Test AC-4 - Unpriced order supports no inference', assert => {
+		const order = { orderNumber: 'order-ac4', orderAmount: 20.00, items: [{ itemDescription: 'A' }, { itemDescription: 'B' }] }
+		const txn = makeMockChargeTransaction(-20.00, '2026-07-23', order)
+		assert(getAmazonChargeItems(txn) === undefined, 'no prices, no subset')
+		assert(canSplitAmazonByItem(txn) === false, 'falls back to the amount-based split')
+	})
+}
+
+/**
+ * Test AC-5 - The order's payment lines: posted charges are navigable, announced ones are not
+ *
+ * The line list is the union of the bank transactions matched to the order and the entries on
+ * Amazon's payments page. An entry Amazon has announced but the bank hasn't posted has no
+ * transaction behind it, so there is nothing to open and the UI must not offer to.
+ */
+function testAC5_orderPaymentLines() {
+	runTest('Test AC-5 - Order payment lines mark the unposted charge as having nothing to open', assert => {
+		const order = makeMockAmazonOrder({ transactions: [
+			{ amount: 4.06, date: 'July 14, 2026', last4: '9869' },
+			{ amount: 12.06, date: 'July 23, 2026', last4: '9869' },
+			{ amount: 20.00, date: 'August 20, 2026', last4: '9869' }   // announced, not on the bank yet
+		]})
+		const first  = makeMockChargeTransaction(-4.06, '2026-07-14', { ...order, matchedTxnDate: 'July 14, 2026' })
+		const second = makeMockChargeTransaction(-12.06, '2026-07-23', { ...order, matchedTxnDate: 'July 23, 2026' })
+
+		withStub(Core, 'getTransactionsForOrderNumber', () => [first, second], () => {
+			const lines = getAmazonOrderLines(second)
+
+			assert(lines.length === 3, `3 lines - two posted, one announced (got: ${lines.length})`, lines)
+			const pending = lines.filter(l => l.pending)
+			assert(pending.length === 1, `exactly one pending line (got: ${pending.length})`, lines)
+			assert(pending[0]?.transaction === undefined, 'the pending line has no transaction to navigate to', pending[0])
+			assert(Math.abs((pending[0]?.amount ?? NaN) + 20.00) < 0.005,
+				`the pending amount reads as a bank amount, i.e. negated (got: ${pending[0]?.amount})`, pending[0])
+			assert(lines.filter(l => l.transaction === second).length === 1, 'the charge being viewed is one of the lines', lines)
+			assert(lines[0].date <= lines[1].date, 'lines are oldest first', lines)
+			assert(lines.every(l => l.last4 === '9869'), 'each line carries the card it was billed to', lines)
+		})
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
 export function runTransactionMatchingTests() {
@@ -1431,6 +1559,14 @@ export function runTransactionMatchingTests() {
 	testZS21_smallestSufficientShareFundsTheRefund()
 	testZS22_refundConsumingAWholeShare()
 	testZS24_genericFullRefundOfSplitCharge()
+	console.groupEnd()
+
+	console.group('Amazon Charge Inference')
+	testAC1_wholeOrderOnOneCharge()
+	testAC2_oneChargeOfSeveral()
+	testAC3_ambiguousSubsetDeclines()
+	testAC4_unpricedOrder()
+	testAC5_orderPaymentLines()
 	console.groupEnd()
 
 	console.groupEnd()

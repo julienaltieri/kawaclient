@@ -109,7 +109,48 @@ or splitting the original charge to fund a refund that has nothing to cancel it 
 system and is owned by [`zero-sum-streams.md`](zero-sum-streams.md). Non-Amazon refunds are
 reconciled there too, by a separate rail that deliberately never touches Amazon transactions.
 
-### 6. Item-level prices in the UI
+### 6. Which charge am I looking at
+
+An order billed as several charges produces several bank transactions that are *identical* on screen:
+same order number, same picture, same item list. Deciding how to categorise one of them means knowing
+which one it is, and until recently nothing on the tile said.
+
+`getAmazonOrderLines` ([`CategorizeAction.js`](../src/components/CategorizeAction.js)) builds the
+order's payment history as the union of two things: the bank transactions matched to the order, and
+the entries on Amazon's payments page. An entry with no bank transaction behind it is a charge Amazon
+has announced but the bank has not posted — it renders dimmed and italic and **cannot be tapped**,
+because there is nothing to open. Every other line can be, which closes the dialog and reopens it on
+that charge. That navigation is the only practical way to move between the charges of one order:
+finding the sibling in the transaction feed runs straight back into the problem of telling them
+apart.
+
+The tile also carries a `Charge 2 of 3` label and, per line, the card it was billed to
+(`matchedTxnLast4`), which is what separates a card charge from the gift-card portion of the same
+order.
+
+Sign note: `order.transactions[]` amounts are positive for a charge, so they are negated when
+rendered as lines, to read the way bank amounts do.
+
+### 7. Which items did *this* charge pay for
+
+Amazon bills per shipment, so one order can arrive as several charges — while every one of them
+carries the whole order's item list. "The order's items" and "the items on this transaction" are not
+the same set, and nothing in the payload says which shipment an item went in.
+
+`getAmazonChargeItems` infers it: spread the order total across the items, then look for the subset
+that sums to this charge. **Exactly one subset fitting is the answer; zero or several means we do not
+know**, and the caller falls back to the amount-based split. Ambiguity has to decline rather than
+pick, because the consequence of picking is a real product picture with someone else's price under
+it.
+
+This is what `canSplitAmazonByItem` now rests on. It used to compare the item prices against the
+transaction amount — but those prices come from `allocateProportionally(prices, transactionAmount)`,
+which sums to that amount *by construction*, so the check was a tautology that could never fail. The
+result was that splitting one charge of a two-charge order listed both items at prices that were
+fiction: on order #112-7078452-6127462, the $12.06 charge offered its two items at roughly $3.05 and
+$9.01, when in fact it paid for exactly one of them, in full.
+
+### 8. Item-level prices in the UI
 
 The scraper supplies a nominal `itemPrice` per item and its own `postTaxPrice` estimate. **The client
 uses neither directly.** `getAmazonItemPrices(amz, total)`
@@ -126,9 +167,10 @@ Two reasons, and both matter:
 
 Where it surfaces:
 
-- **`TransactionView`** — the item carousel, each picture carrying its post-tax price bottom-right
+- **`TransactionView`** — the item carousel, showing the items *this charge* paid for when they can
+  be determined and the whole order otherwise, each picture carrying its post-tax price bottom-right
   (`AmazonItemImage`, shared by both views). The headline amount is **the transaction's own**, with
-  the order's other transactions listed beneath it. It used to be their sum, which read as "what the
+  the order's payment lines beneath it (§6). It used to be their sum, which read as "what the
   order cost" only for as long as they were all charges — once refunds started carrying the same
   order number the sum became the order's net after returns, matching neither the allocations shown
   below it nor any real transaction.
@@ -138,8 +180,8 @@ Where it surfaces:
   several items in one stream collapsed into a single allocation. Streams already picked on this
   transaction float to the top of the dropdown under an "Already in this order" `optgroup`.
 
-`canSplitAmazonByItem` decides which view opens, and requires the prices to actually sum to the
-transaction being split.
+`canSplitAmazonByItem` decides which view opens, and requires the charge's items to be known and to
+number more than one — see §7.
 
 ---
 
@@ -162,6 +204,14 @@ and nothing about items, so once two items have been summed into one allocation 
 map back — editing an existing split therefore falls back to the amount-based view. Changing this
 means teaching the model which items went where, which is a backend change and was deliberately
 deferred.
+
+**A charge's item list is inferred, and declines when it can't be sure.** Nothing in Amazon's payload
+maps items to shipments, so the subset that sums to the charge is the best available evidence. The
+rule is deliberately all-or-nothing: one fitting subset is used, anything else falls back to amounts.
+A guessed subset would be indistinguishable from a known one on screen, which is what makes guessing
+unacceptable here rather than merely imprecise. If the scraper ever exposes shipment grouping, this
+inference should be retired in favour of it — `items[]` is stored verbatim, so that needs no backend
+change.
 
 **Matching is heuristic and ordered by confidence, never by convenience.** Each pass is narrower and
 more certain than the one after it, and no pass may overwrite an earlier pass's match. Loosening an

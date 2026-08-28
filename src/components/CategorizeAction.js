@@ -27,14 +27,76 @@ export const getAmazonItemPrices = (amz,total) => {
 	return items.map(it => it.postTaxPrice || it.itemPrice) //partially priced order: show what the scraper had, item by item
 }
 
-//True when this transaction can be split item by item: an amazon order of several items that all carry a price.
-//Unpriced orders (amazon fresh, digital) fall back to the amount-based split.
+//Beyond this many items the subset search below stops being worth running - and orders that large are also
+//the least likely to have a single clean subset.
+const maxItemsForChargeInference = 14;
+
+//Which of the order's items THIS charge paid for, as {items,prices,indices} - or undefined when we can't tell.
+//
+//Amazon bills per shipment, so one order can arrive as several bank charges while every one of them carries
+//the whole order's item list. "The order's items" and "the items on this transaction" are therefore not the
+//same set, and nothing in the payload says which shipment an item shipped in. So it is inferred: spread the
+//order total across its items, then look for the subset summing to this charge. Exactly one subset fitting
+//is the answer; zero or several means we don't know, and the caller falls back to amounts. Guessing here
+//would put fictional prices next to real product pictures.
+export const getAmazonChargeItems = (transaction) => {
+	var amz = transaction?.amazonOrderDetails, items = amz?.items || [], target = Math.abs(transaction?.amount||0);
+	if(!items.length || !(target>0) || !(amz.orderAmount>0))return undefined
+	var orderPrices = getAmazonItemPrices(amz,amz.orderAmount);
+	if(!utils.and(orderPrices,pr => pr>0))return undefined
+	var all = items.map((it,i) => i);
+	//the whole order billed as a single charge is the ordinary case and needs no search
+	if(Math.abs(utils.sum(orderPrices)-target)<0.005)return {items:items,prices:orderPrices,indices:all}
+	if(items.length>maxItemsForChargeInference)return undefined
+
+	var match = undefined;
+	for(var mask=1;mask<(1<<items.length);mask++){
+		var sum = 0;
+		for(var i=0;i<items.length;i++){if(mask & (1<<i))sum += orderPrices[i]}
+		if(Math.abs(sum-target)<0.005){
+			if(match!==undefined)return undefined //two subsets fit: ambiguous, so we don't know
+			match = mask;
+		}
+	}
+	if(match===undefined)return undefined
+	var indices = all.filter(i => !!(match & (1<<i)));
+	return {items:indices.map(i => items[i]),prices:indices.map(i => orderPrices[i]),indices:indices}
+}
+
+//True when this transaction can be split item by item: we know which items it paid for, and there is more
+//than one of them to divide between streams. Unpriced orders (amazon fresh, digital) and charges whose item
+//subset can't be pinned down fall back to the amount-based split.
 export const canSplitAmazonByItem = (transaction) => {
+	var charge = getAmazonChargeItems(transaction);
+	return !!charge && charge.items.length>1
+}
+
+//The order's payment lines as the user should see them: the bank transactions matched to the order, plus the
+//entries on Amazon's payments page that haven't reached the bank yet. Returns
+//[{amount,date,transaction,pending,last4}] oldest first. `transaction` is undefined on a pending line, which
+//is why those can't be navigated to.
+//Sign convention: order.transactions[] amounts are positive for a charge, so they are negated here to read
+//like bank amounts (see documentation/amazon-transaction.md).
+export const getAmazonOrderLines = (transaction) => {
 	var amz = transaction?.amazonOrderDetails;
-	if(!(amz?.items?.length>1))return false
-	var prices = getAmazonItemPrices(amz,Math.abs(transaction.amount));
-	//the prices have to add up to the transaction being split, or the allocations wouldn't balance
-	return utils.and(prices,pr => pr>0) && Math.abs(utils.sum(prices)-Math.abs(transaction.amount))<0.005
+	if(!amz)return []
+	var neighbors = Core.getTransactionsForOrderNumber(amz.orderNumber) || [];
+	var ledger = amz.transactions || [];
+	if(!ledger.length)return neighbors.map(t => ({amount:t.amount,date:t.date,transaction:t,pending:false,last4:""}))
+
+	var unclaimed = [...neighbors], lines = [];
+	ledger.forEach(entry => {
+		if(!entry.amount)return
+		//prefer the bank transaction pass 0 matched to this very entry, then any with the opposite amount
+		var pick = unclaimed.filter(t => Math.abs(t.amount+entry.amount)<0.005);
+		var matched = pick.filter(t => t.amazonOrderDetails?.matchedTxnDate===entry.date)[0] || pick[0];
+		if(matched)unclaimed.splice(unclaimed.indexOf(matched),1)
+		lines.push({amount:-entry.amount,date:matched?matched.date:(entry.date?new Date(entry.date):undefined),
+			transaction:matched,pending:!matched,last4:entry.last4||""})
+	})
+	//anything the ledger doesn't account for is still a real bank transaction, and still navigable
+	unclaimed.forEach(t => lines.push({amount:t.amount,date:t.date,transaction:t,pending:false,last4:""}))
+	return lines.sort(utils.sorters.asc(l => l.date?l.date.getTime():Number.MAX_SAFE_INTEGER))
 }
 
 //The white product tile: item picture with its post-tax price in the bottom-right corner. Shared by the
@@ -228,15 +290,44 @@ export class TransactionView extends BaseComponent{
 	getAmazonNeighbors(){if(this.isAmazon())return Core.getTransactionsForOrderNumber(this.getAmazonData().orderNumber).sort(utils.sorters.asc(t => t.getDisplayDate()))}
 	handleAmzItemArrowClicked(e,right){
 		var offSet = (right)?1:-1;
-		var amzItemsCnt = this.props.transaction.amazonOrderDetails.items.length;
+		var amzItemsCnt = (getAmazonChargeItems(this.props.transaction)?.items || this.props.transaction.amazonOrderDetails.items).length;
 		if(this.state.selectedItemImage+offSet>amzItemsCnt || this.state.selectedItemImage+offSet<1)return;
 		this.updateState({selectedItemImage:this.state.selectedItemImage+offSet})
 	}
+	//"Charge 2 of 3" - only meaningful once an order has produced more than one line
+	getChargeLabel(orderLines){
+		if(!(orderLines?.length>1))return ""
+		var at = orderLines.findIndex(l => l.transaction===this.props.transaction);
+		return at>-1?`Charge ${at+1} of ${orderLines.length}`:""
+	}
+	//One line of the order's payment history. A line backed by a bank transaction can be tapped to reopen the
+	//dialog on that transaction - the only way to tell two charges of one order apart and act on the right
+	//one. A line Amazon has announced but the bank hasn't posted has nothing to open, so it renders dimmed
+	//and italic and stays inert.
+	renderOrderLine(l,i){
+		var isCurrent = l.transaction===this.props.transaction;
+		var canNavigate = !!l.transaction && !isCurrent && !!this.props.onNavigateToTransaction;
+		return <div key={i} onClick={canNavigate?((e) => {e.stopPropagation();this.props.onNavigateToTransaction(l.transaction)}):undefined}
+			title={l.pending?"Not posted to the bank yet":(canNavigate?"Open this charge":undefined)}
+			style={{display:"flex", justifyContent:"space-between", marginTop:"0.2rem",
+				color: isCurrent?DS.getStyle().bodyText:DS.getStyle().bodyTextSecondary,
+				fontWeight: isCurrent?"bold":"normal",
+				fontStyle: l.pending?"italic":"normal",
+				opacity: l.pending?0.5:1,
+				cursor: canNavigate?"pointer":"default",
+				textDecoration: canNavigate?"underline dotted":"none"}}>
+			<span>{l.date?utils.formatDateShort(l.date):"pending"}{l.last4?" ****"+l.last4:""}</span>
+			<span>{utils.formatCurrencyAmount(l.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
+		</div>
+	}
 	render(){
 		var amz = this.getAmazonData();
-		var isCompound = this.isAmazon() && amz.items.length>1;
-		var amznghbrs = this.getAmazonNeighbors();
-		var itemPostTaxPrices = getAmazonItemPrices(amz,amz?.orderAmount);
+		//the items this charge actually paid for when we can tell them apart; otherwise the whole order
+		var charge = this.isAmazon()?getAmazonChargeItems(this.props.transaction):undefined;
+		var shownItems = charge?charge.items:(amz?.items||[]);
+		var itemPostTaxPrices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
+		var isCompound = this.isAmazon() && shownItems.length>1;
+		var orderLines = this.isAmazon()?getAmazonOrderLines(this.props.transaction):[];
 		//always the transaction being shown, never the order's net. Summing the order's transactions
 		//was defensible while they were all charges, but a refund carries the same orderNumber, so the
 		//sum silently became "what the order cost after returns" - a number that matches neither the
@@ -248,7 +339,7 @@ export class TransactionView extends BaseComponent{
 		padding:"1.5rem", transition: "opacity "+disappearAnimationTime/1000+"s ease", alignItems: "center" }}>
 				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
 					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
-						{amz.items.map((it,i) => 
+						{shownItems.map((it,i) => 
 							<AmazonItemImage key={i} item={it} price={itemPostTaxPrices[i]} size={6} style={{
 								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
 								transition:"margin-left 0.5s ease"}}/>
@@ -256,17 +347,19 @@ export class TransactionView extends BaseComponent{
 					</div>
 					{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
 						<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
-						<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{amz.items.length}</span>
-						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<amz.items.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
+						<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{shownItems.length}</span>
+						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>
 					</div>):""}
 					</div>
 				):""}
 				<TxInfoContainer>{/*regular transaction*/}
 					{this.isAmazon()?(<div style={{fontSize:"0.7rem",color:"grey",marginTop:"0.5rem",marginBottom:"0.5rem"}}><div>Amazon Order</div>
-						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div></div>):""}
+						<div style={{marginTop:"0.2rem"}}>#{this.props.transaction.amazonOrderDetails.orderNumber}</div>
+						{/*without this an order billed as several charges looks identical on every one of them*/}
+						{this.getChargeLabel(orderLines)?<div style={{marginTop:"0.2rem",fontWeight:"bold"}}>{this.getChargeLabel(orderLines)}</div>:""}</div>):""}
 
 					<DS.component.Label highlight style={{textWrap:"wrap",maxWidth:"8rem"}}>{
-						this.isAmazon()?getAmazonDescription(amz.items[this.state.selectedItemImage-1].itemDescription):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
+						this.isAmazon()?getAmazonDescription(shownItems[this.state.selectedItemImage-1]?.itemDescription||""):(this.props.transaction.description.indexOf("Amazon")>-1 && this.props.transaction.amount>0 ?"Amazon Refund":this.props.transaction.description)}</DS.component.Label>
 					{amz?<div>
 						<div style={{marginTop:"0.5rem",fontSize:"0.7rem",color:"grey"}}>{amz?"Ordered on "+utils.formatDateShort(new Date(amz.date)):""}</div>
 						<div style={{marginTop:"0.2rem",fontSize:"0.7rem",color:"grey"}}>{amz?"by "+amz.accountName:""}</div></div>
@@ -276,11 +369,7 @@ export class TransactionView extends BaseComponent{
 				<Spacer/>
 				<div>
 					<AmountDiv positive={totalAmount>0}>{utils.formatCurrencyAmount(totalAmount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
-					{amznghbrs?.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{amznghbrs.length} Transactions:{amznghbrs.map(n => 
-						<div style={{display: "flex", justifyContent: "space-between",color: "grey",marginTop:"0.2rem"}} key={n.getTransactionHash()}>
-							<span>{utils.formatDateShort(n.date)}</span>
-							<span>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span>
-						</div>)}</div>:""}
+					{orderLines.length>1?<div style={{fontSize:"0.8rem",marginTop:"1rem",textAlign:"left"}}>{orderLines.length} Transactions:{orderLines.map((l,i) => this.renderOrderLine(l,i))}</div>:""}
 				</div>
 			</DS.component.ContentTile>
 			{this.props.transaction.reconciliation?<div>{this.renderReconciliation()}</div>:""}

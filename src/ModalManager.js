@@ -5,7 +5,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView, AmazonItemImage, getAmazonItemPrices, canSplitAmazonByItem} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, getAmazonChargeItems, canSplitAmazonByItem} from './components/CategorizeAction'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
@@ -62,7 +62,7 @@ export const ModalTemplates = {
 			<TransactionsModalView controller={that.state.controller} transactions={transactions} />
 		</div>,buttonArray)(that)
 	},
-	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs) => (that) => {
+	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs,onNavigateToTransaction) => (that) => {
 		//an amazon order is always split by item, never by amount - the prices are already known.
 		//two cases keep the amount-based view: orders with no per-item prices (amazon fresh, digital),
 		//and editing a split that already exists. The second is deliberate: streamAllocation records
@@ -73,7 +73,7 @@ export const ModalTemplates = {
 		const AllocationView = splitByItem?AmazonItemAllocationView:StreamAllocationOptionView;
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs}/>
+			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs} onNavigateToTransaction={onNavigateToTransaction}/>
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
@@ -355,13 +355,17 @@ export class AmazonItemAllocationView extends BaseComponent{
 	constructor(props){
 		super(props)
 		var amz = props.transaction.amazonOrderDetails;
+		//only the items THIS charge paid for. An order billed as several charges carries the whole order's
+		//item list on each of them, so asking the user to place every item while splitting one charge asks
+		//about things this transaction never paid for - and prices them wrongly on top.
+		var charge = getAmazonChargeItems(props.transaction);
 		this.state = {
 			controller: props.controller,
 			amz: amz,
-			//prices are spread onto this transaction's amount, not the order total: an order can be billed
-			//as several charges, and the allocations have to sum to the one being split.
-			prices: getAmazonItemPrices(amz,Math.abs(props.transaction.amount)),
-			assignments: amz.items.map(() => undefined),
+			items: charge.items,
+			//already spread onto this charge, so the allocations sum to the transaction being split
+			prices: charge.prices,
+			assignments: charge.items.map(() => undefined),
 			pickOrder: [],//streamIds in the order they were picked, most recent last
 			allocations: []
 		}
@@ -438,11 +442,11 @@ export class AmazonItemAllocationView extends BaseComponent{
 	render(){
 		return(<div>
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction}/>
+				<TransactionView transaction={this.props.transaction} onNavigateToTransaction={this.props.onNavigateToTransaction}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.amz.items.map((it,i) => <DS.component.Row key={i}>
+					{this.state.items.map((it,i) => <DS.component.Row key={i}>
 						<AmazonItemImage item={it} price={this.state.prices[i]} size={3} style={{
 							overflow:"hidden",borderRadius: DS.borderRadiusSmall,
 							alignSelf:"center",marginBottom:"0.5rem"}}/>
@@ -546,7 +550,7 @@ export class StreamAllocationOptionView extends BaseComponent{
 
 		return(<div>
 			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction}/>
+				<TransactionView transaction={this.props.transaction} onNavigateToTransaction={this.props.onNavigateToTransaction}/>
 			</div>
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
