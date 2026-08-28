@@ -171,7 +171,12 @@ class MissionControl extends BaseComponent{
 		if(this.state.fetching){return (<PageLoader/>)}
 		else if(this.state.availableTransactions.length==0){return (<div></div>)}
 		else{return <StyledHomeContainer>
-				<ActionZoneContainer style={this.state.actionQueueManager.hasActions()?{height:'20rem',opacity:1}:{height:0,opacity:0}}>
+				{/*no height of its own while there are actions: it was pinned at 20rem, so a card taller than
+				   that ran past the bottom of the zone and everything below - the year graph, income, the
+				   activity list - stayed exactly where it was. Letting the zone take its height from the
+				   card also means it follows the item name opening, because an auto height tracks a child
+				   whose own height is being animated. The empty state still needs a number to collapse to.*/}
+				<ActionZoneContainer style={this.state.actionQueueManager.hasActions()?{opacity:1}:{height:0,opacity:0,overflow:"hidden"}}>
 					<ActionButtonsContainer>
 						<ActionButton alt="skip" className="material-symbols-rounded" onClick={this.onClickSkipButton} disabled={!this.state.actionQueueManager.isCurrentActionSkippable()}>
 						arrow_forward_ios</ActionButton>

@@ -418,9 +418,12 @@ class CategorizeActionCard extends ActionCard{
 			</AnimationSymbolContainer>
 			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction} navigation={this.getNavigation(false)}/>
 
-			{/*stream suggestions*/}
+			{/*stream suggestions. ActionsContainerBox carries `margin: 5rem auto` and every caller
+			   overrides only the top of it; the 5rem underneath went unnoticed while the action zone was
+			   pinned to a fixed height and simply overflowed it. Now that the zone takes its height from
+			   the card, that margin is real space and has to be a number somebody chose.*/}
 			{this.state.fetching?<div></div>:
-			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",opacity:this.state.animationIconVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
+			<FadeInWrap><ActionsContainerBox style={{position:"relative",marginTop:"1rem",marginBottom:DS.verticalSpacing.m,opacity:this.state.animationIconVisible?0:(this.props.inFocus?1:0),pointerEvents:this.props.inFocus?"inherit":"none"}}>
 					{(this.state.recStreams.length)?this.state.recStreams
 					.filter(s => s.isActiveAtDate(this.props.transaction.getDisplayDate()) || s.isActiveAtDate(new Date()))
 					.map((a,i) => <DS.component.StreamTag highlight={true} key={i} onClick={(e)=> this.onClickStreamTag(a)}>{a.name}</DS.component.StreamTag>):""}
@@ -443,7 +446,6 @@ export class TransactionView extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state = {selectedItemImage:1,nameOpen:false,nameClamped:true}
-		this.nameRef = React.createRef()
 	}
 	isAmazon(){return this.getAmazonData()}
 	getAmazonData(){return getAmazonOrderData(this.props.transaction)}
@@ -466,23 +468,28 @@ export class TransactionView extends BaseComponent{
 	//the same moment would shrink the text to two lines in a single frame, leaving the height transition
 	//with nothing left to hide and making the close look instant. It goes back on when the transition
 	//actually ends, which is also why there is no duration duplicated here to drift out of step.
-	toggleName(){
+	//`el` is the name itself, read out of the event rather than through a ref: the clamped box and the tap
+	//target are one element, so the thing that was tapped is also the thing to measure.
+	toggleName(el){
 		if(this.state.nameOpen)return this.updateState({nameOpen:false})
 		return this.updateState({nameClamped:false,nameOpen:true,nameHeight:undefined})
-			.then(() => this.updateState({nameHeight:this.nameRef.current?.scrollHeight}))
+			.then(() => this.updateState({nameHeight:el.scrollHeight}))
 	}
 	//Two lines, cut where the line ends with an ellipsis to say there is more, and tapping opens it.
 	//The ellipsis is the affordance: it appears only when something is actually hidden.
+	//
+	//The clamp, the animated height and the tap handler all sit on the one element, so whatever is visible
+	//is by definition inside the thing that responds to a tap. Wrapping the name in a separate box for the
+	//height left the two able to disagree about where the name was, and only the last line of it answered.
 	renderItemName(text){
 		var collapsed = nameCollapsedLines*nameLineHeight*DS.fontSize.body+"rem";
-		return <div ref={this.nameRef} onClick={(e) => {e.stopPropagation();this.toggleName()}}
+		return <DS.component.Label highlight title={this.state.nameOpen?undefined:text}
+			onClick={(e) => {e.stopPropagation();this.toggleName(e.currentTarget)}}
 			onTransitionEnd={() => {if(!this.state.nameOpen && !this.state.nameClamped)this.updateState({nameClamped:true})}}
-			title={this.state.nameOpen?undefined:text} style={{...tappableStyle,overflow:"hidden",
+			style={{...tappableStyle,textWrap:"wrap",lineHeight:nameLineHeight,overflow:"hidden",
 				maxHeight:(this.state.nameOpen && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
-				transition:"max-height "+nameOpenAnimationTime/1000+"s ease"}}>
-			<DS.component.Label highlight style={{textWrap:"wrap",lineHeight:nameLineHeight,
-				...(this.state.nameClamped?{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines,overflow:"hidden"}:{})}}>{text}</DS.component.Label>
-		</div>
+				transition:"max-height "+nameOpenAnimationTime/1000+"s ease",
+				...(this.state.nameClamped?{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines}:{})}}>{text}</DS.component.Label>
 	}
 	//Dates, order identity and sibling charges are all supporting text: one size, one colour.
 	secondaryTextStyle(){return {fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}
