@@ -293,7 +293,13 @@ export class TransactionView extends BaseComponent{
 		var charge = this.isAmazon()?getAmazonChargeItems(this.props.transaction):undefined;
 		var shownItems = charge?charge.items:(amz?.items||[]);
 		var itemPostTaxPrices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
-		var isCompound = this.isAmazon() && shownItems.length>1;
+		//Two rules, kept independent of each other on purpose:
+		//  the carousel appears only when this charge covers more than one item;
+		//  the per-item price tags appear only when the carousel does.
+		//A charge covering one item has that item's price on display already - it is the transaction
+		//amount beside the picture - so a tag would only repeat it. Tying the tag to the carousel rather
+		//than to whether a price happens to be known is what stops the two from drifting apart.
+		var showCarousel = this.isAmazon() && shownItems.length>1;
 		var amznghbrs = this.getAmazonNeighbors();
 		//always the transaction being shown, never the order's net. Summing the order's transactions
 		//was defensible while they were all charges, but a refund carries the same orderNumber, so the
@@ -307,12 +313,12 @@ export class TransactionView extends BaseComponent{
 				{this.isAmazon()?(<div style={{marginRight:"1rem"}}>{/*amazon suggestions*/}
 					<div style={{position:"relative",display:"flex",maxWidth:"6rem",minWidth:"6rem",overflow:"hidden",borderRadius: DS.borderRadiusSmall}}>
 						{shownItems.map((it,i) => 
-							<AmazonItemImage key={i} item={it} price={itemPostTaxPrices[i]} size={6} style={{
+							<AmazonItemImage key={i} item={it} price={showCarousel?itemPostTaxPrices[i]:undefined} size={6} style={{
 								marginLeft:(i==0?-(this.state.selectedItemImage-1)*6+"rem":0),
 								transition:"margin-left 0.5s ease"}}/>
 						)}
 					</div>
-					{isCompound?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
+					{showCarousel?(<div style={{display:"flex",justifyContent: "space-evenly",alignItems:"center",marginTop:"0.5rem"}}>
 						<span onClick={(e) => this.handleAmzItemArrowClicked(e)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage>1?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.leftArrow}</span>
 						<span style={{color:DS.getStyle().bodyTextSecondary,fontSize:"0.8rem"}}>{this.state.selectedItemImage}/{shownItems.length}</span>
 						<span onClick={(e) => this.handleAmzItemArrowClicked(e,true)} style={{cursor:"pointer",userSelect: "none",color:this.state.selectedItemImage<shownItems.length?DS.getStyle().bodyTextSecondary:DS.getStyle().buttonDisabled}}>{DS.icon.rightArrow}</span>

@@ -165,9 +165,14 @@ Two reasons, and both matter:
 Where it surfaces:
 
 - **`TransactionView`** — the item carousel, showing the items *this charge* paid for when they can
-  be determined and the whole order otherwise, each picture carrying its post-tax price bottom-right
-  (`AmazonItemImage`, shared by both views). The headline amount is **the transaction's own**, with
-  the order's payment lines beneath it (§6). It used to be their sum, which read as "what the
+  be determined and the whole order otherwise. Two independent rules govern it: the carousel appears
+  only when the charge covers more than one item, and the per-item price tags appear only when the
+  carousel does. A charge covering a single item already has that item's price on display — it is the
+  transaction amount beside the picture — so a tag would only repeat it. Tying the tag to the
+  carousel rather than to whether a price happens to be known is what keeps the two from drifting
+  apart. (`AmazonItemImage` is shared with the split view, which always prices its rows: you cannot
+  assign an item to a stream without knowing what it cost.) The headline amount is **the
+  transaction's own**, with the order's payment lines beneath it (§6). It used to be their sum, which read as "what the
   order cost" only for as long as they were all charges — once refunds started carrying the same
   order number the sum became the order's net after returns, matching neither the allocations shown
   below it nor any real transaction.
