@@ -9,3 +9,5 @@
 !.env.production
 !/documentation/
 !/documentation/**
+!/CLAUDE.md
+!/DECISION-PRINCIPLES.md
