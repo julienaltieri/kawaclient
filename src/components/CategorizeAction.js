@@ -481,15 +481,23 @@ export class TransactionView extends BaseComponent{
 	//The clamp, the animated height and the tap handler all sit on the one element, so whatever is visible
 	//is by definition inside the thing that responds to a tap. Wrapping the name in a separate box for the
 	//height left the two able to disagree about where the name was, and only the last line of it answered.
+	//A plain element rather than DS.component.Label, so the box, the clamp, the animated height and the tap
+	//target are one thing whose size nothing else gets a say in. The Label sets text-wrap:nowrap,
+	//overflow-x:clip and a font size that resolves to nothing - all of which had to be overridden here
+	//anyway - and leaving the size to be inherited made the two-line height below a guess: get it wrong and
+	//the box is shorter than the text it is showing, which is a tap target that ends before the words do.
+	//It takes its colour and size from the same tokens the Label would have given it.
 	renderItemName(text){
+		var open = this.state.nameOpen;
 		var collapsed = nameCollapsedLines*nameLineHeight*DS.fontSize.body+"rem";
-		return <DS.component.Label highlight title={this.state.nameOpen?undefined:text}
+		return <div title={open?undefined:text}
 			onClick={(e) => {e.stopPropagation();this.toggleName(e.currentTarget)}}
 			onTransitionEnd={() => {if(!this.state.nameOpen && !this.state.nameClamped)this.updateState({nameClamped:true})}}
-			style={{...tappableStyle,textWrap:"wrap",lineHeight:nameLineHeight,overflow:"hidden",
-				maxHeight:(this.state.nameOpen && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
+			style={{...tappableStyle,width:"100%",boxSizing:"border-box",overflow:"hidden",
+				color:DS.getStyle().bodyText,fontSize:DS.fontSize.body+"rem",lineHeight:nameLineHeight,
+				maxHeight:(open && this.state.nameHeight)?this.state.nameHeight+"px":collapsed,
 				transition:"max-height "+nameOpenAnimationTime/1000+"s ease",
-				...(this.state.nameClamped?{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines}:{})}}>{text}</DS.component.Label>
+				...(this.state.nameClamped?{display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:nameCollapsedLines}:{})}}>{text}</div>
 	}
 	//Dates, order identity and sibling charges are all supporting text: one size, one colour.
 	secondaryTextStyle(){return {fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}
