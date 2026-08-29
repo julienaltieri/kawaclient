@@ -19,7 +19,7 @@
 import Core from '../core'
 import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
-import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData, mapAllocationsToItems, getAmazonItemSplit } from '../components/CategorizeAction'
+import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData, mapAllocationsToItems, getAmazonItemSplit, getAmazonItemRefundStates } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -1813,6 +1813,206 @@ function testAC19_refundSplitNamesTheReturnedItem() {
 }
 
 // ---------------------------------------------------------------------------
+// AC-20 .. AC-26 - per-item refund state
+//
+// getAmazonItemRefundStates turns an item's stream (read off getAmazonItemSplit) and the order's credits
+// (via the memoised getOrderRefundAttribution) into "await" | "back" | undefined per item. Unlike every
+// function above, it reaches into the Core singleton directly for both - Core.getStreamById, to tell a
+// refund stream from an ordinary one, and Core.getTransactionsForOrderNumber, to find the order's other
+// charges and its credits. Production code is not made injectable for this; the stub below is contained
+// to this test file, which is the smaller blast radius. It restores in a finally so a throwing assertion
+// can never leak a stubbed Core into a later test.
+//
+// getOrderRefundAttribution memoises per order, keyed on a signature that starts with the order number
+// and also reads each transaction's getTransactionHash() - so every scenario below gets its own distinct
+// order number and its own distinct, stable hashes, or one test would be served another's cached answer.
+// ---------------------------------------------------------------------------
+
+function withStubbedCore({ streams = {}, orderTransactions = [] }, fn) {
+	withStub(Core, 'getStreamById', (id) => streams[id], () => {
+		withStub(Core, 'getTransactionsForOrderNumber', (_orderNumber) => orderTransactions, () => fn())
+	})
+}
+
+// Gives a mock transaction the getTransactionHash the memo signature (and the per-item lookup) key off -
+// mirrors makeMockHybridTransaction's getTransactionHash (~line 515); any distinct, stable string works,
+// the algorithm never inspects its shape.
+function withHash(transaction, hash) {
+	transaction.getTransactionHash = () => hash
+	return transaction
+}
+
+// A single-charge Amazon order whose items all sum exactly to the charge, allocated in one shot to one
+// stream - the shape every scenario below starts from. Because the allocation is a single entry over the
+// whole charge, getAmazonItemSplit never has to invert an ambiguous per-item split to find it; the only
+// ambiguity under test is matching the CREDIT to a subset of items, not this step.
+function makeRefundStateCharge(orderNumber, itemPrices, streamId) {
+	var amount = utils.round2Decimals(utils.sum(itemPrices))
+	var order = {
+		orderNumber, orderAmount: amount, transactions: [{ amount }],
+		items: itemPrices.map((price, i) => ({ itemPrice: price, itemDescription: 'Item ' + i }))
+	}
+	var txn = withHash(makeMockChargeTransaction(-amount, '2026-07-23', order), orderNumber + '-charge')
+	txn.streamAllocation = [valueAllocation(streamId, -amount)]
+	return { order, txn }
+}
+
+function makeRefundStateCredit(order, amount, dateString, suffix) {
+	return withHash(makeMockChargeTransaction(amount, dateString, order), order.orderNumber + '-credit-' + suffix)
+}
+
+// Runs getAmazonItemRefundStates for one charge, with Core.getStreamById and
+// Core.getTransactionsForOrderNumber stubbed to exactly what the order holds - mirroring how the real
+// caller always computes `split` itself and hands it in alongside the transaction.
+function getRefundStates(txn, credits, streamId, isZeroSumStream) {
+	var states
+	withStubbedCore({
+		streams: { [streamId]: { isZeroSumStream } },
+		orderTransactions: [txn, ...credits]
+	}, () => {
+		states = getAmazonItemRefundStates(txn, getAmazonItemSplit(txn))
+	})
+	return states
+}
+
+/**
+ * Test AC-20 - A credit that pays for a set of items marks all of them back
+ *
+ * Two items priced identically and a credit covering both exactly. A credit pays for a set, not one item
+ * at a time, so both settle - there is no ambiguity left once the whole set is what balances.
+ */
+function testAC20_creditCoveringBothItemsMarksBothBack() {
+	runTest('Test AC-20 - A credit covering both items marks both back', assert => {
+		var { order, txn } = makeRefundStateCharge('order-ac20', [27.38, 27.38], 'stream-returns')
+		var credit = makeRefundStateCredit(order, 54.76, '2026-08-01', 1)
+
+		var states = getRefundStates(txn, [credit], 'stream-returns', true)
+
+		assert(states?.[0]?.state === 'back', `item 0 is back (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'back', `item 1 is back (got: "${states?.[1]?.state}")`, states)
+		assert(states?.[0]?.date === credit.date && states?.[1]?.date === credit.date,
+			"both carry the credit's date", states)
+	})
+}
+
+/**
+ * Test AC-21 - Several readings worth identical money are not several readings
+ *
+ * The same two items, but the credit covers only ONE of them. Two subsets fit (either item alone) but
+ * both settle the identical price, so principle 10 overrides principle 9: the first is marked back and
+ * the other stays awaiting - refusing here would hide that a refund is genuinely still outstanding.
+ */
+function testAC21_creditCoveringOneOfTwoIdenticalItems() {
+	runTest('Test AC-21 - Credit covering one of two identical items resolves one, leaves the other awaiting', assert => {
+		var { order, txn } = makeRefundStateCharge('order-ac21', [27.38, 27.38], 'stream-returns')
+		var credit = makeRefundStateCredit(order, 27.38, '2026-08-01', 1)
+
+		var states = getRefundStates(txn, [credit], 'stream-returns', true)
+
+		assert(states !== undefined, 'per-item states are returned, not a charge-level refusal', states)
+		assert(states?.[0]?.state === 'back', `the first item is back (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'await', `the second stays awaiting (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test AC-22 - Two subsets that settle DIFFERENT prices refuse, and the whole charge falls back
+ *
+ * $10, $10 and $20 with a $20 credit: {20} and {10,10} both add up, but they settle different price
+ * lists, so nothing is claimed. Per-item dots would otherwise claim nothing came back, which is false -
+ * the caller instead falls back to the charge-level strip.
+ */
+function testAC22_differentSettlingSubsetsRefuseAndFallBack() {
+	runTest('Test AC-22 - Subsets settling different prices refuse - the charge falls back', assert => {
+		var { order, txn } = makeRefundStateCharge('order-ac22', [10, 10, 20], 'stream-returns')
+		var credit = makeRefundStateCredit(order, 20, '2026-08-01', 1)
+
+		var states = getRefundStates(txn, [credit], 'stream-returns', true)
+
+		assert(states === undefined, 'the whole charge falls back rather than showing a false per-item answer', states)
+	})
+}
+
+/**
+ * Test AC-23 - A credit matching no subset at all leaves every item awaiting, not unknown
+ *
+ * $10 and $20 items, a $99 credit that fits nothing. That is a fee or a bad match, not evidence about
+ * either item, so it surfaces as ordinary "await" rather than the "unknown" charge-level refusal AC-22
+ * produces - the two shapes are different facts and must not collapse into the same label.
+ */
+function testAC23_unmatchableCreditLeavesItemsAwaiting() {
+	runTest('Test AC-23 - A credit matching no subset leaves every item awaiting', assert => {
+		var { order, txn } = makeRefundStateCharge('order-ac23', [10, 20], 'stream-returns')
+		var credit = makeRefundStateCredit(order, 99, '2026-08-01', 1)
+
+		var states = getRefundStates(txn, [credit], 'stream-returns', true)
+
+		assert(states?.[0]?.state === 'await', `item 0 stays awaiting (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'await', `item 1 stays awaiting (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test AC-24 - No credits at all: every item awaits
+ *
+ * Nothing has come back, so every item allocated to the refund stream is left awaiting - the honest
+ * default the whole function degrades to.
+ */
+function testAC24_noCreditsEveryItemAwaits() {
+	runTest('Test AC-24 - No credits yet: every item awaits', assert => {
+		var { txn } = makeRefundStateCharge('order-ac24', [15, 25], 'stream-returns')
+
+		var states = getRefundStates(txn, [], 'stream-returns', true)
+
+		assert(states?.[0]?.state === 'await', `item 0 awaits (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'await', `item 1 awaits (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test AC-25 - An item on an ordinary stream has no refund story
+ *
+ * The item never left for a zero-sum stream, so there is nothing to say about it coming back - a credit
+ * being present elsewhere in the order does not manufacture one.
+ */
+function testAC25_ordinaryStreamHasNoRefundStory() {
+	runTest('Test AC-25 - An item on an ordinary stream returns no refund story', assert => {
+		var { order, txn } = makeRefundStateCharge('order-ac25', [16.12], 'stream-groceries')
+		var credit = makeRefundStateCredit(order, 16.12, '2026-08-01', 1)
+
+		var states = getRefundStates(txn, [credit], 'stream-groceries', false)
+
+		assert(states === undefined, 'no dot, no refund story - the stream is not zero-sum', states)
+	})
+}
+
+/**
+ * Test AC-26 - Determinism: the same scenario resolves the same way twice
+ *
+ * The AC-21 pick (first item back, second awaiting) is only defensible while it is stable - an
+ * arbitrary-but-equivalent choice that changed between runs of identical data would be a bug, not a
+ * feature. Run twice with fresh mocks, each with its own order number so neither run reads the other's
+ * memoised answer.
+ */
+function testAC26_sameScenarioResolvesIdenticallyTwice() {
+	runTest('Test AC-26 - The same scenario (AC-21 shape) resolves identically on a second run', assert => {
+		var run = (orderNumber) => {
+			var { order, txn } = makeRefundStateCharge(orderNumber, [27.38, 27.38], 'stream-returns')
+			var credit = makeRefundStateCredit(order, 27.38, '2026-08-01', 1)
+			return getRefundStates(txn, [credit], 'stream-returns', true)
+		}
+
+		var first = run('order-ac26-a')
+		var second = run('order-ac26-b')
+
+		assert(first?.[0]?.state === second?.[0]?.state && first?.[1]?.state === second?.[1]?.state,
+			'both runs mark the same item back and the same item awaiting', { first, second })
+		assert(first?.[0]?.state === 'back' && first?.[1]?.state === 'await',
+			"and it is the AC-21 outcome both times, not just agreement with itself", { first, second })
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
 export function runTransactionMatchingTests() {
@@ -1883,6 +2083,16 @@ export function runTransactionMatchingTests() {
 	testAC17_amountSplitDeclines()
 	testAC18_singleItemChargeIsStillItemWise()
 	testAC19_refundSplitNamesTheReturnedItem()
+	console.groupEnd()
+
+	console.group('Per-item refund state')
+	testAC20_creditCoveringBothItemsMarksBothBack()
+	testAC21_creditCoveringOneOfTwoIdenticalItems()
+	testAC22_differentSettlingSubsetsRefuseAndFallBack()
+	testAC23_unmatchableCreditLeavesItemsAwaiting()
+	testAC24_noCreditsEveryItemAwaits()
+	testAC25_ordinaryStreamHasNoRefundStory()
+	testAC26_sameScenarioResolvesIdenticallyTwice()
 	console.groupEnd()
 
 	console.groupEnd()
