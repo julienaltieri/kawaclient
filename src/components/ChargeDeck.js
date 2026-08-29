@@ -1,4 +1,5 @@
 import React from 'react';
+import styled from 'styled-components'
 import BaseComponent from './BaseComponent';
 import Core from '../core.js'
 import DS from '../DesignSystem.js'
@@ -27,12 +28,32 @@ export const deckPhysics = {
 	rubber: 0.8
 };
 const dragLockPx = 6;          //below this the gesture has not declared itself yet
+//The drag track contains real inputs and selects for the allocation rows, so only the drag surface itself
+//should reject text selection - inline style can't express that as a descendant rule, hence
+//styled-components here though the rest of this component is inline.
+const Track = styled.div`
+	-webkit-user-select: none;
+	user-select: none;
+
+	input, select, textarea {
+		-webkit-user-select: text;
+		user-select: text;
+	}
+`
+//cursor + tap highlight for the padded target around each pager dot, matching tappableStyle in
+//CategorizeAction.js so the mobile blue flash is gone here too
+const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightColor:"transparent"};
 //The modal's own side padding, which the deck reaches back into so a page slides all the way to the edge
 //of the sheet instead of stopping at the text column. Read from the same values BaseModalWrapper uses
 //rather than guessed: clipping a page short of the sheet edge makes the neighbour appear out of nowhere
 //instead of sliding in from under the frame.
 const bleed = () => (Core.isMobile()?DS.spacing.s:DS.spacing.l);
 const heightAnimation = 300;   //ms; matches the item name's open/close so the two never fight
+//Read by BOTH the inline style in render() and the restore in fit(), so they can never drift apart again:
+//fit() used to restore an empty string after an instant fit, which REMOVED the inline transition outright
+//(React never re-applies it without a re-render) instead of putting this back - so the deck's height
+//stopped animating after the very first paint.
+const heightTransitionValue = "height "+heightAnimation/1000+"s ease";
 const dotLimit = 7;            //beyond this, dots stop being countable and become a count
 //half the smallest type on the tile: big enough to see, small enough that a row of them stays a marker
 //rather than becoming a control
@@ -47,6 +68,8 @@ export default class ChargeDeck extends BaseComponent{
 		this.x = 0;             //the track's current offset, in px. Not state: it changes every frame.
 		this.raf = undefined;
 		this.drag = undefined;
+		this.clickSwallow = undefined; //the one-shot listener currently armed on window, or undefined
+		this.swallowTimer = undefined;
 		this.onPointerDown = this.onPointerDown.bind(this);
 		this.onPointerMove = this.onPointerMove.bind(this);
 		this.onPointerUp = this.onPointerUp.bind(this);
@@ -74,6 +97,7 @@ export default class ChargeDeck extends BaseComponent{
 		super.componentWillUnmount?.();
 		window.removeEventListener('resize',this.onResize);
 		cancelAnimationFrame(this.raf);
+		this.disarmClickSwallow();
 	}
 	reducedMotion(){return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches}
 	count(){return (this.props.pages||[]).length}
@@ -97,7 +121,7 @@ export default class ChargeDeck extends BaseComponent{
 		if(!deck || !page)return
 		if(now || this.reducedMotion())deck.style.transition = "none";
 		deck.style.height = page.offsetHeight+"px";
-		if(now || this.reducedMotion())requestAnimationFrame(() => {if(this.deckRef.current)this.deckRef.current.style.transition = ""});
+		if(now || this.reducedMotion())requestAnimationFrame(() => {if(this.deckRef.current)this.deckRef.current.style.transition = heightTransitionValue});
 	}
 	//A spring rather than an easing curve, because the thing being continued is a throw that already has a
 	//speed: handing that speed to the spring is what makes the release feel like one movement instead of a
@@ -124,13 +148,36 @@ export default class ChargeDeck extends BaseComponent{
 		if(this.reducedMotion())return this.place(this.pageX(to))
 		this.settle(this.pageX(to),v0||0);
 	}
+	//Arms a single capture-phase click swallower on window. Installed only after a drag that MOVED, because
+	//when the press started inside the modal and the release lands outside it, the browser fires the
+	//resulting click on the common ancestor of the two points - the modal wrapper, which carries
+	//data-dismiss - so the drag's own release click is the one thing that closes the dialog. Capture phase
+	//so this runs before the click can reach React's delegated handler on the root container.
+	armClickSwallow(){
+		this.disarmClickSwallow();
+		var swallow = (e) => {e.stopPropagation();this.disarmClickSwallow()};
+		this.clickSwallow = swallow;
+		window.addEventListener('click',swallow,true);
+		//safety net: a release over a region that never fires a click at all (empty backdrop, outside the
+		//window) would otherwise leave this armed to catch the NEXT, unrelated click instead
+		this.swallowTimer = setTimeout(() => this.disarmClickSwallow(),500);
+	}
+	disarmClickSwallow(){
+		if(this.clickSwallow){window.removeEventListener('click',this.clickSwallow,true);this.clickSwallow = undefined}
+		if(this.swallowTimer){clearTimeout(this.swallowTimer);this.swallowTimer = undefined}
+	}
 	onPointerDown(e){
+		//a fresh gesture must never inherit a swallower armed by the one before it
+		this.disarmClickSwallow();
 		if(this.count()<2)return
 		//anything that answers a tap of its own keeps it: the item carousel's arrows, the name that opens,
 		//a stream field. The deck only claims what nothing else wanted.
 		if(e.target.closest && e.target.closest('[data-no-drag]'))return
 		cancelAnimationFrame(this.raf);
-		this.drag = {x0:e.clientX,y0:e.clientY,x:this.x,moved:false,samples:[[performance.now(),this.x]]};
+		//capture so the drag keeps receiving pointermove/up wherever the cursor goes - without it, moving
+		//the pointer past the modal's edge stops delivering events to the track and the throw freezes there.
+		try{e.currentTarget.setPointerCapture(e.pointerId)}catch(err){}
+		this.drag = {x0:e.clientX,y0:e.clientY,x:this.x,moved:false,samples:[[performance.now(),this.x]],pointerId:e.pointerId};
 	}
 	onPointerMove(e){
 		if(!this.drag)return
@@ -150,7 +197,12 @@ export default class ChargeDeck extends BaseComponent{
 		if(this.drag.samples.length>6)this.drag.samples.shift();
 		this.place(want);
 	}
-	onPointerUp(){
+	onPointerUp(e){
+		//Released first and unconditionally, from the EVENT's pointer id rather than the drag's: a gesture
+		//judged to be a vertical scroll clears `this.drag` mid-move, and releasing only through that object
+		//would leave the capture held by a drag that no longer exists. The browser releases implicitly on
+		//pointerup, but relying on that means the one path that matters is the one never exercised here.
+		try{e.currentTarget.releasePointerCapture(e.pointerId)}catch(err){}
 		if(!this.drag)return
 		var d = this.drag; this.drag = undefined;
 		if(!d.moved)return
@@ -162,6 +214,7 @@ export default class ChargeDeck extends BaseComponent{
 		if(Math.abs(v)>deckPhysics.flickVel)target = this.props.index+(v<0?1:-1);
 		else if(Math.abs(this.x-this.pageX(this.props.index))<w*deckPhysics.commitFrac)target = this.props.index;
 		this.go(target,v);
+		this.armClickSwallow();
 	}
 	//Position and nothing else. A dot that also said whether its charge had posted or been categorized was
 	//asking a half-rem circle to carry three meanings, and the tile says all of them already.
@@ -169,17 +222,25 @@ export default class ChargeDeck extends BaseComponent{
 		var n = this.count();
 		if(n<2)return ""
 		var style = {fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary};
-		return <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:DS.spacing.xxs+"rem",
+		//The dots are the primary way to move between pages on a desktop, where there is no swipe, so each
+		//gets a padded target around it rather than relying on the dot's own tiny circle: horizontal padding
+		//is half of what used to be the row's gap, and the gap itself moves to 0, so adjacent targets meet
+		//with no dead space between them while the dots stay spaced exactly as before.
+		var dotGap = DS.spacing.xxs;
+		return <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:0,
 				margin:DS.spacing.s+"rem 0 0 0"}}>
 			{n>dotLimit
 				?<span style={{...style,fontVariantNumeric:"tabular-nums"}}>{(this.props.index+1)+" / "+n}</span>
 				:this.props.pages.map((p,i) => <span key={i} onClick={() => this.go(i,0)}
 					aria-label={"Charge "+(i+1)+" of "+n}
-					style={{width:dotSize,height:dotSize,borderRadius:"50%",cursor:"pointer",flexShrink:0,
+					style={{...dotTargetStyle,display:"flex",alignItems:"center",justifyContent:"center",
+						padding:DS.spacing.xxs+"rem "+dotGap/2+"rem"}}>
+					<span style={{width:dotSize,height:dotSize,borderRadius:"50%",flexShrink:0,
 						border:"1.5px solid "+(i===this.props.index?DS.getStyle().bodyText:DS.getStyle().bodyTextSecondary),
 						background:i===this.props.index?DS.getStyle().bodyText:"transparent",
 						transform:"scale("+(i===this.props.index?1.4:1)+")",
-						transition:"transform 0.2s ease"}}/>)}
+						transition:"transform 0.2s ease"}}/>
+				</span>)}
 		</div>
 	}
 	render(){
@@ -193,15 +254,15 @@ export default class ChargeDeck extends BaseComponent{
 			   cap.*/}
 			<div ref={this.deckRef} style={{position:"relative",overflow:"hidden",contain:"inline-size",
 					margin:"0 "+(-b)+"rem",padding:"0 "+b+"rem",
-					transition:"height "+heightAnimation/1000+"s ease"}}>
-				<div ref={this.trackRef}
+					transition:heightTransitionValue}}>
+				<Track ref={this.trackRef}
 					onPointerDown={this.onPointerDown} onPointerMove={this.onPointerMove}
 					onPointerUp={this.onPointerUp} onPointerCancel={this.onPointerUp}
 					style={{display:"flex",alignItems:"flex-start",gap:b+"rem",
 						touchAction:"pan-y",willChange:"transform"}}>
 					{pages.map((p,i) => <div key={i} style={{flex:"0 0 100%",minWidth:0,
 							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}</div>)}
-				</div>
+				</Track>
 			</div>
 			{this.renderPager()}
 		</div>

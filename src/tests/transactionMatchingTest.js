@@ -19,7 +19,7 @@
 import Core from '../core'
 import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
-import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData, mapAllocationsToItems, getAmazonItemSplit, getAmazonItemRefundStates } from '../components/CategorizeAction'
+import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData, mapAllocationsToItems, getAmazonItemSplit, getAmazonItemRefundStates, getAllocationRefundStates } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -2013,6 +2013,162 @@ function testAC26_sameScenarioResolvesIdenticallyTwice() {
 }
 
 // ---------------------------------------------------------------------------
+// RA-1 .. RA-7 - refunds confirmed on a hand-made allocation line
+//
+// getAllocationRefundStates is the non-Amazon sibling of getAmazonItemRefundStates above: there is no
+// order number here to join a credit to a charge, so the only signal is the split itself - a line moved
+// onto a zero-sum stream IS the claim that money is coming back for it, and the only credit allowed to
+// settle it is one matching that line's amount to the cent. Unlike the Amazon path, there is no subset
+// matching: a line is one number the reader typed, not a set of items an order total can prove.
+//
+// Only Core.getStreamById needs stubbing here (to say which streamId is zero-sum) - the function never
+// calls Core.getTransactionsForOrderNumber, so withStubbedCore's other stub is simply unused.
+// ---------------------------------------------------------------------------
+
+// A credit shaped the way transaction.reconciliation[0].credit holds them (see renderReconciliation).
+function makeAllocationCredit(amount, dateString) {
+	return { amount, date: new Date(dateString), description: 'Refund' }
+}
+
+// Runs getAllocationRefundStates with Core.getStreamById stubbed to exactly the streams given - mirroring
+// how the real caller always has a live streamAllocation array and passes it in alongside the transaction.
+function getAllocationStates(transaction, streams) {
+	var states
+	withStubbedCore({ streams }, () => {
+		states = getAllocationRefundStates(transaction, transaction.streamAllocation)
+	})
+	return states
+}
+
+/**
+ * Test RA-1 - A line on a refund stream settled by a credit of the same amount reads back
+ *
+ * $52.50 moved onto "Returns" and a $52.50 credit: nothing to disambiguate, the line is confirmed back
+ * and carries the credit's date.
+ */
+function testRA1_matchingCreditMarksLineBack() {
+	runTest('Test RA-1 - Line and credit agree to the cent: back, with the credit\'s date', assert => {
+		var credit = makeAllocationCredit(52.50, '2026-08-01')
+		var transaction = { amount: -52.50, streamAllocation: [valueAllocation('stream-returns', -52.50)],
+			reconciliation: [{ credit: [credit] }] }
+
+		var states = getAllocationStates(transaction, { 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0]?.state === 'back', `the line is back (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[0]?.date === credit.date, "and carries the credit's date", states)
+	})
+}
+
+/**
+ * Test RA-2 - A cent apart is not a match
+ *
+ * $52.49 on the refund stream against a $52.50 credit. Nothing else ties a credit to a line, so the only
+ * thing that can - the amount - has to agree exactly; a cent of daylight leaves it awaiting.
+ */
+function testRA2_oneCentOffStaysAwaiting() {
+	runTest('Test RA-2 - A cent off the credit: still awaiting', assert => {
+		var transaction = { amount: -52.49, streamAllocation: [valueAllocation('stream-returns', -52.49)],
+			reconciliation: [{ credit: [makeAllocationCredit(52.50, '2026-08-01')] }] }
+
+		var states = getAllocationStates(transaction, { 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0]?.state === 'await', `the line stays awaiting (got: "${states?.[0]?.state}")`, states)
+	})
+}
+
+/**
+ * Test RA-3 - An ordinary line has no refund story even when a credit happens to match its amount
+ *
+ * Two lines: one on an everyday stream, one on the refund stream. The credit's amount happens to equal
+ * the ordinary line's, but a credit is only ever weighed against refund-stream lines, so the ordinary
+ * line's own entry stays undefined regardless.
+ */
+function testRA3_ordinaryLineHasNoState() {
+	runTest('Test RA-3 - An ordinary line reads no state, even matched by amount', assert => {
+		var transaction = { amount: -82.50,
+			streamAllocation: [valueAllocation('stream-groceries', -52.50), valueAllocation('stream-returns', -30)],
+			reconciliation: [{ credit: [makeAllocationCredit(52.50, '2026-08-01')] }] }
+
+		var states = getAllocationStates(transaction,
+			{ 'stream-groceries': { isZeroSumStream: false }, 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0] === undefined, 'the ordinary line carries no state', states)
+		assert(states?.[1]?.state === 'await', `the refund line (unmatched) awaits (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test RA-4 - Two lines worth the same money and one credit: the first is claimed, the second still waits
+ *
+ * A credit settles at most one line. Two lines of the same amount are interchangeable - there is no wrong
+ * pick to protect against - so the first is taken and the second is left genuinely still outstanding.
+ */
+function testRA4_oneCreditClaimsOnlyTheFirstMatchingLine() {
+	runTest('Test RA-4 - One credit claims the first matching line, not both', assert => {
+		var transaction = { amount: -105, streamAllocation: [valueAllocation('stream-returns', -52.50), valueAllocation('stream-returns', -52.50)],
+			reconciliation: [{ credit: [makeAllocationCredit(52.50, '2026-08-01')] }] }
+
+		var states = getAllocationStates(transaction, { 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0]?.state === 'back', `the first line is back (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'await', `the second still awaits (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test RA-5 - A credit equal to the SUM of two lines settles neither
+ *
+ * $30 and $22.50 on the refund stream, one $52.50 credit - exactly their sum. Lines are not a set the way
+ * Amazon items are; nothing licenses combining them, so both stay awaiting.
+ */
+function testRA5_creditEqualToTheSumOfTwoLinesSettlesNeither() {
+	runTest('Test RA-5 - A credit matching the SUM of two lines settles neither', assert => {
+		var transaction = { amount: -52.50, streamAllocation: [valueAllocation('stream-returns', -30), valueAllocation('stream-returns', -22.50)],
+			reconciliation: [{ credit: [makeAllocationCredit(52.50, '2026-08-01')] }] }
+
+		var states = getAllocationStates(transaction, { 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0]?.state === 'await', `the $30 line awaits (got: "${states?.[0]?.state}")`, states)
+		assert(states?.[1]?.state === 'await', `the $22.50 line awaits (got: "${states?.[1]?.state}")`, states)
+	})
+}
+
+/**
+ * Test RA-6 - No reconciliation on the transaction: every refund-stream line awaits
+ *
+ * The queue's dialog clears reconciliation (see openDialog above), and a missing one means nothing can be
+ * confirmed - not an error, just the honest default the whole function degrades to.
+ */
+function testRA6_noReconciliationEveryLineAwaits() {
+	runTest('Test RA-6 - No reconciliation on the transaction: the line awaits', assert => {
+		var transaction = { amount: -52.50, streamAllocation: [valueAllocation('stream-returns', -52.50)] }
+
+		var states = getAllocationStates(transaction, { 'stream-returns': { isZeroSumStream: true } })
+
+		assert(states?.[0]?.state === 'await', `the line awaits (got: "${states?.[0]?.state}")`, states)
+	})
+}
+
+/**
+ * Test RA-7 - No line on a refund stream at all: no per-line refund story
+ *
+ * Every line ordinary, no zero-sum stream in the split - the function hands back undefined outright,
+ * which is how the caller knows there is no per-line story to show at all (as opposed to one line among
+ * several, see RA-3).
+ */
+function testRA7_noRefundStreamLineReturnsUndefined() {
+	runTest('Test RA-7 - No line on a refund stream: the function returns undefined', assert => {
+		var transaction = { amount: -52.50, streamAllocation: [valueAllocation('stream-groceries', -30), valueAllocation('stream-home', -22.50)],
+			reconciliation: [{ credit: [makeAllocationCredit(52.50, '2026-08-01')] }] }
+
+		var states = getAllocationStates(transaction,
+			{ 'stream-groceries': { isZeroSumStream: false }, 'stream-home': { isZeroSumStream: false } })
+
+		assert(states === undefined, 'no per-line refund story here', states)
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
 export function runTransactionMatchingTests() {
@@ -2093,6 +2249,16 @@ export function runTransactionMatchingTests() {
 	testAC24_noCreditsEveryItemAwaits()
 	testAC25_ordinaryStreamHasNoRefundStory()
 	testAC26_sameScenarioResolvesIdenticallyTwice()
+	console.groupEnd()
+
+	console.group('Refunds on allocation lines')
+	testRA1_matchingCreditMarksLineBack()
+	testRA2_oneCentOffStaysAwaiting()
+	testRA3_ordinaryLineHasNoState()
+	testRA4_oneCreditClaimsOnlyTheFirstMatchingLine()
+	testRA5_creditEqualToTheSumOfTwoLinesSettlesNeither()
+	testRA6_noReconciliationEveryLineAwaits()
+	testRA7_noRefundStreamLineReturnsUndefined()
 	console.groupEnd()
 
 	console.groupEnd()

@@ -269,7 +269,48 @@ cannot be told apart — or where no reconciliation has been computed — the ch
 what shows, which is the older and less specific statement rather than a wrong one. See
 [`amazon-transaction.md`](amazon-transaction.md) §8.
 
+**On any other split charge, the refund is shown on the allocation line that carries it.** Same three
+states, same fallback, an amount where the picture was — but the rule joining a credit to a line is far
+stricter, because nothing joins them for us:
+
+- An Amazon credit is tied to its charge by the order number, which is what licenses matching it against
+  *combinations* of items: a shipment really is a set.
+- Nothing ties a credit to an ordinary debit. The date cannot — a refund posts days or weeks later, by
+  construction. The merchant name cannot — it is truncated, prefixed and shared across unrelated
+  purchases. And the automated pairing above is deliberately fenced off from exactly these cases.
+
+So **the reader makes the association and the app only confirms it.** Putting a share of the charge on a
+zero-sum stream *is* the claim that this much is coming back; a credit settles that line when its amount
+equals the line's **to the cent**, and nothing else does. There is no subset matching here: a line is one
+number somebody typed, not a set, and combining lines to reach a credit's total would invent the very
+association the rule refuses. Where two lines could take the same credit the first does — they are worth
+identical money, so there is no wrong answer to protect against, only a refund that refusing would hide.
+
+A credit matching no line produces **nothing at all** on the charge, not even the strip: saying a refund
+arrived would be the association just declined. It stays visible as its own transaction in the feed, which
+is where an unassociated credit belongs.
+
+Two consequences follow from the amount being the reader's own input rather than a fact from an order:
+
+- The match re-runs against the amounts **currently in the fields**, not the saved allocation, so a line
+  comes apart from its credit as the amount is typed away from it and settles again when it returns.
+- A settled line keeps **both** of its controls, where a settled Amazon item row gives up its label and
+  dropdown. The rule is the same — what gives way is what is no longer a choice — but an item's price came
+  from the order and a line's amount did not. A read-only settled line would trap a mistyped amount that
+  happened to match, with no way back.
+
+One line is enough, and that is the point rather than an edge case: a bill you expect back in full — a
+medical charge on a reimbursement stream — is a single allocation, and it is the commonest shape this
+serves. A marker there says something the headline does not, because the headline says what the charge
+cost and the marker says the money is coming back. As with items, the charge-level strip stands down
+wherever the rows carry the refund, and the headline nets what has arrived. `RA-1` … `RA-7` cover the
+rule.
+
 ### 6. Tests
+
+`RA-1` … `RA-7` cover refunds on allocation lines: the exact-amount rule and the cent that breaks it,
+an ordinary stream carrying no refund state, two identical lines against one credit, a credit equal to two
+lines combined settling neither, and a transaction with no reconciliation reading as expected.
 
 `ZS-1` … `ZS-24` in [`transactionMatchingTest.js`](../src/tests/transactionMatchingTest.js) are
 fully mocked and run in the browser console from `clientTestRoutine.js`.

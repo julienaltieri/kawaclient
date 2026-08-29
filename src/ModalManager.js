@@ -5,7 +5,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates, getAmazonUnpostedCharges} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates, getAmazonUnpostedCharges, getAllocationRefundStates} from './components/CategorizeAction'
 import ChargeDeck from './components/ChargeDeck'
 import utils from './utils'
 import SideBar from './components/SideBar'
@@ -351,7 +351,7 @@ const MainContent = styled.div`
 
 //Splits an amazon transaction item by item. Same shape as StreamAllocationOptionView - same TransactionView
 //on top, same ul of Rows below, same {streamId,amount,type} array handed to Confirm - but the amount per row
-//is the item's own post-tax price rather than something typed, so the row reads "<picture> Goes to <stream>".
+//is the item's own post-tax price rather than something typed, so the row reads "<picture> goes to <stream>".
 export class AmazonItemAllocationView extends BaseComponent{
 	constructor(props){
 		super(props)
@@ -464,15 +464,15 @@ export class AmazonItemAllocationView extends BaseComponent{
 							overflow:"hidden",borderRadius: DS.borderRadiusSmall,
 							alignSelf:"center",marginBottom:"0.5rem"}}/>
 						{/*once the credit is in there is nothing left to choose, so the label and the field give
-						   way to what happened - starting where "Goes to" starts, so a settled row still lines
+						   way to what happened - starting where "goes to" starts, so a settled row still lines
 						   up with the ones above and below it*/}
 						{this.refunds?.[i]?.state==="back"
 							?<StyledSpendReceive style={{maxWidth:"none",textAlign:"left",alignSelf:"center"}}>
-								Refunded on {utils.formatDateShort(this.refunds[i].date)}</StyledSpendReceive>
+								refunded on {utils.formatDateShort(this.refunds[i].date)}</StyledSpendReceive>
 							:<React.Fragment>
 								{/*textAlign left so this starts at the same 0.5rem offset as the settled label above -
 								   centered text would begin further right and the column would not line up*/}
-								<StyledSpendReceive style={{textAlign:"left"}}>Goes to</StyledSpendReceive>
+								<StyledSpendReceive style={{textAlign:"left"}}>goes to</StyledSpendReceive>
 								<DS.component.DropDown
 									value={(this.state.assignments[i])?this.getDropDownLabelForStreamId(this.state.assignments[i]):'DEFAULT'}
 									onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
@@ -584,10 +584,21 @@ export class AmazonOrderAllocationView extends BaseComponent{
 	renderPage(transaction,i){
 		var itemWise = this.usesItemView(transaction);
 		var ItemView = itemWise?AmazonItemAllocationView:StreamAllocationOptionView;
+		//The item-wise half reads live, per-item state the same way it always has. The amount-based half is
+		//computed from the SAVED allocations (transaction.streamAllocation) rather than the reader's live
+		//edits, because here the deck page owns the tile and the embedded StreamAllocationOptionView owns
+		//the fields - unlike that view's own copy of this same tile, this one does not re-net mid-edit.
+		//A whole charge on a reimbursement stream is the commonest shape this feature serves - a medical
+		//bill expected back in full is one line, not several - so this does not gate on there being more
+		//than one line; getAllocationRefundStates already returns undefined when nothing here is on a
+		//zero-sum stream, and that is the only gate a single line needs. The item side never gated on count.
+		var refundShownOnRows = itemWise
+			?!!getAmazonItemRefundStates(transaction,getAmazonItemSplit(transaction))
+			:!!getAllocationRefundStates(transaction,transaction.streamAllocation);
 		return <div key={transaction.getTransactionHash?.()||i}>
 			<div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
 				<TransactionView transaction={transaction} inDeck pricedBelow={itemWise}
-					refundShownOnItems={itemWise && !!getAmazonItemRefundStates(transaction,getAmazonItemSplit(transaction))}/>
+					refundShownOnRows={refundShownOnRows}/>
 			</div>
 			<div style={{marginTop:DS.spacing.s+"rem"}} data-no-drag>
 				<ItemView embedded controller={this.state.controller} transaction={transaction}
@@ -744,37 +755,87 @@ export class StreamAllocationOptionView extends BaseComponent{
 	}
 
 	render(){
+		//Recomputed from the CURRENT edits every render, not the saved transaction, so the match re-runs as
+		//the reader types: moving an amount away from a credit's breaks it, moving it back restores it.
+		var states = getAllocationRefundStates(this.props.transaction,this.state.allocations);
+		//A single line IS the charge - a dot on it would only repeat what the headline and the charge-level
+		//strip already say, so per-row state is shown only once there is more than one line to tell apart.
+		//A whole charge allocated to a reimbursement stream is the commonest shape this feature serves - a
+		//medical bill expected back in full is one line, not several - so this does not gate on there being
+		//more than one line: the headline says what the charge cost, the dot says that money is coming
+		//back, and once it has, the line strikes through and the headline nets to what was actually spent.
+		//That second fact is not otherwise on screen. getAllocationRefundStates already returns undefined
+		//when nothing here is on a zero-sum stream, so that is the only gate a single line needs - the item
+		//side never gated on count either.
+		var showing = !!states;
+		var amountWidth = 3;//rem - the amount input's own width
 
 		return(<div>
 			{this.props.embedded?"":<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction}/>
+				<TransactionView transaction={this.props.transaction} refundShownOnRows={showing}/>
 			</div>}
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-					{this.state.allocations.map((al,i) => <DS.component.Row key={al.nodeId}>
-						{(i==0)?<DS.component.Input style={{width:"3rem"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DS.component.Input>:
-								<DS.component.Input numerical style={{width:"3rem"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
-										onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
-										onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
-										onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
-										onFocus={e => {e.target.select()}}></DS.component.Input>
-									}
-						{al.amount>0?<StyledSpendReceive style={{color:DS.getStyle().positive}}>earnt as</StyledSpendReceive>:<StyledSpendReceive>spent as</StyledSpendReceive>}
-						<DS.component.DropDown
-							value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'} 
-							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
-							<option value='DEFAULT' disabled hidden> </option>
-							{Core.getMasterStream().getAllTerminalStreams()
-							.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
-							.sort(utils.sorters.asc(s => s.name.charCodeAt()))
-							.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
-						</DS.component.DropDown>
-						{(i>0 && this.state.allocations.length>1)?<span 
-							style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}} 
-							onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DS.icon.close}</span>:""}
-						
-						
-					</DS.component.Row>)}
+					{this.state.allocations.map((al,i) => {
+						var st = showing?states[i]:undefined;
+						return <DS.component.Row key={al.nodeId}>
+							{/*the dot rides centred on the field's own middle line, inside the amount input's box, same
+							   size/colour as the one ItemPriceLabel puts on an Amazon item picture (CategorizeAction.js)
+							   - that one keeps its own bottom-right corner position, unrelated to this one. Centred is
+							   where it reads well on a field and where it can never collide with the digits, since the
+							   input's horizontal padding already keeps a clear gutter. top:50% with translateY(-100%),
+							   verified in a browser rather than derived: this span's box is taller than the field it
+							   contains, so its 50% line sits BELOW the field's own centre, and pulling back a full dot
+							   height is what lands on it. -50%, which would be the arithmetic answer if the anchor were
+							   the field, sits visibly low - do not "correct" it back. A `bottom` value is worse still:
+							   StyledInputContainer (src/DesignSystem.js) carries `margin-bottom: spacing.xxs`, so a
+							   bottom-anchored dot measures from under that margin and lands clear of the field.
+							   Riding inside the input rather than in a slot beside it means it never competes with the
+							   input for width, and a row without a dot occupies exactly the same space as one with it.
+							   This wrapper span still needs its own position:relative even though StyledInputContainer
+							   is already relative: that container is internal to DS.component.Input and isn't exposed
+							   for a sibling dot rendered out here to anchor against, so this span is the anchor instead.
+							   The input's own bottom margin moves to this wrapper (marginBottom below) so the dot has a
+							   clean edge - the input's box, not the whitespace under it - to sit on.*/}
+							<span style={{position:"relative",display:"inline-block",marginBottom:DS.spacing.xxs+"rem"}}>
+								{(i==0)?<DS.component.Input style={{width:amountWidth+"rem",marginBottom:0,textDecoration:st?.state==="back"?"line-through":"none"}} disabled positive={al.amount>0} value={al.amount.toFixed(2)}></DS.component.Input>:
+										<DS.component.Input numerical style={{width:amountWidth+"rem",marginBottom:0,textDecoration:st?.state==="back"?"line-through":"none"}} positive={al.amount>0} defaultValue={al.amount.toFixed(2)}
+												onChange={((e)=> this.handleOnChangeValue(e,i)).bind(this)}
+												onBlur={((e)=> this.handleOnValueBlur(e,i)).bind(this)}
+												onInput={((e)=>this.handleOnInput(e,i)).bind(this)}
+												onFocus={e => {e.target.select()}}></DS.component.Input>
+											}
+								{st?<span style={{position:"absolute",top:"50%",transform:"translateY(-100%)",left:DS.spacing.xxs+"rem",width:"0.4rem",height:"0.4rem",borderRadius:"50%",
+									pointerEvents:"none",background:st.state==="back"?DS.getStyle().positive:DS.getStyle().warning}}/>:""}
+							</span>
+							{/*once the credit is in there is nothing left to choose, so the label and the dropdown
+							   give way to what happened - the same "refunded on ..." treatment
+							   AmazonItemAllocationView uses for its own settled row, so the two read as one thing.
+							   The amount input above is the one deliberate difference from that row: unlike an
+							   Amazon item's price, this amount is the reader's own input AND the thing that makes
+							   the match, so making it read-only here would trap a mistyped amount that happened
+							   to match, with no way back - it stays, and stays editable, settled or not.
+							   textAlign left on both branches below so every row's second column starts at the
+							   same offset, settled or not - centered text would start further right.*/}
+							{st?.state==="back"
+								?<StyledSpendReceive style={{maxWidth:"none",textAlign:"left"}}>refunded on {utils.formatDateShort(st.date)}</StyledSpendReceive>
+								:<React.Fragment>
+									{al.amount>0?<StyledSpendReceive style={{color:DS.getStyle().positive,textAlign:"left"}}>earnt as</StyledSpendReceive>:<StyledSpendReceive style={{textAlign:"left"}}>spent as</StyledSpendReceive>}
+									<DS.component.DropDown
+										value={(this.state.allocations[i]?.streamId)?this.getDropDownLabelForStreamId(this.state.allocations[i].streamId):'DEFAULT'}
+										onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
+										<option value='DEFAULT' disabled hidden> </option>
+										{Core.getMasterStream().getAllTerminalStreams()
+										.filter(s => s.isActiveAtDate(this.props.transaction.date) || s.isActiveAtDate(new Date()))
+										.sort(utils.sorters.asc(s => s.name.charCodeAt()))
+										.map((a,j) => <option key={j} sid={a.id}>{this.getDropDownLabelForStreamId(a.id)}</option>)}
+									</DS.component.DropDown>
+								</React.Fragment>}
+							{(i>0 && this.state.allocations.length>1)?<span
+								style={{fontWeight: 600, cursor:"pointer",paddingLeft:"1rem"}}
+								onClick={((e)=> this.handleOnClickRemoveAllocation(e,i)).bind(this)}>{DS.icon.close}</span>:""}
+						</DS.component.Row>
+					})}
 					<li style={{color:DS.getStyle().modalPrimaryButton,cursor:"pointer",marginTop:"1rem"}} onClick={this.handleOnClickAddAllocation.bind(this)}>{DS.icon.plus} Add line</li>
 
 				</ul>

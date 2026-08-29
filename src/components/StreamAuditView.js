@@ -251,13 +251,13 @@ class StreamDetailsModalView extends BaseComponent{
 			</DS.component.DropDown> an interest income stream, and <DS.component.DropDown value={isZeroSumStream ? 'is' : 'is not'} onChange={this.handleZeroSumChange} autoSize inline>
 				<option value="is">is</option>
 				<option value="is not">is not</option>
-			</DS.component.DropDown> a transaction-neutral stream for tracking reimbursements.
+			</DS.component.DropDown> a stream that tracks refunds - money you allocate there is money expected back, and the app marks each transaction awaiting it or already arrived.
 			{isZeroSumStream && " It"}
 			{isZeroSumStream && <DS.component.DropDown value={isRefundStream ? 'is' : 'is not'} onChange={this.handleRefundStreamChange} autoSize inline>
 				<option value="is">is</option>
 				<option value="is not">is not</option>
 			</DS.component.DropDown>}
-			{isZeroSumStream && " the stream refunds get reconciled into."}
+			{isZeroSumStream && " the one stream that stranded refunds get automatically reconciled into."}
 		</DS.component.SentenceWrapper>
 	}
 }

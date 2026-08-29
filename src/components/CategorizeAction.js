@@ -458,6 +458,47 @@ export const getAmazonItemRefundStates = (transaction,split) => {
 	})
 }
 
+//The non-Amazon equivalent of getAmazonItemRefundStates above, and deliberately much thinner: an order
+//number is what lets that function pool credits across every sibling charge and infer which SUBSET of
+//items a credit paid for. Nothing plays that role for an ordinary transaction - the refund posts days
+//later so the date can't join the two, the merchant name is truncated and shared with other charges so it
+//can't either, and the automated pairing rail deliberately skips these cases (see refundMatchingConfig in
+//transactionMatching.js). So the reader makes the association themselves, by moving a share of the charge
+//onto a zero-sum stream (e.g. "Returns"), and all this can do is CONFIRM it: a line on that stream IS the
+//claim that money is coming back for it, and the only credit allowed to settle it is one matching that
+//line's amount to the cent, because nothing else ties the two together.
+//
+//`allocations` is the split as the reader is editing it right now, not what was last saved onto the
+//transaction - the caller passes its live form fields so the match re-runs as the reader types, same as
+//`transaction?.streamAllocation` is only the fallback for when nothing is being edited.
+//
+//NO SUBSET MATCHING. getAmazonItemRefundStates may combine several ITEMS because a shipment really is a
+//set of them and the order total proves the set. A line here is one number the reader typed by hand, with
+//no set beneath it to prove anything about - combining lines to reach a credit's total would not recover
+//an association, it would invent one, which is exactly what this rule exists to refuse.
+//
+//Two lines worth the same money are interchangeable, so there is no wrong pick left to protect against -
+//only a refund that refusing would hide (DECISION-PRINCIPLES.md 9 and 10). Credits are claimed by the
+//first still-unclaimed matching line, walked in order, so the choice is stable rather than falling out of
+//whatever order the credits happened to arrive in.
+export const getAllocationRefundStates = (transaction,allocations) => {
+	var lines = allocations || transaction?.streamAllocation;
+	if(!lines?.length)return undefined
+	var onRefundStream = lines.map(al => !!(al?.streamId && Core.getStreamById(al.streamId)?.isZeroSumStream));
+	if(!onRefundStream.some(b => b))return undefined
+
+	var credits = transaction?.reconciliation?.[0]?.credit || [];
+	var claimed = new Array(credits.length).fill(false);
+	return lines.map((al,i) => {
+		if(!onRefundStream[i])return undefined
+		var cents = Math.round(Math.abs(al.type==="percent"?(al.amount||0)*(transaction?.amount||0):(al.amount||0))*100);
+		var at = credits.findIndex((c,ci) => !claimed[ci] && Math.round(Math.abs(c.amount)*100)===cents);
+		if(at===-1)return {state:"await"}
+		claimed[at] = true;
+		return {state:"back",date:credits[at].date}
+	})
+}
+
 //True when this transaction can be split item by item: we know which items it paid for. One item is enough -
 //the row is still where its stream and its refund state are said, and a single-item charge that dropped to
 //the amount-based view would be the one charge in an order whose rows looked different from its siblings'.
@@ -841,7 +882,32 @@ export class TransactionView extends BaseComponent{
 	//other charges. Laying it out this way is what gave the description and the amount room on a phone;
 	//the fixed 5rem info column and the 8rem name clamp that used to hold the row together are what made
 	//it cramped, and neither is needed once the tile is a column.
-	renderAmazonTile(){
+	//The headline nets what came back, but only when the rows below are showing refund state per row - so
+	//only then is doing so honest: elsewhere (a queue card) nothing on screen explains why the amount reads
+	//smaller than the transaction, so it would just look wrong. Amazon items and plain-transaction stream
+	//allocations are two different sources for "what refunded" - this is the one place either feeds the
+	//headline, so a non-Amazon transaction with a returned allocation gets the same treatment Amazon does
+	//(renderRegularTile never reaches the Amazon-only netting that used to live in renderAmazonTile alone).
+	nettedAmount(){
+		var amount = this.props.transaction.amount;
+		if(!this.props.refundShownOnRows)return amount
+		if(this.isAmazon()){
+			var split = getAmazonItemSplit(this.props.transaction);
+			var amz = this.getAmazonData();
+			var prices = split?split.prices:getAmazonItemPrices(amz,amz?.orderAmount);
+			var states = getAmazonItemRefundStates(this.props.transaction,split);
+			var refundedTotal = utils.sum((states||[]).map((st,i) => st?.state==="back"?prices[i]:0));
+			return refundedTotal?utils.round2Decimals(amount+refundedTotal):amount
+		}
+		var allocations = this.props.transaction.streamAllocation;
+		var states = getAllocationRefundStates(this.props.transaction,allocations);
+		//each line's own signed dollar value (not the abs cents getAllocationRefundStates matches on) -
+		//subtracting it cancels that line back out of the total, whichever way its sign fell
+		var dollarOf = al => al.type==="percent"?(al.amount||0)*(this.props.transaction.amount||0):(al.amount||0);
+		var refundedTotal = utils.sum((states||[]).map((st,i) => st?.state==="back"?-dollarOf(allocations[i]):0));
+		return refundedTotal?utils.round2Decimals(amount+refundedTotal):amount
+	}
+	renderAmazonTile(amount){
 		var amz = this.getAmazonData();
 		//the items this charge actually paid for when we can tell them apart; otherwise the whole order
 		var split = getAmazonItemSplit(this.props.transaction);
@@ -853,20 +919,6 @@ export class TransactionView extends BaseComponent{
 		//order from another.
 		var inDeck = !!this.props.inDeck;
 		var siblings = inDeck?[]:(this.getAmazonNeighbors()||[]).filter(n => !this.isCurrentTransaction(n));
-		//always the transaction being shown, never the order's net. Summing the order's transactions was
-		//defensible while they were all charges, but a refund carries the same orderNumber, so the sum
-		//silently became "what the order cost after returns" - a number matching neither the allocations
-		//below it nor any real transaction. The sibling lines give the context instead.
-		var amount = this.props.transaction.amount;
-		//The rows below only show refund state per item when this prop is set - so only then is the
-		//headline allowed to net an item's price back out, and only then is doing so honest: elsewhere
-		//(a queue card) nothing on screen explains why the amount reads smaller than the transaction, so
-		//it would just look wrong.
-		if(this.props.refundShownOnItems){
-			var refundStates = getAmazonItemRefundStates(this.props.transaction,split);
-			var refundedTotal = utils.sum((refundStates||[]).map((st,i) => st?.state==="back"?prices[i]:0));
-			if(refundedTotal)amount = utils.round2Decimals(amount+refundedTotal);
-		}
 		return(<React.Fragment>
 			{inDeck?"":this.renderAmazonIdentity(amz)}
 			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
@@ -881,7 +933,7 @@ export class TransactionView extends BaseComponent{
 					{this.renderItemName(shownItems[this.state.selectedItemImage-1]?.itemDescription||"")}
 					{/*a pending charge has no date to show, but the slot keeps its height with a non-breaking
 					   space rather than collapsing, so the tile holds the same shape as a posted one*/}
-					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{this.props.pending?" ":utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
+					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{this.props.pending?" ":utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}
 				</div>
@@ -890,7 +942,7 @@ export class TransactionView extends BaseComponent{
 	}
 	//Everything that is not an amazon order: a description, a date and an amount, in the row they have
 	//always been in.
-	renderRegularTile(){
+	renderRegularTile(amount){
 		var txn = this.props.transaction;
 		return(<React.Fragment>
 			<TxInfoContainer>
@@ -899,10 +951,13 @@ export class TransactionView extends BaseComponent{
 				<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(txn.getDisplayDate())}</div>
 			</TxInfoContainer>
 			<Spacer/>
-			<AmountDiv positive={txn.amount>0}>{utils.formatCurrencyAmount(txn.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
+			<AmountDiv positive={amount>0}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 		</React.Fragment>)
 	}
 	render(){
+		//always the transaction being shown, never the order's net, netted only when the rows below are
+		//telling the per-row refund story - see nettedAmount()
+		var amount = this.nettedAmount();
 		return(<div>
 			{/*a pending charge is outlined instead of filled so it reads as less certain than the posted
 			   charges around it - an outline on top of the fill would read as MORE important, backwards
@@ -917,11 +972,11 @@ export class TransactionView extends BaseComponent{
 					...(this.props.pending
 						?{background:"transparent",border:"1px solid "+DS.getStyle().bodyTextSecondary,boxShadow:"none"}
 						:{})}}>
-				{this.isAmazon()?this.renderAmazonTile():this.renderRegularTile()}
+				{this.isAmazon()?this.renderAmazonTile(amount):this.renderRegularTile(amount)}
 			</DS.component.ContentTile>
 			{/*the strip is the charge-level way of saying what the item rows now say per item, so where those
 			   rows are carrying it this would be the same statement twice - and the vaguer of the two*/}
-			{(this.props.transaction.reconciliation && !this.props.refundShownOnItems)?<div>{this.renderReconciliation()}</div>:""}
+			{(this.props.transaction.reconciliation && !this.props.refundShownOnRows)?<div>{this.renderReconciliation()}</div>:""}
 		</div>
 	)}
 	renderReconciliation(){
