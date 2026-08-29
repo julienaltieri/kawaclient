@@ -19,7 +19,7 @@
 import Core from '../core'
 import utils from '../utils'
 import { reconcileZeroSumStreamTransactions, suggestAmazonReturnSplits, suggestRefundMatches, getMerchantKey, merchantKeysMatch, refundMatchingConfig } from '../transactionMatching'
-import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData } from '../components/CategorizeAction'
+import { getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData, mapAllocationsToItems, getAmazonItemSplit } from '../components/CategorizeAction'
 
 // ---------------------------------------------------------------------------
 // Test runner – each test collapses to ONE console line.
@@ -1693,6 +1693,125 @@ function testAC13_pricesAreStableAndItemsUnshared() {
 	})
 }
 
+
+// ---------------------------------------------------------------------------
+// Reading an item split back
+//
+// streamAllocation records stream and amount only. These cover recovering which item went to which
+// stream by inverting that sum, and - more importantly - declining to when the answer is not unique.
+// ---------------------------------------------------------------------------
+
+const valueAllocation = (streamId, amount) => ({ streamId, amount, type: 'value' })
+
+/**
+ * Test AC-14 - An item-wise split can be read back item by item
+ *
+ * The whole basis for editing an item split in the view it was made in. Two items, two streams, each
+ * allocation exactly one item's price.
+ */
+function testAC14_itemSplitReadsBack() {
+	runTest('Test AC-14 - An item-wise split reads back onto its items', assert => {
+		const txn = makeMockChargeTransaction(-16.12, '2026-07-23', makeMockAmazonOrder({ transactions: [{ amount: 16.12 }] }))
+		txn.streamAllocation = [valueAllocation('stream-food', -4.06), valueAllocation('stream-home', -12.06)]
+
+		const split = getAmazonItemSplit(txn)
+		assert(split?.items.length === 2, 'both items are still there', split?.items.length)
+		assert(JSON.stringify(split?.streamIds) === JSON.stringify(['stream-food', 'stream-home']),
+			'each item carries the stream its own price was allocated to', split?.streamIds)
+	})
+}
+
+/**
+ * Test AC-15 - A charge categorized whole puts every item on that stream
+ *
+ * The commonest case by far: a stream chip writes one percent allocation covering everything. There is
+ * only one possible reading, so it must never fall back - and it must not depend on the arithmetic
+ * agreeing to the cent.
+ */
+function testAC15_wholeChargeAllocationCoversEveryItem() {
+	runTest('Test AC-15 - One allocation over the whole charge puts every item on it', assert => {
+		const txn = makeMockChargeTransaction(-16.12, '2026-07-23', makeMockAmazonOrder({ transactions: [{ amount: 16.12 }] }))
+		txn.streamAllocation = [{ streamId: 'stream-shopping', amount: 1.0, type: 'percent' }]
+		assert(JSON.stringify(getAmazonItemSplit(txn)?.streamIds) === JSON.stringify(['stream-shopping', 'stream-shopping']),
+			'every item reads as being on the one stream', getAmazonItemSplit(txn)?.streamIds)
+
+		const byValue = makeMockChargeTransaction(-16.12, '2026-07-23', makeMockAmazonOrder({ transactions: [{ amount: 16.12 }] }))
+		byValue.streamAllocation = [valueAllocation('stream-shopping', -16.13)]//a cent adrift on purpose
+		assert(JSON.stringify(getAmazonItemSplit(byValue)?.streamIds) === JSON.stringify(['stream-shopping', 'stream-shopping']),
+			'and a rounding cent cannot cost it the item view', getAmazonItemSplit(byValue)?.streamIds)
+	})
+}
+
+/**
+ * Test AC-16 - Two readings means no reading
+ *
+ * The refusal that makes the rest safe. Items priced alike on different streams could be swapped and
+ * the result would look exactly as convincing, so the inversion declines and the caller shows amounts.
+ */
+function testAC16_ambiguousSplitDeclines() {
+	runTest('Test AC-16 - An ambiguous split declines rather than picking', assert => {
+		assert(mapAllocationsToItems([10, 10], [valueAllocation('a', -10), valueAllocation('b', -10)], -20) === undefined,
+			'two identical prices on two streams is not knowable')
+		assert(JSON.stringify(mapAllocationsToItems([10, 10], [valueAllocation('a', -20)], -20)) === JSON.stringify(['a', 'a']),
+			'but identical prices on ONE stream are, because there is nothing to choose')
+	})
+}
+
+/**
+ * Test AC-17 - An amount-based split is not an item split and must not pretend to be
+ *
+ * Halves typed by hand line up with no subset of the item prices. This is the case the fallback exists
+ * for, and the one that would be most convincing if it were faked.
+ */
+function testAC17_amountSplitDeclines() {
+	runTest('Test AC-17 - An amount-based split falls back to amounts', assert => {
+		const txn = makeMockChargeTransaction(-16.12, '2026-07-23', makeMockAmazonOrder({ transactions: [{ amount: 16.12 }] }))
+		txn.streamAllocation = [valueAllocation('a', -8.06), valueAllocation('b', -8.06)]
+		assert(getAmazonItemSplit(txn)?.streamIds === undefined,
+			'halves that match no subset of the items are not an item split', getAmazonItemSplit(txn)?.streamIds)
+		assert(getAmazonItemSplit(txn)?.items.length === 2,
+			'the items are still known - only the mapping is not', getAmazonItemSplit(txn)?.items.length)
+	})
+}
+
+/**
+ * Test AC-18 - A charge with a single item can still be split by item
+ *
+ * One row is still where a stream is chosen and where a refund is shown. A single-item charge dropping
+ * to the amount-based view would be the one charge in an order whose rows looked unlike its siblings'.
+ */
+function testAC18_singleItemChargeIsStillItemWise() {
+	runTest('Test AC-18 - One item is enough for the item-wise view', assert => {
+		const order = { orderNumber: 'order-ac18', orderAmount: 12.06, transactions: [{ amount: 12.06 }],
+			items: [{ itemPrice: 12.06, itemDescription: 'Only thing', image: '' }] }
+		const txn = makeMockChargeTransaction(-12.06, '2026-07-23', order)
+		assert(canSplitAmazonByItem(txn) === true, 'a one-item charge is splittable by item', canSplitAmazonByItem(txn))
+		assert(getAmazonItemSplit(txn)?.streamIds === undefined,
+			'and with nothing allocated yet it has no streams to show', getAmazonItemSplit(txn)?.streamIds)
+	})
+}
+
+/**
+ * Test AC-19 - A refund split reads back, so the returned item can be named
+ *
+ * A return reconciles by splitting the charge and allocating part of it to the refund stream. Inverting
+ * that is what lets the item itself carry the refund state instead of the whole charge.
+ */
+function testAC19_refundSplitNamesTheReturnedItem() {
+	runTest('Test AC-19 - The item a refund landed on is recoverable', assert => {
+		const order = { orderNumber: 'order-ac19', orderAmount: 43.44, transactions: [{ amount: 43.44 }],
+			items: [{ itemPrice: 18.49, itemDescription: 'Kept', image: '' },
+					{ itemPrice: 24.95, itemDescription: 'Returned', image: '' }] }
+		const txn = makeMockChargeTransaction(-43.44, '2026-07-23', order)
+		txn.streamAllocation = [valueAllocation('stream-returns', -24.95), valueAllocation('stream-baby', -18.49)]
+
+		const split = getAmazonItemSplit(txn)
+		const returned = split?.items.filter((it, i) => split.streamIds?.[i] === 'stream-returns')
+		assert(returned?.length === 1 && returned[0].itemDescription === 'Returned',
+			'the refund stream resolves to exactly the item that was sent back', returned?.map(it => it.itemDescription))
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point – called from clientTestRoutine.js
 // ---------------------------------------------------------------------------
@@ -1755,6 +1874,15 @@ export function runTransactionMatchingTests() {
 	testAC11_incompleteInventoryAbsorbsNothing()
 	testAC12_interchangeableItemsDecline()
 	testAC13_pricesAreStableAndItemsUnshared()
+	console.groupEnd()
+
+	console.group('Reading an item split back')
+	testAC14_itemSplitReadsBack()
+	testAC15_wholeChargeAllocationCoversEveryItem()
+	testAC16_ambiguousSplitDeclines()
+	testAC17_amountSplitDeclines()
+	testAC18_singleItemChargeIsStillItemWise()
+	testAC19_refundSplitNamesTheReturnedItem()
 	console.groupEnd()
 
 	console.groupEnd()

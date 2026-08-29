@@ -118,37 +118,21 @@ which one it is.
 The tile names the order once across the top — `Fanny's Amazon order #818 from Aug 24`, both halves
 cut to what distinguishes one order from another, with the full order number on the `title` — and
 then describes **one charge**: its item, its date,
-its amount, and beneath that the order's other bank transactions as `and $12.06 on 7/23/26`. Those
-sibling lines are the navigation: tapping one closes the dialog and reopens it on that charge.
-Nothing else was added — the tile is crowded already, and navigation turned out to be the whole of
-what was needed.
+its amount, and beneath that the order's other bank transactions as `and $12.06 on 7/23/26`.
 
-**Tappable is signalled by underlining the amount and nothing else**, and the cue is derived from the
-same flag as the click handler, so a row cannot look openable while being inert. An earlier version
-put a dotted underline on the row's base style, which meant every sibling wore the cue whether or not
-it could be opened — the fix was to move the cue onto the amount, not to abandon the underline.
+Those sibling lines are **inert, and appear only on a queue card**. In the queue you answer one charge
+at a time, and jumping to a sibling mid-flow is what creates the states nothing downstream handles —
+one charge split and the other not, one categorized while its sibling is still queued. The lines are
+still worth their row: without them nothing on the card says this order has other charges at all.
+Nothing is underlined, because nothing opens — with one condition instead of two, the cue and the
+behaviour cannot drift apart.
 
-Where tapping is allowed depends on where you are:
-
-| | sibling is uncategorized | sibling is already categorized |
-|---|---|---|
-| **in the queue** | inert | opens its dialog |
-| **inside a dialog** | opens the split view | opens its dialog |
-
-In the queue you are categorizing one transaction at a time, and jumping to a sibling mid-flow is
-what creates the awkward states — one charge split and the other not, one categorized while its
-sibling is still queued. An already categorized sibling is the exception because there is nothing in
-progress to disturb. Inside a dialog the restriction lifts: by then you are looking at one charge
-rather than working through a queue.
-
-**Where you land follows the target, not where you came from.** A categorized charge opens its own
-dialog; an uncategorized one opens the split view. That is what makes the round trip work in both
-directions, and it means the dialog can end up on a different transaction than the one it opened on —
-so it writes its allocations to the transaction it ended on, and only concludes the queue card's
-action when that is the card's own transaction.
-
-That navigation is the only practical way to move between the charges of one order: finding the
-sibling in the transaction feed runs straight back into the problem of telling them apart.
+**Inside a dialog there are no sibling lines, because the siblings are pages.** Every charge of the
+order is a page of a deck you flick between (§9), so moving between them neither closes the dialog nor
+reopens anything, and the order is named once above the deck rather than on each page. The defect that
+the old close-and-reopen navigation had to guard against — a dialog writing its allocations to the
+transaction it *opened* on rather than the one it ended on — is gone rather than fixed: the dialog now
+holds every charge and writes each one explicitly.
 
 **Only *posted* charges are listed.** Amazon's payments-page ledger also contains entries that never
 become bank transactions at all — the gift-card portion of a split payment, for one — so listing it
@@ -257,25 +241,66 @@ Where it surfaces:
   keep pushing the amount down after the words had stopped.
 
   The item carousel shows the items *this charge* paid for when they can be determined and the whole
-  order otherwise. Two independent rules govern it: the carousel appears
-  only when the charge covers more than one item, and the per-item price tags appear only when the
-  carousel does. A charge covering a single item already has that item's price on display — it is the
-  transaction amount beside the picture — so a tag would only repeat it. Tying the tag to the
-  carousel rather than to whether a price happens to be known is what keeps the two from drifting
-  apart. (`AmazonItemImage` is shared with the split view, which always prices its rows: you cannot
-  assign an item to a stream without knowing what it cost.) The headline amount is **the
-  transaction's own**, with the order's other charges beneath it (§6). It used to be their sum, which
-  read as "what the order cost" only for as long as they were all charges — once refunds started carrying the same
-  order number the sum became the order's net after returns, matching neither the allocations shown
-  below it nor any real transaction.
-- **`AmazonItemAllocationView`** ([`ModalManager.js:354`](../src/ModalManager.js#L354)) — Split, for
-  an Amazon order, asks *which stream* rather than *how much*. One row per item — picture, "Goes to",
-  stream — emitting the same `{streamId, amount, type:"value"}` array as the amount-based view, with
-  several items in one stream collapsed into a single allocation. Streams already picked on this
-  transaction float to the top of the dropdown under an "Already in this order" `optgroup`.
+  order otherwise. The carousel appears only when the charge covers more than one item, and its
+  per-item price tags appear only when the carousel does **and nothing below is already pricing the
+  items**. On a queue card the tag is the only place an item's price appears at all; inside the deck
+  the allocation rows carry every price, so a tag there would say it twice. A charge covering a single
+  item has its price on display anyway — it is the transaction amount beside the picture.
+  (`AmazonItemImage` is shared with the split view, which always prices its rows: you cannot assign an
+  item to a stream without knowing what it cost.) The headline amount is **the transaction's own**. It
+  used to be the order's sum, which read as "what the order cost" only for as long as they were all
+  charges — once refunds started carrying the same order number the sum became the order's net after
+  returns, matching neither the allocations shown below it nor any real transaction.
+- **`AmazonItemAllocationView`** — Split, for an Amazon order, asks *which stream* rather than *how
+  much*. One row per item — picture, "Goes to", stream — emitting the same
+  `{streamId, amount, type:"value"}` array as the amount-based view, with several items in one stream
+  collapsed into a single allocation. Streams already picked float to the top of the dropdown under an
+  "Already in this order" `optgroup`. One item is enough: a single-item charge dropping to the
+  amount-based view would be the one charge in an order whose rows looked unlike its siblings'.
 
-`canSplitAmazonByItem` decides which view opens, and requires the charge's items to be known and to
-number more than one — see §7.
+  An item allocated to a **zero-sum stream** is one that went back, and the row says so without being
+  told: an amber dot in the price chip while the credit is expected, a green dot with the price struck
+  and "Refunded on …" in place of the field once it has arrived. Which item a credit landed on is
+  inferred by matching its amount against the item prices, and **only when exactly one item matches** —
+  two items priced alike would otherwise put "refunded" under a picture of something still owned. The
+  arrived half needs the zero-sum reconciliation for that stream, which is computed in the analysis
+  view and attached to the transaction there; everywhere else — the queue's dialog included — a
+  returned item reads as still expected, which is less than the truth rather than different from it.
+
+`canSplitAmazonByItem` requires only that the charge's items be known — see §7.
+
+### 9. The charge deck
+
+Every charge of one order, as pages you flick between, inside the Split and Edit dialogs
+([`ChargeDeck.js`](../src/components/ChargeDeck.js)). One page is a charge tile *and* its allocation
+rows, so the two travel together — swapping the rows underneath a moving deck is what made the content
+jump. The deck owns the track's position, the gesture, the spring and its own height; it knows nothing
+about what a page contains.
+
+The gesture locks direction after 6px, so a vertical drag still scrolls. A release projects its
+velocity, snaps to the nearest page and settles on a spring, which is what makes a throw feel like one
+movement rather than a drag followed by an animation. Velocity is sampled from the **track**, not the
+finger: past either end the track follows only `rubber` of the hand, and measuring the hand there hands
+the spring a speed the deck never had. The constants sit together in `deckPhysics`, tuned on a device
+against a live prototype. Page pitch is measured off the DOM rather than computed, because the page is a
+flex child of a track inside a modal whose padding is not the deck's to know.
+
+The pager is dots up to seven charges and a `3 / 9` count beyond, where dots stop being countable. A dot
+says **position and nothing else**: filled and larger for the one you are on. It briefly also said
+whether a charge had posted and whether it was categorized, which is three meanings on a half-rem circle
+and two more than it carries — the tile says all of them already.
+
+**One confirmation answers the order.** The dialog writes each charge its own allocations, and only the
+ones actually changed. Because `categorizeTransactions` consumes the queue action of every transaction
+it categorizes, the sibling cards leave with it — the same path a stream chip already took for an order.
+A deck can hold charges in both states at once, one being split for the first time and another being
+edited; the commit rail already keys each transaction on `transactionId` or `id` depending on which, so
+no branch is needed for the mixed case.
+
+Confirm asks a different question depending on why the dialog is open. Clearing queued work (Split from
+a card): every charge that has never been categorized must be fully allocated, because leaving one
+behind recreates exactly the half-answered order the deck exists to prevent. Correcting an existing
+categorization (Edit): something must actually have changed since it opened.
 
 ---
 
@@ -293,11 +318,17 @@ reaches the UI unchecked.
 needs the *nominal* prices as weights in order to re-spread them onto a total that isn't the order
 total. Dropping it from the payload would break the split view.
 
-**Splitting by item is the initial allocation only.** `streamAllocation` records stream and amount
-and nothing about items, so once two items have been summed into one allocation there is nothing to
-map back — editing an existing split therefore falls back to the amount-based view. Changing this
-means teaching the model which items went where, which is a backend change and was deliberately
-deferred.
+**An item split is read back by inverting it, not by storing it.** `streamAllocation` still records
+stream and amount and nothing about items — the server's `assignStream` rebuilds allocations as
+`{streamId, amount}` and `consolidate()` merges same-stream value allocations, so item identity has
+nowhere to live. But if a split was *made* item by item then every allocation is exactly the sum of some
+subset of the charge's item prices, and that assignment can be recovered: `mapAllocationsToItems`
+inverts the sum, and editing an existing split therefore opens in the view it was created in. **Unique
+or refuse**, like every other inference here — two items priced alike on two streams have two equally
+good readings, and the fallback to the amount-based rows knows less and says so. A single allocation
+covering the whole charge needs no arithmetic at all and never falls back, which matters because that is
+what a stream chip writes. This replaced a deliberate deferral to a backend change; the backend change
+is still the only way to make it a *fact* rather than an inference.
 
 **Item mapping and item prices belong to the order, not to a charge.** Nothing in Amazon's payload
 maps items to shipments, so a disjoint assignment of subsets to the order's charges is the best

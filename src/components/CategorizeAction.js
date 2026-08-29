@@ -203,12 +203,164 @@ export const getAmazonChargeItems = (transaction) => {
 	return {items:indices.map(i => amz.items[i]),prices:indices.map(i => resolved.price[i]),indices:indices}
 }
 
-//True when this transaction can be split item by item: we know which items it paid for, and there is more
-//than one of them to divide between streams. Unpriced orders (amazon fresh, digital) and charges whose item
-//subset can't be pinned down fall back to the amount-based split.
+//Beyond this the inversion below stops being worth running; an order that resists it this hard is one whose
+//items were almost certainly not what the split was made from.
+const maxStepsForAllocationInversion = 50000;
+
+//Reading an item-wise split back out of the allocations it produced.
+//
+//streamAllocation records stream and amount and nothing about items, so the model cannot say which item
+//went where. But if the split was MADE item by item then every allocation is exactly the sum of some subset
+//of this charge's item prices, and that assignment can be recovered by inverting the sum. Nothing is stored
+//and nothing is asked of the backend: this is inference over what is already there.
+//
+//Unique or refuse, the same rule the order resolution follows and for the same reason - two items priced
+//alike on two different streams have two equally good readings, and a wrong one looks exactly like a right
+//one once it is a picture with a stream name beside it. The caller falls back to the amount-based rows,
+//which know less and say so.
+//
+//Returns a streamId per item, aligned with `prices`, or undefined.
+export const mapAllocationsToItems = (prices,allocations,transactionAmount) => {
+	if(!prices?.length || !allocations?.length)return undefined
+	if(!allocations.every(al => !!al.streamId))return undefined
+	//one allocation covers everything there is, so there is nothing to infer and nothing to be wrong about.
+	//This is the common case - a charge categorized from a stream chip carries a single percent allocation -
+	//and it is handled before any arithmetic so a rounding cent cannot cost it the item view.
+	if(allocations.length===1)return prices.map(() => allocations[0].streamId)
+	if(!prices.every(pr => pr>0))return undefined
+
+	//percent allocations are relative to the charge; value allocations already carry its sign
+	var caps = allocations.map(al => Math.abs(al.type==="percent"?(al.amount||0)*(transactionAmount||0):(al.amount||0)));
+	if(!caps.every(c => c>0))return undefined
+	var cents = prices.map(pr => Math.round(pr*100)), left = caps.map(c => Math.round(c*100));
+	if(utils.sum(cents,c => c)!==utils.sum(left,c => c))return undefined
+
+	//biggest item first: it is the one with the fewest places to go, so a dead end is reached sooner
+	var order = cents.map((c,i) => i).sort((a,b) => cents[b]-cents[a]);
+	var assign = new Array(cents.length), found, steps = 0, ambiguous = false;
+	var walk = (k) => {
+		if(ambiguous)return
+		if(++steps>maxStepsForAllocationInversion){ambiguous = true;return}//out of budget is not the same as
+		if(k===order.length){                                             //no answer, so it declines too
+			if(found)return void (ambiguous = true)
+			found = [...assign];
+			return
+		}
+		var i = order[k];
+		for(var a=0;a<left.length && !ambiguous;a++){
+			if(left[a]<cents[i])continue
+			left[a] -= cents[i]; assign[i] = a;
+			walk(k+1);
+			left[a] += cents[i]; assign[i] = undefined;
+		}
+	}
+	walk(0);
+	return (ambiguous || !found)?undefined:found.map(a => allocations[a].streamId)
+}
+
+//This charge's items, their prices, and - when the existing split can be read back - the stream each item
+//is on. `streamIds` is undefined when there is no split yet or when it could not be inverted; the caller
+//shows empty rows in the first case and the amount-based view in the second.
+export const getAmazonItemSplit = (transaction) => {
+	var charge = getAmazonChargeItems(transaction);
+	if(!charge)return undefined
+	var existing = transaction?.streamAllocation;
+	return {...charge, streamIds: existing?.length
+		?mapAllocationsToItems(charge.prices,existing,transaction.amount)
+		:undefined}
+}
+
+//Whether a refund has arrived is a fact about the ORDER, not the one charge on screen: a charge's own
+//`reconciliation` used to answer this, but that property is stamped onto exactly one transaction object -
+//whichever one the reader clicked in the analysis view (AnalysisView.js:199) - so every sibling charge in
+//the same order never had it, and the queue's dialog deliberately clears it (see openDialog below), which
+//meant nothing shown there could ever go green. The order's own credits (same orderNumber as the charge
+//they refund) are visible from every context, so reading those instead works everywhere the amber dot does.
+//
+//Resolved once per order rather than per charge, for the reason 6 and 7 in DECISION-PRINCIPLES.md are both
+//about: an item's refund state is a property of the item, and must come out the same regardless of which
+//charge you happened to open to ask about it.
+//
+//Memoised, because a charge deck renders every charge of an order in one pass and each asks this same
+//question - without the cache, an order's debits would be walked (and each re-split item by item) once
+//per charge shown instead of once.
+var orderRefundMemo = {signature:undefined,expecting:undefined};
+const getOrderRefundAttribution = (orderNumber) => {
+	if(!orderNumber)return undefined
+	var order = Core.getTransactionsForOrderNumber(orderNumber)||[];
+	if(!order.length)return undefined
+	//cheap enough to recompute every render, but not free - a signature over what the order actually
+	//holds lets an unchanged order answer from the last pass instead
+	var signature = orderNumber+"|"+order.map(t => (t.getTransactionHash?.()||"")+":"+t.amount).join(",");
+	if(orderRefundMemo.signature===signature)return orderRefundMemo.expecting
+
+	//every item of the order sitting on a zero-sum stream, wherever its own charge lives among the order's
+	//several bank charges - the same split the item-wise view already computes, just walked across all of
+	//them instead of the one on screen
+	var expecting = [];
+	order.filter(t => t.amount<0).forEach(t => {
+		var split = getAmazonItemSplit(t);
+		var streamIds = split?.streamIds;
+		if(!streamIds?.length)return
+		streamIds.forEach((id,i) => {
+			if(id && Core.getStreamById(id)?.isZeroSumStream)
+				expecting.push({hash:t.getTransactionHash?.(),itemIndex:i,price:split.prices[i],state:"await",date:undefined});
+		});
+	});
+
+	var credits = order.filter(t => t.amount>0);
+	if(credits.length){
+		//one item expected across the whole order and at least one credit: there is nothing to confuse it
+		//with, so the amounts need not agree - a credit often carries shipping or tax the item's own share
+		//never carried.
+		if(expecting.length===1){
+			expecting[0].state = "back"; expecting[0].date = credits[0].date
+		//several candidates: a credit is attributed only where exactly one item's price matches it. Two
+		//items priced alike are not distinguishable, and naming the wrong one puts "refunded" under a
+		//picture of something still owned.
+		}else{
+			credits.forEach(credit => {
+				var amount = Math.abs(credit.amount);
+				var at = expecting.map((e,i) => (e.state==="await" && Math.abs(e.price-amount)<0.005)?i:-1).filter(i => i>-1);
+				if(at.length===1){expecting[at[0]].state = "back"; expecting[at[0]].date = credit.date}
+			});
+		}
+	}
+
+	orderRefundMemo = {signature,expecting};
+	return expecting
+}
+
+//Where each of this charge's items has got to on a refund stream: "await", "back", or nothing.
+//
+//An item allocated to a zero-sum stream with no credit against it yet IS the awaiting state - nothing else
+//records it, and no extra data is needed to say so, which is why this half works everywhere including the
+//queue's dialog. Whether a credit has ARRIVED is answered by getOrderRefundAttribution above; a missing
+//order, an order with no charges on file, or this charge not turning up in it all fall back to leaving
+//every item awaiting, which is less than the truth rather than different from it.
+export const getAmazonItemRefundStates = (transaction,split) => {
+	var streamIds = split?.streamIds;
+	if(!streamIds?.length)return undefined
+	var states = streamIds.map(id => (id && Core.getStreamById(id)?.isZeroSumStream)?{state:"await"}:undefined);
+	if(!states.some(st => !!st))return undefined
+	var expecting = getOrderRefundAttribution(getAmazonOrderData(transaction)?.orderNumber);
+	if(!expecting?.length)return states
+	var hash = transaction?.getTransactionHash?.();
+	return states.map((st,i) => {
+		if(!st)return st
+		var entry = expecting.find(e => e.hash===hash && e.itemIndex===i);
+		return entry?.state==="back"?{state:"back",date:entry.date}:st
+	})
+}
+
+//True when this transaction can be split item by item: we know which items it paid for. One item is enough -
+//the row is still where its stream and its refund state are said, and a single-item charge that dropped to
+//the amount-based view would be the one charge in an order whose rows looked different from its siblings'.
+//Unpriced orders (amazon fresh, digital) and charges whose item subset can't be pinned down fall back to
+//the amount-based split.
 export const canSplitAmazonByItem = (transaction) => {
 	var charge = getAmazonChargeItems(transaction);
-	return !!charge && charge.items.length>1
+	return !!charge && charge.items.length>0
 }
 
 //The white product tile: item picture with its post-tax price in the bottom-right corner. Shared by the
@@ -224,7 +376,15 @@ export const AmazonItemImage = (props) => (
 			filter: "brightness("+(DS.isDarkMode()?0.9:1)+")",
 			...props.style}}>
 		<DS.component.Image src={props.item.image} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
-		{props.price>0?<ItemPriceLabel>{utils.formatCurrencyAmount(props.price,2,true,true,Core.getPreferredCurrency())}</ItemPriceLabel>:""}
+		{props.price>0?<ItemPriceLabel>
+			{/*the dot rides inside the chip rather than sitting loose on the picture: product shots are
+			   pale and a small mark on top of one gets lost, while the chip is dark in both themes. The
+			   rule goes through the price alone - across the whole chip it would strike the dot too.*/}
+			{props.refund?<span style={{width:"0.4rem",height:"0.4rem",borderRadius:"50%",flexShrink:0,
+				background:props.refund.state==="back"?DS.getStyle().positive:DS.getStyle().warning}}/>:""}
+			<span style={{textDecoration:props.refund?.state==="back"?"line-through":"none"}}>
+				{utils.formatCurrencyAmount(props.price,2,true,true,Core.getPreferredCurrency())}</span>
+		</ItemPriceLabel>:""}
 	</div>
 )
 
@@ -359,45 +519,53 @@ class CategorizeActionCard extends ActionCard{
 		})
 	}
 	resetAnimationState(){return this.updateState({animationIconVisible:false,visible:true,isSaving:false,moveOutOfTheWay:this.props.startsOutOfTheWay,useSkipIcon:false})}
-	//In the queue you are categorizing one transaction at a time, so the order's other charges are shown
-	//but inert: jumping to a sibling mid-categorization is what creates the awkward states - one charge
-	//split and the other not, one categorized while its sibling is still in the queue. The exception is a
-	//sibling that has ALREADY been categorized: there is nothing in progress to disturb, so it opens. Once
-	//you are inside a dialog the restriction lifts, because by then you are looking at one charge rather
-	//than working through a queue.
-	getNavigation(insideDialog){
-		return {
-			canNavigate: (other) => insideDialog || !!other.categorized,
-			onNavigate: (other) => Promise.resolve(Core.dismissModal()).then(() => this.openCharge(other))
-		}
-	}
-	//Where tapping a sibling lands follows the target, not where you came from: an already categorized
-	//charge opens its own dialog, an uncategorized one opens the split view. That is what lets you go back
-	//and forth between the two.
-	openCharge(transaction){
-		return transaction.categorized?this.onEditClicked(transaction):this.onSplitClicked(transaction)
-	}
 	//The refund strip is a statement about one zero-sum stream's analysis, and the queue has no stream in
 	//view, so there is none to show here. Clearing it is what stops a strip left on the transaction by a
 	//previous visit to the analysis view from turning up in the queue's dialog.
-	openDialog(title,transaction,streamRecs){
+	openDialog(title,transaction,streamRecs,options){
 		transaction.reconciliation = undefined;
-		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions(title,undefined,undefined,transaction,streamRecs,this.getNavigation(true)))
+		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions(title,undefined,undefined,transaction,streamRecs,options))
+	}
+	//What a dialog answered with, in the one shape both kinds return: a charge and the allocations for it.
+	//An order opened as a deck answers for every charge it holds; anything else answers for the one it was
+	//given. Charges the reader never touched come back with nothing and are dropped here rather than being
+	//written as an empty categorization.
+	answeredCharges(state,fallback){
+		var charges = state?.charges||[fallback], allocations = state?.allocationsByCharge||[state?.allocations];
+		var out = {charges:[],allocations:[]};
+		charges.forEach((t,i) => {
+			if(!t || !allocations[i]?.length)return
+			out.charges.push(t); out.allocations.push(allocations[i]);
+		});
+		return out
 	}
 	onEditClicked(transaction){
-		return this.openDialog("Edit",transaction,[]).then(({state,buttonIndex}) => {
-			if(buttonIndex==1)this.props.appContext.onCategorizationUpdate([transaction],[state.allocations])
+		var target = transaction||this.props.transaction;
+		return this.openDialog("Edit",target,[]).then(({state,buttonIndex}) => {
+			if(buttonIndex!=1)return
+			var answered = this.answeredCharges(state,target);
+			if(answered.charges.length)this.props.appContext.onCategorizationUpdate(answered.charges,answered.allocations)
 		}).catch(e => {})
 	}
-	//The dialog can be navigated onto another charge of the same order, so what gets written has to be the
-	//transaction it ended up on rather than the one this card was built for. Only a split of THIS card's
-	//transaction concludes the card's action; a sibling is saved on its own and the card stays where it is.
+	//An Amazon order billed as several charges puts several cards in this queue, and the split dialog holds
+	//all of them at once - so one confirmation answers the lot. Concluding the action with every charge it
+	//covered is what takes their queue cards with it: categorizeTransactions consumes the queue action of
+	//each transaction it categorizes, which is the same path a stream chip already takes for an order.
+	//Charges already categorized are in that list too, and need no special handling here - the commit rail
+	//keys each one on transactionId or id depending on whether it was categorized already.
 	onSplitClicked(transaction){
-		var target = transaction || this.props.transaction;
-		return this.openDialog("Split",target,this.state.recStreams).then(({state,buttonIndex}) => {
+		var target = transaction||this.props.transaction;
+		//requireAll: every charge of this order is queued work, and leaving one behind recreates the
+		//half-answered order the deck exists to prevent
+		return this.openDialog("Split",target,this.state.recStreams,{requireAll:true}).then(({state,buttonIndex}) => {
 			if(buttonIndex!=1)return
-			if(target===this.props.transaction)this.props.parentAction.onActionConcluded(this.props.parentAction,[target],state.allocations)
-			else this.props.appContext.onCategorizationUpdate([target],[state.allocations])
+			var answered = this.answeredCharges(state,target);
+			if(!answered.charges.length)return
+			//this card's own transaction has to be among them for the card to conclude; if the reader
+			//answered only siblings, they are saved and the card stays where it is
+			if(answered.charges.indexOf(this.props.transaction)>-1)
+				this.props.parentAction.onActionConcluded(this.props.parentAction,answered.charges,answered.allocations)
+			else this.props.appContext.onCategorizationUpdate(answered.charges,answered.allocations)
 		}).catch(e => {this.updateState({isSaving:false})})
 	}
 	showMoreStreamContextualMenu(event){
@@ -416,7 +584,7 @@ class CategorizeActionCard extends ActionCard{
 			<AnimationSymbolContainer style={{opacity:this.state.animationIconVisible?1:0,transform:"scale("+(this.state.animationIconVisible?1:0.5)+")"}}>
 				<AnimationSymbol>{this.state.useSkipIcon?<Chevron/>:<Check/>}</AnimationSymbol>
 			</AnimationSymbolContainer>
-			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction} navigation={this.getNavigation(false)}/>
+			<TransactionView animationIconVisible={this.state.animationIconVisible} transaction={this.props.transaction}/>
 
 			{/*stream suggestions. ActionsContainerBox carries `margin: 5rem auto` and every caller
 			   overrides only the top of it; the 5rem underneath went unnoticed while the action zone was
@@ -520,18 +688,17 @@ export class TransactionView extends BaseComponent{
 		</div>
 	}
 	//Another charge of the same order: "and $12.06 on 7/23/26", sitting under this charge's own amount and
-	//aligned with it so the two read as one column of money. Tappable is signalled by underlining the amount
-	//and nothing else, and the cue comes off the same flag as the handler - a row can never look openable
-	//while being inert. `navigation` is what decides: in the queue only an already categorized charge opens,
-	//inside a dialog any of them does, and a caller can veto individual rows on top of that.
+	//aligned with it so the two read as one column of money.
+	//
+	//Inert, always. These lines appear only on a queue card now, where you are answering one charge at a
+	//time and jumping to a sibling mid-flow is what creates the states nothing downstream handles - one
+	//charge split and the other not. Inside a dialog the charges are pages of a deck instead, so there is
+	//nothing left for a tappable line to do. Nothing is underlined, because nothing opens: the cue and the
+	//behaviour cannot disagree if there is only one of them.
 	renderSiblingLine(n){
-		var nav = this.props.navigation;
-		var canNavigate = !!nav?.onNavigate && (nav.canNavigate?nav.canNavigate(n):true);
-		return <div key={n.getTransactionHash()} title={canNavigate?"Open this charge":undefined}
-			onClick={canNavigate?((e) => {e.stopPropagation();nav.onNavigate(n)}):undefined}
-			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",
-				...(canNavigate?tappableStyle:{cursor:"default"})}}>
-			and <span style={{textDecoration:canNavigate?"underline":"none"}}>{utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</span> on {utils.formatDateShort(n.getDisplayDate())}
+		return <div key={n.getTransactionHash()}
+			style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem",cursor:"default"}}>
+			and {utils.formatCurrencyAmount(n.amount,undefined,undefined,undefined,Core.getPreferredCurrency())} on {utils.formatDateShort(n.getDisplayDate())}
 		</div>
 	}
 	//The product picture, with the carousel under it when this charge covers more than one item.
@@ -541,11 +708,15 @@ export class TransactionView extends BaseComponent{
 	//A charge covering one item has that item's price on display already - it is the transaction amount
 	//beside the picture - so a tag would only repeat it. Tying the tag to the carousel rather than to
 	//whether a price happens to be known is what stops the two from drifting apart.
+	//`pricedBelow` says the rows under this tile already carry every item's price, so a tag on the carousel
+	//would only say it twice. That is the deck's case; on a queue card there are no rows and the tag is the
+	//only place an item's price appears at all.
 	renderAmazonPicture(shownItems,prices,showCarousel){
+		var priced = showCarousel && !this.props.pricedBelow;
 		return <div style={{marginRight:DS.spacing.xs+"rem",flexShrink:0}}>
 			<div style={{position:"relative",display:"flex",width:DS.spacing.xl+"rem",overflow:"hidden",borderRadius:DS.borderRadiusSmall}}>
 				{shownItems.map((it,i) =>
-					<AmazonItemImage key={i} item={it} price={showCarousel?prices[i]:undefined} size={DS.spacing.xl} style={{
+					<AmazonItemImage key={i} item={it} price={priced?prices[i]:undefined} size={DS.spacing.xl} style={{
 						marginLeft:(i==0?-(this.state.selectedItemImage-1)*DS.spacing.xl+"rem":0),
 						transition:"margin-left 0.5s ease"}}/>
 				)}
@@ -565,18 +736,31 @@ export class TransactionView extends BaseComponent{
 	renderAmazonTile(){
 		var amz = this.getAmazonData();
 		//the items this charge actually paid for when we can tell them apart; otherwise the whole order
-		var charge = getAmazonChargeItems(this.props.transaction);
-		var shownItems = charge?charge.items:(amz?.items||[]);
-		var prices = charge?charge.prices:getAmazonItemPrices(amz,amz?.orderAmount);
+		var split = getAmazonItemSplit(this.props.transaction);
+		var shownItems = split?split.items:(amz?.items||[]);
+		var prices = split?split.prices:getAmazonItemPrices(amz,amz?.orderAmount);
 		var showCarousel = shownItems.length>1;
-		var siblings = (this.getAmazonNeighbors()||[]).filter(n => !this.isCurrentTransaction(n));
+		//Inside a deck the order is named once above it and the siblings ARE the other pages, so neither
+		//belongs on the tile; on a queue card there is no deck, and both are how you tell one charge of an
+		//order from another.
+		var inDeck = !!this.props.inDeck;
+		var siblings = inDeck?[]:(this.getAmazonNeighbors()||[]).filter(n => !this.isCurrentTransaction(n));
 		//always the transaction being shown, never the order's net. Summing the order's transactions was
 		//defensible while they were all charges, but a refund carries the same orderNumber, so the sum
 		//silently became "what the order cost after returns" - a number matching neither the allocations
 		//below it nor any real transaction. The sibling lines give the context instead.
 		var amount = this.props.transaction.amount;
+		//The rows below only show refund state per item when this prop is set - so only then is the
+		//headline allowed to net an item's price back out, and only then is doing so honest: elsewhere
+		//(a queue card) nothing on screen explains why the amount reads smaller than the transaction, so
+		//it would just look wrong.
+		if(this.props.refundShownOnItems){
+			var refundStates = getAmazonItemRefundStates(this.props.transaction,split);
+			var refundedTotal = utils.sum((refundStates||[]).map((st,i) => st?.state==="back"?prices[i]:0));
+			if(refundedTotal)amount = utils.round2Decimals(amount+refundedTotal);
+		}
 		return(<React.Fragment>
-			{this.renderAmazonIdentity(amz)}
+			{inDeck?"":this.renderAmazonIdentity(amz)}
 			<div style={{display:"flex",flexDirection:"row",alignItems:"flex-start"}}>
 				{this.renderAmazonPicture(shownItems,prices,showCarousel)}
 				<div style={{display:"flex",flexDirection:"column",flexGrow:1,minWidth:0}}>
@@ -618,7 +802,9 @@ export class TransactionView extends BaseComponent{
 						:{flexDirection:"row",alignItems:"center",textAlign:"center"})}}>
 				{this.isAmazon()?this.renderAmazonTile():this.renderRegularTile()}
 			</DS.component.ContentTile>
-			{this.props.transaction.reconciliation?<div>{this.renderReconciliation()}</div>:""}
+			{/*the strip is the charge-level way of saying what the item rows now say per item, so where those
+			   rows are carrying it this would be the same statement twice - and the vaguer of the two*/}
+			{(this.props.transaction.reconciliation && !this.props.refundShownOnItems)?<div>{this.renderReconciliation()}</div>:""}
 		</div>
 	)}
 	renderReconciliation(){
@@ -637,6 +823,9 @@ export class TransactionView extends BaseComponent{
 //price tag sitting in the bottom-right corner of an amazon item picture (see AmazonItemImage). The picture
 //tile is always white in both themes, so the chip is dark in both.
 const ItemPriceLabel = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 0.2rem;
 	position: absolute;
 	bottom: 0;
 	right: 0;

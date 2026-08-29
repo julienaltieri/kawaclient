@@ -5,7 +5,8 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView, AmazonItemImage, getAmazonChargeItems, canSplitAmazonByItem, getAmazonOrderData} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates} from './components/CategorizeAction'
+import ChargeDeck from './components/ChargeDeck'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
@@ -62,18 +63,18 @@ export const ModalTemplates = {
 			<TransactionsModalView controller={that.state.controller} transactions={transactions} />
 		</div>,buttonArray)(that)
 	},
-	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs,navigation) => (that) => {
-		//an amazon order is always split by item, never by amount - the prices are already known.
-		//two cases keep the amount-based view: orders with no per-item prices (amazon fresh, digital),
-		//and editing a split that already exists. The second is deliberate: streamAllocation records
-		//stream and amount only, so once several items have been summed into one allocation there is
-		//nothing to map back onto items. Splitting by item is therefore the initial allocation only,
-		//until the model records which items went where - which is a backend change.
-		const splitByItem = canSplitAmazonByItem(transaction) && !transaction.streamAllocation?.length;
-		const AllocationView = splitByItem?AmazonItemAllocationView:StreamAllocationOptionView;
+	//`options.requireAll` says this dialog is clearing queued work rather than correcting it, so every
+	//charge of the order that has never been categorized has to be answered before it can be confirmed.
+	ModalWithStreamAllocationOptions: (title,message,buttonArray,transaction,streamRecs,options) => (that) => {
+		//An amazon order is split by item, never by amount - the prices are already known. The amount-based
+		//view is the fallback for orders with no per-item prices (amazon fresh, digital) and for splits that
+		//cannot be read back onto their items; see getAmazonItemSplit.
+		const isOrder = !!getAmazonOrderData(transaction);
+		const AllocationView = isOrder?AmazonOrderAllocationView:StreamAllocationOptionView;
 		return ModalTemplates.ModalWithComponent(title,<div>
 			<div style={{textAlign:"left"}}>{message}</div>
-			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs} navigation={navigation}/>
+			<AllocationView controller={that.state.controller} transaction={transaction} streamRecs={streamRecs}
+				requireAll={!!options?.requireAll}/>
 		</div>,buttonArray)(that)
 	},
 	ModalWithListItems: (title,items,itemRendered = (li) => li,enableAccessor = () => true) => (that) => {
@@ -358,31 +359,43 @@ export class AmazonItemAllocationView extends BaseComponent{
 		//only the items THIS charge paid for. An order billed as several charges carries the whole order's
 		//item list on each of them, so asking the user to place every item while splitting one charge asks
 		//about things this transaction never paid for - and prices them wrongly on top.
-		var charge = getAmazonChargeItems(props.transaction);
+		//A split that already exists is read back onto the items it was made from, so editing one opens in
+		//the view it was created in rather than dropping to amounts. Where it cannot be read back the
+		//caller has already chosen the amount-based view, so `streamIds` is only ever absent here because
+		//nothing has been allocated yet.
+		var split = getAmazonItemSplit(props.transaction);
+		var seeded = split?.streamIds;
+		//what came back, per item - undefined where nothing on this charge is on a refund stream
+		this.refunds = getAmazonItemRefundStates(props.transaction,split);
 		this.state = {
 			controller: props.controller,
 			amz: amz,
-			items: charge.items,
+			items: split.items,
 			//already spread onto this charge, so the allocations sum to the transaction being split
-			prices: charge.prices,
-			assignments: charge.items.map(() => undefined),
-			pickOrder: [],//streamIds in the order they were picked, most recent last
+			prices: split.prices,
+			assignments: seeded?[...seeded]:split.items.map(() => undefined),
+			pickOrder: seeded?seeded.filter((id,i) => seeded.indexOf(id)===i):[],//streamIds, most recent last
 			allocations: []
 		}
-		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
-		this.setPrimaryButtonDisabled(true);
+		this.state.allocations = this.buildAllocations(this.state.assignments);
+		if(!this.props.embedded){
+			this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
+			this.setPrimaryButtonDisabled(true);
+		}
 	}
+	//Embedded, this view is one page of a deck: the page owns the transaction on show and the deck owns the
+	//confirm button, so the only thing to do with a change is hand it up. Standalone it still owns both.
 	postStateUpdateCallback(){
+		if(this.props.embedded)return this.props.onChange?.(this.state.allocations,this.isValid())
 		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
 		this.validate();
 	}
 	setPrimaryButtonDisabled(b){this.state.controller.setPrimaryButtonDisabled(b)}
-	validate(){
-		this.setPrimaryButtonDisabled(//every item needs a stream, and every stream needs to still exist
-			!utils.and(this.state.assignments,streamId => !!streamId)
-			|| !utils.and(this.state.allocations,al => Core.getMasterStream().hasTerminalChild(al.streamId) && !isNaN(al.amount) && al.amount!=0)
-		);
+	isValid(){//every item needs a stream, and every stream needs to still exist
+		return utils.and(this.state.assignments,streamId => !!streamId)
+			&& utils.and(this.state.allocations,al => Core.getMasterStream().hasTerminalChild(al.streamId) && !isNaN(al.amount) && al.amount!=0)
 	}
+	validate(){this.setPrimaryButtonDisabled(!this.isValid())}
 	handleStreamSelected(e,i){
 		var s = Core.getStreamById(e.target.selectedOptions[0].getAttribute("sid"))
 		this.assignItem(i,s.id)
@@ -441,27 +454,179 @@ export class AmazonItemAllocationView extends BaseComponent{
 	}
 	render(){
 		return(<div>
-			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction} navigation={this.props.navigation}/>
-			</div>
+			{this.props.embedded?"":<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
+				<TransactionView transaction={this.props.transaction}/>
+			</div>}
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.items.map((it,i) => <DS.component.Row key={i}>
-						<AmazonItemImage item={it} price={this.state.prices[i]} size={3} style={{
+						<AmazonItemImage item={it} price={this.state.prices[i]} size={3} refund={this.refunds?.[i]} style={{
 							overflow:"hidden",borderRadius: DS.borderRadiusSmall,
 							alignSelf:"center",marginBottom:"0.5rem"}}/>
-						<StyledSpendReceive>Goes to</StyledSpendReceive>
-						<DS.component.DropDown
-							value={(this.state.assignments[i])?this.getDropDownLabelForStreamId(this.state.assignments[i]):'DEFAULT'}
-							onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
-							<option value='DEFAULT' disabled hidden> </option>
-							{this.renderStreamOptions()}
-						</DS.component.DropDown>
+						{/*once the credit is in there is nothing left to choose, so the label and the field give
+						   way to what happened - starting where "Goes to" starts, so a settled row still lines
+						   up with the ones above and below it*/}
+						{this.refunds?.[i]?.state==="back"
+							?<StyledSpendReceive style={{maxWidth:"none",textAlign:"left",alignSelf:"center"}}>
+								Refunded on {utils.formatDateShort(this.refunds[i].date)}</StyledSpendReceive>
+							:<React.Fragment>
+								{/*textAlign left so this starts at the same 0.5rem offset as the settled label above -
+								   centered text would begin further right and the column would not line up*/}
+								<StyledSpendReceive style={{textAlign:"left"}}>Goes to</StyledSpendReceive>
+								<DS.component.DropDown
+									value={(this.state.assignments[i])?this.getDropDownLabelForStreamId(this.state.assignments[i]):'DEFAULT'}
+									onChange={((e)=>this.handleStreamSelected(e,i)).bind(this)}>
+									<option value='DEFAULT' disabled hidden> </option>
+									{this.renderStreamOptions()}
+								</DS.component.DropDown>
+							</React.Fragment>}
 					</DS.component.Row>)}
 				</ul>
 			</div>
 		</div>)
 	}
+}
+
+//Every charge of one Amazon order, as pages of a deck.
+//
+//An order billed as several charges produces several bank transactions that are identical on screen and
+//several cards in the queue. Listing the siblings under the tile only ever said that they existed; here
+//they are the pages, so one pass answers the order and their queue cards leave together.
+//
+//This view owns no rows of its own. Each page is a charge tile plus whichever allocation view suits that
+//charge - item-wise where the items are known and the existing split can be read back onto them, amounts
+//where it cannot - and those views report upward instead of driving the modal, so there is one
+//implementation of a row rather than two.
+export class AmazonOrderAllocationView extends BaseComponent{
+	constructor(props){
+		super(props)
+		var charges = AmazonOrderAllocationView.chargesOf(props.transaction);
+		var at = charges.indexOf(props.transaction);
+		this.state = {
+			controller: props.controller,
+			charges: charges,
+			index: at>-1?at:0,//chargesOf puts it first, so this is 0 - kept honest rather than hard-coded
+			//what each charge was allocated when the dialog opened, so a change can be told from a re-render
+			baselines: charges.map(t => normalizeAllocations(t.streamAllocation,t.amount)),
+			allocationsByCharge: charges.map(() => undefined),
+			validByCharge: charges.map(() => false)
+		}
+		this.publish(true);
+	}
+	//The order's charges: its bank debits, oldest first. Credits carry the same order number and are not
+	//charges, so they are not pages - a refund is reconciled against the charge it cancels, which is a
+	//different system (documentation/zero-sum-streams.md).
+	static chargesOf(transaction){
+		var amz = getAmazonOrderData(transaction);
+		if(!amz)return [transaction]
+		var found = (Core.getTransactionsForOrderNumber(amz.orderNumber)||[])
+			.filter(t => t.amount<0)
+			.sort(utils.sorters.asc(t => t.getDisplayDate()));
+		//Identity is the wrong test for whether the lookup found it: the caller holds its own reference and
+		//the lookup reads globalState, so the same charge can arrive as two objects. Adding it again would
+		//make one charge two pages and write it twice on confirm.
+		var same = (a,b) => a===b || (!!a.transactionId && a.transactionId===b.transactionId) || (!!a.id && a.id===b.id);
+		//The CALLER's object wins wherever both exist. It is the one carrying whatever the view stamped on
+		//it for this dialog - the zero-sum reconciliation, above all - and the copy from globalState has
+		//none of that.
+		found = found.map(t => same(t,transaction)?transaction:t);
+		if(!found.some(t => same(t,transaction)))found = [transaction].concat(found);
+		//The charge you opened leads, whatever order the bank posted them in. You asked about this one; the
+		//others are context, and burying it behind a sibling because that sibling settled first makes you
+		//hunt for the page you already chose.
+		return [transaction].concat(found.filter(t => !same(t,transaction)))
+	}
+	//Item-wise where this charge's items are known AND any existing split can be read back onto them.
+	//A split made by amount is not an item split and must not be shown as one.
+	usesItemView(transaction){
+		//a credit is not a charge and pays for no items; it is only ever here because it was opened directly
+		if(!(transaction.amount<0))return false
+		if(!canSplitAmazonByItem(transaction))return false
+		if(!transaction.streamAllocation?.length)return true
+		return !!getAmazonItemSplit(transaction)?.streamIds
+	}
+	onChargeChanged(i,allocations,valid){
+		var allocationsByCharge = [...this.state.allocationsByCharge], validByCharge = [...this.state.validByCharge];
+		allocationsByCharge[i] = allocations; validByCharge[i] = valid;
+		this.updateState({allocationsByCharge:allocationsByCharge,validByCharge:validByCharge},() => this.publish())
+	}
+	//What the modal answers with, and whether it may be answered at all.
+	//
+	//Confirm asks two different questions depending on why the dialog is open. Clearing queued work
+	//(`requireAll`): every charge that has never been categorized must be fully allocated, because leaving
+	//one behind recreates exactly the half-answered order this deck exists to prevent. Correcting an
+	//existing categorization: something must actually have changed since it opened, which is the same
+	//validate rail as before with a comparison against the opening state added to it.
+	publish(initial){
+		var changed = this.state.charges.map((t,i) => {
+			var now = this.state.allocationsByCharge[i];
+			return !!now && !sameAllocations(normalizeAllocations(now,t.amount),this.state.baselines[i])
+		});
+		var incomplete = this.state.charges.some((t,i) => {
+			if(this.props.requireAll && !t.streamAllocation?.length)return !this.state.validByCharge[i]
+			return changed[i] && !this.state.validByCharge[i]
+		});
+		//only the charges the reader actually moved are written back
+		var answers = this.state.charges.map((t,i) => (changed[i] && this.state.validByCharge[i])?this.state.allocationsByCharge[i]:undefined);
+		var content = {charges:this.state.charges,allocationsByCharge:answers,
+			//the single-charge shape the rest of the app still speaks
+			allocations:answers[this.state.index]};
+		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...content};
+		if(initial)return this.state.controller.setPrimaryButtonDisabled(true)
+		this.state.controller.setPrimaryButtonDisabled(incomplete || !answers.some(a => !!a));
+	}
+	renderPage(transaction,i){
+		var itemWise = this.usesItemView(transaction);
+		var ItemView = itemWise?AmazonItemAllocationView:StreamAllocationOptionView;
+		return <div key={transaction.getTransactionHash?.()||i}>
+			<div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
+				<TransactionView transaction={transaction} inDeck pricedBelow={itemWise}
+					refundShownOnItems={itemWise && !!getAmazonItemRefundStates(transaction,getAmazonItemSplit(transaction))}/>
+			</div>
+			<div style={{marginTop:DS.spacing.s+"rem"}} data-no-drag>
+				<ItemView embedded controller={this.state.controller} transaction={transaction}
+					streamRecs={this.props.streamRecs||[]}
+					onChange={(allocations,valid) => this.onChargeChanged(i,allocations,valid)}/>
+			</div>
+		</div>
+	}
+	//One line naming the order, above the deck rather than on every page: it is the only thing here that is
+	//about the whole order rather than one charge of it.
+	renderOrderLine(){
+		var amz = getAmazonOrderData(this.props.transaction);
+		if(!amz)return ""
+		var ordered = amz.date?new Date(amz.date):undefined;
+		//left, explicitly: MainContent centres its text, and a line that names the order should start where
+		//the tile under it starts
+		return <div title={"Amazon order #"+amz.orderNumber} style={{fontSize:DS.fontSize.little+"rem",
+				textAlign:"left",color:DS.getStyle().bodyTextSecondary,whiteSpace:"nowrap",overflow:"hidden",
+				textOverflow:"ellipsis",marginBottom:DS.spacing.xs+"rem"}}>
+			{(amz.accountName?amz.accountName+"'s ":"")+"Amazon order #"+(amz.orderNumber+"").slice(-3)
+				+(ordered?" from "+utils.formatDateMonthDay(ordered):"")}
+		</div>
+	}
+	render(){
+		//no padding of its own: the pager already carries the space under the deck, and adding a second
+		//helping of it is what left a hole between the dots and the buttons
+		return <div>
+			{this.renderOrderLine()}
+			<ChargeDeck pages={this.state.charges.map((t,i) => this.renderPage(t,i))}
+				index={this.state.index}
+				onIndexChange={(i) => this.updateState({index:i},() => this.publish())}/>
+		</div>
+	}
+}
+
+//Allocations as a set of {streamId, amount} with the amount in cents, so two sets can be compared without
+//caring about order, about percent versus value, or about which way the sign fell.
+function normalizeAllocations(allocations,transactionAmount){
+	return (allocations||[]).filter(al => !!al.streamId).map(al => ({
+		streamId: al.streamId,
+		cents: Math.round(Math.abs(al.type==="percent"?(al.amount||0)*(transactionAmount||0):(al.amount||0))*100)
+	})).sort((a,b) => a.streamId<b.streamId?-1:(a.streamId>b.streamId?1:a.cents-b.cents))
+}
+function sameAllocations(a,b){
+	return a.length===b.length && a.every((x,i) => x.streamId===b[i].streamId && x.cents===b[i].cents)
 }
 
 export class StreamAllocationOptionView extends BaseComponent{
@@ -475,10 +640,14 @@ export class StreamAllocationOptionView extends BaseComponent{
 			{streamId: undefined,amount: 0,type:"value",nodeId:1}]
 		}
 		this.firstTimeMinusAttempt= true;//used to match the minus sign if needed
-		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
-		this.setPrimaryButtonDisabled(true);
+		if(!this.props.embedded){
+			this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
+			this.setPrimaryButtonDisabled(true);
+		}
 	}
+	//see AmazonItemAllocationView.postStateUpdateCallback - embedded, this is one page of a deck
 	postStateUpdateCallback(){
+		if(this.props.embedded)return this.props.onChange?.(this.state.allocations,this.isValid())
 		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...this.state}
 		this.validate();
 	}
@@ -535,11 +704,10 @@ export class StreamAllocationOptionView extends BaseComponent{
 		this.updateState({allocations:[...this.state.allocations]},this.postStateUpdateCallback);
 	}
 	setPrimaryButtonDisabled(b){this.state.controller.setPrimaryButtonDisabled(b)}
-	validate(){
-		this.setPrimaryButtonDisabled(//all streams should exist and have an allocated value
-			!utils.and(this.state.allocations,al => Core.getMasterStream().hasTerminalChild(al.streamId) && !isNaN(al.amount) && al.amount!=0)
-		);
+	isValid(){//all streams should exist and have an allocated value
+		return utils.and(this.state.allocations,al => Core.getMasterStream().hasTerminalChild(al.streamId) && !isNaN(al.amount) && al.amount!=0)
 	}
+	validate(){this.setPrimaryButtonDisabled(!this.isValid())}
 
 	getDropDownLabelForStreamId(id){
 		var s = Core.getStreamById(id);
@@ -549,9 +717,9 @@ export class StreamAllocationOptionView extends BaseComponent{
 	render(){
 
 		return(<div>
-			<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
-				<TransactionView transaction={this.props.transaction} navigation={this.props.navigation}/>
-			</div>
+			{this.props.embedded?"":<div style={{display:"flex", flexDirection: "column", paddingBottom: "2rem", justifyContent: "center"}}>
+				<TransactionView transaction={this.props.transaction}/>
+			</div>}
 			<div style={{display:"flex",justifyContent: "center",flexDirection:"column",alignItems:"stretch"}}>
 				<ul style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
 					{this.state.allocations.map((al,i) => <DS.component.Row key={al.nodeId}>

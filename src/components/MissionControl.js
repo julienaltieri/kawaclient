@@ -148,9 +148,14 @@ class MissionControl extends BaseComponent{
 			this.state.actionQueueManager.unSkip();
 			Core.globalState.history.popState();		}
 	}
+	//Two shapes, because two things conclude a card. A stream chip answers every transaction it covers with
+	//the SAME allocation, so it passes one array. An order split as a deck answers each charge differently,
+	//so it passes one array per transaction. Anything else here would mean a second commit path to keep
+	//correct, and this one already handles a mixed set - categorizeTransactions keys each transaction on
+	//transactionId or id depending on whether it had been categorized before.
 	onCategorizeActionConcluded(action, txnsToCategorize, streamAllocation){//categorization card concluded
-		//streamAllocations is an array of allocations. All txnsToCategorize will be allocated using the allocation array
-		this.onCategorizationUpdate(txnsToCategorize,txnsToCategorize.map(t => streamAllocation));
+		var perTransaction = Array.isArray(streamAllocation[0]);
+		this.onCategorizationUpdate(txnsToCategorize,perTransaction?streamAllocation:txnsToCategorize.map(t => streamAllocation));
 	}
 	onCategorizationUpdate(txnsToUpdate,streamAllocations){
 		var txnsSnapshot = Core.globalState.history.snapshot(txnsToUpdate);

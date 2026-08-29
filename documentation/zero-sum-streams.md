@@ -256,9 +256,18 @@ The presence of a reconciliation result changes the feed
   net balance, and the direction is the whole point.
 
 Clicking a line stamps its matches onto `txn.reconciliation`, which `TransactionView` renders under
-the transaction tile ([`CategorizeAction.js:285`](../src/components/CategorizeAction.js#L285)): one
-"Refunded on …" row per credit, or a single placeholder — *Awaiting refund* on a debit, *Missing
-matching debit* on a credit.
+the transaction tile: one "Refunded on …" row per credit, or a single placeholder — *Awaiting refund*
+on a debit, *Missing matching debit* on a credit.
+
+**On an Amazon charge split by item, the refund is shown on the item instead of on the charge.** An
+item allocated to a zero-sum stream is one that went back, and that is the whole of what records it —
+so the amber "expected" state needs no reconciliation data and appears everywhere, the queue's dialog
+included. The green "arrived" state does need it, and a credit is attributed to an item only when
+exactly one item's price matches its amount; two items priced alike are not distinguishable, and
+naming the wrong one would put *Refunded* under a picture of something still owned. Where the items
+cannot be told apart — or where no reconciliation has been computed — the charge-level strip above is
+what shows, which is the older and less specific statement rather than a wrong one. See
+[`amazon-transaction.md`](amazon-transaction.md) §8.
 
 ### 6. Tests
 

@@ -197,25 +197,25 @@ export class StreamAnalysisTransactionFeedView extends GenericStreamAnalysisView
 	handleClickOnTransaction(txn){
 		//assigned either way: leaving a previous transaction's strip on the object would show it here
 		txn.reconciliation = this.takesPartInReconciliation(txn)?this.getReconciledTransactionsFromTransaction(txn):undefined
-		//quick navigation between the charges of one amazon order: close this dialog and reopen it on the
-		//sibling charge. Without it the only way to reach the other charge is to find it in the feed, and
-		//since the charges of an order look alike, knowing which one you found is the whole difficulty.
-		const navigation = {
-			onNavigate: (other) => Promise.resolve(Core.dismissModal()).then(() => this.handleClickOnTransaction(other)),
-			canNavigate: (other) => !this.isMatchedCredit(other)
-		}
-		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[],navigation)).then(({state,buttonIndex}) => {
-			if(buttonIndex==1){
-				let txnToUpdate = [txn]
-				let allocs = [state.allocations]
-				let ptxn = txn.pairedTransferTransactionId?this.props.analysis.transactions.filter(t => t.transactionId==txn.pairedTransferTransactionId)[0]:undefined;
-				if(!!ptxn){
-					txnToUpdate.push(ptxn)
-					//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
-					allocs.push([{streamId: state.allocations[0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
-				}
-				this.props.onCategorizationUpdate(txnToUpdate,allocs)
+		//The charges of one amazon order are pages of a deck inside the dialog, so there is no navigating
+		//between them any more - and nothing to close and reopen. The dialog answers for every charge the
+		//reader changed, which is why what comes back is a list rather than one allocation array.
+		return Core.presentModal(ModalTemplates.ModalWithStreamAllocationOptions("Edit",undefined,undefined,txn,[])).then(({state,buttonIndex}) => {
+			if(buttonIndex!=1)return
+			let charges = state.charges||[txn], byCharge = state.allocationsByCharge||[state.allocations];
+			let txnToUpdate = [], allocs = [];
+			charges.forEach((t,i) => {if(byCharge[i]?.length){txnToUpdate.push(t);allocs.push(byCharge[i])}});
+			if(!txnToUpdate.length)return
+			//the other half of a transfer follows the transaction the dialog was opened on, and only if that
+			//one was among the charges actually changed
+			let at = txnToUpdate.indexOf(txn);
+			let ptxn = txn.pairedTransferTransactionId?this.props.analysis.transactions.filter(t => t.transactionId==txn.pairedTransferTransactionId)[0]:undefined;
+			if(!!ptxn && at>-1){
+				txnToUpdate.push(ptxn)
+				//note: strictly speaking this isn't correct: the paired transaction should replicate the stream allocation of the original transaction but it's likely a non-use case
+				allocs.push([{streamId: allocs[at][0].streamId,amount: ptxn.amount,type:"value",nodeId:1}])
 			}
+			this.props.onCategorizationUpdate(txnToUpdate,allocs)
 		}).catch(e => {})
 	}
 
