@@ -270,6 +270,37 @@ export const getAmazonItemSplit = (transaction) => {
 		:undefined}
 }
 
+//The order's charges Amazon's ledger says exist but no posted bank debit accounts for yet, as positive
+//amounts - restricted to the ones that are actually a SHIPMENT still coming, not a payment artifact.
+//Without the ledger there is no way to know what is missing at all - a bank posting slower than usual
+//would look identical to an order that was only ever billed once - and inventing a pending charge in that
+//case would be worse than omitting one, so an order with no ledger simply shows none.
+export const getAmazonUnpostedCharges = (transaction) => {
+	var amz = getAmazonOrderData(transaction);
+	if(!amz)return []
+	var ledger = (amz.transactions||[]).filter(t => t.amount>0).map(t => utils.round2Decimals(t.amount));
+	if(!ledger.length)return []
+	var posted = (Core.getTransactionsForOrderNumber(amz.orderNumber)||[])
+		.filter(t => t.amount<0).map(t => utils.round2Decimals(-t.amount));
+	//multiset difference: each posted debit cancels exactly one matching ledger entry, so two ledger
+	//entries of the same amount with only one posted correctly leave the other as unposted
+	var remaining = ledger.slice();
+	posted.forEach(p => {
+		var at = remaining.findIndex(c => Math.abs(c-p)<0.005);
+		if(at>-1)remaining.splice(at,1);
+	});
+	//A pending PAGE is a shipment that hasn't arrived, and a shipment is defined by the items waiting on
+	//it - not by the arithmetic that produced its amount. A gift card or a discount also leaves an amount
+	//the posted debits don't cover, but that amount is how the order was paid, not something still coming,
+	//and the difference above can't tell the two apart on its own. Asking the order's own item resolution
+	//is what can: a leftover that resolves to real items is a shipment; one that resolves to none is a
+	//payment artifact and gets no page.
+	return remaining.filter(amount => {
+		var stub = {amount:-amount, amazonOrderDetails:transaction.amazonOrderDetails};
+		return getAmazonChargeItems(stub)?.items?.length>0
+	})
+}
+
 //Whether a refund has arrived is a fact about the ORDER, not the one charge on screen: a charge's own
 //`reconciliation` used to answer this, but that property is stamped onto exactly one transaction object -
 //whichever one the reader clicked in the analysis view (AnalysisView.js:199) - so every sibling charge in
@@ -708,11 +739,14 @@ export class TransactionView extends BaseComponent{
 	//A charge covering one item has that item's price on display already - it is the transaction amount
 	//beside the picture - so a tag would only repeat it. Tying the tag to the carousel rather than to
 	//whether a price happens to be known is what stops the two from drifting apart.
-	//`pricedBelow` says the rows under this tile already carry every item's price, so a tag on the carousel
-	//would only say it twice. That is the deck's case; on a queue card there are no rows and the tag is the
-	//only place an item's price appears at all.
+	//The carousel prices its items only where a per-item price could change what you do next - which means
+	//inside a dialog, and only there. On a queue card you are answering the whole charge, so no decision
+	//turns on what one item cost and the tag is decoration on top of a picture. Inside the deck it earns
+	//its place only when the rows below are NOT already item-wise: where they are, `pricedBelow` is set and
+	//the tag would say the same number twice; where they fell back to amounts, it is the only place an
+	//item's own price appears.
 	renderAmazonPicture(shownItems,prices,showCarousel){
-		var priced = showCarousel && !this.props.pricedBelow;
+		var priced = showCarousel && !!this.props.inDeck && !this.props.pricedBelow;
 		return <div style={{marginRight:DS.spacing.xs+"rem",flexShrink:0}}>
 			<div style={{position:"relative",display:"flex",width:DS.spacing.xl+"rem",overflow:"hidden",borderRadius:DS.borderRadiusSmall}}>
 				{shownItems.map((it,i) =>
@@ -771,7 +805,9 @@ export class TransactionView extends BaseComponent{
 					   by a count that knows nothing about the width it has - it dropped words that would
 					   have fitted, and still ran to three lines when they were long.*/}
 					{this.renderItemName(shownItems[this.state.selectedItemImage-1]?.itemDescription||"")}
-					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
+					{/*a pending charge has no date to show, but the slot keeps its height with a non-breaking
+					   space rather than collapsing, so the tile holds the same shape as a posted one*/}
+					<div style={{...this.secondaryTextStyle(),marginTop:DS.spacing.xxs+"rem"}}>{this.props.pending?" ":utils.formatDateShort(this.props.transaction.getDisplayDate())}</div>
 					<AmountDiv positive={amount>0} style={{marginTop:DS.spacing.xxs+"rem",textAlign:"right"}}>{utils.formatCurrencyAmount(amount,undefined,undefined,undefined,Core.getPreferredCurrency())}</AmountDiv>
 					{siblings.length?<div style={{display:"flex",flexDirection:"column",alignItems:"flex-end"}}>{siblings.map(n => this.renderSiblingLine(n))}</div>:""}
 				</div>
@@ -794,12 +830,19 @@ export class TransactionView extends BaseComponent{
 	}
 	render(){
 		return(<div>
-			<DS.component.ContentTile style={{opacity:this.props.animationIconVisible?0:1, margin:0, boxSizing:"border-box",
+			{/*a pending charge is outlined instead of filled so it reads as less certain than the posted
+			   charges around it - an outline on top of the fill would read as MORE important, backwards
+			   for something that hasn't happened yet. The two opacities multiply rather than one replacing
+			   the other, so a pending tile that is also animating out still fades.*/}
+			<DS.component.ContentTile style={{opacity:(this.props.animationIconVisible?0:1)*(this.props.pending?0.5:1), margin:0, boxSizing:"border-box",
 					boxShadow:"0px 6px 10px #00000023", padding:DS.spacing.s+"rem",
 					transition:"opacity "+disappearAnimationTime/1000+"s ease",
 					...(this.isAmazon()
 						?{flexDirection:"column",alignItems:"stretch",textAlign:"left",gap:DS.spacing.xs+"rem"}
-						:{flexDirection:"row",alignItems:"center",textAlign:"center"})}}>
+						:{flexDirection:"row",alignItems:"center",textAlign:"center"}),
+					...(this.props.pending
+						?{background:"transparent",border:"1px solid "+DS.getStyle().bodyTextSecondary,boxShadow:"none"}
+						:{})}}>
 				{this.isAmazon()?this.renderAmazonTile():this.renderRegularTile()}
 			</DS.component.ContentTile>
 			{/*the strip is the charge-level way of saying what the item rows now say per item, so where those

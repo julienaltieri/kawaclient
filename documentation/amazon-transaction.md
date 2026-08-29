@@ -134,10 +134,13 @@ the old close-and-reopen navigation had to guard against — a dialog writing it
 transaction it *opened* on rather than the one it ended on — is gone rather than fixed: the dialog now
 holds every charge and writes each one explicitly.
 
-**Only *posted* charges are listed.** Amazon's payments-page ledger also contains entries that never
-become bank transactions at all — the gift-card portion of a split payment, for one — so listing it
-would show lines that stay "pending" forever and inflate what looks like the order's transaction
-count. The ledger is still *read*, but for resolution rather than display: see §7.
+**The sibling lines list only *posted* charges.** Amazon's payments-page ledger also contains entries
+that never become bank transactions at all — the gift-card portion of a split payment, for one — so
+listing it here would show lines that stay "pending" forever and inflate what looks like the order's
+transaction count. The ledger is still *read*, but for resolution rather than display: see §7.
+
+The deck does show what has not posted, but on a different rule and with a different treatment — a
+shipment that has not arrived, not a payment that will never appear as one. See §9.
 
 ### 7. Which items did *this* charge pay for
 
@@ -241,11 +244,12 @@ Where it surfaces:
   keep pushing the amount down after the words had stopped.
 
   The item carousel shows the items *this charge* paid for when they can be determined and the whole
-  order otherwise. The carousel appears only when the charge covers more than one item, and its
-  per-item price tags appear only when the carousel does **and nothing below is already pricing the
-  items**. On a queue card the tag is the only place an item's price appears at all; inside the deck
-  the allocation rows carry every price, so a tag there would say it twice. A charge covering a single
-  item has its price on display anyway — it is the transaction amount beside the picture.
+  order otherwise. The carousel appears only when the charge covers more than one item. Its per-item
+  price tags appear only **inside a dialog, and only where the rows below are not already item-wise** —
+  a price earns its place when it could change what you do next, and nothing else. On a queue card you
+  answer the whole charge, so no decision turns on what one item cost. In the deck the allocation rows
+  carry every price already, so a tag would say the same number twice; the one case that keeps it is the
+  fallback to amount-based rows, where the tag is the only place an item's own price appears.
   (`AmazonItemImage` is shared with the split view, which always prices its rows: you cannot assign an
   item to a stream without knowing what it cost.) The headline amount is **the transaction's own**. It
   used to be the order's sum, which read as "what the order cost" only for as long as they were all
@@ -289,6 +293,21 @@ The pager is dots up to seven charges and a `3 / 9` count beyond, where dots sto
 says **position and nothing else**: filled and larger for the one you are on. It briefly also said
 whether a charge had posted and whether it was categorized, which is three meanings on a half-rem circle
 and two more than it carries — the tile says all of them already.
+
+**A shipment that has not arrived is still a page.** The order was billed for it, and the item
+resolution already assigns it items — the completeness rule in §7 exists precisely so a charge still in
+transit is not left out and does not cost the charges that *did* post their own items. Such a page shows
+its items and its amount, outlined rather than filled and at half opacity, with the date slot held but
+blank because there is no date yet, and *Not posted yet* where the allocation rows would be. It carries
+no rows, cannot be categorised, and is structurally incapable of being written: the deck renders it from
+a display-only stand-in, and the real charges live in their own array, so nothing pending can reach the
+commit path or the confirm gate.
+
+**What makes a pending page is unshipped items, not unexplained money.** A ledger entry with no bank
+debit against it is only a candidate; it becomes a page only if the resolution assigns it items. An
+entry that resolves to no items is how the order was *paid* — a gift card portion, a discount — not
+something still coming, and a page saying "not posted yet" about it would be false. Nothing in the
+payload labels those entries, so the items are the only honest discriminator available.
 
 **One confirmation answers the order.** The dialog writes each charge its own allocations, and only the
 ones actually changed. Because `categorizeTransactions` consumes the queue action of every transaction

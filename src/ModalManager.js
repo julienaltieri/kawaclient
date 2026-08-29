@@ -5,7 +5,7 @@ import Core from './core.js'
 import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
-import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates} from './components/CategorizeAction'
+import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates, getAmazonUnpostedCharges} from './components/CategorizeAction'
 import ChargeDeck from './components/ChargeDeck'
 import utils from './utils'
 import SideBar from './components/SideBar'
@@ -505,6 +505,10 @@ export class AmazonOrderAllocationView extends BaseComponent{
 		this.state = {
 			controller: props.controller,
 			charges: charges,
+			//amounts the ledger says were charged but no posted debit accounts for - a separate array,
+			//never merged into `charges`, because nothing in it is a real transaction: there is nothing to
+			//allocate and nothing publish() may ever write
+			pending: getAmazonUnpostedCharges(props.transaction),
 			index: at>-1?at:0,//chargesOf puts it first, so this is 0 - kept honest rather than hard-coded
 			//what each charge was allocated when the dialog opened, so a change can be told from a re-render
 			baselines: charges.map(t => normalizeAllocations(t.streamAllocation,t.amount)),
@@ -569,8 +573,10 @@ export class AmazonOrderAllocationView extends BaseComponent{
 		//only the charges the reader actually moved are written back
 		var answers = this.state.charges.map((t,i) => (changed[i] && this.state.validByCharge[i])?this.state.allocationsByCharge[i]:undefined);
 		var content = {charges:this.state.charges,allocationsByCharge:answers,
-			//the single-charge shape the rest of the app still speaks
-			allocations:answers[this.state.index]};
+			//the single-charge shape the rest of the app still speaks. `index` now walks the full deck,
+			//pending pages included, so it can point past the end of `answers` when one of those is open -
+			//there is nothing to answer with there, hence undefined rather than an out-of-range read
+			allocations:this.state.index<answers.length?answers[this.state.index]:undefined};
 		this.state.controller.state.modalContentState = {...this.state.controller.state.modalContentState,...content};
 		if(initial)return this.state.controller.setPrimaryButtonDisabled(true)
 		this.state.controller.setPrimaryButtonDisabled(incomplete || !answers.some(a => !!a));
@@ -587,6 +593,27 @@ export class AmazonOrderAllocationView extends BaseComponent{
 				<ItemView embedded controller={this.state.controller} transaction={transaction}
 					streamRecs={this.props.streamRecs||[]}
 					onChange={(allocations,valid) => this.onChargeChanged(i,allocations,valid)}/>
+			</div>
+		</div>
+	}
+	//A page for a charge the ledger says exists but the bank hasn't posted. Its tile is a display-only
+	//stand-in - there is no transaction behind it, and there must not be one, or a categorization would end
+	//up written against a charge that hasn't happened yet. The stub carries only what TransactionView reads:
+	//an amount (so the item resolution below can find this charge's items on its own), the order's own
+	//details, and a date/hash that say plainly this is not a real transaction.
+	renderPendingPage(amount,k){
+		var stub = {amount:-amount, amazonOrderDetails:this.props.transaction.amazonOrderDetails,
+			getDisplayDate:() => undefined, getTransactionHash:() => "pending-"+k};
+		return <div key={stub.getTransactionHash()}>
+			<div style={{display:"flex",flexDirection:"column",justifyContent:"center"}}>
+				<TransactionView transaction={stub} inDeck pending/>
+			</div>
+			{/*stands where the allocation rows would be on a posted page, so the deck doesn't lurch onto a
+			   page an inch shorter than its neighbours*/}
+			<div style={{marginTop:DS.spacing.s+"rem",minHeight:DS.spacing.m+"rem",display:"flex",
+					alignItems:"center",justifyContent:"center",textAlign:"center",
+					color:DS.getStyle().bodyTextSecondary,fontSize:DS.fontSize.little+"rem"}}>
+				Not posted yet
 			</div>
 		</div>
 	}
@@ -608,9 +635,11 @@ export class AmazonOrderAllocationView extends BaseComponent{
 	render(){
 		//no padding of its own: the pager already carries the space under the deck, and adding a second
 		//helping of it is what left a hole between the dots and the buttons
+		//pending pages come last: they have not happened yet, so they trail the charges that already have
 		return <div>
 			{this.renderOrderLine()}
-			<ChargeDeck pages={this.state.charges.map((t,i) => this.renderPage(t,i))}
+			<ChargeDeck pages={this.state.charges.map((t,i) => this.renderPage(t,i))
+					.concat(this.state.pending.map((amount,k) => this.renderPendingPage(amount,k)))}
 				index={this.state.index}
 				onIndexChange={(i) => this.updateState({index:i},() => this.publish())}/>
 		</div>
