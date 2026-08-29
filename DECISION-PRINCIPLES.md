@@ -10,6 +10,9 @@ Every principle was extracted from a decision actually made, and carries the exa
 The examples are written to stand alone: you should be able to take the point without knowing the
 feature they happened in.
 
+The numbers are stable addresses — code comments cite them (`DECISION-PRINCIPLES.md #9`) — so anything
+learned later is appended to its section rather than inserted. Read by section, not by number.
+
 Nearly all of these are arguments about **risk** — what breaks, what misleads, what has to be
 re-litigated later. Read them that way and they stop being taste and start being reasons. Where two
 of them pull against each other, and several do, the tie-breaker is the same question: **what does
@@ -122,6 +125,10 @@ The counterweight to 9, and the reason it is judgement rather than dogma.
 > might attribute it to the wrong one: "if they are the same amount, it doesn't matter that you
 > picked the wrong one." Same amount, same outcome, no ambiguity that matters.
 
+The licence comes with a condition: an arbitrary choice must still be a **stable** one. A pick that
+falls out of iteration order gives the same data two different answers on two different renders, and
+"it does not matter which" stops being true the moment the reader can watch it change.
+
 ### 11. Degrade honestly
 
 When you cannot be sure, show less. Never show something invented that happens to be well-formed.
@@ -129,6 +136,30 @@ When you cannot be sure, show less. Never show something invented that happens t
 > *In practice:* every approved fallback shows less rather than more — the whole order instead of a
 > guessed subset; real prices that do not add up to the charge instead of adjusted ones that do; an
 > unstyled row instead of an affordance that does nothing.
+
+### 21. An unknown is not a negative answer
+
+A state that already asserts something cannot double as the absence of knowledge. Reuse it that way and
+the interface states a fact it does not have — and it will be the confident-looking one, because it was
+designed to be.
+
+> *In practice:* items sent back showed amber for "refund expected". When a refund arrived that could not
+> be tied to a particular item, those items stayed amber — which told the reader no money had come back,
+> when some had. The answer was not a better guess but a third outcome: expected, arrived, and cannot-tell.
+> Two of those are claims; the third exists so the absence of one has somewhere to go. It shows the
+> charge-level statement instead of the per-item one, which says what is known without naming what is not.
+
+### 22. Agreement in aggregate is not agreement
+
+A total that matches while none of its parts do is the signature of something else going on — a fee, an
+adjustment, a bad match. Reading it as confirmation launders a coincidence into a fact.
+
+> *In practice:* refunds of $15 and $5 against two items priced $10 and $10. The totals agree at $20, and
+> a rule read that as both items having come back. Nothing about the parts supports it, and the shape is
+> exactly what a mis-matched refund looks like — so the case now surfaces to the reader instead of
+> resolving silently. The rule was deleted rather than narrowed: once equal-amount candidates could be
+> broken by a tie-break, everything it caught legitimately was already covered elsewhere, and all it had
+> left was the case it got wrong.
 
 ---
 
@@ -220,6 +251,19 @@ Not to check work that is already done — to surface cases nobody thought to as
 > visual cue that lied, and an edge case that reshaped the algorithm twice — none of which code
 > review had found. And such tools are for operating, not reading: "strip all the explanations
 > (I don't read them)."
+
+### 23. A test that cannot fail the way production fails proves nothing
+
+The risk is not a missing test. It is a passing one, because it licenses a belief that nothing else will
+go back and check.
+
+> *In practice:* a tap handler was verified in a DOM stub, which reports whatever the code says and knows
+> nothing about how a browser delivers a tap. It passed while the feature was dead on a phone — a finger
+> drifts a few pixels, the browser suppresses the click, and no handler runs. Driving a real browser over
+> the DevTools protocol with touch events found it in one run, and the same harness then measured the two
+> layout bugs that reading the CSS had not settled. The trap has a second form once work is delegated: an
+> agent reporting "tests pass" is making a claim, and it is worth exactly the command output quoted beside
+> it.
 
 ---
 

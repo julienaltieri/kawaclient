@@ -264,9 +264,22 @@ Where it surfaces:
 
   An item allocated to a **zero-sum stream** is one that went back, and the row says so without being
   told: an amber dot in the price chip while the credit is expected, a green dot with the price struck
-  and "Refunded on …" in place of the field once it has arrived. Which item a credit landed on is
-  inferred by matching its amount against the item prices, and **only when exactly one item matches** —
-  two items priced alike would otherwise put "refunded" under a picture of something still owned. The
+  and "Refunded on …" in place of the field once it has arrived. Which items a credit landed on is inferred by
+  matching its amount against **subsets** of what is still awaiting — a
+  credit pays for a set, not an item, so two socks returned together are resolved by the one credit that
+  covers both. Several matching subsets are not automatically several readings: where every one of them
+  settles the **same** prices the choice cannot come out wrong, so the first is taken (principle 10 over 9,
+  and the pick is deterministic so it cannot differ between renders). Where they settle different prices —
+  a $20 item against a $10+$10 pair — it refuses.
+
+  What is left over is two different facts and is not reported as one. A credit that matched several
+  subsets worth different amounts demonstrably arrived and cannot be placed: those items claim nothing per
+  item, and the charge falls back to the **charge-level strip**, which says a refund arrived without naming
+  an item it cannot name. A credit that matched *no* subset at all is a different shape — a fee, a partial
+  adjustment, a match on the wrong order — and the items stay **amber**, so it surfaces to the reader
+  instead of resolving quietly. An earlier pass accepted a charge whose own total happened to equal the
+  leftover credits; it was deleted rather than narrowed, because agreement in aggregate while no part
+  agrees is not evidence (principle 22). The
   arrived half needs the zero-sum reconciliation for that stream, which is computed in the analysis
   view and attached to the transaction there; everywhere else — the queue's dialog included — a
   returned item reads as still expected, which is less than the truth rather than different from it.

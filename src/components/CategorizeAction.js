@@ -341,20 +341,89 @@ const getOrderRefundAttribution = (orderNumber) => {
 
 	var credits = order.filter(t => t.amount>0);
 	if(credits.length){
+		//credits get consumed by object reference as each pass below places them, so a later pass sees
+		//only what the earlier ones left over - once a credit is spent on an answer it cannot also fund
+		//the honest-fallback verdict at the bottom.
+		var consumed = new Set();
+
 		//one item expected across the whole order and at least one credit: there is nothing to confuse it
 		//with, so the amounts need not agree - a credit often carries shipping or tax the item's own share
 		//never carried.
 		if(expecting.length===1){
-			expecting[0].state = "back"; expecting[0].date = credits[0].date
-		//several candidates: a credit is attributed only where exactly one item's price matches it. Two
-		//items priced alike are not distinguishable, and naming the wrong one puts "refunded" under a
-		//picture of something still owned.
+			expecting[0].state = "back"; expecting[0].date = credits[0].date; consumed.add(credits[0])
+		//several candidates: what a credit actually pays for is a SUBSET of what's still awaiting, not one
+		//item's price - two socks refunded by a single credit are a subset of size two, and comparing the
+		//credit to one price at a time is the narrowing that missed them. Unique subset or refuse is the
+		//same rule as the single-item case above: two items priced alike make more than one subset add up,
+		//and naming either puts "refunded" under a picture of something still owned.
+		//
+		//Cents, not dollars, so floating point dust never decides a match. Largest credit first, so a big
+		//credit that resolves several items settles before a small, ambiguous one could pre-empt it. Above
+		//maxItemsForChargeInference candidates the walk is exponential and not worth running, the same
+		//guard the charge-assignment search above already uses.
 		}else{
-			credits.forEach(credit => {
-				var amount = Math.abs(credit.amount);
-				var at = expecting.map((e,i) => (e.state==="await" && Math.abs(e.price-amount)<0.005)?i:-1).filter(i => i>-1);
-				if(at.length===1){expecting[at[0]].state = "back"; expecting[at[0]].date = credit.date}
-			});
+			var awaiting = expecting.filter(e => e.state==="await");
+			//Several matching subsets are not always several readings. Principles 9 and 10 in
+			//DECISION-PRINCIPLES.md are why: 9 refuses when a wrong pick would be indistinguishable from a
+			//right one, but 10 is its counterweight and overrides 9 here - when EVERY matching subset settles
+			//the identical sorted list of prices, there is no wrong pick left to protect against, only a
+			//refund that has in fact arrived and that refusing would hide. Whichever physical item the credit
+			//actually paid for, the same prices end up marked back, so the first (lowest bitmask, i.e. the
+			//earliest items) is taken exactly as a unique match would be. The gate is equality of what is
+			//SETTLED, nothing looser - a $20 item and a $10+$10 pair both summing to $20 settle different
+			//lists and still refuse.
+			var settledPriceKey = entries => entries.map(e => Math.round(e.price*100)).sort((a,b) => a-b).join(",");
+			//Set the moment a credit refuses on genuine ambiguity - matches that settle DIFFERENT price lists,
+			//not just several of them. The honest-fallback below reads this to tell that shape apart from a
+			//credit that simply matched no subset at all, which is a different fact and must not collapse into
+			//the same label (see the comment on the fallback for why).
+			var ambiguousSubsetSeen = false;
+			if(awaiting.length && awaiting.length<=maxItemsForChargeInference){
+				credits.slice().sort((a,b) => Math.abs(b.amount)-Math.abs(a.amount)).forEach(credit => {
+					var live = expecting.filter(e => e.state==="await");
+					var target = Math.round(Math.abs(credit.amount)*100);
+					var full = (1<<live.length)-1, matches = [];
+					for(var mask=1;mask<=full;mask++){
+						var sum = 0;
+						for(var i=0;i<live.length;i++){if(mask&(1<<i))sum += Math.round(live[i].price*100)}
+						if(sum===target)matches.push(mask)
+					}
+					//matches is built walking mask upward from 1, so matches[0] is already the lowest bitmask -
+					//"first" deterministically, never dependent on iteration order elsewhere.
+					if(matches.length){
+						var maskEntries = mask => live.filter((e,i) => mask&(1<<i));
+						var firstKey = settledPriceKey(maskEntries(matches[0]));
+						if(matches.every(m => settledPriceKey(maskEntries(m))===firstKey)){
+							consumed.add(credit);
+							live.forEach((e,i) => {if(matches[0]&(1<<i)){e.state = "back"; e.date = credit.date}})
+						}else{
+							ambiguousSubsetSeen = true
+						}
+					}
+				});
+			}
+		}
+
+		//A credit consumed by nothing above is still money that arrived, but "unplaceable" is not one fact -
+		//it is two, and DECISION-PRINCIPLES.md 11 (degrade honestly) means telling them apart rather than
+		//collapsing both into the same label.
+		//
+		//A credit that matched several subsets settling DIFFERENT prices (ambiguousSubsetSeen) demonstrably
+		//arrived and still cannot be placed - that really is "unknown", and the charge falls back to its
+		//charge-level strip, which can say only what this case supports.
+		//
+		//A credit that matched no subset at all is a different shape entirely - a fee, a partial adjustment,
+		//a bad match on the wrong order. A third pass used to walk every still-unplaced charge and accept
+		//one whose OWN total happened to add up to what was left over; it has been deleted, because it
+		//read that coincidence as evidence the charge's items themselves came back. It never was: two credits
+		//summing to a charge's total by chance is not the same fact as a credit that resolves to an item, and
+		//resolving it silently hid exactly the shape worth a second look - a fee, a partial adjustment, or a
+		//credit matched to the wrong order. So this shape now stays "await" - amber, deliberately left as a
+		//flag for the reader to look at rather than a silent resolution. Nothing legitimate is lost: two
+		//same-priced items, or two same-priced charges, refunded by one credit are both several subsets
+		//settling the same amounts, and the pass 2 tie-break above already catches both on its own.
+		if(credits.some(c => !consumed.has(c)) && ambiguousSubsetSeen){
+			expecting.forEach(e => {if(e.state==="await")e.state = "unknown"})
 		}
 	}
 
@@ -377,6 +446,11 @@ export const getAmazonItemRefundStates = (transaction,split) => {
 	var expecting = getOrderRefundAttribution(getAmazonOrderData(transaction)?.orderNumber);
 	if(!expecting?.length)return states
 	var hash = transaction?.getTransactionHash?.();
+	//a credit arrived for this charge but couldn't be pinned to one of its items ("unknown", not "await") -
+	//per-item dots would still claim nothing came back, which is false, so the whole charge is handed back
+	//to the caller's existing "no item story here" fallback: the charge-level refund strip, which is able
+	//to say only what this case actually supports.
+	if(expecting.some(e => e.hash===hash && e.state==="unknown"))return undefined
 	return states.map((st,i) => {
 		if(!st)return st
 		var entry = expecting.find(e => e.hash===hash && e.itemIndex===i);
