@@ -182,7 +182,10 @@ class CompoundStreamAuditView extends StreamAuditView{
 				chart={<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
  				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
- 					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
+ 					{/*one step down the scale on a phone: at body size this line wraps to two on the narrow
+ 					   column the row leaves it, and it is the row's supporting text rather than its subject.
+ 					   DS.fontSize.little is the next size below body, not a chosen number.*/}
+ 					<div style={Core.isMobile()?{fontSize:DS.fontSize.little+"rem"}:undefined}>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
  			</HeaderRowDrawer>
  			<StreamAuditCellContainer isCollapsed={isCollapsed}>
