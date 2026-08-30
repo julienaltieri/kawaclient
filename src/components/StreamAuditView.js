@@ -35,6 +35,11 @@ let shouldShowContextForObservationPeriodTransition = () => ((new Date() - getPr
 export const getAnalysisStartDate = () => (!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly).previousDate(getAnalysisDate())
 
 
+//What the chart gives up on a phone so the stream name can have it. One constant, because the two are
+//the same 2rem moving across: take it off the chart and the title must be able to absorb it, or the
+//row just grows a gap where the name should be.
+const chartGiveBackRem = DS.spacing.m;
+
 const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(getAnalysisDate(),s,txns,observationPeriod,subReportingPeriod))
 
 var count = 0;
@@ -181,8 +186,13 @@ class CompoundStreamAuditView extends StreamAuditView{
 				}}
 				drawer={<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>}
 				drawerCaption={drawerCaption}
-				chart={<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
- 				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
+				chart={<MiniGraph narrowBy={Core.isMobile()?chartGiveBackRem:0} analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
+ 				{/*On a phone the title takes the room the chart gave back. flexGrow has to REPLACE the auto
+ 				   margin rather than join it: with marginRight:auto still there the freed space becomes gap
+ 				   between the two, not width for the name - which is the thing that was wrapping.*/}
+ 				<div style={Core.isMobile()
+ 						?{padding:"1rem",flexGrow:1,minWidth:0,textAlign:"left"}
+ 						:{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
  					{/*one step down the scale on a phone: at body size this line wraps to two on the narrow
  					   column the row leaves it, and it is the row's supporting text rather than its subject.

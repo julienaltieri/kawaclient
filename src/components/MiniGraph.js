@@ -107,7 +107,7 @@ export default class MiniGraph extends GenericChartView{
 	            <stop offset="70%" stopColor={DesignSystem.getStyle().positive}/>
 	        </radialGradient>
 		</defs></svg>
-	    <MiniGraphContainer>
+	    <MiniGraphContainer narrowBy={this.props.narrowBy}>
 	    <V.VictoryChart scale={{ x: "time", y:"linear" }} domain={this.getDomain()} height={this.style.chartHeight} width={this.style.chartWidth} padding={this.style.chartPadding}
 	    				containerComponent={<V.VictoryVoronoiContainer onActivated={this.onFlyOver} onDeactivated={this.onFlyOut} 
 	    				events={{onClick:(d) => this.state.hovering?this.handleClick(this.hoverData):""}}
@@ -201,8 +201,11 @@ const GraphTitle = styled.div`
     font-size: 0.9rem;
 `
 
+//`narrowBy` lets a caller reclaim horizontal room from the chart. The box is the row's last item and is
+//right-anchored, so shrinking it moves its LEFT edge inward and the right edge does not move at all -
+//which is the point: this reduces the chart's effective size rather than repositioning it.
 const MiniGraphContainer = styled.div`
-	width: 10.5rem;
+	width: ${props => 10.5-(props.narrowBy||0)}rem;
 	height: 3.8rem;
 	display: flex;
 	align-content: center;

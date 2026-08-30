@@ -15,7 +15,9 @@ const ringMarginRem = DS.spacing.xs;
 //Twice the row's own margin on each side of the drawer's content: the ring is alone in there rather than
 //one item in a row, so the gap that reads as tight-but-fine beside a name and a chart reads as cramped
 //around a single object.
-const drawerGapRem = ringMarginRem*2;
+//DS.spacing.l either side, not twice the row's own margin: at 2rem the opened drawer was too tight for
+//most streams' value and word, which wrap under the ring rather than beside it.
+const drawerGapRem = DS.spacing.l;
 //How far the panel must travel to reveal it: the ring's box plus that gap either side.
 const openWidthRem = ringWidthRem+drawerGapRem+drawerGapRem;
 const openWidth = openWidthRem*DS.remToPx; //px - the drag/spring math below works in px, like ChargeDeck's
