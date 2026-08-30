@@ -36,9 +36,11 @@ export const getAnalysisStartDate = () => (!shouldShowContextForObservationPerio
 
 
 //What the chart gives up on a phone so the stream name can have it. One constant, because the two are
-//the same 2rem moving across: take it off the chart and the title must be able to absorb it, or the
+//the same 2.5rem moving across: take it off the chart and the title must be able to absorb it, or the
 //row just grows a gap where the name should be.
-const chartGiveBackRem = DS.spacing.m;
+//This narrows the chart's WINDOW, not the chart - MiniGraphContainer crops rather than resizes, so the
+//value pill and axis labels stay the size they were drawn at however much room is handed back here.
+const chartGiveBackRem = DS.spacing.m+DS.spacing.xxs;
 
 const mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(getAnalysisDate(),s,txns,observationPeriod,subReportingPeriod))
 

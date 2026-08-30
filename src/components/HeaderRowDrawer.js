@@ -12,14 +12,18 @@ import DS from '../DesignSystem.js';
 //and marginLeft:"1rem", which are exactly DS.spacing.l and DS.spacing.xs on the scale.
 const ringWidthRem = DS.spacing.l;
 const ringMarginRem = DS.spacing.xs;
-//Twice the row's own margin on each side of the drawer's content: the ring is alone in there rather than
-//one item in a row, so the gap that reads as tight-but-fine beside a name and a chart reads as cramped
-//around a single object.
-//DS.spacing.l either side, not twice the row's own margin: at 2rem the opened drawer was too tight for
-//most streams' value and word, which wrap under the ring rather than beside it.
-const drawerGapRem = DS.spacing.l;
-//How far the panel must travel to reveal it: the ring's box plus that gap either side.
-const openWidthRem = ringWidthRem+drawerGapRem+drawerGapRem;
+//The drawer is sized from its CONTENT, not from the ring. It used to be ring + gap + gap, which made the
+//caption's width a hostage of the ring's: the caption lives inside the ring's box, so every attempt to give
+//it room by widening the drawer bought padding instead of text width. Widening the gap from 2rem to 3rem
+//moved the caption's box by exactly zero pixels, measured.
+//6.5rem is what the longest real caption needs to stop wrapping mid-phrase; the ring keeps its own 3rem and
+//centres itself inside that. Note this makes the open drawer NARROWER than it was (7.5rem against 9rem)
+//while the caption's box more than doubles - the room was there all along, spent on padding.
+const drawerContentWidthRem = DS.spacing.xl+DS.spacing.xxs;
+//Breathing room either side of that content. Small, because the content is now wide enough to carry itself.
+const drawerPadRem = DS.spacing.xxs;
+//How far the panel must travel to reveal it: the content's box plus that padding either side.
+const openWidthRem = drawerContentWidthRem+drawerPadRem+drawerPadRem;
 const openWidth = openWidthRem*DS.remToPx; //px - the drag/spring math below works in px, like ChargeDeck's
 
 //Physics tuned per spec rather than picked: critically damped (damping is derived, not typed) so the panel
@@ -30,10 +34,6 @@ const rubber = 0.3;      //fraction of the finger the panel follows past either 
 const flickVel = 0.30;   //px/ms, above which a release commits regardless of distance
 const commitFrac = 0.22; //fraction of the open travel a slow drag must cross to commit
 const dragLockPx = 6;    //below this the gesture hasn't declared itself yet - matches ChargeDeck's own lock
-
-//Centred in the drawer: with nothing overlaying the ring, the room it has is the room it appears to have.
-//Equals drawerGapRem by construction; written this way so it stays true if the ring or the gap changes.
-const ringInsetRem = (openWidthRem-ringWidthRem)/2;
 
 //DS.backgroundOpacity is the token this codebase already uses as an alpha channel (StreamView.js); 0.45 is
 //the exact opacity ChargeDeck gives a page that isn't the current gesture's focus - the same "quiet"
@@ -55,12 +55,15 @@ const tileStyle = {
 	margin:0
 };
 
-//The ring's own box: same size and column layout wherever it renders. marginLeft only applies when the ring
-//is a flex item in the plain row (desktop) - in the drawer (mobile) the drawer's own padding (ringInsetRem)
-//already places it, and giving it both stacked the two and pushed the ring hard against the drawer's edge.
-const ringBoxStyle = (withMargin) => ({width:ringWidthRem+"rem",flexShrink:0,
+//The ring's own box, and in the drawer also the caption's. Its WIDTH is what the caption wraps in, so the
+//two placements need different widths: in the row it is the ring and nothing else, so it is the ring's 3rem;
+//in the drawer the caption sits under the ring and wraps at this width, so it is the drawer's content width
+//with the ring centring itself inside it. Binding both to ringWidthRem is what confined the caption to 48px.
+//marginLeft applies only in the row, where the ring is a flex item among others; the drawer places it by
+//centring, and giving it both pushed the ring off-centre toward the drawer's right edge.
+const ringBoxStyle = (inRow) => ({width:(inRow?ringWidthRem:drawerContentWidthRem)+"rem",flexShrink:0,
 	display:"flex",flexDirection:"column",alignItems:"center",
-	...(withMargin?{marginLeft:ringMarginRem+"rem"}:{})});
+	...(inRow?{marginLeft:ringMarginRem+"rem"}:{})});
 
 //One compound-stream header row's drawer. Desktop renders exactly what the row rendered before this existed
 //- ring in place, no drawer, no gesture. Mobile moves the ring into a drawer that sits outside the window at
@@ -210,16 +213,16 @@ export default class HeaderRowDrawer extends BaseComponent{
 		this.go(target,v);
 		this.armClickSwallow();
 	}
-	//The ring's box: same size and column layout wherever it renders - only whether it carries its own
-	//marginLeft differs (see ringBoxStyle above).
+	//The ring's box: same column layout wherever it renders - what differs is its width and whether it
+	//carries its own marginLeft (see ringBoxStyle above).
 	//
 	//`drawerCaption` renders ONLY on mobile, and that is not an inconsistency between screens - it is the
 	//caption belonging to the drawer, which only mobile has. It exists because a drawer gives the ring
 	//vertical room the row never had, and because a ring pushed out of sight should say the number it was
 	//always comparing. Desktop keeps the ring in the row exactly as it has always been; adding a caption
 	//there would be a redesign of a row that has no bug, which is the one thing this change must not do.
-	renderRingBox(withMargin){
-		return <div style={ringBoxStyle(withMargin)}>
+	renderRingBox(inRow){
+		return <div style={ringBoxStyle(inRow)}>
 			{this.props.drawer}
 			{Core.isMobile()?this.props.drawerCaption:null}
 		</div>
@@ -260,9 +263,15 @@ export default class HeaderRowDrawer extends BaseComponent{
 			{/*the drawer: the ring's own box, flush with the window's left edge and translated a further
 			   -openWidth. At x=0 its whole box sits left of the clip and is invisible; as x grows its right
 			   edge tracks x exactly, which is the other half of why it can never meet the content below*/}
+			{/*Centred with justifyContent rather than padded. This codebase sets box-sizing per component and
+			   has no global border-box rule, so a padded box here is a content-box one: width + padding, and
+			   the padding would push the content past the width the spring translates by. The previous
+			   paddingLeft only looked centred because a 3rem pad and a 9rem content-box width happened to
+			   leave 3rem either side of a 3rem ring - an arithmetic coincidence that broke the moment the box
+			   inside stopped being exactly the ring's width. Centring cannot drift.*/}
 			<div ref={this.drawerRef} style={{position:"absolute",top:0,bottom:0,left:0,
 					width:openWidthRem+"rem",display:"flex",alignItems:"center",
-					paddingLeft:ringInsetRem+"rem",pointerEvents:"none"}}>
+					justifyContent:"center",pointerEvents:"none"}}>
 				{this.renderRingBox(false)}
 			</div>
 			{/*The separator, standing where a box-shadow could not: a box-shadow on the content would paint

@@ -16,27 +16,63 @@ staging-only sandbox page.
 
 ## The problem it solves
 
-A stream header row holds a ring, a name, an amount and a sparkline. The sparkline's container is
-`10.5rem`, but the Victory chart inside it is intrinsically **16.5rem** — so the chart hangs past its own
-box on both sides, always, on every row. The left overhang is hidden by the container's `mask-image`; the
-right one normally still falls inside the card, so nothing shows.
+A stream header row holds a ring, a name, an amount and a sparkline, and on a phone there is not enough
+width for all four. The name wraps, and the sparkline is squeezed.
 
-A long stream name pushes the container far enough right that the overhang crosses the card's edge, and
-the card clips it. What gets cut is the value pill, because the pill is the rightmost thing *inside the
-chart*.
+*Squeezed*, specifically — not merely narrowed. Victory emits its chart as
+`<svg viewBox="0 0 280 100" style="width:100%">`, and the container is a flex item with the default
+`flex-shrink: 1`. So the box gives way to a long name, and an svg with a viewBox and `width:100%`
+**scales to whatever box it is given**. Measured on a 390px screen, same nominal `10.5rem` container:
 
-**The name is the trigger, not the cause.** Two earlier fixes failed on exactly that distinction, and both
-look correct until measured:
+| stream name | graph box | chart drawn at |
+|---|---|---|
+| `Fun` | 168px | x0.600 |
+| `Investments & Interests` | 136px | x0.487 |
 
-- Clamping the pill inside the SVG's viewBox. Correct in itself, and it changed nothing here: the pill was
-  never outside the SVG — the SVG was outside the card. (That clamp is still in
-  [`MiniGraph.js`](../src/components/MiniGraph.js), because a genuinely wide value *can* overrun the
-  chart's own viewport. Different bug, same symptom.)
-- Pinning the chart's box and truncating the name. The overhang measures 34px past the card whatever the
-  name does, so this fixed nothing while appearing to address the obvious culprit.
+The chart's size has always depended on the length of the stream name. Nothing was pinned; it simply was
+not visible until a row got tight enough.
 
-Removing the ring is what actually returns the width, and the ring is the row's least-consulted element —
-which is why it is the thing that moves rather than the chart or the name.
+Removing the ring is what returns the width, and the ring is the row's least-consulted element — which is
+why it is the thing that moves rather than the chart or the name.
+
+### A wrong cause, recorded
+
+This file previously stated that the Victory chart is *intrinsically 16.5rem* and *hangs past its own box
+on both sides on every row*, and that a long name pushes that overhang past the card's edge where it gets
+clipped. **That is wrong, and measurement disproves it**: the svg is `width:100%` of its container, so it
+never exceeds it, and the graph box did not cross the card's edge in any tested configuration — long name
+or short, drawer open or closed.
+
+It is recorded rather than quietly deleted because a plausible mechanism written down with confidence is
+worse than no explanation: the next person measures against it instead of against the row. What survives
+is the narrower claim — the pill clamp in [`MiniGraph.js`](../src/components/MiniGraph.js) is still there
+and still earns its place, because a genuinely wide value *can* overrun the chart's own viewport. That is
+a different bug that happened to share a symptom.
+
+### Narrowing the chart means cropping it
+
+Because the svg scales to its box, handing width back to the name by shrinking the container **resizes the
+chart** — axis labels, value pill and all. Doing exactly that shipped once, and cost every mobile chart
+about a fifth of its size.
+
+So `MiniGraphContainer` is a window rather than a box. It sets `overflow:hidden` and
+`justify-content:flex-end`, and the chart sits inside a `ChartWindowContent` holder pinned at the design
+width with `flex-shrink:0`. The container shows a right-anchored window onto a chart that never changes
+size: narrowing hides the chart's *left*, which is the only part safe to lose, because the container's
+`mask-image` has already faded it to nothing.
+
+The mask stays on the container, i.e. **outside** the crop, so it always spans the leftmost 40% of what is
+visible. The fade therefore cannot itself be cut off — the leftmost surviving column is fully transparent
+by construction, and no amount of cropping produces a hard edge.
+
+| graph box | crop (now) | scale (before) |
+|---|---|---|
+| 136px | x0.600 | x0.487 |
+| 122px | x0.600 | x0.434 |
+| 109px | x0.600 | x0.388 |
+
+A side effect worth knowing: the chart's drawn scale is now a **constant** rather than a function of the
+name's length, so long-name rows draw their chart larger than they used to.
 
 ## How it works
 
@@ -64,14 +100,29 @@ All derived; none typed.
 
 | | |
 |---|---|
-| open width | ring `DS.spacing.l` plus a gap either side, the gap being twice the row's own ring margin |
-| ring inset | `(openWidth − ringWidth) / 2` — centred by construction |
+| drawer content width | `DS.spacing.xl + DS.spacing.xxs` — 6.5rem, what the longest real caption needs |
+| drawer padding | `DS.spacing.xxs` either side |
+| open width | that content plus that padding either side — 7.5rem |
+| centring | `justifyContent:center`, not padding — see below |
 | separator | `1px solid DS.getStyle().borderColor`, the rule the hamburger menu draws between its links |
 | separator height | `top:25% / bottom:25%` — half the row, centred, and still proportional when a long name wraps to two lines |
 
-The ring carries no `marginLeft` inside the drawer. Production gives it one because there it is an item in
-a flex row; in the drawer the padding already places it, and both together push it against the drawer's
-right edge while looking centred in the code.
+**The drawer is sized from its content, not from the ring.** It used to be `ring + gap + gap`, which made
+the caption's width a hostage of the ring's: the caption lives *inside* the ring's box, so widening the
+drawer bought padding rather than text width. Widening the gap from 2rem to 3rem moved the caption's box by
+exactly zero pixels — it stayed 48px while the drawer went from 112px to 144px. Sizing from the content
+instead makes the open drawer *narrower* than it was, 7.5rem against 9rem, while the caption's box more
+than doubles. The room was there the whole time, spent on padding.
+
+**Centred by `justifyContent`, never by padding.** This codebase sets `box-sizing` per component and has no
+global `border-box` rule, so a padded box here is a content box: the padding adds to the width the spring
+translates by. The old `paddingLeft` only looked centred because a 3rem pad and a 9rem content-box width
+happened to leave 3rem either side of a 3rem ring — arithmetic that came apart the moment the box inside
+stopped being exactly the ring's width. Flex centring cannot drift.
+
+The ring carries no `marginLeft` inside the drawer. It has one in the row, where it is an item among
+others; in the drawer the centring places it, and both together pushed it off-centre toward the drawer's
+right edge.
 
 ### What the drawer holds
 
@@ -81,6 +132,12 @@ The ring, and underneath it the number the ring was always about: the period's v
 income and fully-paid streams, and a second copy would eventually disagree with the rest of the app about
 the same stream. Both methods read only `props.analysis` and hold no state, so borrowing them costs an
 object.
+
+The caption wraps at the drawer's content width, because `ringBoxStyle` is the box it lives in, and that
+box takes the drawer's content width in the drawer and the ring's own 3rem in the row. Binding both
+placements to the ring's width is what confined the caption to 48px, where it did not so much wrap as
+overflow: centred on a box narrower than its own longest word, `$8,200 received this year` went to three
+lines and spilled past its box on all of them.
 
 The caption renders **only on mobile**. It is not a screen inconsistency: it belongs to the drawer, and
 only mobile has one. It exists because a drawer gives the ring vertical room the row never had, and
@@ -163,6 +220,7 @@ kept for experimentation drifts from the shipped one within days.
   screen's very edge, and the drag that opens a drawer starts inside the row's own content, which the
   card's margin and padding hold clear of it. Worth knowing that the clearance is what protects it: a row
   redrawn flush to the screen edge would put the two gestures in the same place.
-- **The drawer does not fix the chart's overhang**, it removes the condition that exposes it. The chart is
-  still intrinsically wider than its container on every row, including on desktop. If a row ever regains a
-  left-hand element, the clipping returns.
+- **The drawer does not make the chart bigger**, it stops the name from making it smaller. The chart is
+  cropped rather than resized now, so its drawn size no longer depends on the row at all; what the drawer
+  returns is room for the *name*. If a row ever regains a left-hand element the name loses that room again
+  — but the chart keeps its size, which is the part that used to fail silently.

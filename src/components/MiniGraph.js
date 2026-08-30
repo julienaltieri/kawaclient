@@ -108,6 +108,7 @@ export default class MiniGraph extends GenericChartView{
 	        </radialGradient>
 		</defs></svg>
 	    <MiniGraphContainer narrowBy={this.props.narrowBy}>
+	    <ChartWindowContent>
 	    <V.VictoryChart scale={{ x: "time", y:"linear" }} domain={this.getDomain()} height={this.style.chartHeight} width={this.style.chartWidth} padding={this.style.chartPadding}
 	    				containerComponent={<V.VictoryVoronoiContainer onActivated={this.onFlyOver} onDeactivated={this.onFlyOut} 
 	    				events={{onClick:(d) => this.state.hovering?this.handleClick(this.hoverData):""}}
@@ -130,6 +131,7 @@ export default class MiniGraph extends GenericChartView{
        		<V.VictoryScatter size={({datum})=>this.style.chartStrokeWidth+1} style={{data: {fill: ({datum})=>this.getAnnotationsAtDate(datum.x).length?"url(#"+(datum.y<0?"alertHighlight":"positiveHighlight")+")":this.getFillValue(datum.y)}}} data={this.getData()} />
      		{this.state.hovering?null:<MiniToolTip scale={{ x: "time", y:"linear" }} datum={this.getData(true).slice(this.projectionLine?-1:-2)[0]}/>}
      	</V.VictoryChart>
+     	</ChartWindowContent>
      	</MiniGraphContainer>
      	{(!Core.isMobile() && this.state.hovering && this.hoverData[0]?.x && this.getAnnotationsAtDate(this.hoverData[0]?.x).length)?
      		<AnnotationTooltip	shouldOverrideOverflow={this.props.shouldOverrideOverflow}
@@ -201,18 +203,37 @@ const GraphTitle = styled.div`
     font-size: 0.9rem;
 `
 
-//`narrowBy` lets a caller reclaim horizontal room from the chart. The box is the row's last item and is
-//right-anchored, so shrinking it moves its LEFT edge inward and the right edge does not move at all -
-//which is the point: this reduces the chart's effective size rather than repositioning it.
+//`narrowBy` lets a caller reclaim horizontal room from the chart. The box is the row's last item, so
+//shrinking it moves its LEFT edge inward and the right edge does not move at all.
+//
+//It has to CROP rather than resize. Victory emits `viewBox="0 0 280 100"` with `width:100%`, so an svg
+//given a smaller box simply draws the same chart smaller - narrowing the container by 2rem shrank every
+//mobile chart by about a fifth, axis labels and value pill included, which is a resize dressed as a
+//width change. The fix is a window: ChartWindowContent keeps the chart's full design width whatever the
+//container does, and `justify-content:flex-end` anchors it to the right, so the container shows a
+//right-aligned WINDOW onto a chart that never changes size. Narrowing hides the chart's left, which is
+//the only part it is safe to lose - the mask below has already faded it to nothing.
+//
+//The mask stays on the container, i.e. OUTSIDE the crop, so it always spans the leftmost 40% of what is
+//actually visible. The fade can therefore never itself be cut off: the leftmost cropped column is fully
+//transparent by construction, so there is no hard edge no matter how far the crop goes.
 const MiniGraphContainer = styled.div`
 	width: ${props => 10.5-(props.narrowBy||0)}rem;
 	height: 3.8rem;
 	display: flex;
 	align-content: center;
-    justify-content: center;
+    justify-content: flex-end;
     align-items: center;
+    overflow: hidden;
     mask-image: linear-gradient(90deg, transparent 0%, white 40%);
 
+`
+//The chart's own box, at its design width always. flex-shrink:0 is what makes it a window rather than a
+//resize - without it flex would helpfully shrink this back down to the container and undo the whole thing.
+const ChartWindowContent = styled.div`
+	width: 10.5rem;
+	height: 100%;
+	flex-shrink: 0;
 `
 const LabelBox = styled.div`
 	background-color: ${props => props.color};
