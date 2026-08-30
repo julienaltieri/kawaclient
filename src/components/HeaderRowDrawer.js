@@ -61,6 +61,8 @@ const tileStyle = {
 //with the ring centring itself inside it. Binding both to ringWidthRem is what confined the caption to 48px.
 //marginLeft applies only in the row, where the ring is a flex item among others; the drawer places it by
 //centring, and giving it both pushed the ring off-centre toward the drawer's right edge.
+//This box sizes TEXT, not the ring - the ring carries its own ringWidthRem box inside it (see
+//renderRingBox). Letting the ring inherit this width drew it at 6.5rem across the whole row.
 const ringBoxStyle = (inRow) => ({width:(inRow?ringWidthRem:drawerContentWidthRem)+"rem",flexShrink:0,
 	display:"flex",flexDirection:"column",alignItems:"center",
 	...(inRow?{marginLeft:ringMarginRem+"rem"}:{})});
@@ -221,9 +223,13 @@ export default class HeaderRowDrawer extends BaseComponent{
 	//vertical room the row never had, and because a ring pushed out of sight should say the number it was
 	//always comparing. Desktop keeps the ring in the row exactly as it has always been; adding a caption
 	//there would be a redesign of a row that has no bug, which is the one thing this change must not do.
+	//The ring gets its OWN box, always ringWidthRem, inside the caption's. TimeAndMoneyProgressView draws
+	//itself at 100% of whatever contains it, so the enclosing box was silently doing two jobs: the width the
+	//caption wraps at, and the diameter of the ring. Widening it for the caption drew a 6.5rem ring that
+	//overflowed the row. Two boxes, one job each - the outer one sizes text, the inner one sizes the ring.
 	renderRingBox(inRow){
 		return <div style={ringBoxStyle(inRow)}>
-			{this.props.drawer}
+			<div style={{width:ringWidthRem+"rem",flexShrink:0}}>{this.props.drawer}</div>
 			{Core.isMobile()?this.props.drawerCaption:null}
 		</div>
 	}

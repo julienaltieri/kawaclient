@@ -134,7 +134,11 @@ the same stream. Both methods read only `props.analysis` and hold no state, so b
 object.
 
 The caption wraps at the drawer's content width, because `ringBoxStyle` is the box it lives in, and that
-box takes the drawer's content width in the drawer and the ring's own 3rem in the row. Binding both
+box takes the drawer's content width in the drawer and the ring's own 3rem in the row. **That box sizes
+text, and the ring carries its own `ringWidthRem` box inside it.** `TimeAndMoneyProgressView` draws at 100%
+of whatever contains it, so a single box was silently doing two jobs — the width the caption wraps at, and
+the diameter of the ring. Widening it for the caption drew a 6.5rem ring across the row. Two boxes, one job
+each. Binding both
 placements to the ring's width is what confined the caption to 48px, where it did not so much wrap as
 overflow: centred on a box narrower than its own longest word, `$8,200 received this year` went to three
 lines and spilled past its box on all of them.
