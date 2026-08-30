@@ -159,10 +159,10 @@ kept for experimentation drifts from the shipped one within days.
 
 ## Boundaries
 
-- **Untested against Android's back gesture.** A right-swipe from the screen edge is the system back
-  gesture on Android, and these rows begin at the screen edge. If the two fight, the drawer needs to open
-  from a drag starting further in — which weakens the interaction, so it is worth knowing before relying
-  on it.
+- **Android's back gesture does not conflict**, checked on a device. That gesture is claimed from the
+  screen's very edge, and the drag that opens a drawer starts inside the row's own content, which the
+  card's margin and padding hold clear of it. Worth knowing that the clearance is what protects it: a row
+  redrawn flush to the screen edge would put the two gestures in the same place.
 - **The drawer does not fix the chart's overhang**, it removes the condition that exposes it. The chart is
   still intrinsically wider than its container on every row, including on desktop. If a row ever regains a
   left-hand element, the clipping returns.

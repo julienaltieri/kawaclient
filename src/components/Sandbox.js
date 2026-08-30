@@ -55,12 +55,10 @@ class CompoundStreamHeaderRow extends BaseComponent{
 	}
 	renderDrawerCaption(analysis){
 		var v = this.periodValue(analysis);
-		return <React.Fragment>
-			<div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
-					fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{v.text}</div>
-			<div style={{textAlign:"center",lineHeight:1.15,
-					fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}>{v.word}</div>
-		</React.Fragment>
+		//one wrapping line rather than two fixed ones - see the same caption in StreamAuditView
+		return <div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+				fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{v.text}{" "}
+				<span style={{color:DS.getStyle().bodyTextSecondary}}>{v.word}</span></div>
 	}
 	render(){
 		var analysis = this.getAnalysis();

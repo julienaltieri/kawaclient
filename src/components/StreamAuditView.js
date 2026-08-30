@@ -165,6 +165,13 @@ class CompoundStreamAuditView extends StreamAuditView{
 		//and keeps the rule in one place; re-implementing its savings/income/paid branches here would be a
 		//second copy to keep in step.
 		const periodView = new TerminalStreamCurrentReportPeriodView({analysis:this.getStreamAnalysis().getCurrentPeriodReport()});
+		//Value and word as ONE wrapping line rather than two fixed ones: "$1,204 left" then breaks where the
+		//width runs out instead of always in the same place, so a short value keeps its word beside it rather
+		//than leaving a gap under it - the same way the row's own per-period line behaves.
+		const drawerCaption = <div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+				fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>
+			{format(periodView.getPrimaryValue())}{" "}
+			<span style={{color:DS.getStyle().bodyTextSecondary}}>{periodView.getSubtext()}</span></div>;
  		return (<CompountStreamAuditViewContainer isCollapsed={isCollapsed}>
  			<HeaderRowDrawer
 				onClick={this.toggleCollapse}
@@ -173,12 +180,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 					cursor: "pointer"
 				}}
 				drawer={<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>}
-				drawerCaption={<React.Fragment>
-					<div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
-							fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{format(periodView.getPrimaryValue())}</div>
-					<div style={{textAlign:"center",lineHeight:1.15,
-							fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}>{periodView.getSubtext()}</div>
-				</React.Fragment>}
+				drawerCaption={drawerCaption}
 				chart={<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
  				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
