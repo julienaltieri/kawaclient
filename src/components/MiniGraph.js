@@ -149,19 +149,44 @@ export class CompactMiniGraph extends MiniGraph{
 	}
 }
 
+// Shared by the pill's own rendering and the clip-avoidance estimate below, so the estimate can never
+// drift out of sync with what is actually drawn (DECISION-PRINCIPLES.md #17).
+const TOOLTIP_FONT_SIZE = 22
+const TOOLTIP_BACKGROUND_PADDING = { left: 10, right: 15, bottom: 7, top: 7 }
+// Inter's average digit advance is ~0.55em; rounded up to 0.6 so the estimate errs toward "too wide".
+// Under-estimating clips the pill (the bug being fixed here); over-estimating only starts the pill's
+// slide away from the edge a few pixels early, which is not visible.
+const TOOLTIP_CHAR_ADVANCE_EM = 0.6
+
 const MiniToolTip = (props) => {
-	let text = utils.formatCurrencyAmount(props.datum.y,0,false,false,Core.getPreferredCurrency())
+	var text = utils.formatCurrencyAmount(props.datum.y,0,false,false,Core.getPreferredCurrency())
+	// Victory injects the chart's real pixel scale and width into direct VictoryChart children (and into
+	// VictoryVoronoiContainer's labelComponent) -- verified empirically, see the probe referenced in the
+	// PR notes. The drawable SVG box therefore runs from x=0 to props.width; keep the pill's center inside
+	// it by pulling it back (or pushing it forward) with dx exactly as far as it would otherwise overshoot.
+	//width is injected on both paths this component is used from, but a NaN here would reach the SVG as an
+	//invalid dx and shift the pill for no reason, so an absent one simply means no clamping rather than a
+	//wrong one
+	var clamps = typeof props.width === "number" && typeof props.scale?.x === "function"
+	var centerX = clamps?props.scale.x(props.datum.x):0
+	var halfTextWidth = 0.5*text.length*TOOLTIP_CHAR_ADVANCE_EM*TOOLTIP_FONT_SIZE
+	var rightEdge = centerX+halfTextWidth+TOOLTIP_BACKGROUND_PADDING.right
+	var leftEdge = centerX-halfTextWidth-TOOLTIP_BACKGROUND_PADDING.left
+	var overshootRight = rightEdge-props.width
+	var overshootLeft = 0-leftEdge // mirror of overshootRight against the SVG box's left edge (x=0)
+	var dx = !clamps ? 0 : (overshootRight>0 ? -overshootRight : (overshootLeft>0 ? overshootLeft : 0))
 	return (<g>
 		<defs>
 			<filter id="shadow" x="0" y="0" width="100%" height="100%">
 				<feDropShadow dx="0" dy="0" stdDeviation="2" floodColor={DesignSystem.isDarkMode()?"#0008":"#0003"}/>
 			</filter>
 		</defs>
-		<V.VictoryLabel backgroundPadding={{ left: 10, right: 15,bottom:7,top:7 }}
-      backgroundStyle={{fill:DesignSystem.getStyle()[props.datum.y>=0?"positive":"expenses"], opacity: 1,rx:15 }} 
-      			scale={props.scale} textAnchor="middle" verticalAnchor="middle" 
-				style={{filter: "url(#shadow)",fill:DesignSystem.getStyle().bodyTextLight, fontSize: 22,fontFamily:"Inter",fontWeight:500}}
+		<V.VictoryLabel backgroundPadding={TOOLTIP_BACKGROUND_PADDING}
+      backgroundStyle={{fill:DesignSystem.getStyle()[props.datum.y>=0?"positive":"expenses"], opacity: 1,rx:15 }}
+      			scale={props.scale} textAnchor="middle" verticalAnchor="middle"
+				style={{filter: "url(#shadow)",fill:DesignSystem.getStyle().bodyTextLight, fontSize: TOOLTIP_FONT_SIZE,fontFamily:"Inter",fontWeight:500}}
 				datum={{x:props.datum.x,y:props.datum.y}}
+				dx={dx}
 				dy={-7+(props.datum.y>0?1:-1)*28}
 				text={text}/></g>)
 }

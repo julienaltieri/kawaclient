@@ -15,7 +15,8 @@ const NavRoutes = {
 	login:  		'/login',
 	categorization: '/categorization',
 	streams: 		'/streams',
-	settings: 		'/settings'
+	settings: 		'/settings',
+	sandbox: 		'/sandbox'
 }
 const isValidRoute = (path)=> Object.keys(NavRoutes).map(k => NavRoutes[k]).indexOf(path)>-1
 

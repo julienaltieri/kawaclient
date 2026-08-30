@@ -134,6 +134,7 @@ Recorded so far:
 |---|---|
 | [`amazon-transaction.md`](amazon-transaction.md) | How Amazon order data is scraped, ingested, matched to bank transactions, and split by item. |
 | [`zero-sum-streams.md`](zero-sum-streams.md) | Streams whose transactions are expected to cancel out: how debits and credits are paired, and how an Amazon return auto-splits the charge that funds it. |
+| [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, the gesture, and the traps found getting there. |
 
 ---
 

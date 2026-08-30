@@ -14,6 +14,7 @@ import MiniGraph from './MiniGraph'
 import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 import {ModalTemplates} from '../ModalManager.js'
+import HeaderRowDrawer from './HeaderRowDrawer'
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -158,26 +159,32 @@ class CompoundStreamAuditView extends StreamAuditView{
 		if(this.props.stream.name == "Retraite"){console.log(this.getStreamAnalysis({
 			observationPeriod:this.props.stream.getPreferredReportingPeriod()
 		}))}
+		//The drawer's caption under the ring: the same value and word ("left","over","saved","received","paid")
+		//TerminalStreamCurrentReportPeriodView already gives this period elsewhere, taken from there rather
+		//than re-derived - those methods read only props.analysis and hold no state, so this costs an object
+		//and keeps the rule in one place; re-implementing its savings/income/paid branches here would be a
+		//second copy to keep in step.
+		const periodView = new TerminalStreamCurrentReportPeriodView({analysis:this.getStreamAnalysis().getCurrentPeriodReport()});
  		return (<CompountStreamAuditViewContainer isCollapsed={isCollapsed}>
- 			<DS.component.ContentTile 
+ 			<HeaderRowDrawer
 				onClick={this.toggleCollapse}
 				style={{
-					flexDirection: "row",
-					justifyContent: "space-between",
-					width: "calc(100% - "+DS.spacing.xs+"rem)", 
-					margin: 0,
 					marginBottom: this.state.isCollapsed ? DS.verticalSpacing.xs : DS.verticalSpacing.s ,
 					cursor: "pointer"
-				}}>
- 				<div style={{width:"3rem",marginLeft:"1rem",flexShrink:0}}>
-					<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>
- 				</div>
+				}}
+				drawer={<TimeAndMoneyProgressView analysis={this.getStreamAnalysis().getCurrentPeriodReport()} viewConfig={{timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001}}/>}
+				drawerCaption={<React.Fragment>
+					<div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+							fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{format(periodView.getPrimaryValue())}</div>
+					<div style={{textAlign:"center",lineHeight:1.15,
+							fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}>{periodView.getSubtext()}</div>
+				</React.Fragment>}
+				chart={<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
  				<div style={{padding:"1rem",flexGrow: 0,marginRight:"auto",textAlign:"left"}}>
  					<StreamGroupHeaderTitle>{this.props.stream.name}</StreamGroupHeaderTitle>
  					<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis())),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
  				</div>
- 				<MiniGraph analysis={this.getStreamAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>
- 			</DS.component.ContentTile>
+ 			</HeaderRowDrawer>
  			<StreamAuditCellContainer isCollapsed={isCollapsed}>
  				<RowLayout>
  					{getStreamsForDisplay(this.props.stream.children,this.getStreamAnalysis()).map((s,i) => 

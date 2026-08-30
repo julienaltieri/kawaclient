@@ -13,8 +13,8 @@ import Navigation, {TopNavigationBar,NavRoutes} from './components/Navigation'
 import MissionControl from './components/MissionControl'
 import SettingPage from './components/SettingPage'
 import PageLoader from './components/PageLoader'
-
-
+import Sandbox from './components/Sandbox'
+import AppConfig from './AppConfig'
 
 export default class App extends BaseComponent{
   constructor(props){   
@@ -42,6 +42,9 @@ export default class App extends BaseComponent{
     Navigation.addView("Streams",NavRoutes.streams);
     Navigation.addView("Categorization",NavRoutes.categorization);
     Navigation.addView("Settings",NavRoutes.settings);
+    //Sandbox is a workbench, not a feature: only staging registers the menu entry, so production never
+    //shows a dead entry and the route below never exists to be guessed at.
+    if(AppConfig.staging)Navigation.addView("Sandbox",NavRoutes.sandbox);
 
   }
 
@@ -57,6 +60,10 @@ export default class App extends BaseComponent{
             <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.refresh}/>}/>
             <Route path={NavRoutes.home}            element={<MissionControl refresh={this.refresh}/>}/>
             <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.refresh}/>}/>
+            {/*Sandbox: a workbench, not a feature. Only registered in staging (AppConfig.staging) so
+               production never exposes the route or the menu entry. Delete this line and the addView
+               call above, and the Sandbox import, to remove it entirely.*/}
+            {AppConfig.staging?<Route path={NavRoutes.sandbox}     element={<Sandbox refresh={this.refresh}/>}/>:""}
           </Routes>:<Routes>
             <Route path={NavRoutes.login}           element={<LoginPage refresh={this.refresh}/>}/>
             <Route path={"*"}                       element={<PageLoader/>}/>

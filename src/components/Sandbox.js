@@ -1,0 +1,123 @@
+import React from 'react';
+import BaseComponent from './BaseComponent';
+import Core from '../core.js';
+import DS from '../DesignSystem.js';
+import AppConfig from '../AppConfig';
+import memoize from 'memoize-one';
+import {getStreamAnalysis,reportingConfig,getAnalysisRootDate} from '../processors/ReportingCore.js';
+import {getAnalysisStartDate} from './StreamAuditView';
+import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,format} from './AnalysisView';
+import MiniGraph from './MiniGraph';
+import {Period} from '../Time';
+import utils from '../utils';
+import PageLoader from './PageLoader';
+import HeaderRowDrawer from './HeaderRowDrawer';
+
+//General sandbox page, currently hosting one experiment: several real compound-stream header rows (the
+//same row CompoundStreamAuditView renders in StreamAuditView.js), composed from HeaderRowDrawer - the same
+//drawer component that row uses in production. A first-class route behind login, so it follows the same
+//loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's ready.
+
+const titleStyle = {marginBottom:DS.spacing.xxs+"rem",textAlign:"left",fontWeight:"bold"};
+const ringConfig = {timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001};
+
+//Same reporting-date logic StreamAuditView keeps privately (it isn't exported): the end of the current
+//observation period, computed once since it doesn't change while this page is open.
+//Called, not computed at module scope. getAnalysisRootDate reads the user's preferences, which do not
+//exist until Core has loaded - and a module body runs the moment anything imports this file, which is
+//long before that. Evaluating it eagerly threw on `userPreferences` of undefined and took the whole app
+//down, from a page nobody had opened.
+const analysisDate = () => reportingConfig.observationPeriod.nextDateFromNow(getAnalysisRootDate());
+
+//One compound-stream header row, built on HeaderRowDrawer: this component supplies the stream's data and
+//the drawer/text/chart content, HeaderRowDrawer supplies the window, the gesture and the spring.
+class CompoundStreamHeaderRow extends BaseComponent{
+	constructor(props){
+		super(props);
+		//own memoize instance per row, not the shared module-level one StreamAuditView uses: several of these
+		//rows are on screen together, and a single shared cache would miss on every render as rows alternate.
+		this.mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(analysisDate(),s,txns,observationPeriod,subReportingPeriod));
+	}
+	getAnalysis(options){
+		return this.mAnalyze(this.props.stream,this.props.transactions,
+			options?.observationPeriod || reportingConfig.observationPeriod,
+			options?.subReportingPeriod || options?.observationPeriod?.subdivision)
+	}
+	//The ring compares money spent against time elapsed but never says the number it is comparing. Under it
+	//goes exactly what the app already says about a period elsewhere - the same value and the same word
+	//("left", "over", "saved", "received", "paid") - taken from TerminalStreamCurrentReportPeriodView rather
+	//than re-derived. Those methods read only props.analysis and hold no state, so borrowing them costs an
+	//object and keeps the rule in one place; re-implementing its savings/income/paid branches here would be
+	//a second copy to keep in step.
+	periodValue(analysis){
+		var view = new TerminalStreamCurrentReportPeriodView({analysis:analysis});
+		return {text:format(view.getPrimaryValue()), word:view.getSubtext()}
+	}
+	renderDrawerCaption(analysis){
+		var v = this.periodValue(analysis);
+		return <React.Fragment>
+			<div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+					fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{v.text}</div>
+			<div style={{textAlign:"center",lineHeight:1.15,
+					fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyTextSecondary}}>{v.word}</div>
+		</React.Fragment>
+	}
+	render(){
+		var analysis = this.getAnalysis();
+		var current = analysis.getCurrentPeriodReport();
+		return <HeaderRowDrawer
+				//these rows never collapse, so there is only the one (expanded) margin to reproduce
+				style={{marginBottom:DS.verticalSpacing.s}}
+				drawer={<TimeAndMoneyProgressView analysis={current} viewConfig={ringConfig}/>}
+				drawerCaption={this.renderDrawerCaption(current)}
+				chart={<MiniGraph analysis={this.getAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
+			<div style={{padding:DS.spacing.xs+"rem",flexGrow:0,marginRight:"auto",textAlign:"left"}}>
+				<div style={titleStyle}>{this.props.stream.name}</div>
+				<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(current.reportingDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
+			</div>
+		</HeaderRowDrawer>
+	}
+}
+
+//Picks a handful of real streams for display: sorted by name length and the extremes (plus a couple of
+//midpoints) kept, so a long name and a short one both end up on screen rather than however many happen to
+//come first.
+function pickStreams(){
+	var master = Core.getMasterStream();
+	var all = master.getAllStreams().filter(s => s!==master && !s.isTerminal() && s.isActiveAtDate(new Date()));
+	var byLength = [...all].sort(utils.sorters.asc(s => s.name.length));
+	if(byLength.length<=5)return byLength
+	var picks = [byLength[0],byLength[Math.floor(byLength.length/3)],byLength[Math.floor(byLength.length*2/3)],byLength[byLength.length-1]];
+	return picks.filter((s,i) => picks.indexOf(s)===i)
+}
+
+export default class Sandbox extends BaseComponent{
+	constructor(props){
+		super(props);
+		this.state = {fetching:true,transactions:[]};
+	}
+	//Same loading lifecycle every page follows (see StreamView.js's MasterStreamView): fetching starts
+	//true, loadData() waits on Core.loadData() before touching Core for anything, then flips fetching
+	//off. Reading Core before that resolves - including at module scope - is what crashed this page before.
+	loadData(){
+		//same range MissionControl fetches over, so these rows analyze the same real transactions the audit view does
+		return Core.loadData()
+			.then(() => Core.getTransactionsBetweenDates(new Date(Math.min(AppConfig.transactionFetchMinDate,getAnalysisStartDate())),new Date()))
+			.then(txns => this.updateState({fetching:false,transactions:(txns||[]).filter(t => t.categorized)}))
+	}
+	componentDidMount(){
+		super.componentDidMount?.();
+		this.loadData();
+	}
+	getTransactionsForStream(s){return this.state.transactions.filter(t => t.isAllocatedToStream(s))}
+	render(){
+		if(this.state.fetching)return <PageLoader/>
+		var streams = pickStreams();
+		if(!streams.length)return <div style={{padding:DS.spacing.xs+"rem"}}>No streams to show.</div>
+		//DS.spacing.xs, not .l: production's header rows come within 1rem of the screen edge, and a page
+		//gutter three times that made every row narrower than the thing it is reproducing
+		return <div style={{maxWidth:"50rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
+			{streams.map(s => <CompoundStreamHeaderRow key={s.id} stream={s} transactions={this.getTransactionsForStream(s)}/>)}
+		</div>
+	}
+}

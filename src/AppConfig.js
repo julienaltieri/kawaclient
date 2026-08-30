@@ -4,6 +4,7 @@ import utils from './utils'
 let staging = false;
 
 const AppConfig = {
+	staging,
 	serverURL: staging?"":"https://8nwhu27f2l.execute-api.us-west-2.amazonaws.com/dev",
 	featureFlags: {
 		apiCategorizationOfflineMode: false,
