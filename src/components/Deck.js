@@ -234,8 +234,12 @@ export default class Deck extends BaseComponent{
 		//is half of what used to be the row's gap, and the gap itself moves to 0, so adjacent targets meet
 		//with no dead space between them while the dots stay spaced exactly as before.
 		var dotGap = DS.spacing.xxs;
-		return <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:0,
-				margin:DS.spacing.s+"rem 0 0 0"}}>
+		//Distance from the page above. A prop because the two callers sit in different rooms: inside a modal
+		//sheet the pager needs the full DS.spacing.s to clear the content, and on the page the same gap read
+		//as a hole. Derived from the token either way rather than typed.
+		var pagerGap = this.props.pagerGapRem!==undefined?this.props.pagerGapRem:DS.spacing.s;
+		return <div data-no-drag style={{display:"flex",justifyContent:"center",alignItems:"center",gap:0,
+				margin:pagerGap+"rem 0 0 0"}}>
 			{n>dotLimit
 				?<span style={{...style,fontVariantNumeric:"tabular-nums"}}>{(this.props.index+1)+" / "+n}</span>
 				:this.props.pages.map((p,i) => <span key={i} onClick={() => this.go(i,0)}
@@ -253,7 +257,12 @@ export default class Deck extends BaseComponent{
 	render(){
 		var pages = this.props.pages||[];
 		var b = this.props.bleedRem!==undefined?this.props.bleedRem:bleed();
-		return <div>
+		//The gesture sits on the WHOLE component rather than on the track, so the band between the last page
+		//and the pager is grabbable too - it is the obvious place to put a thumb and it used to be dead. The
+		//pager itself opts out: its dots are tap targets, and a drag starting on one should move the deck
+		//only by way of that dot's own click.
+		return <div onPointerDown={this.onPointerDown} onPointerMove={this.onPointerMove}
+				onPointerUp={this.onPointerUp} onPointerCancel={this.onPointerUp}>
 			{/*The deck reaches back into the sheet's padding and clips there, so a page slides under the frame
 			   rather than stopping short of it. `contain: inline-size` is what keeps the track's width - which
 			   is every page laid end to end - from being what the modal sizes itself to: the desktop sheet is
@@ -263,9 +272,7 @@ export default class Deck extends BaseComponent{
 					margin:"0 "+(-b)+"rem",padding:"0 "+b+"rem",
 					transition:heightTransitionValue}}>
 				<Track ref={this.trackRef}
-					onPointerDown={this.onPointerDown} onPointerMove={this.onPointerMove}
-					onPointerUp={this.onPointerUp} onPointerCancel={this.onPointerUp}
-					style={{display:"flex",alignItems:"flex-start",gap:b+"rem",
+					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:b+"rem",
 						touchAction:"pan-y",willChange:"transform"}}>
 					{pages.map((p,i) => <div key={i} style={{flex:"0 0 100%",minWidth:0,
 							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}</div>)}

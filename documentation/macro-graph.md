@@ -33,19 +33,42 @@ The carousel does not carry a gesture of its own. It reuses `Deck`
 be a second set of spring constants and a second copy of the three release guards to keep in step with the
 first.
 
-Two things differ from the modal caller. `bleedRem` is **0**: `Deck`'s default bleed reaches back into a
-modal's side padding so a page slides in from under the sheet's frame, and at page level there is no frame
-to slide under — a negative margin there would push the track out of its column.
+Three things differ from the modal caller.
+
+**`bleedRem` is `DS.spacing.xs`.** `Deck`'s default bleed reaches back into a modal's side padding so a page
+slides in from under the sheet's frame; here it reaches into the inset the page tiles used to carry, and the
+tiles are full width instead. Without it a swiped page stopped about a rem short of the screen edge, which
+reads as the page being clamped rather than as it sliding away — the same defect the bleed was invented for
+in the modal.
+
+**Every page is the same height, and the macro graph sets it.** `stretchPages` makes the track stretch its
+pages to the tallest, so no page carries a height of its own — swap the first page for a taller one and the
+rest follow. The alternative, a typed page height, would be a second place to keep in step with a chart that
+sizes itself from its own viewBox.
+
+**`pagerGapRem` is half `DS.spacing.s`.** The pager's distance from the page is the caller's, because the two
+sit in different rooms: inside a modal sheet the full gap clears the content, and on the page the same gap
+read as a hole.
 
 And **the index lives in `ChartCarousel`, not in `MasterStreamAuditView`.** That parent rebuilds three full
 `MultiStreamAnalysis` trees on every render and is not memoised, so paging from its state would recompute
 the entire portfolio's analysis in order to move a carousel. One level down, a page change re-renders only
 the carousel and reconciles the page elements the parent already built.
 
-**The graph is deliberately not marked `[data-no-drag]`.** `Deck` skips any gesture starting inside that
-marker, which is how inputs and the item carousel keep their own taps in the modal. The chart does not need
-it: its hover is a mouse-move with no button held, which never becomes a drag, and on mobile it has no
-tooltip at all. So a horizontal swipe across the chart pages the carousel, which is what it should do.
+### Who owns a drag on the chart
+
+**The chart is marked `[data-no-drag]`; the tile around it is not.** `Deck` ignores any gesture starting
+inside that marker, so a drag beginning on the chart belongs to the chart and a drag beginning on the tile's
+padding pages the carousel. The marker sits on the chart's own wrapper rather than on the tile, which is what
+keeps that distinction available at all — marking the tile would have made the whole page undraggable.
+
+This reverses the first attempt, which left the chart draggable on the reasoning that its hover is a
+mouse-move with no button held and so could never become a drag. That is true of the hover and beside the
+point: the chart has pointer interactions of its own, and a swipe starting on it was taking them.
+
+`Deck`'s gesture also sits on the **whole component** rather than on its track, so the band between the page
+and the pager drags too — it is where a thumb naturally lands and it used to be dead. The pager itself opts
+out with the same marker, since its dots are tap targets.
 
 ## What it shows
 

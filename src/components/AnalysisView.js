@@ -867,9 +867,14 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners.map(l => l.current.invalidate = true)
 		this.mouseMoveListeners=[];
 
+		{/*Full width and no bottom margin: this tile is a carousel page now, so the inset that used to hold
+		   it clear of the screen edge stopped a swiped page short of that edge instead, and the spacing
+		   under it belongs to the carousel rather than to the chart.*/}
 		return (<DS.component.ContentTile 
-			style={{position:"relative",width:"calc(100% - 2rem)",height:"100%",margin:0,padding:"1rem",marginBottom:DS.verticalSpacing[Core.isMobile()?"s":"m"]}}>
-			<div style={{position:"relative",width:"100%",height:"100%"}}>
+			style={{position:"relative",width:"100%",height:"100%",margin:0,padding:"1rem"}}>
+			{/*data-no-drag marks the CHART, not the tile: the chart answers pointer gestures of its own and
+			   the carousel must not take them, while the tile's padding around it stays a drag surface.*/}
+			<div data-no-drag style={{position:"relative",width:"100%",height:"100%"}}>
 		       	<svg style={{position:"absolute",width:0}}><defs>
 			        <radialGradient id="alertHighlight">
 			            <stop offset="30%" stopColor={DS.UIColors.white}/>
