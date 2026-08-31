@@ -33,7 +33,7 @@ const drawerContentWidthRem = DS.spacing.xl+DS.spacing.xs;
 const drawerPadRem = DS.spacing.xs;
 //How far the panel must travel to reveal it: the content's box plus that padding either side.
 const openWidthRem = drawerContentWidthRem+drawerPadRem+drawerPadRem;
-const openWidth = openWidthRem*DS.remToPx; //px - the drag/spring math below works in px, like ChargeDeck's
+const openWidth = openWidthRem*DS.remToPx; //px - the drag/spring math below works in px, like the Deck's
 
 //Physics tuned per spec rather than picked: critically damped (damping is derived, not typed) so the panel
 //never oscillates on its own, only the guards in settle() below stop it from crossing the target.
@@ -42,10 +42,10 @@ const damping = 2*Math.sqrt(stiffness);
 const rubber = 0.3;      //fraction of the finger the panel follows past either end
 const flickVel = 0.30;   //px/ms, above which a release commits regardless of distance
 const commitFrac = 0.22; //fraction of the open travel a slow drag must cross to commit
-const dragLockPx = 6;    //below this the gesture hasn't declared itself yet - matches ChargeDeck's own lock
+const dragLockPx = 6;    //below this the gesture hasn't declared itself yet - matches the Deck's own lock
 
 //DS.backgroundOpacity is the token this codebase already uses as an alpha channel (StreamView.js); 0.45 is
-//the exact opacity ChargeDeck gives a page that isn't the current gesture's focus - the same "quiet"
+//the exact opacity Deck gives a page that isn't the current gesture's focus - the same "quiet"
 //treatment, reused here for the chart while the drawer is out.
 const quietOpacityFloor = 0.45;
 
@@ -141,7 +141,7 @@ export default class HeaderRowDrawer extends BaseComponent{
 		}
 	}
 	//A spring rather than an easing curve, so a release already carrying a throw's speed continues it instead
-	//of restarting from a standstill - same reasoning as ChargeDeck's settle().
+	//of restarting from a standstill - same reasoning as the Deck's settle().
 	settle(target,v0){
 		cancelAnimationFrame(this.raf);
 		var v = v0*1000; //v0 arrives in px/ms
@@ -177,7 +177,7 @@ export default class HeaderRowDrawer extends BaseComponent{
 		}
 		this.settle(open?openWidth:0,v0||0);
 	}
-	//Arms a single capture-phase click swallower on window, only after a drag that MOVED - mirrors ChargeDeck's
+	//Arms a single capture-phase click swallower on window, only after a drag that MOVED - mirrors the Deck's
 	//guard so a release that lands on the row's own content doesn't also fire that content's click.
 	armClickSwallow(){
 		this.disarmClickSwallow();

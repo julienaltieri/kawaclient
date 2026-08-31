@@ -15,6 +15,7 @@ import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 import {ModalTemplates} from '../ModalManager.js'
 import HeaderRowDrawer from './HeaderRowDrawer'
+import ChartCarousel, {PlaceholderPage} from './ChartCarousel'
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -79,12 +80,20 @@ class MasterStreamAuditView extends StreamAuditView{
 	getAnalysisForStreams(ss){
 		return getMultiStreamAnalysis(getAnalysisDate(),ss,this.props.auditedTransactions,!shouldShowContextForObservationPeriodTransition()?reportingConfig.observationPeriod:Period.biyearly,reportingConfig.observationPeriod.subdivision)
 	}
+	//The macro graph is page one of a carousel rather than the only thing here: more ways of reading the
+	//same year are meant to follow it. The pages are built HERE, where the analyses already exist, and the
+	//index lives inside ChartCarousel - paging from this component's state would rebuild all three analysis
+	//trees, since neither this component nor getAnalysisForStreams is memoised.
 	render(){return (<div>
-		<EndOfPeriodProjectionGraph  	
-			incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))>0 && !s.isSavings))}
-			expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
-			savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
-		/></div>)
+		<ChartCarousel pages={[
+			<EndOfPeriodProjectionGraph key="projection"
+				incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))>0 && !s.isSavings))}
+				expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
+				savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
+			/>,
+			<PlaceholderPage key="placeholder" label="Next visualization"/>
+		]}/>
+	</div>)
 	}
 }
 

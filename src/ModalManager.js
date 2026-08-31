@@ -6,7 +6,7 @@ import styled from 'styled-components'
 import {CategorizationModalView} from './components/CategorizationRulesView'
 import DS from './DesignSystem.js'
 import {TransactionView, AmazonItemImage, canSplitAmazonByItem, getAmazonOrderData, getAmazonItemSplit, getAmazonItemRefundStates, getAmazonUnpostedCharges, getAllocationRefundStates} from './components/CategorizeAction'
-import ChargeDeck from './components/ChargeDeck'
+import Deck from './components/Deck'
 import utils from './utils'
 import SideBar from './components/SideBar'
 import Navigation from './components/Navigation'
@@ -649,7 +649,7 @@ export class AmazonOrderAllocationView extends BaseComponent{
 		//pending pages come last: they have not happened yet, so they trail the charges that already have
 		return <div>
 			{this.renderOrderLine()}
-			<ChargeDeck pages={this.state.charges.map((t,i) => this.renderPage(t,i))
+			<Deck pageLabel="Charge" pages={this.state.charges.map((t,i) => this.renderPage(t,i))
 					.concat(this.state.pending.map((amount,k) => this.renderPendingPage(amount,k)))}
 				index={this.state.index}
 				onIndexChange={(i) => this.updateState({index:i},() => this.publish())}/>

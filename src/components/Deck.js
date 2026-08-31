@@ -6,7 +6,11 @@ import DS from '../DesignSystem.js'
 
 //A horizontal deck of pages you flick between, one page in view at a time.
 //
-//Built for the charges of one Amazon order: an order billed as several charges produces several bank
+//A paged, swipeable container: N pages laid end to end, one visible, dragged between with a spring and a
+//pager underneath. It knows nothing about what a page contains - `pages` is an array of nodes - and is
+//used both for the charges of one Amazon order and for the stream view's visualisation carousel.
+//
+//It was written for the charges of one Amazon order: an order billed as several charges produces several bank
 //transactions that are identical on screen, and listing them under the tile only ever said that they
 //existed. Here they ARE the pages, so moving between them is the same gesture as moving through the
 //action queue and nothing has to be closed and reopened to do it.
@@ -47,6 +51,9 @@ const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightCol
 //of the sheet instead of stopping at the text column. Read from the same values BaseModalWrapper uses
 //rather than guessed: clipping a page short of the sheet edge makes the neighbour appear out of nowhere
 //instead of sliding in from under the frame.
+//Default bleed: the MODAL's own side padding, which the deck reaches back into so a page slides all the
+//way to the sheet edge instead of stopping at the text column. A caller outside a modal has no such padding
+//to reach into and passes bleedRem:0 - hence a prop rather than a constant.
 const bleed = () => (Core.isMobile()?DS.spacing.s:DS.spacing.l);
 const heightAnimation = 300;   //ms; matches the item name's open/close so the two never fight
 //Read by BOTH the inline style in render() and the restore in fit(), so they can never drift apart again:
@@ -59,7 +66,7 @@ const dotLimit = 7;            //beyond this, dots stop being countable and beco
 //rather than becoming a control
 const dotSize = DS.fontSize.little/2+"rem";
 
-export default class ChargeDeck extends BaseComponent{
+export default class Deck extends BaseComponent{
 	constructor(props){
 		super(props)
 		this.state = {}
@@ -232,7 +239,7 @@ export default class ChargeDeck extends BaseComponent{
 			{n>dotLimit
 				?<span style={{...style,fontVariantNumeric:"tabular-nums"}}>{(this.props.index+1)+" / "+n}</span>
 				:this.props.pages.map((p,i) => <span key={i} onClick={() => this.go(i,0)}
-					aria-label={"Charge "+(i+1)+" of "+n}
+					aria-label={(this.props.pageLabel||"Page")+" "+(i+1)+" of "+n}
 					style={{...dotTargetStyle,display:"flex",alignItems:"center",justifyContent:"center",
 						padding:DS.spacing.xxs+"rem "+dotGap/2+"rem"}}>
 					<span style={{width:dotSize,height:dotSize,borderRadius:"50%",flexShrink:0,
@@ -245,7 +252,7 @@ export default class ChargeDeck extends BaseComponent{
 	}
 	render(){
 		var pages = this.props.pages||[];
-		var b = bleed();
+		var b = this.props.bleedRem!==undefined?this.props.bleedRem:bleed();
 		return <div>
 			{/*The deck reaches back into the sheet's padding and clips there, so a page slides under the frame
 			   rather than stopping short of it. `contain: inline-size` is what keeps the track's width - which

@@ -289,7 +289,9 @@ Where it surfaces:
 ### 9. The charge deck
 
 Every charge of one order, as pages you flick between, inside the Split and Edit dialogs
-([`ChargeDeck.js`](../src/components/ChargeDeck.js)). One page is a charge tile *and* its allocation
+([`Deck.js`](../src/components/Deck.js)). `Deck` is generic — it knows nothing about charges, `pages` is
+just an array of nodes — and the stream view's visualisation carousel uses the same component. It was
+named `ChargeDeck` while this was its only caller. One page is a charge tile *and* its allocation
 rows, so the two travel together — swapping the rows underneath a moving deck is what made the content
 jump. The deck owns the track's position, the gesture, the spring and its own height; it knows nothing
 about what a page contains.
