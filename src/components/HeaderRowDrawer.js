@@ -12,14 +12,15 @@ import DS from '../DesignSystem.js';
 //and marginLeft:"1rem", which are exactly DS.spacing.l and DS.spacing.xs on the scale.
 const ringWidthRem = DS.spacing.l;
 const ringMarginRem = DS.spacing.xs;
-//The drawer draws the ring smaller than the row does. A drawer gives it a whole panel and a caption
-//underneath, so it no longer has to carry the row on its own and reads as heavy at the row's size.
-//DS.spacing.m rather than a percentage of the row's ring: 70% of 3rem is 2.1rem, which is not on the
-//scale, and a hard 2.1rem is exactly the magic number DECISION-PRINCIPLES.md #17 exists to prevent. 2rem
-//is the token nearest that intent, two pixels away.
-//It is a SEPARATE constant rather than a change to ringWidthRem because the row's ring must not move:
-//desktop renders the row exactly as it always did, which is the one thing this feature must not redesign.
-const drawerRingWidthRem = DS.spacing.m;
+//The drawer draws the ring smaller than the row does. The value sits BESIDE it rather than under it, so
+//the ring is one of two things sharing the panel's width rather than the thing the panel is built around.
+//A SEPARATE constant rather than a change to ringWidthRem because the row's ring must not move: desktop
+//renders the row exactly as it always did, which is the one thing this feature must not redesign.
+//Converged on the bench at 85%, which is 2.55rem and not on the scale; this is the token composition
+//nearest that intent, one pixel away, and a hard 2.55rem is the magic number principle 17 prevents.
+const drawerRingWidthRem = DS.spacing.m+DS.spacing.xxs;
+//Between the ring and the value beside it.
+const drawerRingGapRem = DS.spacing.xxs;
 //The drawer is sized from its CONTENT, not from the ring. It used to be ring + gap + gap, which made the
 //caption's width a hostage of the ring's: the caption lives inside the ring's box, so every attempt to give
 //it room by widening the drawer bought padding instead of text width. Widening the gap from 2rem to 3rem
@@ -27,9 +28,9 @@ const drawerRingWidthRem = DS.spacing.m;
 //6.5rem is what the longest real caption needs to stop wrapping mid-phrase; the ring keeps its own 3rem and
 //centres itself inside that. Note this makes the open drawer NARROWER than it was (7.5rem against 9rem)
 //while the caption's box more than doubles - the room was there all along, spent on padding.
-const drawerContentWidthRem = DS.spacing.xl+DS.spacing.xxs;
-//Breathing room either side of that content. Small, because the content is now wide enough to carry itself.
-const drawerPadRem = DS.spacing.xxs;
+const drawerContentWidthRem = DS.spacing.xl+DS.spacing.xs;
+//Breathing room either side of that content.
+const drawerPadRem = DS.spacing.xs;
 //How far the panel must travel to reveal it: the content's box plus that padding either side.
 const openWidthRem = drawerContentWidthRem+drawerPadRem+drawerPadRem;
 const openWidth = openWidthRem*DS.remToPx; //px - the drag/spring math below works in px, like ChargeDeck's
@@ -71,9 +72,12 @@ const tileStyle = {
 //centring, and giving it both pushed the ring off-centre toward the drawer's right edge.
 //This box sizes TEXT, not the ring - the ring carries its own ringWidthRem box inside it (see
 //renderRingBox). Letting the ring inherit this width drew it at 6.5rem across the whole row.
+//In the drawer the ring and the value sit side by side; in the row the ring is alone, so the direction
+//there is moot and stays as it was. Beside the ring, the value reads left-aligned rather than centred -
+//centred text under a ring and centred text beside one are different things.
 const ringBoxStyle = (inRow) => ({width:(inRow?ringWidthRem:drawerContentWidthRem)+"rem",flexShrink:0,
-	display:"flex",flexDirection:"column",alignItems:"center",
-	...(inRow?{marginLeft:ringMarginRem+"rem"}:{})});
+	display:"flex",flexDirection:inRow?"column":"row",alignItems:"center",
+	...(inRow?{marginLeft:ringMarginRem+"rem"}:{gap:drawerRingGapRem+"rem"})});
 
 //One compound-stream header row's drawer. Desktop renders exactly what the row rendered before this existed
 //- ring in place, no drawer, no gesture. Mobile moves the ring into a drawer that sits outside the window at
@@ -239,7 +243,12 @@ export default class HeaderRowDrawer extends BaseComponent{
 	renderRingBox(inRow){
 		return <div style={ringBoxStyle(inRow)}>
 			<div style={{width:(inRow?ringWidthRem:drawerRingWidthRem)+"rem",flexShrink:0}}>{this.props.drawer}</div>
-			{Core.isMobile()?this.props.drawerCaption:null}
+			{/*The caption's BOX is the drawer's business, its content the caller's. Callers used to carry
+			   the marginTop and textAlign that placed it under the ring, which meant every caller had to be
+			   edited to move it beside the ring instead - the arrangement is one decision and belongs in one
+			   place. minWidth:0 so it may wrap rather than force the flex row wider than the panel.*/}
+			{Core.isMobile()?<div style={{flex:"1 1 auto",minWidth:0,textAlign:"left"}}>
+				{this.props.drawerCaption}</div>:null}
 		</div>
 	}
 	//The chart's own shield and dimming, wherever the row renders it: a shield rather than pointer-events:none

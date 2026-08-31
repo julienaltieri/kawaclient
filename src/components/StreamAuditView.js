@@ -166,7 +166,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 		if(this.props.stream.name == "Retraite"){console.log(this.getStreamAnalysis({
 			observationPeriod:this.props.stream.getPreferredReportingPeriod()
 		}))}
-		//The drawer's caption under the ring: the same value and word ("left","over","saved","received","paid")
+		//The drawer's caption beside the ring: the same value and word ("left","over","saved","received","paid")
 		//TerminalStreamCurrentReportPeriodView already gives this period elsewhere, taken from there rather
 		//than re-derived - those methods read only props.analysis and hold no state, so this costs an object
 		//and keeps the rule in one place; re-implementing its savings/income/paid branches here would be a
@@ -175,7 +175,7 @@ class CompoundStreamAuditView extends StreamAuditView{
 		//Value and word as ONE wrapping line rather than two fixed ones: "$1,204 left" then breaks where the
 		//width runs out instead of always in the same place, so a short value keeps its word beside it rather
 		//than leaving a gap under it - the same way the row's own per-period line behaves.
-		const drawerCaption = <div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+		const drawerCaption = <div style={{lineHeight:1.15,
 				fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>
 			{format(periodView.getPrimaryValue())}{" "}
 			<span style={{color:DS.getStyle().bodyTextSecondary}}>{periodView.getSubtext()}</span></div>;

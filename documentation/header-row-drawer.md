@@ -107,11 +107,13 @@ All derived; none typed.
 
 | | |
 |---|---|
-| drawer content width | `DS.spacing.xl + DS.spacing.xxs` — 6.5rem, what the longest real caption needs |
-| ring, in the drawer | `DS.spacing.m` — 2rem |
+| drawer content width | `DS.spacing.xl + DS.spacing.xs` — 7rem |
+| ring, in the drawer | `DS.spacing.m + DS.spacing.xxs` — 2.5rem |
 | ring, in the row | `DS.spacing.l` — 3rem, unchanged |
-| drawer padding | `DS.spacing.xxs` either side |
-| open width | that content plus that padding either side — 7.5rem |
+| ring to value | `DS.spacing.xxs` |
+| drawer padding | `DS.spacing.xs` either side |
+| open width | that content plus that padding either side — 9rem |
+| value box | what the ring and the gap leave — 4rem |
 | centring | `justifyContent:center`, not padding — see below |
 | separator | `1px solid DS.getStyle().borderColor`, the rule the hamburger menu draws between its links |
 | separator height | `top:25% / bottom:25%` — half the row, centred, and still proportional when a long name wraps to two lines |
@@ -119,9 +121,10 @@ All derived; none typed.
 **The drawer is sized from its content, not from the ring.** It used to be `ring + gap + gap`, which made
 the caption's width a hostage of the ring's: the caption lives *inside* the ring's box, so widening the
 drawer bought padding rather than text width. Widening the gap from 2rem to 3rem moved the caption's box by
-exactly zero pixels — it stayed 48px while the drawer went from 112px to 144px. Sizing from the content
-instead makes the open drawer *narrower* than it was, 7.5rem against 9rem, while the caption's box more
-than doubles. The room was there the whole time, spent on padding.
+exactly zero pixels — it stayed 48px while the drawer went from 112px to 144px. Sized from its content the
+drawer is 9rem, exactly what it was; what changed is where those 9rem go. The value's box is 64px instead
+of 48px and the rest is deliberate padding rather than the residue of a formula. The room was there the
+whole time.
 
 **Centred by `justifyContent`, never by padding.** This codebase sets `box-sizing` per component and has no
 global `border-box` rule, so a padded box here is a content box: the padding adds to the width the spring
@@ -135,27 +138,44 @@ right edge.
 
 ### What the drawer holds
 
-The ring, and underneath it the number the ring was always about: the period's value and its word —
+The ring, and beside it the number the ring was always about: the period's value and its word —
 *left*, *over*, *saved*, *received*, *paid*. Those come from `TerminalStreamCurrentReportPeriodView`'s
 `getPrimaryValue()` and `getSubtext()` rather than being re-derived; the branches differ for savings,
 income and fully-paid streams, and a second copy would eventually disagree with the rest of the app about
 the same stream. Both methods read only `props.analysis` and hold no state, so borrowing them costs an
 object.
 
-The caption wraps at the drawer's content width, because `ringBoxStyle` is the box it lives in, and that
-box takes the drawer's content width in the drawer and the ring's own 3rem in the row. **That box sizes
+The value wraps at what the ring and the gap leave of the drawer's content width — 4rem — because
+`ringBoxStyle` is the row it sits in, and that row takes the drawer's content width in the drawer and the
+ring's own 3rem in the row. **That box sizes
 text, and the ring carries its own box inside it.** `TimeAndMoneyProgressView` draws at 100%
 of whatever contains it, so a single box was silently doing two jobs — the width the caption wraps at, and
-the diameter of the ring. Widening it for the caption drew a 6.5rem ring across the row. Two boxes, one job
+the diameter of the ring. Widening it for the caption drew a ring as wide as the whole panel. Two boxes, one job
 each — which is also what lets the drawer draw a *smaller* ring than the row without touching the width
 the caption wraps at.
 
-**The drawer's ring is `DS.spacing.m`, the row's is `DS.spacing.l`.** A drawer gives the ring a whole panel
-and a caption underneath, so it no longer carries the row alone and reads as heavy at the row's size. Two
-constants rather than one scaled from the other, because the row's ring must not move — desktop renders the
-row exactly as it always did. The size was converged on the bench at 70%, which is 2.1rem and not on the
-scale; `DS.spacing.m` is the token nearest that intent, two pixels away, and a hard 2.1rem is the magic
-number principle 17 exists to prevent. Binding both
+### The value sits beside the ring, not under it
+
+The drawer's content is a **row**: ring, then the period's value taking whatever width is left. Stacked, the
+value wrapped in a column no wider than the ring, and every extra rem of drawer width went to padding around
+a narrow text box. Beside it, the panel's width becomes the value's width, so the arrangement gets wider as
+the drawer does rather than just more padded — which is the property the stacked version never had.
+
+Beside the ring the value is **left-aligned**. Centred text under a ring and centred text beside one are
+different things: the first is a caption, the second is a column that doesn't line up with anything.
+
+**The caption's box belongs to the drawer; its content belongs to the caller.** Both callers used to carry
+the `marginTop` and `textAlign:center` that placed the text under the ring, which meant moving it beside the
+ring required editing every caller. The arrangement is one decision and now lives in one place —
+`renderRingBox` wraps whatever it is handed in the box that positions it, with `minWidth:0` so it may wrap
+rather than force the flex row wider than the panel.
+
+**The drawer's ring is `DS.spacing.m + DS.spacing.xxs`, the row's is `DS.spacing.l`.** Beside a value rather
+than above it, the ring is one of two things sharing the panel rather than the thing the panel is built
+around. Two constants rather than one scaled from the other, because the row's ring must not move — desktop
+renders the row exactly as it always did. The size was converged on the bench at 85%, which is 2.55rem and
+not on the scale; this is the token composition nearest that intent, one pixel away, and a hard 2.55rem is
+the magic number principle 17 exists to prevent. Binding both
 placements to the ring's width is what confined the caption to 48px, where it did not so much wrap as
 overflow: centred on a box narrower than its own longest word, `$8,200 received this year` went to three
 lines and spilled past its box on all of them.

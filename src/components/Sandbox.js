@@ -43,7 +43,7 @@ class CompoundStreamHeaderRow extends BaseComponent{
 			options?.observationPeriod || reportingConfig.observationPeriod,
 			options?.subReportingPeriod || options?.observationPeriod?.subdivision)
 	}
-	//The ring compares money spent against time elapsed but never says the number it is comparing. Under it
+	//The ring compares money spent against time elapsed but never says the number it is comparing. Beside it
 	//goes exactly what the app already says about a period elsewhere - the same value and the same word
 	//("left", "over", "saved", "received", "paid") - taken from TerminalStreamCurrentReportPeriodView rather
 	//than re-derived. Those methods read only props.analysis and hold no state, so borrowing them costs an
@@ -56,7 +56,7 @@ class CompoundStreamHeaderRow extends BaseComponent{
 	renderDrawerCaption(analysis){
 		var v = this.periodValue(analysis);
 		//one wrapping line rather than two fixed ones - see the same caption in StreamAuditView
-		return <div style={{marginTop:DS.spacing.xxs+"rem",textAlign:"center",lineHeight:1.15,
+		return <div style={{lineHeight:1.15,
 				fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{v.text}{" "}
 				<span style={{color:DS.getStyle().bodyTextSecondary}}>{v.word}</span></div>
 	}
