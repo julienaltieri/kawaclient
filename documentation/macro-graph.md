@@ -35,20 +35,29 @@ first.
 
 Three things differ from the modal caller.
 
-**`bleedRem` is `DS.spacing.xs`, and `gapRem` is 0.** The bleed is how far the deck reaches outward before
-it clips, so a swiped page runs to the screen edge instead of stopping short of it. The gutter is separate,
-and 0 here is what produces 2rem on screen: each tile already rests `DS.spacing.xs` inside its page, so two
-adjacent tiles are separated by both insets. They were one number originally — correct only when a page
-fills its own box. With an inset tile the bleed counted that space a third time and the pages read as
-overlapping.
+**The geometry comes from one number.** `pageInsetRem` is how far a resting page sits from its container's
+edge, and everything else is derived: the deck's `padRem` *is* that inset, `gapRem` is twice it (a page's
+right inset plus the next page's left one), and `bleedRem` is 0 because this caller already spans its
+container and has no frame to reach back into.
 
-The tiles keep their inset rather than going full width. Full-bleed *tiles* were tried and were wrong twice
-over: the tile ended up wider than everything else on the page, and it overflowed the deck's clip so three
-of its four rounded corners were cut off.
+`padRem` and `bleedRem` are separate props for exactly this reason. They were one number, which conflated
+two different jobs: **padding** holds a page off the container's edge, **bleed** is a negative margin that
+lets a page slide past that edge before the clip. A modal needs both, since the sheet's padding is outside
+the component. A caller that already spans its container needs only the padding.
+
+The tiles fill their page rather than carrying an inset of their own. Two earlier attempts set the inset in
+one place and the gutter in another, and the two disagreed: an inset tile inside an inset page counts the
+same space twice, which left the pages reading as overlapped, and a tile wider than the deck's clip is what
+cut its corners off.
 
 **Every page is the same height, and the macro graph sets it.** `stretchPages` makes the track stretch its
 pages to the tallest, so no page carries a height of its own — swap the first page for a taller one and the
 rest follow.
+
+**A page tile must be `border-box`.** This codebase sets `box-sizing` per component and has no global rule,
+so `height:100%` plus padding made the tile 2rem taller than the page holding it, and the deck's
+`overflow:hidden` cut that 2rem off the bottom — taking two more rounded corners with it. The tile is the
+one place this matters, because it is the only thing asked to be exactly its parent's height.
 
 **Under `stretchPages` the deck's height must be `auto`.** `fit()` normally sets the deck to the active
 page's measured height, and that measurement is circular once pages stretch: a page's height then comes

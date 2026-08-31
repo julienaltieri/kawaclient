@@ -21,21 +21,28 @@ import Deck from './Deck';
 //chart's dimensions - swap the first page for a taller one and the rest follow. A typed height here would
 //be a second place to keep in step with a chart that sizes itself from its own viewBox.
 //
-//`bleedRem` is DS.spacing.xs: the deck reaches that far outward and clips there, so a swiped page runs to
-//the screen edge instead of stopping short of it. The modal caller keeps Deck's default, which reaches into
-//ITS sheet padding.
-const bleedRem = DS.spacing.xs;
-//The gutter between pages is 0 HERE, and that is what makes it 2rem on screen: each tile already rests
-//DS.spacing.xs from its page's edge, so two adjacent tiles are separated by both insets. Adding the bleed
-//on top - which is what `gap` defaulted to - counted that space a third time and the pages read as
-//overlapping by about a rem.
-const gapRem = 0;
+//The whole page geometry comes from ONE number. Everything else is derived from it, because the previous
+//two attempts each set the inset in one place and the gutter in another and the two disagreed.
+//
+//  pageInsetRem   how far a resting page sits from its container's edge
+//  padRem         the deck's own padding, which IS that inset - so the page needs no margin of its own
+//  gapRem         twice the inset: a page's right inset plus the next page's left inset, made explicit
+//  bleedRem       0 - this caller already spans its container, so there is no frame to reach back into;
+//                 the deck clips at the container edge, which is where a swiped page should disappear
+//
+//The tiles fill their page rather than carrying an inset of their own. An inset tile inside an inset page
+//counts the same space twice, which is what left the pages reading as overlapped, and a tile wider than the
+//deck's clip is what cut the corners off it.
+const pageInsetRem = DS.spacing.xs;
+const padRem = pageInsetRem;
+const gapRem = 2*pageInsetRem;
+const bleedRem = 0;
 
 //A page that does not exist yet. It is deliberately mute: it names what will live here and nothing else -
 //a placeholder that explains the carousel would be explaining the interface rather than being it.
 export const PlaceholderPage = (props) => <DS.component.ContentTile
-		style={{position:"relative",width:"calc(100% - "+2*DS.spacing.xs+"rem)",height:"100%",
-			margin:"0 auto",padding:"1rem",
+		style={{position:"relative",width:"100%",height:"100%",boxSizing:"border-box",
+			margin:0,padding:DS.spacing.xs+"rem",
 			display:"flex",alignItems:"center",justifyContent:"center"}}>
 	<div style={{fontSize:DS.fontSize.body+"rem",color:DS.getStyle().bodyTextSecondary}}>{props.label}</div>
 </DS.component.ContentTile>
@@ -46,7 +53,7 @@ export default class ChartCarousel extends BaseComponent{
 		this.state = {index:0}
 	}
 	render(){
-		return <Deck pageLabel="View" bleedRem={bleedRem} gapRem={gapRem} stretchPages={true}
+		return <Deck pageLabel="View" bleedRem={bleedRem} padRem={padRem} gapRem={gapRem} stretchPages={true}
 			pagerGapRem={DS.spacing.s/2}
 			pages={this.props.pages||[]}
 			index={this.state.index}

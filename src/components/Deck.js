@@ -267,6 +267,13 @@ export default class Deck extends BaseComponent{
 		//page holds an inset tile, the tile's own margins already separate one page from the next, and adding
 		//the bleed on top of them double-counts. Defaults to the bleed so the modal is unchanged.
 		var gap = this.props.gapRem!==undefined?this.props.gapRem:b;
+		//Padding and bleed were welded together as one number, which is what made the page geometry so hard
+		//to reason about: the padding is what holds a page off the container's edge, and the negative margin
+		//is what lets a page slide PAST that edge before it clips. A modal needs both, because the sheet's
+		//own padding is outside this component. A caller that is already full width needs only the padding -
+		//it has no frame to reach back into, and a negative margin there just pushes the track out of its
+		//column. Defaults to the bleed, so the modal is unchanged.
+		var pad = this.props.padRem!==undefined?this.props.padRem:b;
 		//The gesture sits on the WHOLE component rather than on the track, so the band between the last page
 		//and the pager is grabbable too - it is the obvious place to put a thumb and it used to be dead. The
 		//pager itself opts out: its dots are tap targets, and a drag starting on one should move the deck
@@ -279,7 +286,7 @@ export default class Deck extends BaseComponent{
 			   width:auto between 30 and 40rem, and without this a two-charge order pushed it straight to the
 			   cap.*/}
 			<div ref={this.deckRef} style={{position:"relative",overflow:"hidden",contain:"inline-size",
-					margin:"0 "+(-b)+"rem",padding:"0 "+b+"rem",
+					margin:"0 "+(-b)+"rem",padding:"0 "+pad+"rem",
 					transition:heightTransitionValue}}>
 				<Track ref={this.trackRef}
 					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:gap+"rem",
