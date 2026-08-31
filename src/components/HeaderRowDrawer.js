@@ -12,6 +12,14 @@ import DS from '../DesignSystem.js';
 //and marginLeft:"1rem", which are exactly DS.spacing.l and DS.spacing.xs on the scale.
 const ringWidthRem = DS.spacing.l;
 const ringMarginRem = DS.spacing.xs;
+//The drawer draws the ring smaller than the row does. A drawer gives it a whole panel and a caption
+//underneath, so it no longer has to carry the row on its own and reads as heavy at the row's size.
+//DS.spacing.m rather than a percentage of the row's ring: 70% of 3rem is 2.1rem, which is not on the
+//scale, and a hard 2.1rem is exactly the magic number DECISION-PRINCIPLES.md #17 exists to prevent. 2rem
+//is the token nearest that intent, two pixels away.
+//It is a SEPARATE constant rather than a change to ringWidthRem because the row's ring must not move:
+//desktop renders the row exactly as it always did, which is the one thing this feature must not redesign.
+const drawerRingWidthRem = DS.spacing.m;
 //The drawer is sized from its CONTENT, not from the ring. It used to be ring + gap + gap, which made the
 //caption's width a hostage of the ring's: the caption lives inside the ring's box, so every attempt to give
 //it room by widening the drawer bought padding instead of text width. Widening the gap from 2rem to 3rem
@@ -223,13 +231,14 @@ export default class HeaderRowDrawer extends BaseComponent{
 	//vertical room the row never had, and because a ring pushed out of sight should say the number it was
 	//always comparing. Desktop keeps the ring in the row exactly as it has always been; adding a caption
 	//there would be a redesign of a row that has no bug, which is the one thing this change must not do.
-	//The ring gets its OWN box, always ringWidthRem, inside the caption's. TimeAndMoneyProgressView draws
-	//itself at 100% of whatever contains it, so the enclosing box was silently doing two jobs: the width the
-	//caption wraps at, and the diameter of the ring. Widening it for the caption drew a 6.5rem ring that
-	//overflowed the row. Two boxes, one job each - the outer one sizes text, the inner one sizes the ring.
+	//The ring gets its OWN box inside the caption's. TimeAndMoneyProgressView draws itself at 100% of
+	//whatever contains it, so the enclosing box was silently doing two jobs: the width the caption wraps at,
+	//and the diameter of the ring. Widening it for the caption drew a 6.5rem ring that overflowed the row.
+	//Two boxes, one job each - the outer one sizes text, the inner one sizes the ring - which is also what
+	//lets the drawer draw a smaller ring than the row without touching the width the caption wraps at.
 	renderRingBox(inRow){
 		return <div style={ringBoxStyle(inRow)}>
-			<div style={{width:ringWidthRem+"rem",flexShrink:0}}>{this.props.drawer}</div>
+			<div style={{width:(inRow?ringWidthRem:drawerRingWidthRem)+"rem",flexShrink:0}}>{this.props.drawer}</div>
 			{Core.isMobile()?this.props.drawerCaption:null}
 		</div>
 	}

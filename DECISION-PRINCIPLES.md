@@ -263,7 +263,11 @@ go back and check.
 > the DevTools protocol with touch events found it in one run, and the same harness then measured the two
 > layout bugs that reading the CSS had not settled. The trap has a second form once work is delegated: an
 > agent reporting "tests pass" is making a claim, and it is worth exactly the command output quoted beside
-> it.
+> it. And a third, which caught the instrument built under 20: a bench reproducing a row box for box
+> converged its layout correctly and was blind to the one element it had mocked — the progress ring, drawn
+> there as a fixed-width div and in production as an SVG that fills whatever contains it. Widening that
+> container for the caption's sake therefore drew a ring twice its size, in a case the bench could not
+> express. A mock is a claim that the real thing has no behaviour you are not modelling.
 
 ---
 

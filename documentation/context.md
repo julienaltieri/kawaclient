@@ -86,6 +86,13 @@ it gets acted on with confidence.
 Point at the source of truth instead: the code, the git history, the deploy log. A fact that will be
 wrong in three weeks either gets cut or gets replaced by a pointer to wherever it stays true.
 
+**Line numbers are volatile, and links must not carry them.** `[file.js:145](../src/file.js#L145)` is
+right when written and silently wrong after the next edit anywhere above it — an audit found 11 of 19
+such links pointing into unrelated functions, several landing inside the very function the surrounding
+paragraph was contrasting against, which is worse than no link at all because it reads as confirmation.
+Link the file and name the symbol in the prose: the name survives edits and is greppable, the number is
+a fact with a three-week shelf life.
+
 ### Rule 6 — Anything added here must be allowlisted, or it is invisible
 
 `client/.gitignore` is an **allowlist**: it ignores `*` and then re-includes named paths. Anything

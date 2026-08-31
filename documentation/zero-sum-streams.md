@@ -14,8 +14,8 @@ zero-sum stream needs to *pair them off*, so it can answer the only question tha
 debits are still waiting to be reimbursed?
 
 `stream.isZeroSumStream` is a per-stream flag, toggled in the stream audit sentence
-([`StreamAuditView.js:251`](../src/components/StreamAuditView.js#L251)) and stored on the stream
-model ([`model.js:58`](../src/model.js#L58)). Turning it on switches the stream's transaction feed
+([`StreamAuditView.js`](../src/components/StreamAuditView.js)) and stored on the stream
+model ([`model.js`](../src/model.js)). Turning it on switches the stream's transaction feed
 into a reconciliation view and makes the stream eligible for the refund reconciliation below.
 
 ## Who owns which half
@@ -40,7 +40,7 @@ split at the section comment.
 ### 1. Pairing transactions inside the stream
 
 `reconcileZeroSumStreamTransactions(txnArr, stream)`
-([`transactionMatching.js:14`](../src/transactionMatching.js#L14)) returns
+([`transactionMatching.js`](../src/transactionMatching.js)) returns
 `{ matches: [{debit: [...], credit: [...]}], unmatched: [...] }`.
 
 Transactions are split into debits and credits by `moneyInForStream(stream)` — **not** by
@@ -72,7 +72,7 @@ Savings and interest-income streams are skipped outright: their transactions are
 ### 2. The Amazon-aware pass
 
 After the sum-to-zero passes, one more pass runs
-([`transactionMatching.js:59`](../src/transactionMatching.js#L59)): any leftover credit and leftover
+([`transactionMatching.js`](../src/transactionMatching.js)): any leftover credit and leftover
 debit carrying the **same `orderNumber`** are paired, whatever their amounts.
 
 This exists because an Amazon order can be paid partly by card and partly by gift card. The bank sees
@@ -125,7 +125,7 @@ partly-refunded purchase, so the guard rejected exactly the cases the feature ex
 
 #### The Amazon rail — order number
 
-`suggestAmazonReturnSplits` ([`transactionMatching.js:139`](../src/transactionMatching.js#L139))
+`suggestAmazonReturnSplits` ([`transactionMatching.js`](../src/transactionMatching.js))
 groups stranded credits by the `orderNumber` on their `amazonOrderDetails` and looks for the charge
 carrying the same one. `amount` is the sum of *all* that order's stranded credits, so several refunds
 against one charge resolve in a single write rather than one at a time.
@@ -145,7 +145,7 @@ ambiguous and left those refunds stranded for good.
 
 #### The generic rail — merchant, amount and proximity
 
-`suggestRefundMatches` ([`transactionMatching.js:187`](../src/transactionMatching.js#L187)) handles
+`suggestRefundMatches` ([`transactionMatching.js`](../src/transactionMatching.js)) handles
 everything that is not Amazon: a Lululemon charge and a "Refund: Lululemon" credit that arrives
 three weeks later. It runs **only on the designated refund stream** (see below) and only on credits
 the Amazon rail did not claim. Its tunables live in `refundMatchingConfig` at the top of the file.
@@ -171,7 +171,7 @@ Three things are excluded outright:
 - **Any merchant seen on a zero-sum stream that is not the refund stream.** A credit card tracked on
   its own zero-sum stream produces credits that look exactly like refunds — a credit cancelling an
   earlier debit of the same name — and are not. `Core.getMerchantKeysOnOtherZeroSumStreams`
-  ([`core.js:486`](../src/core.js#L486)) collects those keys once per run.
+  ([`core.js`](../src/core.js)) collects those keys once per run.
 - **Credits already tagged as transfers** (`pairedTransferTransactionId`).
 
 There is deliberately **no requirement for a "Refund:" prefix**, and no same-account rule. Both look
@@ -184,8 +184,8 @@ refund; that is what the rail trusts.
 
 The generic rail needs to know which zero-sum stream is *the* refund stream, since its whole
 exclusion rule is "seen on a different one". That is `userPreferences.refundStreamId`, set from the
-stream-audit sentence ([`StreamAuditView.js:254`](../src/components/StreamAuditView.js#L254)) and
-resolved by `Core.getRefundStream` ([`core.js:478`](../src/core.js#L478)).
+stream-audit sentence ([`StreamAuditView.js`](../src/components/StreamAuditView.js)) and
+resolved by `Core.getRefundStream` ([`core.js`](../src/core.js)).
 
 It is a user preference rather than a stream property because it is single-valued — designating a
 stream clears whichever held it before — and because `userPreferences` is a free-form object on the
@@ -221,7 +221,7 @@ already-split, which the old guard then treated as permanently ineligible.
 The remainder is derived by subtracting the rounded refund from the share rather than being rounded
 independently, so the allocations always sum back to the transaction amount — the server rejects a
 categorisation whose allocations do not
-([`Categorization.js:33`](../../src/model/Categorization.js#L33)).
+([`Categorization.js`](../../src/model/Categorization.js)).
 
 **The write is self-terminating, and that is the design.** Once made, the charge's
 `moneyInForStream(stream)` is no longer zero, so on the next run step 1 pairs it against the refund
@@ -231,7 +231,7 @@ It is driven by `Core.refreshTransactionReconciliation` ([`core.js`](../src/core
 after an Amazon order refresh and after any transaction fetch — so it runs unprompted, in the
 background, whenever new data lands. `MissionControl` listens for the result and forces a full
 re-render rather than a state bump when something was actually written
-([`MissionControl.js:41`](../src/components/MissionControl.js#L41)), because money has moved between
+([`MissionControl.js`](../src/components/MissionControl.js)), because money has moved between
 streams and the cached reports are stale.
 
 When a refund is *not* reconciled, `appGlobals.explainRefundReconciliation()` prints, for every
@@ -240,13 +240,13 @@ It reports the guards rather than re-deciding, so what it prints is what the rai
 
 ### 5. What the user sees
 
-`StreamObservationPeriodView` ([`StreamObservationPeriodAnalysisView.js:23`](../src/components/StreamObservationPeriodAnalysisView.js#L23))
+`StreamObservationPeriodView` ([`StreamObservationPeriodAnalysisView.js`](../src/components/StreamObservationPeriodAnalysisView.js))
 runs step 1 again, independently of `Core`, purely for display — over the analysis period's
 transactions rather than the whole categorised set. The two runs share no state; each computes what
 it needs.
 
 The presence of a reconciliation result changes the feed
-([`AnalysisView.js:380`](../src/components/AnalysisView.js#L380)):
+([`AnalysisView.js`](../src/components/AnalysisView.js)):
 
 - **Matched credits are hidden.** A closed loop is not news; the debit stands for the pair.
 - **Every remaining line gets a status dot**, whose colour and tooltip say where it stands: green

@@ -71,6 +71,13 @@ by construction, and no amount of cropping produces a hard edge.
 | 122px | x0.600 | x0.434 |
 | 109px | x0.600 | x0.388 |
 
+How much is handed back is `chartGiveBackRem` in
+[`StreamAuditView.js`](../src/components/StreamAuditView.js) — `DS.spacing.m + DS.spacing.xxs`, 2.5rem, and
+only on mobile. It is one constant rather than two because the same 2.5rem moves across the row: taken off
+the chart's window, it has to be absorbed by the title, or the row grows a gap where the name should be.
+The title absorbs it through `flexGrow:1`, which had to *replace* its `marginRight:auto` rather than join
+it — with the auto margin still there the freed space becomes gap instead of width.
+
 A side effect worth knowing: the chart's drawn scale is now a **constant** rather than a function of the
 name's length, so long-name rows draw their chart larger than they used to.
 
@@ -101,6 +108,8 @@ All derived; none typed.
 | | |
 |---|---|
 | drawer content width | `DS.spacing.xl + DS.spacing.xxs` — 6.5rem, what the longest real caption needs |
+| ring, in the drawer | `DS.spacing.m` — 2rem |
+| ring, in the row | `DS.spacing.l` — 3rem, unchanged |
 | drawer padding | `DS.spacing.xxs` either side |
 | open width | that content plus that padding either side — 7.5rem |
 | centring | `justifyContent:center`, not padding — see below |
@@ -135,10 +144,18 @@ object.
 
 The caption wraps at the drawer's content width, because `ringBoxStyle` is the box it lives in, and that
 box takes the drawer's content width in the drawer and the ring's own 3rem in the row. **That box sizes
-text, and the ring carries its own `ringWidthRem` box inside it.** `TimeAndMoneyProgressView` draws at 100%
+text, and the ring carries its own box inside it.** `TimeAndMoneyProgressView` draws at 100%
 of whatever contains it, so a single box was silently doing two jobs — the width the caption wraps at, and
 the diameter of the ring. Widening it for the caption drew a 6.5rem ring across the row. Two boxes, one job
-each. Binding both
+each — which is also what lets the drawer draw a *smaller* ring than the row without touching the width
+the caption wraps at.
+
+**The drawer's ring is `DS.spacing.m`, the row's is `DS.spacing.l`.** A drawer gives the ring a whole panel
+and a caption underneath, so it no longer carries the row alone and reads as heavy at the row's size. Two
+constants rather than one scaled from the other, because the row's ring must not move — desktop renders the
+row exactly as it always did. The size was converged on the bench at 70%, which is 2.1rem and not on the
+scale; `DS.spacing.m` is the token nearest that intent, two pixels away, and a hard 2.1rem is the magic
+number principle 17 exists to prevent. Binding both
 placements to the ring's width is what confined the caption to 48px, where it did not so much wrap as
 overflow: centred on a box narrower than its own longest word, `$8,200 received this year` went to three
 lines and spilled past its box on all of them.
@@ -195,6 +212,24 @@ that works, which is the one thing this change must not do.
 Note the shape of `isMobile()` — it is `window.innerHeight > window.innerWidth`, i.e. orientation rather
 than width. A phone in landscape reports desktop and will render the plain row. That is acceptable here
 because a landscape phone genuinely has the width this change exists to recover.
+
+## The sandbox page
+
+`/sandbox` renders this component against real streams, so the gesture can be exercised without hunting
+for a row in the feed. It is a **workbench, not a feature**, and it is the same component production uses
+— a copy kept for experimentation drifts from the shipped one within days.
+
+It is gated on `AppConfig.staging`, in two places that must both hold: the menu entry
+([`App.js`](../src/App.js)) and the route itself, so production registers neither.
+
+**The route path is registered unconditionally** in `NavRoutes` ([`Navigation.js`](../src/components/Navigation.js))
+even though the page is gated. That is deliberate and worth knowing before it looks like a bug: `isValidRoute`
+redirects any path absent from `NavRoutes` back to home, so a path that exists only in staging is not
+unreachable in production — it is unreachable *everywhere*, including staging, because the redirect fires
+before the gate is ever consulted. The gate belongs on the page, not on the path.
+
+`AppConfig.staging` is a local dev toggle that is never committed, so what a given deploy does with this
+page follows from that file's committed value, not from anything stated here.
 
 ## Out of scope
 

@@ -47,7 +47,7 @@ extension decides to send and what it sends is the parser's half — see its `co
 ### 2. Ingestion
 
 `Core` registers `amazonHistoryHandler` as a `window` message listener at construction
-([`core.js:43`](../src/core.js#L43)). It filters on the prefix, guards re-entry with
+([`core.js`](../src/core.js)). It filters on the prefix, guards re-entry with
 `globalState.amzHistorySaving`, stamps each order with `id = orderNumber`, and posts the set to
 `ApiCaller.saveAmazonOrderHistory`.
 
@@ -63,17 +63,17 @@ they change on a different cadence than budget data, and they are re-derivable b
 scraper adds arrive intact without a schema change on this side.
 
 On load, `Core` fetches the last two years into `globalState.amzOrderHistory`
-([`core.js:112`](../src/core.js#L112)).
+([`core.js`](../src/core.js)).
 
 ### 4. Matching orders to bank transactions
 
-`reconcileAmazonTransactions` ([`transactionMatching.js:145`](../src/transactionMatching.js#L145))
+`reconcileAmazonTransactions` ([`transactionMatching.js`](../src/transactionMatching.js))
 attaches a matched order onto a bank transaction as `transaction.amazonOrderDetails`. Everything
 downstream keys off the presence of that property.
 
 A transaction is a candidate if its description matches `/amz|amazon/i` and does *not* match the
 exclusion list (`amazon web services`, `amazon.fr`, `amazon prime`, …) — `amazonConfig` in
-[`core.js:16`](../src/core.js#L16).
+[`core.js`](../src/core.js).
 
 Four passes run in descending order of confidence, each only on what the previous ones left:
 
@@ -82,7 +82,7 @@ Four passes run in descending order of confidence, each only on what the previou
 | 0 | Amazon's own payments page gave the order a `transactions[]` list — match a bank line to one of those entries by `bankTxn.amount + txn.amount ≈ 0`, nearest date within 2 days | `transactionLevelMatch` |
 | 1 | One bank transaction equals one order total | `directMatch` |
 | 2 | Several transactions on the *same date* summing to one order total | `sameDate` |
-| 3 | Pairs spread across up to 15 days summing to one order total, widening the window a day at a time | `multipleDaysAppart` |
+| 3 | Pairs spread across up to 14 days summing to one order total, widening the window a day at a time | `multipleDaysAppart` |
 
 **Sign conventions are opposite on the two sides and this is the single easiest thing to get wrong.**
 A bank charge is **negative**; the `amount` on an `order.transactions[]` entry is **positive** for a
@@ -90,9 +90,9 @@ charge and negative for a refund. That is why pass 0 tests a *sum* against zero 
 equality — it makes charges and refunds symmetrical in one expression. Order-level `orderAmount` is
 always positive.
 
-Pass 3 is combinatorial, so it is skipped entirely once more than 20 transactions remain unmatched.
+Pass 3 is combinatorial, so it is skipped entirely once 20 or more transactions remain unmatched.
 
-Reconciliation is re-entrant: `_performAmazonReconciliation` ([`core.js:516`](../src/core.js#L516))
+Reconciliation is re-entrant: `_performAmazonReconciliation` ([`core.js`](../src/core.js))
 bails unless the unmatched count actually dropped, so repeated calls are cheap. Matches found on
 already-categorised transactions are persisted back.
 
@@ -214,7 +214,7 @@ $9.01, when in fact it paid for exactly one of them, in full.
 
 The scraper supplies a nominal `itemPrice` per item and its own `postTaxPrice` estimate. **The client
 uses neither directly.** `getAmazonItemPrices(amz, total)`
-([`CategorizeAction.js:23`](../src/components/CategorizeAction.js#L23)) re-spreads a target total
+([`CategorizeAction.js`](../src/components/CategorizeAction.js)) re-spreads a target total
 across the nominal prices with `utils.allocateProportionally`, a largest-remainder split in cents.
 
 Two reasons, and both matter:
