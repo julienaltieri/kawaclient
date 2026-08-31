@@ -126,6 +126,12 @@ export default class Deck extends BaseComponent{
 	fit(now){
 		var deck = this.deckRef.current, page = this.trackRef.current?.children[this.movingTo!==undefined?this.movingTo:this.props.index];
 		if(!deck || !page)return
+		//Under stretchPages a page's height comes FROM the deck, so measuring a page to size the deck is
+		//circular: the deck fixes a height, every page adopts it, and content taller than that guess is then
+		//clipped by the overflow:hidden above - which cost the tile three of its rounded corners. There is
+		//nothing to animate in that mode anyway, since all pages are already the same height, so the deck
+		//takes the track's natural height and the tallest page decides it.
+		if(this.props.stretchPages){deck.style.height = "auto";return}
 		if(now || this.reducedMotion())deck.style.transition = "none";
 		deck.style.height = page.offsetHeight+"px";
 		if(now || this.reducedMotion())requestAnimationFrame(() => {if(this.deckRef.current)this.deckRef.current.style.transition = heightTransitionValue});
@@ -257,6 +263,10 @@ export default class Deck extends BaseComponent{
 	render(){
 		var pages = this.props.pages||[];
 		var b = this.props.bleedRem!==undefined?this.props.bleedRem:bleed();
+		//Bleed and gutter were the same number, which is only right when a page fills its own box. When the
+		//page holds an inset tile, the tile's own margins already separate one page from the next, and adding
+		//the bleed on top of them double-counts. Defaults to the bleed so the modal is unchanged.
+		var gap = this.props.gapRem!==undefined?this.props.gapRem:b;
 		//The gesture sits on the WHOLE component rather than on the track, so the band between the last page
 		//and the pager is grabbable too - it is the obvious place to put a thumb and it used to be dead. The
 		//pager itself opts out: its dots are tap targets, and a drag starting on one should move the deck
@@ -272,7 +282,7 @@ export default class Deck extends BaseComponent{
 					margin:"0 "+(-b)+"rem",padding:"0 "+b+"rem",
 					transition:heightTransitionValue}}>
 				<Track ref={this.trackRef}
-					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:b+"rem",
+					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:gap+"rem",
 						touchAction:"pan-y",willChange:"transform"}}>
 					{pages.map((p,i) => <div key={i} style={{flex:"0 0 100%",minWidth:0,
 							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}</div>)}

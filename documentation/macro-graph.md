@@ -35,16 +35,26 @@ first.
 
 Three things differ from the modal caller.
 
-**`bleedRem` is `DS.spacing.xs`.** `Deck`'s default bleed reaches back into a modal's side padding so a page
-slides in from under the sheet's frame; here it reaches into the inset the page tiles used to carry, and the
-tiles are full width instead. Without it a swiped page stopped about a rem short of the screen edge, which
-reads as the page being clamped rather than as it sliding away — the same defect the bleed was invented for
-in the modal.
+**`bleedRem` is `DS.spacing.xs`, and `gapRem` is 0.** The bleed is how far the deck reaches outward before
+it clips, so a swiped page runs to the screen edge instead of stopping short of it. The gutter is separate,
+and 0 here is what produces 2rem on screen: each tile already rests `DS.spacing.xs` inside its page, so two
+adjacent tiles are separated by both insets. They were one number originally — correct only when a page
+fills its own box. With an inset tile the bleed counted that space a third time and the pages read as
+overlapping.
+
+The tiles keep their inset rather than going full width. Full-bleed *tiles* were tried and were wrong twice
+over: the tile ended up wider than everything else on the page, and it overflowed the deck's clip so three
+of its four rounded corners were cut off.
 
 **Every page is the same height, and the macro graph sets it.** `stretchPages` makes the track stretch its
 pages to the tallest, so no page carries a height of its own — swap the first page for a taller one and the
-rest follow. The alternative, a typed page height, would be a second place to keep in step with a chart that
-sizes itself from its own viewBox.
+rest follow.
+
+**Under `stretchPages` the deck's height must be `auto`.** `fit()` normally sets the deck to the active
+page's measured height, and that measurement is circular once pages stretch: a page's height then comes
+*from* the deck, so the deck fixes a guess, every page adopts it, and any content taller than the guess is
+clipped by the `overflow:hidden` above. There is nothing to animate in that mode anyway — every page is
+already the same height — so the track's natural height decides it.
 
 **`pagerGapRem` is half `DS.spacing.s`.** The pager's distance from the page is the caller's, because the two
 sit in different rooms: inside a modal sheet the full gap clears the content, and on the page the same gap

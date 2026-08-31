@@ -867,11 +867,14 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		this.mouseMoveListeners.map(l => l.current.invalidate = true)
 		this.mouseMoveListeners=[];
 
-		{/*Full width and no bottom margin: this tile is a carousel page now, so the inset that used to hold
-		   it clear of the screen edge stopped a swiped page short of that edge instead, and the spacing
-		   under it belongs to the carousel rather than to the chart.*/}
+		{/*The tile rests 1rem from the border and fills its page's height. `margin:0 auto` rather than the
+		   bare `margin:0` it used to carry: left-aligned, the inset was 2rem of dead space on the right
+		   instead of 1rem either side. What lets a swiped page reach the screen edge is the deck's bleed,
+		   not this width - making the tile full-bleed instead put it wider than everything else on the page.
+		   No bottom margin: the spacing under the page belongs to the carousel.*/}
 		return (<DS.component.ContentTile 
-			style={{position:"relative",width:"100%",height:"100%",margin:0,padding:"1rem"}}>
+			style={{position:"relative",width:"calc(100% - "+2*DS.spacing.xs+"rem)",height:"100%",
+				margin:"0 auto",padding:"1rem"}}>
 			{/*data-no-drag marks the CHART, not the tile: the chart answers pointer gestures of its own and
 			   the carousel must not take them, while the tile's padding around it stays a drag surface.*/}
 			<div data-no-drag style={{position:"relative",width:"100%",height:"100%"}}>
