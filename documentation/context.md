@@ -142,6 +142,7 @@ Recorded so far:
 | [`amazon-transaction.md`](amazon-transaction.md) | How Amazon order data is scraped, ingested, matched to bank transactions, and split by item. |
 | [`zero-sum-streams.md`](zero-sum-streams.md) | Streams whose transactions are expected to cancel out: how debits and credits are paired, and how an Amazon return auto-splits the charge that funds it. |
 | [`macro-graph.md`](macro-graph.md) | The chart at the top of the stream view: what it plots, the projection, why hover bypasses React state, and the traps in it. |
+| [`visualisation-carousel.md`](visualisation-carousel.md) | The swipeable container at the top of the stream view: one deck shared with the Amazon charge modal, how its geometry is derived, and how to add a visualisation. |
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
 
 ---

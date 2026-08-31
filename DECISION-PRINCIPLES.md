@@ -217,6 +217,21 @@ elements already use it.
 > a literal. Guidance: "no magical numbers, but use design system values even for spacing. to
 > understand when to use what, check the semantic value of other implementations."
 
+### 24. One dimension, one author
+
+A spacing that is set in two places will disagree, and the version you are reading will always look
+right. The fix is to delete one of the authors, not to reconcile the numbers.
+
+> *In practice:* a carousel's resting inset was set on the tile *and* as padding on the deck; then its
+> gutter came from tile margins *and* from a gap on the track; then padding was applied by the deck *and*
+> by the page body. Three rounds, three wrong results, each obvious in the file being edited and invisible
+> from it. It ended when one constant became the source and everything else was derived from it — inset,
+> bleed, gutter and edge fade all being the same number times a small integer.
+>
+> A measurement can be the second author too. `fit()` sized a deck from its active page, and stretching the
+> pages made a page's height come *from* the deck: the deck fixed a guess, every page adopted it, and
+> anything taller was clipped. A measurement that feeds what it measures is not a measurement.
+
 ### 18. One implementation, every screen
 
 Both sizes must be right, preferably from the same code. A second branch is a second thing to keep
@@ -241,6 +256,16 @@ is on direction.
 > prose spec instead — one containing exclusions and edge cases that no pre-written option would
 > have contained. **Ask open questions in prose; do not offer pickers.**
 
+### 25. When production is the only instrument, land one change at a time
+
+Bundling is efficient when you can test. When the deploy *is* the test, a commit carrying five changes
+buys one observation and cannot attribute it, so the next round starts from a guess.
+
+> *In practice:* five layout properties across three files went out in one commit, on a screen whose owner
+> had said production was the only place it could be judged. The reply — "you broke the layout in multiple
+> ways" — was accurate and unattributable, and cost two further rounds to take apart. Note the tell: the
+> commit before it had already promised to stop doing this.
+
 ### 20. Build the instrument that makes the case visible
 
 Not to check work that is already done — to surface cases nobody thought to ask about.
@@ -251,6 +276,11 @@ Not to check work that is already done — to surface cases nobody thought to as
 > visual cue that lied, and an edge case that reshaped the algorithm twice — none of which code
 > review had found. And such tools are for operating, not reading: "strip all the explanations
 > (I don't read them)."
+>
+> The failure is not only skipping the instrument, it is **owning one and not using it**. A header
+> row's layout was converged in a bench that reproduced its box model exactly, in one round. The
+> carousel above it was reasoned about instead and took five, every wrong guess costing a deploy and
+> a screenshot — which is to say the user was made the instrument.
 
 ### 23. A test that cannot fail the way production fails proves nothing
 

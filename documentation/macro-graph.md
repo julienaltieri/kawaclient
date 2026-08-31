@@ -22,79 +22,16 @@ level up, not in the chart.
 
 ## It is page one of a carousel
 
-The graph does not sit in the stream view directly. `MasterStreamAuditView` renders a `ChartCarousel`
-([`ChartCarousel.js`](../src/components/ChartCarousel.js)) and hands it an array of pages, of which the
-macro graph is the first — the container exists because more ways of reading the same year are meant to
-follow it.
+The graph does not sit in the stream view directly: `MasterStreamAuditView` renders a `ChartCarousel` and
+hands it an array of pages, of which this is the first. The container, its geometry, who owns a drag on the
+chart, and how to add a visualisation are all in
+[`visualisation-carousel.md`](visualisation-carousel.md).
 
-The carousel does not carry a gesture of its own. It reuses `Deck`
-([`Deck.js`](../src/components/Deck.js)), the same paged, swipeable container the Amazon charge deck uses:
-`pages` is an array of nodes and `Deck` knows nothing about what is in them. A second implementation would
-be a second set of spring constants and a second copy of the three release guards to keep in step with the
-first.
-
-Three things differ from the modal caller.
-
-**The geometry comes from one number.** The page body holds its content `DS.spacing.xs` off the screen edge,
-and a swipe is the one thing that should not obey it — a page has to be able to travel all the way out of
-view. So the deck steps back out of that padding and re-applies it itself, which puts the clip at the
-screen's edge rather than a rem inside it. Everything derives from that same inset: `bleedRem` is the
-negative margin that escapes the body's padding, `padRem` re-applies it inside so a resting page sits where
-it always did, `gapRem` is twice it, and `fadeEdgesRem` is it again.
-
-`padRem` and `bleedRem` are separate props because they do different jobs: **padding** holds a page off the
-container's edge, **bleed** is the negative margin that lets a page reach past it. They were one number, and
-conflating them is what produced first a doubled inset and then a clip a rem short of the screen.
-
-**The clip stays, and a mask softens it.** Removing `overflow:hidden` was tried; it only works where every
-page is exactly the container's width, and a modal's sheet is narrower than its track, so the neighbouring
-page would be painted across it. The mask is transparent for the first and last `fadeEdgesRem`, which is
-exactly the strip outside a resting page — so nothing visible is faded at rest, and only a page in motion
-dissolves into the edge.
-
-The tiles fill their page rather than carrying an inset of their own. Two earlier attempts set the inset in
-one place and the gutter in another, and the two disagreed: an inset tile inside an inset page counts the
-same space twice, which left the pages reading as overlapped, and a tile wider than the deck's clip is what
-cut its corners off.
-
-**Every page is the same height, and the macro graph sets it.** `stretchPages` makes the track stretch its
-pages to the tallest, so no page carries a height of its own — swap the first page for a taller one and the
-rest follow.
-
-**A page tile must be `border-box`.** This codebase sets `box-sizing` per component and has no global rule,
-so `height:100%` plus padding made the tile 2rem taller than the page holding it, and the deck's
-`overflow:hidden` cut that 2rem off the bottom — taking two more rounded corners with it. The tile is the
-one place this matters, because it is the only thing asked to be exactly its parent's height.
-
-**Under `stretchPages` the deck's height must be `auto`.** `fit()` normally sets the deck to the active
-page's measured height, and that measurement is circular once pages stretch: a page's height then comes
-*from* the deck, so the deck fixes a guess, every page adopts it, and any content taller than the guess is
-clipped by the `overflow:hidden` above. There is nothing to animate in that mode anyway — every page is
-already the same height — so the track's natural height decides it.
-
-**`pagerGapRem` is half `DS.spacing.s`.** The pager's distance from the page is the caller's, because the two
-sit in different rooms: inside a modal sheet the full gap clears the content, and on the page the same gap
-read as a hole.
-
-And **the index lives in `ChartCarousel`, not in `MasterStreamAuditView`.** That parent rebuilds three full
-`MultiStreamAnalysis` trees on every render and is not memoised, so paging from its state would recompute
-the entire portfolio's analysis in order to move a carousel. One level down, a page change re-renders only
-the carousel and reconciles the page elements the parent already built.
-
-### Who owns a drag on the chart
-
-**The chart is marked `[data-no-drag]`; the tile around it is not.** `Deck` ignores any gesture starting
-inside that marker, so a drag beginning on the chart belongs to the chart and a drag beginning on the tile's
-padding pages the carousel. The marker sits on the chart's own wrapper rather than on the tile, which is what
-keeps that distinction available at all — marking the tile would have made the whole page undraggable.
-
-This reverses the first attempt, which left the chart draggable on the reasoning that its hover is a
-mouse-move with no button held and so could never become a drag. That is true of the hover and beside the
-point: the chart has pointer interactions of its own, and a swipe starting on it was taking them.
-
-`Deck`'s gesture also sits on the **whole component** rather than on its track, so the band between the page
-and the pager drags too — it is where a thumb naturally lands and it used to be dead. The pager itself opts
-out with the same marker, since its dots are tap targets.
+Two things about the graph itself follow from living there. Its `ContentTile` is `width:100%`,
+`height:100%`, `boxSizing:"border-box"` with no margin — the inset and the spacing below belong to the
+carousel, and a tile that also insets itself counts the same space twice. And its chart wrapper carries
+`data-no-drag`, so a drag starting on the chart stays with the chart while one starting on the tile's
+padding pages the carousel.
 
 ## What it shows
 
