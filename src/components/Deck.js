@@ -55,6 +55,8 @@ const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightCol
 //way to the sheet edge instead of stopping at the text column. A caller outside a modal has no such padding
 //to reach into and passes bleedRem:0 - hence a prop rather than a constant.
 const bleed = () => (Core.isMobile()?DS.spacing.s:DS.spacing.l);
+//Transparent for the first and last `f` rem, opaque between: the clip's own edges stop being a line.
+const fadeMask = (f) => "linear-gradient(90deg, transparent 0rem, black "+f+"rem, black calc(100% - "+f+"rem), transparent 100%)";
 const heightAnimation = 300;   //ms; matches the item name's open/close so the two never fight
 //Read by BOTH the inline style in render() and the restore in fit(), so they can never drift apart again:
 //fit() used to restore an empty string after an instant fit, which REMOVED the inline transition outright
@@ -274,6 +276,7 @@ export default class Deck extends BaseComponent{
 		//it has no frame to reach back into, and a negative margin there just pushes the track out of its
 		//column. Defaults to the bleed, so the modal is unchanged.
 		var pad = this.props.padRem!==undefined?this.props.padRem:b;
+		var fade = this.props.fadeEdgesRem||0;
 		//The gesture sits on the WHOLE component rather than on the track, so the band between the last page
 		//and the pager is grabbable too - it is the obvious place to put a thumb and it used to be dead. The
 		//pager itself opts out: its dots are tap targets, and a drag starting on one should move the deck
@@ -285,7 +288,14 @@ export default class Deck extends BaseComponent{
 			   is every page laid end to end - from being what the modal sizes itself to: the desktop sheet is
 			   width:auto between 30 and 40rem, and without this a two-charge order pushed it straight to the
 			   cap.*/}
+			{/*`fadeEdgesRem` softens the clip instead of removing it. Dropping overflow:hidden was tried and
+			   only works where every page is exactly the container's width - a modal's sheet is narrower than
+			   its track and would have the neighbouring page painted across it. A mask keeps the clip and
+			   stops it reading as a cut: a page dissolves at the edge rather than meeting a hard line.
+			   The fade is exactly the bleed, so it covers precisely the strip outside a resting page - which
+			   means at rest nothing visible is faded at all, and only a page in motion crosses it.*/}
 			<div ref={this.deckRef} style={{position:"relative",overflow:"hidden",contain:"inline-size",
+					...(fade?{maskImage:fadeMask(fade),WebkitMaskImage:fadeMask(fade)}:{}),
 					margin:"0 "+(-b)+"rem",padding:"0 "+pad+"rem",
 					transition:heightTransitionValue}}>
 				<Track ref={this.trackRef}

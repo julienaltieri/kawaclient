@@ -21,22 +21,25 @@ import Deck from './Deck';
 //chart's dimensions - swap the first page for a taller one and the rest follow. A typed height here would
 //be a second place to keep in step with a chart that sizes itself from its own viewBox.
 //
-//The whole page geometry comes from ONE number. Everything else is derived from it, because the previous
-//two attempts each set the inset in one place and the gutter in another and the two disagreed.
+//The page body holds its content DS.spacing.xs off the screen edge, and a swipe is the one thing that should
+//not obey it: a page has to be able to travel all the way out of view. So the deck steps back out of that
+//padding and re-applies it itself, which puts the clip at the screen's edge instead of a rem inside it.
+//One number again, and everything derived from it:
 //
-//  pageInsetRem   how far a resting page sits from its container's edge
-//  padRem         the deck's own padding, which IS that inset - so the page needs no margin of its own
-//  gapRem         twice the inset: a page's right inset plus the next page's left inset, made explicit
-//  bleedRem       0 - this caller already spans its container, so there is no frame to reach back into;
-//                 the deck clips at the container edge, which is where a swiped page should disappear
+//  edgeInsetRem  what the page body inset its content by, and what a resting page should keep
+//  bleedRem      the same, as a negative margin - this is how the deck escapes that padding
+//  padRem        the same again, re-applied inside, so a resting page sits where it always did
+//  gapRem        twice it: one page's right inset plus the next page's left one
+//  fadeEdgesRem  the same again: the mask covers exactly the strip outside a resting page, so nothing is
+//                faded at rest and only a page in motion dissolves into the edge
 //
-//The tiles fill their page rather than carrying an inset of their own. An inset tile inside an inset page
-//counts the same space twice, which is what left the pages reading as overlapped, and a tile wider than the
-//deck's clip is what cut the corners off it.
-const pageInsetRem = DS.spacing.xs;
-const padRem = pageInsetRem;
-const gapRem = 2*pageInsetRem;
-const bleedRem = 0;
+//The clip stays. Removing it was tried and is only safe where every page is exactly the container's width;
+//the fade is what stops the clip reading as a cut.
+const edgeInsetRem = DS.spacing.xs;
+const bleedRem = edgeInsetRem;
+const padRem = edgeInsetRem;
+const gapRem = 2*edgeInsetRem;
+const fadeEdgesRem = edgeInsetRem;
 
 //A page that does not exist yet. It is deliberately mute: it names what will live here and nothing else -
 //a placeholder that explains the carousel would be explaining the interface rather than being it.
@@ -53,7 +56,8 @@ export default class ChartCarousel extends BaseComponent{
 		this.state = {index:0}
 	}
 	render(){
-		return <Deck pageLabel="View" bleedRem={bleedRem} padRem={padRem} gapRem={gapRem} stretchPages={true}
+		return <Deck pageLabel="View" bleedRem={bleedRem} padRem={padRem} gapRem={gapRem}
+			fadeEdgesRem={fadeEdgesRem} stretchPages={true}
 			pagerGapRem={DS.spacing.s/2}
 			pages={this.props.pages||[]}
 			index={this.state.index}

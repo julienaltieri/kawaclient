@@ -35,15 +35,22 @@ first.
 
 Three things differ from the modal caller.
 
-**The geometry comes from one number.** `pageInsetRem` is how far a resting page sits from its container's
-edge, and everything else is derived: the deck's `padRem` *is* that inset, `gapRem` is twice it (a page's
-right inset plus the next page's left one), and `bleedRem` is 0 because this caller already spans its
-container and has no frame to reach back into.
+**The geometry comes from one number.** The page body holds its content `DS.spacing.xs` off the screen edge,
+and a swipe is the one thing that should not obey it — a page has to be able to travel all the way out of
+view. So the deck steps back out of that padding and re-applies it itself, which puts the clip at the
+screen's edge rather than a rem inside it. Everything derives from that same inset: `bleedRem` is the
+negative margin that escapes the body's padding, `padRem` re-applies it inside so a resting page sits where
+it always did, `gapRem` is twice it, and `fadeEdgesRem` is it again.
 
-`padRem` and `bleedRem` are separate props for exactly this reason. They were one number, which conflated
-two different jobs: **padding** holds a page off the container's edge, **bleed** is a negative margin that
-lets a page slide past that edge before the clip. A modal needs both, since the sheet's padding is outside
-the component. A caller that already spans its container needs only the padding.
+`padRem` and `bleedRem` are separate props because they do different jobs: **padding** holds a page off the
+container's edge, **bleed** is the negative margin that lets a page reach past it. They were one number, and
+conflating them is what produced first a doubled inset and then a clip a rem short of the screen.
+
+**The clip stays, and a mask softens it.** Removing `overflow:hidden` was tried; it only works where every
+page is exactly the container's width, and a modal's sheet is narrower than its track, so the neighbouring
+page would be painted across it. The mask is transparent for the first and last `fadeEdgesRem`, which is
+exactly the strip outside a resting page — so nothing visible is faded at rest, and only a page in motion
+dissolves into the edge.
 
 The tiles fill their page rather than carrying an inset of their own. Two earlier attempts set the inset in
 one place and the gutter in another, and the two disagreed: an inset tile inside an inset page counts the
