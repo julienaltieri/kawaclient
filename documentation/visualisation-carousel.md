@@ -5,9 +5,9 @@
 ## What this is
 
 The top of the stream view is a carousel: several ways of reading the same year, one at a time, swiped
-between with a pager underneath. The [macro graph](macro-graph.md) is page one; a flow breakdown and a
-balance-to-date forecast are meant to follow, and the container exists because of them rather than because
-one chart needed a frame.
+between with a pager underneath. The [macro graph](macro-graph.md) is page one and the
+[money flow](money-flow.md) is page two; a balance-to-date forecast is meant to follow, and the container
+exists because of them rather than because one chart needed a frame.
 
 `ChartCarousel` ([`ChartCarousel.js`](../src/components/ChartCarousel.js)) is the caller.
 `Deck` ([`Deck.js`](../src/components/Deck.js)) is the mechanism, shared with the Amazon charge deck —
@@ -115,6 +115,10 @@ Build the page as a `DS.component.ContentTile` with `width:100%`, `height:100%`,
 `margin:0` — no inset and no bottom margin, both of which belong to the carousel — and add it to the array
 `MasterStreamAuditView` passes to `ChartCarousel`. Nothing else needs changing: the height follows the
 tallest page, the geometry is the deck's, and the pager counts what it is given.
+
+A page that needs the period under analysis should take the **analysis** the view has already built rather
+than compute a date range of its own — that is what the money flow does, and it keeps the calendar to one
+author (`DECISION-PRINCIPLES.md` #24).
 
 Mark anything inside the page that answers its own pointer gestures with `data-no-drag`.
 

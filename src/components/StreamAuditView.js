@@ -15,7 +15,8 @@ import {Period,timeIntervals} from '../Time'
 import utils from '../utils'
 import {ModalTemplates} from '../ModalManager.js'
 import HeaderRowDrawer from './HeaderRowDrawer'
-import ChartCarousel, {PlaceholderPage} from './ChartCarousel'
+import ChartCarousel from './ChartCarousel'
+import MoneyFlowChart from './MoneyFlowChart'
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -91,7 +92,14 @@ class MasterStreamAuditView extends StreamAuditView{
 				expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
 				savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
 			/>,
-			<PlaceholderPage key="placeholder" label="Next visualization"/>
+			//Page two: where the money came from and where it went. It takes the same analysis this
+			//component already built rather than a date range of its own - the calendar has one author
+			//(DECISION-PRINCIPLES.md #24) - and does its own aggregation from there.
+			<MoneyFlowChart key="moneyflow"
+				stream={this.props.stream}
+				transactions={this.props.auditedTransactions}
+				analysis={this.getStreamAnalysis()}
+			/>
 		]}/>
 	</div>)
 	}
