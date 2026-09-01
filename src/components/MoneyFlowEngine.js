@@ -41,6 +41,7 @@ export const TUNE = {
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
 	baseOp:0.46, curve:0.50,                             // §6.12 the ribbons
 	leadMs:250, yieldLit:0.15, driftPx:8, edgePx:5,      // §7.6 §7.11 §7.16 §7.21  the labels
+	minBandPx:6,                                         // §7.5  thinner than this carries no name
 	smooth:0.13, labelEase:0.25,
 	moveMs:620, dataMs:380,                              // §8.1 §8.4  one clock, and the value tween
 	ratio:2.25, tail:"push"                              // §9.3
@@ -172,6 +173,9 @@ export function layout(tree,focus,opt){
 	const slides = opt.tail!=="grow";
 	Object.keys(nodeById).forEach(id => {
 		const n=nodeById[id], s=sideOf[id], e=endFor(s), ie=at(e), c=firstC[id];
+		/* A stream may decline a name (§1: `label:false`). Its band is still drawn and still
+		   navigable; it simply does not take a slot in the rail. */
+		const named = n.label!==false;
 		const ends = !!(pos[ie]&&pos[ie][id]);
 		const qb = pos[ends?ie:at(c)][id];
 		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0};
@@ -188,8 +192,13 @@ export function layout(tree,focus,opt){
 		/* §7.3  a name sits on the side its own sub-structure is on — the side the view extends to. */
 		const outward = (e-c)*s>0, ic = at(c);
 		const nx = s>0 ? (outward?xs[ic]+5:xs[ic]-5) : (outward?xs[ic]+BAR-5:xs[ic]+BAR+5);
-		names[id] = leafHere
-			? {x:railX,y:q0.y,h:q0.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
+		/* The rail entry takes the position of the bar it names — `qb`, at the END of the view — not
+		   the stream's own column. For a branch that bottoms out early those are different columns
+		   with different stacking, so reading `q0` here put the name beside a band it does not name;
+		   §7.16 then saw a name that had drifted off its bar and gave it up altogether. That is why
+		   labels went missing on a ragged tree and looked arbitrary about which. */
+		if(named)names[id] = leafHere
+			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
 			   id:id,tap:id,vis:show,rail:true}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   strong:Math.abs(c)===1,id:id,tap:id,vis:show};
@@ -682,7 +691,13 @@ export default class MoneyFlowEngine {
 		const frameAt = (c,n) => {if(n.pin)return 1;const ext=n.rail?0:10*k;
 			return clamp01(Math.min((c-ext)-cam.y,(cam.y+cam.h)-(c+ext))/EDGE)};
 		const frameF = n => frameAt(n.y+n.h/2,n);
-		const thickF = n => (n.rail||n.pin) ? 1 : clamp01((n.h/k-8)/6);
+		/* §7.5  A name is either readable or absent. Ramping it over a range of band heights put a
+		   name that was perfectly in focus at a quarter opacity - which is the same channel the diagram
+		   uses to say "not what you are looking at", so a thin stream's name read as dimmed, or as
+		   missing, and there was no telling which. The test is a step now and the ease below smooths
+		   it; what stops two names sharing a spot is the overlap test, which is unambiguous about who
+		   wins - the thicker stream. */
+		const thickF = n => (n.rail||n.pin||n.h/k>=opt.minBandPx) ? 1 : 0;
 		const shown = Object.keys(G.names).map(q => G.names[q]).filter(n => vis(n)>0.02||n.pin);
 		/* §7.24  membership by where the move is GOING, not by how lit a name is right now. */
 		const kin = id => !!(G.inFocus&&G.inFocus(id));

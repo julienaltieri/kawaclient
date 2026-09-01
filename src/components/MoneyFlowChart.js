@@ -77,16 +77,26 @@ export default class MoneyFlowChart extends BaseComponent{
 		this.host = React.createRef()
 	}
 
-	/* The two windows and their names come from the analysis the view already built, so the calendar
-	   has one author (DECISION-PRINCIPLES.md #24). The observation period is the card's "year"; its
-	   subdivision is the "month". */
+	/* The two windows come from the analysis the view already built, so the calendar has one author
+	   (DECISION-PRINCIPLES.md #24): the observation period is the card's "year" and its own
+	   subdivision is the "month".
+
+	   The sub-period is read off the analysis's SCHEDULE rather than off getCurrentPeriodReport(),
+	   because that report is subdivided by whatever the analysis was built with - and the stream view
+	   builds this one with no override, which leaves ReportingCore to fall back to the master
+	   stream's own period. Where that is yearly, the "current period" is a year, and both halves of
+	   the toggle showed the same twelve months. Asking the schedule for the subdivision's boundaries
+	   is independent of how the analysis happened to be sliced. */
 	windows(){
-		const a = this.props.analysis, cur = a.getCurrentPeriodReport()
+		const a = this.props.analysis
+		const sub = a.reportingPeriod.subdivision
+		const sched = a.getReportingSchedule(sub)
+		const to = sched[sched.length-1]                 // the first boundary after now
 		return {
 			observation:{from:a.reportingStartDate, to:a.reportingDate,
 				periodName:a.reportingPeriod.name, label:a.reportingPeriod.unitName},
-			subPeriod:{from:cur.reportingStartDate, to:cur.reportingDate,
-				periodName:cur.reportingPeriod.name, label:cur.reportingPeriod.unitName}
+			subPeriod:{from:sub.previousDate(to), to:to,
+				periodName:sub.name, label:sub.unitName}
 		}
 	}
 	mTree = memoize((master,txns,from,to,periodName,basis) =>

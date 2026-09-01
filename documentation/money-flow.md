@@ -52,13 +52,21 @@ say about one.
 larger, the shortfall is not negative saving: it is money that came from somewhere these streams do
 not describe, and it appears on the in side as `From reserves`, in the alert colour.
 
+`Unallocated` carries **no label** (`label:false`, which any stream may set). It is not a stream
+anyone named or budgeted - it is the width between what came in and what was accounted for - and a
+caption on it competes for the rail with the streams that were. `From reserves` keeps its name: it is
+the alert colour and the exceptional case, and an unexplained red band would be worse than none.
+
 **1.3 A parent is exactly the sum of its children.** Ribbons stack edge to edge against the parent's
 thickness; if the two disagree they visibly overflow or leave a gap. This is why the adapter rolls
 compound streams up from their leaves instead of reading `getExpectedAmountAtDateByPeriod` — that
 would be a second author for the same quantity, and the two part company the moment a child is
 filtered out (`DECISION-PRINCIPLES.md` #24).
 
-**1.4 A stream worth nothing is not in the picture at all** — not drawn, not counted, not a target.
+**1.4 A stream worth less than one unit of currency is not in the picture at all** - not drawn, not
+counted, not a target. Below that it cannot be seen and its name cannot be read, while it still costs
+a slot in the rail that a stream worth reading needs. Dropping it unbalances nothing: a parent is the
+sum of what SURVIVED (1.3), and the difference lands in the residual 1.2 already carries.
 
 **1.5 Ids are stable across period and basis.** Every animation pairs entities by id, and the value
 tween pairs by position within a stable shape. A shape that changed cannot be tweened, and the engine
@@ -75,7 +83,15 @@ uniform depth.
 
 **2.1 The window and its name come from the analysis the view already built**, not from a calendar
 of this feature's own. `MasterStreamAuditView` hands the tile its `StreamAnalysis`; the observation
-period is the card's "year" and its subdivision is the "month". One author for the dates.
+period is the card's "year" and that period's own subdivision is the "month". One author for the
+dates.
+
+The sub-period is read off the analysis's SCHEDULE, not off `getCurrentPeriodReport()`. That report
+is subdivided by whatever the analysis was built with - and the stream view builds this one with no
+override, which leaves `ReportingCore` to fall back on the *master stream's own period*. Where that
+is yearly, the "current period" is a year, and both halves of the toggle showed the same twelve
+months. Asking the schedule for the subdivision's boundaries is independent of how the analysis
+happened to be sliced.
 
 **2.2 Which side a stream is on is decided by its DEFINITION, not by what happened to it.** Savings
 by the flag, then income or expense by the sign of the expected amount — the same three-way split
@@ -265,6 +281,21 @@ there for them.
 bar in frame, is its stream thick enough, did the rail have room — yields a *number*. They multiply
 and the product is eased.
 
+**A name is readable or absent, never half-lit.** The thickness test used to ramp over a range of
+band heights, which put a name that was perfectly in focus at a quarter opacity — and opacity is the
+same channel the diagram uses to say *not what you are looking at*. A thin stream's name read as
+dimmed, or as missing, with no way to tell which. It is a step now: below about half a line the band
+carries no name, above it the name is at full strength, and the ease is what smooths the change. What
+stops two names sharing a spot is the overlap test, which is unambiguous about who wins — the thicker
+stream.
+
+**A rail name sits on the bar it names.** The rail is drawn at the end of the view and so is the bar
+it belongs to, so the name takes its position from THAT column and not from the stream's own. For a
+branch that bottoms out early those are different columns with different stacking; reading the wrong
+one put the name beside a band it did not name, and 7.16 then saw a name that had drifted off its bar
+and gave it up altogether. That is why labels went missing on a ragged tree, and why which ones went
+looked arbitrary.
+
 **7.6 The tier arrives with the camera.** An ease cannot do that: it approaches asymptotically and
 has no idea when the move ends. The tier is driven by the time *left* in the move. **7.7 It leaves on
 the same clock, in every direction** — holding a name visible across a move looks like the right
@@ -348,7 +379,14 @@ feature's history the external probe was the thing that was wrong.
 
 Beyond the engine, the properties worth holding are: nothing in focus is ever cropped, two subjects
 at the same level frame to the same `x` and width, the key set is identical at every focus, and no
-label reverses direction during a move.
+label reverses direction during a move. The rail-name rule and the key-set rule are asserted directly
+against `layout()` in [`moneyFlowEngine.test.js`](../src/tests/moneyFlowEngine.test.js), which needs
+no screen.
+
+**What the invariants are for, in one example.** A bench mock built at realistic scale was quietly
+unbalanced — its residual stream had been left out — and `check()` reported a hub bottom mismatch of
+38 units before anything had been looked at. That is the whole argument for checking where the
+numbers are produced.
 
 ---
 

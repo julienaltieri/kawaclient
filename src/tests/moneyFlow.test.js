@@ -151,6 +151,27 @@ describe("the actual basis", () => {
 		expect(k.value).toBeCloseTo(500, 6)
 	})
 
+	test("§1.4 a stream worth less than a unit is not in the picture either", () => {
+		const t = build([txn("base", 5000), txn("rent", -0.4), txn("utils", -300)])
+		expect(find(t.out, "rent")).toBeNull()          // 40 cents is noise
+		expect(find(t.out, "utils")).not.toBeNull()
+		// and dropping it does not unbalance anything: the difference is in the residual
+		expect(total(t.in)).toBeCloseTo(total(t.out), 6)
+	})
+
+	test("a group worth less than a unit goes with its children", () => {
+		const t = build([txn("base", 5000), txn("rent", -0.3), txn("utils", -0.2)])
+		expect(find(t.out, "home")).toBeNull()
+		expect(find(t.out, "rec")).toBeNull()
+	})
+
+	test("the leftover carries no label; money from reserves keeps its name", () => {
+		const over = build([txn("base", 5000)])
+		expect(find(over.out, "__unallocated").label).toBe(false)
+		const under = build([txn("base", 1000), txn("rent", -1600)])
+		expect(find(under.in, "__reserves").label).toBeUndefined()
+	})
+
 	test("§1.4 a stream worth nothing this period is not in the picture", () => {
 		const t = build([txn("base", 5000)])
 		expect(find(t.out, "rent")).toBeNull()

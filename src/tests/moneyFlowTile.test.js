@@ -143,6 +143,32 @@ test("handing back the same tree is not a change", () => {
 	spy.mockRestore()
 })
 
+test("the month is a month, however the analysis was sliced", () => {
+	// The stream view builds its analysis with no sub-period override, which leaves ReportingCore to
+	// fall back on the MASTER STREAM's own period. Where that is yearly, reading the sub-window off
+	// getCurrentPeriodReport() gave a year — and both halves of the toggle showed the same twelve
+	// months. This is that portfolio.
+	const yearly = new CompoundStream(Object.assign({}, MASTER_JSON, {period: "yearly"}))
+	Core.globalState = Object.assign({}, Core.globalState, {userData: Object.assign(
+		{}, Core.globalState.userData, {masterStream: yearly, getAllStreams: () => yearly.getAllStreams()})})
+	const a = getStreamAnalysis(new Date(Date.now() + 60 * 24 * 3600 * 1000), yearly, [], Period.yearly)
+	expect(a.getCurrentPeriodReport().reportingPeriod.name).toBe("yearly")   // the trap
+
+	const ref = React.createRef()
+	render(<MoneyFlowChart ref={ref} stream={yearly} transactions={[]} analysis={a}/>)
+	const w = ref.current.windows()
+	expect(w.subPeriod.label).toBe("month")
+	expect(w.subPeriod.periodName).toBe("monthly")
+	const days = (w.subPeriod.to - w.subPeriod.from) / (24 * 3600 * 1000)
+	expect(days).toBeGreaterThan(27)
+	expect(days).toBeLessThan(32)
+	// and it is the month we are actually in
+	expect(w.subPeriod.from.getTime()).toBeLessThanOrEqual(Date.now())
+	expect(w.subPeriod.to.getTime()).toBeGreaterThan(Date.now())
+	// while the observation window is the whole year around it
+	expect(w.observation.to - w.observation.from).toBeGreaterThan(360 * 24 * 3600 * 1000)
+})
+
 test("unmounts without throwing", () => {
 	const ref = mount()
 	const engine = ref.current.engine

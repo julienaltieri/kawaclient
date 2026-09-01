@@ -15,6 +15,12 @@ import AppConfig from '../AppConfig'
    against the parent's thickness).
    ================================================================================================== */
 
+/* Below a unit of currency a stream is noise: it cannot be seen, its name cannot be read, and it
+   still costs a slot in the rail that a stream worth reading needs. Dropping it does not unbalance
+   anything - a parent is the sum of what SURVIVED (§1.3), and the difference lands in the residual
+   the two synthetic streams already carry (§1.2). */
+const MIN_VISIBLE = 1;
+
 /* Which of the three a top-level stream is. Decided by the stream's DEFINITION rather than by what
    happened, so a month in which an income stream saw no money still sits on the income side instead
    of vanishing. This is the same three-way split MasterStreamAuditView already makes when it builds
@@ -66,7 +72,7 @@ function buildNode(s,sign,tone,ctx){
 			? (s.getExpectedAmountAtDate(ctx.to,ctx.periodName)||0)
 			: (m ? (tone==="savings" ? -m.saved : m.in) : 0);
 		const v = Math.max(0,raw*sign);
-		if(!(v>0))return null;                                   // §1.4
+		if(v<MIN_VISIBLE)return null;                            // §1.4
 		return {id:s.id,name:s.name,tone:tone,value:v,children:null};
 	}
 	const kids = (s.children||[]).map(c => buildNode(c,sign,tone,ctx)).filter(Boolean);
@@ -74,7 +80,9 @@ function buildNode(s,sign,tone,ctx){
 	/* §1.3  the parent IS the sum of its children. Reading a compound stream's own expected amount
 	   here would be a second author for the same quantity, and the two disagree the moment a child is
 	   filtered out — which shows as ribbons that overflow their parent's bar. */
-	return {id:s.id,name:s.name,tone:tone,value:kids.reduce((a,b) => a+b.value,0),children:kids};
+	const v = kids.reduce((a,b) => a+b.value,0);
+	if(v<MIN_VISIBLE)return null;
+	return {id:s.id,name:s.name,tone:tone,value:v,children:kids};
 }
 
 const sum = a => a.reduce((x,y) => x+y.value,0);
@@ -106,7 +114,13 @@ export function buildFlowTree(master,transactions,o){
 	   the outflow is the larger, the shortfall is not negative saving: it is money that came from
 	   somewhere these streams do not describe. */
 	const inTot = sum(ins), outTot = sum(outs), res = inTot-outTot;
-	if(res>0.005)outs.push({id:"__unallocated",name:"Unallocated",tone:"savings",value:res,children:null});
-	else if(res<-0.005)ins.push({id:"__reserves",name:"From reserves",tone:"alert",value:-res,children:null});
+	/* The leftover carries no label. It is not a stream anyone named or budgeted - it is the width
+	   between what came in and what was accounted for - and a caption on it competes for the rail
+	   with the streams that were. Money from reserves DOES keep its name: it is the alert colour and
+	   the exceptional case, and an unexplained red band would be worse than none. */
+	if(res>=MIN_VISIBLE)outs.push({id:"__unallocated",name:"Unallocated",tone:"savings",
+		value:res,children:null,label:false});
+	else if(res<=-MIN_VISIBLE)ins.push({id:"__reserves",name:"From reserves",tone:"alert",
+		value:-res,children:null});
 	return {hubName:hubName,in:ins,out:outs,inTotal:Math.max(inTot,outTot)};
 }
