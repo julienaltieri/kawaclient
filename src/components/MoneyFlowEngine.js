@@ -101,14 +101,18 @@ export function groupTail(tree,opt){
 			if(acc+n.value>cap+1e-6)return;
 			acc += n.value; tail.push(n);
 		});
-		if(tail.length<least)return kids;
+		/* Biggest first, top to bottom, at every level: the eye reads down the list in the order the
+		   money is worth reading, and the tail - and so the Other it becomes - lands at the bottom
+		   where it belongs. */
+		const down = a => a.slice().sort((x,y) => y.value-x.value);
+		if(tail.length<least)return down(kids);
 		const inTail = {}; tail.forEach(n => inTail[n.id]=1);
 		const rest = kids.filter(n => !inTail[n.id]);
-		if(!rest.length)return kids;
-		/* it takes the colour of the largest thing in it, and sits at the end where the small ones
-		   already were, so the tail reads as one band at the edge of the parent's */
-		const tone = tail.slice().sort((a,b) => b.value-a.value)[0].tone;
-		return rest.concat([{id:"other:"+key,name:"Other",tone:tone,value:acc,children:tail}]);
+		if(!rest.length)return down(kids);
+		/* it takes the colour and the standing of the largest thing in it */
+		const head = down(tail)[0];
+		return down(rest.concat([{id:"other:"+key,name:"Other",tone:head.tone,top:!!head.top,
+			value:acc,children:down(tail)}]));
 	};
 	const sum = a => (a||[]).reduce((x,y) => x+y.value,0);
 	return {hubName:tree.hubName, inTotal:tree.inTotal,
@@ -163,6 +167,18 @@ export function layout(tree,focus,opt){
 	const inFocus = id => {const q=pathOf[id];if(!q)return false;
 		for(let i=0;i<focus.length;i++)if(q[i]!==focus[i])return false;
 		return q.length>=focus.length};
+
+	/* §1.10  An "Other" is a level you open. The view still runs two columns whatever it holds - how
+	   deep it reaches must depend on the level and not on the subject, or two subjects side by side
+	   stop framing to the same width (§5.6) - but a gathered tail is named ONCE, as itself, and its
+	   members are left unnamed until it is opened. Naming them instead is what put five names in the
+	   tier where the gathering had just been arranged to put two. */
+	const isOther = id => typeof id==="string" && id.indexOf("other:")===0;
+	const opened = id => focus.indexOf(id)>=0;
+	const shows = id => {const q=pathOf[id]; if(!q)return false;
+		for(let i=focus.length;i<q.length-1;i++)if(isOther(q[i]))return false;
+		return true};
+	const gathered = id => isOther(id)&&!opened(id)&&shows(id);
 
 	/* §4.8 §4.9  two columns past the focus on the side in focus, capped at that branch's terminal;
 	   exactly one on the other side, because it is context rather than subject.
@@ -270,8 +286,8 @@ export function layout(tree,focus,opt){
 		const within = s>0 ? c<=e : c>=e;
 		/* §7.1  names on the focused side from the focus's depth to +2; the other side only at the
 		   root.  §7.4  only the focused side has a rail. */
-		const leafHere = own(id) && (!kidsOf[id] || (s>0?c>=e:c<=e));
-		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within)?1:0)
+		const leafHere = own(id) && (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
+		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within && shows(id))?1:0)
 		                     : ((!focus.length&&within)?1:0);
 		const railX = xs[ie]+(s>0?BAR+6:-6);                                 // §7.2
 		/* §7.3  a name sits on the side its own sub-structure is on — the side the view extends to. */
@@ -287,8 +303,11 @@ export function layout(tree,focus,opt){
 			   id:id,tap:id,vis:show,rail:true}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  what a name IS - a macro category or a stream inside one - decides its face;
-			      what it is DOING decides its weight. */
-			   top:dep(id)===1,
+			      what it is DOING decides its weight. Which of the two it is comes from the DATA, not
+			      from the column: the income streams sit one column from the hub exactly as the macro
+			      categories do, but they are a level below them - the single income group above them
+			      was unwrapped into the hub itself (§2.7). */
+			   top:!!n.top,
 			   /* §7.3  A name inside the diagram runs from its own bar toward the next column, so the
 			      room it has is one pitch. Zoomed in, a long name is longer than that and reaches into
 			      the rail beyond - which is how two names came to be printed in the same place. It

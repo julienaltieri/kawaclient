@@ -62,7 +62,7 @@ function measure(master,transactions,from,to){
 /* Build one side's forest. `sign` is +1 for the in side and -1 for the out side: a stream's signed
    amount is multiplied by it, so what remains is a magnitude, and a stream pointing the wrong way
    (an income stream that net-refunded, say) lands on zero rather than as a blob on the wrong side. */
-function buildNode(s,sign,tone,ctx){
+function buildNode(s,sign,tone,ctx,top){
 	if(excluded(s))return null;
 	if(s.isTerminal()){
 		const m = ctx.measured&&ctx.measured[s.id];
@@ -73,16 +73,16 @@ function buildNode(s,sign,tone,ctx){
 			: (m ? (tone==="savings" ? -m.saved : m.in) : 0);
 		const v = Math.max(0,raw*sign);
 		if(v<MIN_VISIBLE)return null;                            // §1.4
-		return {id:s.id,name:s.name,tone:tone,value:v,children:null};
+		return {id:s.id,name:s.name,tone:tone,value:v,children:null,top:top};
 	}
-	const kids = (s.children||[]).map(c => buildNode(c,sign,tone,ctx)).filter(Boolean);
+	const kids = (s.children||[]).map(c => buildNode(c,sign,tone,ctx,false)).filter(Boolean);
 	if(!kids.length)return null;
 	/* §1.3  the parent IS the sum of its children. Reading a compound stream's own expected amount
 	   here would be a second author for the same quantity, and the two disagree the moment a child is
 	   filtered out — which shows as ribbons that overflow their parent's bar. */
 	const v = kids.reduce((a,b) => a+b.value,0);
 	if(v<MIN_VISIBLE)return null;
-	return {id:s.id,name:s.name,tone:tone,value:v,children:kids};
+	return {id:s.id,name:s.name,tone:tone,value:v,children:kids,top:top};
 }
 
 const sum = a => a.reduce((x,y) => x+y.value,0);
@@ -99,7 +99,10 @@ export function buildFlowTree(master,transactions,o){
 	let ins = [], outs = [];
 	(master.children||[]).forEach(s => {
 		const c = sideOf(s,o.to);
-		const n = buildNode(s,c.side==="in"?1:-1,c.tone,ctx);
+		/* §9.6  the master's children are the macro categories, and the type says so. Nothing below
+		   them is one - including the income streams that step up a level when the single income group
+		   is unwrapped just below. */
+		const n = buildNode(s,c.side==="in"?1:-1,c.tone,ctx,true);
 		if(n)(c.side==="in"?ins:outs).push(n);
 	});
 	/* The hub IS the total money in, so a single top-level income group standing in front of it is a
@@ -107,7 +110,8 @@ export function buildFlowTree(master,transactions,o){
 	   one compound stream, its children become the roots and it lends the hub its name. Where it is
 	   several, they are the roots and the hub keeps the caller's name. */
 	let hubName = o.hubName||"Income";
-	if(ins.length===1&&ins[0].children){hubName=ins[0].name;ins=ins[0].children}
+	if(ins.length===1&&ins[0].children){hubName=ins[0].name;
+		ins=ins[0].children.map(n => Object.assign({},n,{top:false}))}
 
 	/* §1.1 §1.2  money in equals money out, and these two are what keep it true. What is left after
 	   spending and deliberate saving is unallocated — still savings, just without a stream yet. When

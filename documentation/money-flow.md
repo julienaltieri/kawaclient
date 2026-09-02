@@ -89,12 +89,16 @@ gathered inside another Other: its members' own children are gathered, its own l
 "Other inside Other" says nothing. Its id names its parent, so it is the same stream between one basis
 and the other (1.5), and 1.3 survives because it is worth exactly what it contains.
 
-What it does NOT do is stop the view. From a distance an Other is one band in the tier, and opening it
-is how its members are read; standing on its own parent the view already reaches two levels and the
-members are back in the tier — which is right, because that is the level you asked for. Making the
-view stop short at an unopened Other was tried and reverted: how deep the view runs would then depend
-on the subject rather than on the level, and two subjects side by side would no longer frame to the
-same width (5.6).
+**Children are ordered biggest first, at every level.** The eye reads down the list in the order the
+money is worth reading, and the tail — and so the Other it becomes — lands at the bottom, where it
+belongs.
+
+**A gathered tail is named once, as itself.** The view still runs two columns whatever it holds
+— how deep it reaches must depend on the level and not on the subject, or two subjects side by side
+stop framing to the same width (5.6) — so an unopened Other's members are still drawn, as the several
+thin bands they are. They are simply not NAMED: the tier names the Other. Naming them instead put five
+names in the tier where the gathering had just been arranged to put two, and the group's own name went
+missing, because a band made of hairlines is too thin to carry one.
 
 **1.6 Ragged depth is normal.** Branches bottom out at different levels and nothing may assume a
 uniform depth.
@@ -441,7 +445,11 @@ every frame and overwrite the focus transition running underneath it. The tile m
 unchanged tree arrives as the same reference and the engine returns early on identity.
 
 **The type says two things, and only two.** The FACE says what a name is: a macro category takes the
-condensed face, a stream inside a category takes the text one. The WEIGHT says what it is doing: the
+condensed face, a stream inside a category takes the text one. Which of the two a stream is comes from
+the DATA — the adapter marks the master's children and nothing else — and not from the column it sits
+in: the income streams stand one column from the hub exactly as the macro categories do, but they are
+a level below them, the single income group above them having been unwrapped into the hub itself
+(2.7). Reading it off the column made Activity Income look like a category. The WEIGHT says what it is doing: the
 stream you are standing in is bold and nothing else is — except at the root, where you are standing
 on the whole portfolio and every category is. The amount under a name is always in the numeric face,
 whatever the name above it is set in, and a pinned neighbour keeps the quieter colour that marks it as
