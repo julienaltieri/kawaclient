@@ -155,6 +155,24 @@ describe("the subject fills the frame", () => {
 		expect(span(ghost)/ghost.cam.h).toBeCloseTo(span(root)/root.cam.h, 4)
 	})
 
+	test("an opened Other fills the frame like any other subject", () => {
+		// It did not when its MEMBERS had children of their own: the box came out four and a half
+		// times the frame, so the whole subtree drew at the scale of the picture it was gathered from.
+		const kid = (id,v) => ({id:id,name:id,tone:"expenses",value:v,children:null})
+		const t = groupTail({hubName:"Income", inTotal:10000,
+			in:[{id:"inc",name:"inc",tone:"income",value:10000,children:null}],
+			out:[{id:"p",name:"P",tone:"expenses",value:10000,children:[
+				{id:"a",name:"A",tone:"expenses",value:9000,children:null},
+				{id:"b",name:"B",tone:"expenses",value:600,children:[kid("b1",400),kid("b2",200)]},
+				{id:"c",name:"C",tone:"expenses",value:400,children:[kid("c1",250),kid("c2",150)]}]}]},
+			Object.assign({},opt,{otherShare:0.10, otherMin:2}))
+		expect(t.out[0].children.map(n => n.id)).toEqual(["a","other:p"])
+		const r = compose(t,["p","other:p"],opt)
+		const box = r.g.boxes["other:p"]
+		const strip = opt.neighbourPx*(r.cam.w/opt.cssW)
+		expect(box.y1-box.y0).toBeCloseTo(r.cam.h-2*strip, 4)
+	})
+
 	test("two subjects at the same level still land at the same x", () => {
 		const a = fit(["spd"]).cam, b = fit(["sav"]).cam
 		expect(a.x).toBeCloseTo(b.x, 6)
@@ -226,6 +244,29 @@ describe("the tail is gathered into Other", () => {
 		in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}], out:out})
 	const byId = (list,id) => (list||[]).filter(n => n.id===id)[0]
 	const sum = a => a.reduce((x,y) => x+y.value,0)
+
+	const S = (id,v,kids) => ({id:id,name:id,tone:"savings",value:v,children:kids||null})
+
+	test("at the top of the out side, savings sit above expenses whatever they are worth", () => {
+		const t = groupTail(wrap([N("rent",70),S("save",20),N("annual",10)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["save","rent","annual"])
+	})
+
+	test("size still decides within each of the two groups", () => {
+		const t = groupTail(wrap([N("rent",40),S("small",5),N("annual",15),S("big",40)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["big","small","rent","annual"])
+	})
+
+	test("the exception is the top of the out side only, not every level", () => {
+		const t = groupTail(wrap([N("cat",100,[N("x",70),S("y",30)])]),opt2)
+		expect(byId(t.out,"cat").children.map(n => n.id)).toEqual(["x","y"])
+	})
+
+	test("a gathered tail sits with the group whose tone it took", () => {
+		// the Other takes the tone of the largest thing in it, so an expense tail stays below savings
+		const t = groupTail(wrap([N("rent",60),S("save",30),N("a",4),N("b",3),N("c",3)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["save","rent","other:__out"])
+	})
 
 	test("the smallest streams adding to a tenth or less are gathered; the rest are not", () => {
 		const t = groupTail(wrap([N("big",70),N("mid",22),N("a",4),N("b",3),N("c",1)]),opt2)

@@ -93,6 +93,17 @@ and the other (1.5), and 1.3 survives because it is worth exactly what it contai
 money is worth reading, and the tail — and so the Other it becomes — lands at the bottom, where it
 belongs.
 
+**With one exception: at the top of the out side, what is SAVED sits above what is spent**, whatever
+the two are worth. Everywhere else in the app puts them in that order, and a chart that re-ordered
+them by size would say the two conventions disagree about which is which. Size still decides within
+each of the two groups, and a gathered tail lands at the bottom of whichever group it belongs to,
+since an Other takes the tone of the largest thing in it. The leftover (`__unallocated`) carries the
+savings tone and so sits with the savings: it is the money that was not spent.
+
+The exception is the top level of the out side only. Inside a category the two tones do not mix, so
+there is nothing for it to decide, and applying it at every level would be a rule that never fires
+anywhere it could be seen.
+
 **A gathered tail is named once, as itself.** The view still runs two columns whatever it holds
 — how deep it reaches must depend on the level and not on the subject, or two subjects side by side
 stop framing to the same width (5.6) — so an unopened Other's members are still drawn, as the several
@@ -463,12 +474,27 @@ neighbour above from the last of three categories:
     after    10 →  10 →  11 →  12 →  17 → 30 → 48 → 62 → 70 → 72
 
 with the card 145px tall, so the "before" row spends its first 250ms above the top edge. 148px of
-travel with two reversals becomes 62px with none.
+travel with two reversals becomes 62px with none. Swept over every move between siblings in the
+bench — up, down, and back out to the parent — no name leaves the card and none reverses.
+
+**And it is aimed at where the name LANDS, not at where its bar is that instant.** Decaying a
+displacement on the clock was the first answer here, and it is only right while the bar's *screen*
+path is close to linear in the clock. Re-scaling bends it badly: opening a small stream can leave a
+sibling's bar 656px above a 145px card, and that bar then covers most of its journey in the second
+half of the move while the offset falls at a constant rate — 324px of offset against 135px of bar in
+the first half, so the name sailed off the top of the card and came back. Exactly the fault this
+section exists to prevent, surviving in the one case where the arithmetic was extreme enough.
+Interpolating between the two ENDS cannot do that: it is monotone by construction and exact at both.
+
+The destination is read from the geometry the move is going to, which is held for the duration
+(`moveTo`). A pinned name needs no such lookup: its slot belongs to the camera (7.23), so its target
+is already still.
 
 The seed is taken once, at whatever progress the name first appears, and the remaining travel is what
 is left of the move — so a name appearing midway is not asked to cover the whole distance in the time
 that is left. Both at-rest stores are kept current underneath, so the exponential smoother picks up
-where the move leaves off.
+where the move leaves off — which also absorbs the small error for a name that will land in the rail,
+whose relaxation is not solved for the destination in advance.
 
 This is also why the at-rest rule cannot simply smooth the absolute position the way the move does:
 bars move at rest too — a change of basis tweens them over `dataMs` with no move running — and a name

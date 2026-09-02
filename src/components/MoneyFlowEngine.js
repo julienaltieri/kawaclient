@@ -103,8 +103,16 @@ export function groupTail(tree,opt){
 		});
 		/* Biggest first, top to bottom, at every level: the eye reads down the list in the order the
 		   money is worth reading, and the tail - and so the Other it becomes - lands at the bottom
-		   where it belongs. */
-		const down = a => a.slice().sort((x,y) => y.value-x.value);
+		   where it belongs.
+
+		   ONE EXCEPTION, at the top of the out side: what is saved sits above what is spent, whatever
+		   the two are worth. Everywhere else in the app puts them in that order, and a chart that
+		   re-orders them by size would say the two conventions disagree about which is which. Size
+		   still decides within each of the two groups, and the tail lands at the bottom of whichever
+		   group it belongs to - an Other made of expenses takes the expense tone (below) and one made
+		   of savings takes the savings tone (above). */
+		const rank = key==="__out" ? (n => n.tone==="savings"?0:1) : (() => 0);
+		const down = a => a.slice().sort((x,y) => (rank(x)-rank(y))||(y.value-x.value));
 		if(tail.length<least)return down(kids);
 		const inTail = {}; tail.forEach(n => inTail[n.id]=1);
 		const rest = kids.filter(n => !inTail[n.id]);
@@ -540,6 +548,7 @@ export default class MoneyFlowEngine {
 		this.G = null; this.cam = {x:0,y:0,w:WORLD_W,h:this.worldH};
 		this.dimNow = 1; this.animating = false;
 		this.moveStart = 0; this.moveEnds = 0; this.maskFrom = []; this.maskBack = false;
+		this.moveTo = null;
 		this.clock = 0; this.dataClock = 0; this.fadePump = 0;
 		this.reduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -644,7 +653,7 @@ export default class MoneyFlowEngine {
 		const litA = litIn(A,from), litB = litIn(B,toFocus);
 		this.focus = toFocus; this.onFocusChange(toFocus.slice());
 		cancelAnimationFrame(this.clock);
-		const settle = () => {this.animating=false;this.pinsHeld=null;
+		const settle = () => {this.animating=false;this.pinsHeld=null;this.moveTo=null;
 			this.G=B;this.cam=camB;this.dimNow=dimTo;this.paint()};
 		if(this.reduced)return settle();
 		this.animating = true;
@@ -653,6 +662,9 @@ export default class MoneyFlowEngine {
 		this.fadeAtStart = Object.assign({},this.fade);
 		/* §7.23  who is pinned where, settled once from the destination and held for the move */
 		this.pinsHeld = pinsFor(B,toFocus);
+		/* §7.28  where every name is GOING, so a name can be aimed at its landing place instead of
+		   chasing a bar whose screen path the re-scaling bends. */
+		this.moveTo = {g:B, cam:camB};
 		this.maskFrom = from.slice();
 		this.maskBack = toFocus.length<from.length;
 		const step = now => {
@@ -1073,10 +1085,29 @@ export default class MoneyFlowEngine {
 				   cover the whole distance in the time that is left. */
 				if(this.sSeed[key]===undefined){
 					const prev = this.sPos[key];
-					this.sSeed[key] = {d:(prev===undefined?0:prev-tS), e:mv};
+					this.sSeed[key] = {p0:(prev===undefined?null:prev), e:mv};
 				}
-				const sd = this.sSeed[key], span = 1-sd.e;
-				cyS = tS + sd.d*(span>1e-3 ? clamp01((1-mv)/span) : 0);
+				const sd = this.sSeed[key];
+				/* Aimed at where it LANDS, not at where its bar is this instant. A pin's slot belongs to
+				   the camera (§7.23) so its target is already still; everything else is read from the
+				   destination geometry. Decaying a displacement on the clock instead - which is what
+				   this did first - only looks right while the bar's SCREEN path is close to linear in
+				   the clock, and re-scaling bends it badly: opening a small stream leaves its sibling's
+				   bar 656px above a 145px card, and that bar covers most of its journey in the second
+				   half of the move. The offset meanwhile fell at a constant rate, so in the first half
+				   the name lost 324px of offset against 135px of bar and sailed off the top of the card
+				   before coming back - the very thing this section exists to prevent, in the one case
+				   the arithmetic happened to be extreme. Interpolating between the two ENDS cannot do
+				   that: it is monotone by construction and exact at both. */
+				let pF = tS;
+				if(!isPin&&this.moveTo){
+					const nb = this.moveTo.g.names[key];
+					if(nb){const kB = this.moveTo.cam.w/opt.cssW;
+						pF = ((nb.y+nb.h/2)-this.moveTo.cam.y)/kB}
+				}
+				if(sd.p0===null)cyS = pF;
+				else{const span = 1-sd.e, u = span>1e-3 ? clamp01((mv-sd.e)/span) : 1;
+					cyS = sd.p0+(pF-sd.p0)*u}
 				/* both stores are kept current so the at-rest smoother picks up where this leaves off */
 				if(isPin){this.sY[key] = cyS; delete this.sOff[key]}
 				else{this.sOff[key] = cyS-bandS; delete this.sY[key]}
