@@ -438,8 +438,22 @@ constantly, so the base opacity is chosen for how the overlaps read, not for how
 side, only at the root. Anywhere else the other side is context, and naming it competes with the side
 being explained.
 
-**7.2 The rail sits just beyond the terminal bar**, a few pixels clear of it, so the tier reads as a
-list attached to the picture rather than as part of it.
+**7.2 The name sits INSIDE the terminal bar and the amount beyond it.** A name belongs to its band, so
+it goes on the side the band is and reads as a caption on the thing it names rather than as an entry in
+a list beside the picture; the amounts then line up in a column of their own out at the edge, which is
+what a column of numbers wants. It also puts the two on ONE line — the amount used to be a second line
+beneath the name, which cost the tier more than twice the height per entry and was the first thing
+given up when it ran short (7.14).
+
+**A tier name that cannot fit inside falls back to the outside**, where the rail has room of its own
+and nothing to compete with, and gives up its amount for the place the amount was in. It has to: the
+run inside the bar is one pitch shared with the name at the previous column, and those two are not
+strangers — a tier entry's parent IS that name, and its band contains the entry's band, so they arrive
+on nearly the same row and want the same place as a rule rather than by accident. There is often not
+room for both. At the root, "Spending" alone is over half the pitch and a single word cannot be folded
+to fit, so without the fallback the three category names took the whole run and the tier went unnamed
+entirely — measured: three names, then none, then two with the fallback, while the views that have no
+column between the focus and the tier keep all of theirs, inside the bar, with their amounts.
 
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
 the room it has is one column pitch. Zoomed in, a long name is longer than that and reaches into the

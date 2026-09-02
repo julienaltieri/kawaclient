@@ -314,7 +314,23 @@ export function layout(tree,focus,opt){
 		   §7.16 then saw a name that had drifted off its bar and gave it up altogether. That is why
 		   labels went missing on a ragged tree and looked arbitrary about which. */
 		if(named)names[id] = leafHere
-			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
+			/* §7.2  The NAME sits against the inside of the terminal bar and the AMOUNT beyond it. The
+			   name belongs to the band, so it goes on the side the band is - it reads as a caption on
+			   the thing it names rather than as an entry in a list beside the picture - and the amounts
+			   line up in a column of their own out at the edge, where a column of numbers is what the
+			   eye wants. It also puts the two on ONE line: the amount used to be a second line beneath
+			   the name, which cost the tier more than twice the height per entry and was the first
+			   thing given up when it ran short. */
+			? {x:s>0?xs[ie]-6:xs[ie]+BAR+6, y:qb.y, h:qb.h, name:n.name, val:opt.format(n.value),
+			   anchor:s>0?"end":"start", vx:railX, vAnchor:s>0?"start":"end",
+			   /* §7.3  HALF the run back to the previous column. The other half belongs to the name at
+			      that column, which runs the other way - and the two are not strangers: a tier entry's
+			      parent IS the name it would meet, its own band contains the entry's band, so the two
+			      arrive on nearly the same row and collide as a rule rather than by accident. Splitting
+			      the run gives each the half nearest the bar it names. Before the split the thicker band
+			      won every one of those, which at the root meant the categories took the whole pitch and
+			      the tier went unnamed entirely. */
+			   maxW:(PITCH-BAR)/2-14,
 			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
@@ -1037,9 +1053,9 @@ export default class MoneyFlowEngine {
 		   that is one pitch; in the rail it is whatever is left to the edge of the frame. A rail name
 		   too long for the rail used to be dropped outright by the window test below - a thick stream
 		   with a long name simply went unnamed, which is the other half of why labels went missing. */
-		const roomFor = n => n.pin ? 1e9
-			: n.rail ? (n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k))
-			: (n.maxW||1e9);
+		/* Every name that is not pinned runs back toward the previous column, tier entries included
+		   now that they sit against the inside of their bar, so they all measure against the same run. */
+		const roomFor = n => n.pin ? 1e9 : (n.maxW||1e9);
 		shown.forEach(n => {
 			const ty = this.typeOf(n);
 			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
@@ -1052,20 +1068,18 @@ export default class MoneyFlowEngine {
 		const rails = shown.filter(n => n.rail&&vis(n)>=0.5&&frameF(n)>0.05&&kin(n.id))
 			.sort((a,b) => (a.y+a.h/2)-(b.y+b.h/2));
 		/* §7.13 §7.14 §7.17  measured extents, and the amount is the first thing given up. */
-		let twoLine = true;
-		const eligible = n => n.h/k>=26&&n.val!==undefined;
-		/* A folded name is already two lines; the amount under it would be a third, and §7.14 gives the
-		   amount up before anything else anyway. */
-		const isTwo = n => twoLine&&eligible(n)&&!n._fold;
+		/* §7.14  The amount is beside its name, not beneath it, so it costs no height at all and is
+		   never the thing given up when the tier runs short. What it costs is width in the rail, which
+		   is what the rail is now for. */
+		const showVal = n => !!n.rail&&n.val!==undefined;
 		/* The extents below were measured at bodyPx; a name set smaller reserves proportionally less,
 		   which is where the tier's extra stacking room actually comes from. */
 		const szF = n => this.typeOf(n).size/opt.bodyPx;
 		const upOf = n => (n._fold?15:8)*szF(n)*k;
-		const downOf = n => (n._fold?17:(isTwo(n)?24:10))*szF(n)*k;
+		const downOf = n => (n._fold?17:10)*szF(n)*k;
 		const LEAD = 2*k;
 		const spanOf = n => upOf(n)+downOf(n)+LEAD;
 		const room = bot-top;
-		if(rails.reduce((t,n) => t+spanOf(n),0)>room)twoLine = false;
 		/* §7.15  what gets dropped is decided by focus first, size second. */
 		const expendable = n => (kin(n.id)?1:0)*1e6+n.h;
 		while(rails.length>1&&rails.reduce((t,n) => t+spanOf(n),0)>room){
@@ -1273,11 +1287,28 @@ export default class MoneyFlowEngine {
 			}else{delete this.szSeed[key];szNow = szTo}
 			this.sSz[key] = szNow;
 			if(Math.abs(szTo-szNow)>0.05)more = true;
-			const two = n.pin ? false : (n.rail?isTwo(n):eligible(n));
-			const g = this.text(key,n,cy,two,k,szNow);
-			let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-			g.forEach(e => {const b=e.getBBox();
-				x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
+			let two = !n.pin&&showVal(n);
+			let g = this.text(key,n,cy,two,k,szNow);
+			let x0,y0,x1,y1;
+			const extent = () => {x0=1e9;y0=1e9;x1=-1e9;y1=-1e9;
+				g.forEach(e => {const b=e.getBBox();
+					x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);
+					x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)})};
+			extent();
+			/* §7.2  A tier name sits against the inside of its bar, which is one pitch shared with the
+			   name at the previous column - and those two are not strangers: a tier entry's parent IS
+			   that name, its band contains the entry's, so they arrive on nearly the same row. When
+			   both want it there is not room for both: "Spending" alone is over half the pitch, and a
+			   single word cannot be folded to fit. So the tier name tries the inside first and falls
+			   back to the OUTSIDE of the bar, where the rail has room of its own and nothing to
+			   compete with, giving up its amount for the place the amount was in. Without the fallback
+			   the root lost every name in its tier to the three category names. */
+			if(n.rail&&n.vx!==undefined&&two
+				&&placed.some(p => !p.rail&&x0<p.x1&&p.x0<x1&&y0<p.y1&&p.y0<y1)){
+				two = false;
+				g = this.text(key,n,cy,false,k,szNow,true);
+				extent();
+			}
 			/* §7.19  the drawn LEFT EDGE is smoothed, so an anchor flip slides instead of hopping by
 			   the name's own width. */
 			/* §7.27  in screen pixels, for the same reason the vertical is */
@@ -1326,14 +1357,16 @@ export default class MoneyFlowEngine {
 		}
 	}
 	/* A label is one or two lines of name, plus the amount under a rail entry. */
-	text(key,n,cy,two,k,size){
+	text(key,n,cy,two,k,size,outboard){
 		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
 			b:this.mk("text",{})}));
 		const ty = this.typeOf(n);
 		const px = size===undefined ? ty.size : size;
 		const one = (e,dy,txt,amount) => {
 			if(e.textContent!==txt)e.textContent = txt;
-			this.set(e,{x:n.x,y:cy+dy,"text-anchor":n.anchor,
+			const useV = (amount||outboard)&&n.vx!==undefined;
+			this.set(e,{x:useV?n.vx:n.x, y:cy+dy,
+				"text-anchor":(useV&&n.vAnchor)?n.vAnchor:n.anchor,
 				/* a pinned neighbour is a control rather than a caption (§7.22), which is what the
 				   quieter colour says; the amount under a name is the other thing set in the numeric
 				   face, whatever the name above it is set in. */
@@ -1353,7 +1386,9 @@ export default class MoneyFlowEngine {
 			one(rec.a,-3*sc*k,folded[0],false);
 			out.push(one(rec.a2,12*sc*k,folded[1],false));
 		}else if(rec.a2.parentNode)rec.a2.parentNode.removeChild(rec.a2);
-		if(two)out.push(one(rec.b,19.5*sc*k,n.val,true));
+		/* §7.2  the amount shares the name's baseline, on the other side of the bar - it is beside it,
+		   not beneath it, so a folded name does not push it anywhere either. */
+		if(two)out.push(one(rec.b,4.5*sc*k,n.val,true));
 		else if(rec.b.parentNode)rec.b.parentNode.removeChild(rec.b);
 		return out;
 	}
