@@ -165,7 +165,8 @@ describe("the subject fills the frame", () => {
 				{id:"a",name:"A",tone:"expenses",value:9000,children:null},
 				{id:"b",name:"B",tone:"expenses",value:600,children:[kid("b1",400),kid("b2",200)]},
 				{id:"c",name:"C",tone:"expenses",value:400,children:[kid("c1",250),kid("c2",150)]}]}]},
-			Object.assign({},opt,{otherShare:0.10, otherMin:2}))
+			Object.assign({},opt,{otherMin:2, ratio:2.25, neighbourPx:22,
+				l1Px:3.5, smallPx:10, bodyPx:12}))
 		expect(t.out[0].children.map(n => n.id)).toEqual(["a","other:p"])
 		const r = compose(t,["p","other:p"],opt)
 		const box = r.g.boxes["other:p"]
@@ -267,100 +268,111 @@ describe("the type is decided from the level, not the column", () => {
 })
 
 describe("the tail is gathered into Other", () => {
+	// The tail is decided by the DISPLAY: how many of a set of siblings can carry a name at once when
+	// that set is exploded. §5.3 makes the room a constant — whichever stream you open, its children
+	// fill the frame less one strip at each end — so this is still answerable from the values alone.
+	const gopt = Object.assign({},opt,{otherMin:2, ratio:2.25, neighbourPx:22,
+		l1Px:3.5, smallPx:10, bodyPx:12})
 	const N = (id,v,kids) => ({id:id,name:id,tone:"expenses",value:v,children:kids||null})
-	const opt2 = Object.assign({},opt,{otherShare:0.10, otherMin:2})
+	const S = (id,v) => ({id:id,name:id,tone:"savings",value:v,children:null})
 	const wrap = out => ({hubName:"Income", inTotal:100,
-		in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}], out:out})
+		in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}],
+		out:[{id:"p",name:"P",tone:"expenses",value:out.reduce((a,b)=>a+b.value,0),children:out}]})
+	const kidsOf = t => t.out[0].children
 	const byId = (list,id) => (list||[]).filter(n => n.id===id)[0]
 	const sum = a => a.reduce((x,y) => x+y.value,0)
 
-	const S = (id,v,kids) => ({id:id,name:id,tone:"savings",value:v,children:kids||null})
-
-	test("at the top of the out side, savings sit above expenses whatever they are worth", () => {
-		const t = groupTail(wrap([N("rent",70),S("save",20),N("annual",10)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["save","rent","annual"])
+	test("a set whose bands all clear a line of type is left alone", () => {
+		const t = groupTail(wrap([N("a",40),N("b",30),N("c",30)]),gopt)
+		expect(kidsOf(t).map(n => n.id)).toEqual(["a","b","c"])
 	})
 
-	test("size still decides within each of the two groups", () => {
-		const t = groupTail(wrap([N("rent",40),S("small",5),N("annual",15),S("big",40)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["big","small","rent","annual"])
+	test("a set too crowded to name is gathered", () => {
+		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+		const ids = kidsOf(t).map(n => n.id)
+		expect(ids).toContain("other:p")
+		expect(ids.length).toBeLessThan(10)
 	})
 
-	test("the exception is the top of the out side only, not every level", () => {
-		const t = groupTail(wrap([N("cat",100,[N("x",70),S("y",30)])]),opt2)
-		expect(byId(t.out,"cat").children.map(n => n.id)).toEqual(["x","y"])
+	test("and not before it must be: the boundary is one stream wide", () => {
+		// the rule gathers nothing until the set genuinely cannot be named, so the boundary is sharp.
+		// On this fixture's card seven equal streams each clear a line of type and eight do not.
+		const eq = n => Array.from({length:n},(_,i) => N("s"+i,10))
+		expect(kidsOf(groupTail(wrap(eq(7)),gopt)).map(n => n.id)).not.toContain("other:p")
+		expect(kidsOf(groupTail(wrap(eq(8)),gopt)).map(n => n.id)).toContain("other:p")
 	})
 
-	test("a gathered tail sits with the group whose tone it took", () => {
-		// the Other takes the tone of the largest thing in it, so an expense tail stays below savings
-		const t = groupTail(wrap([N("rent",60),S("save",30),N("a",4),N("b",3),N("c",3)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["save","rent","other:__out"])
+	test("a uniform set has no tail to speak of, and the rule says so", () => {
+		// Worth pinning because it is this rule's weak case: gathering a TAIL only helps when there
+		// is one. With every stream the same size, removing the smallest few leaves the rest exactly
+		// as crowded, so it gathers until a single stream stands beside the Other. Real portfolios
+		// are heavy-tailed and this does not fire; a uniform one is told, bluntly, that its streams
+		// cannot all be named.
+		const eq = n => Array.from({length:n},(_,i) => N("s"+i,10))
+		expect(kidsOf(groupTail(wrap(eq(10)),gopt)).length).toBe(2)
 	})
 
-	test("the smallest streams adding to a tenth or less are gathered; the rest are not", () => {
-		const t = groupTail(wrap([N("big",70),N("mid",22),N("a",4),N("b",3),N("c",1)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["big","mid","other:__out"])
-		const o = byId(t.out,"other:__out")
-		expect(o.children.map(n => n.id).sort()).toEqual(["a","b","c"])
-		expect(o.value).toBeCloseTo(8,6)          // 8 of 100, under the tenth
+	test("a stream that declines a name needs no room for one", () => {
+		// the leftover carries label:false, and counting it as another label to place is what made
+		// the categories at the root look unnameable
+		// the same three values twice, differing only in whether the middle one wants a name. Named,
+		// it crowds the one below it and the set is gathered; unnamed, it merely pushes them apart.
+		const vals = () => [N("a",50),N("x",7),N("b",5)]
+		const named = groupTail(wrap(vals()),gopt)
+		const quiet = vals(); quiet[1].label = false
+		const held = groupTail(wrap(quiet),gopt)
+		expect(kidsOf(named).map(n => n.id)).toContain("other:p")
+		expect(kidsOf(held).map(n => n.id)).not.toContain("other:p")
 	})
 
-	test("it stops at the tenth rather than swallowing the next one up", () => {
-		const t = groupTail(wrap([N("big",70),N("mid",20),N("a",6),N("b",4)]),opt2)
-		// a+b is 10, exactly the cap; adding mid would be 30
-		expect(byId(t.out,"other:__out").children.map(n => n.id).sort()).toEqual(["a","b"])
+	test("the macro categories are never gathered, whatever the arithmetic says", () => {
+		const t = groupTail({hubName:"Income", inTotal:100,
+			in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}],
+			out:[N("big",90),S("s1",4),N("s2",3),N("s3",3)]},gopt)
+		expect(t.out.map(n => n.id).filter(id => String(id).indexOf("other:")===0)).toEqual([])
 	})
 
 	test("one small stream is not a tail - it would trade its own name for a worse one", () => {
-		const t = groupTail(wrap([N("big",95),N("small",5)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["big","small"])
+		const t = groupTail(wrap([N("a",60),N("b",39),N("c",1)]),gopt)
+		const ids = kidsOf(t).map(n => n.id)
+		expect(ids.indexOf("other:p")<0 || byId(kidsOf(t),"other:p").children.length>=2).toBe(true)
 	})
 
-	test("a set that is entirely tail is not a tail", () => {
-		const t = groupTail(wrap([N("a",1),N("b",1)]),opt2)
-		expect(t.out.map(n => n.id)).toEqual(["a","b"])
+	test("something is always left outside it", () => {
+		const t = groupTail(wrap([N("a",1),N("b",1),N("c",1),N("d",1)]),gopt)
+		expect(kidsOf(t).length).toBeGreaterThan(1)
 	})
 
 	test("§1.3 survives it: a parent is still the sum of its children", () => {
-		const t = groupTail(wrap([
-			N("big",60,[N("b1",50),N("b2",4),N("b3",3),N("b4",3)]),
-			N("mid",30),N("a",5),N("b",3),N("c",2)]),opt2)
-		const check = n => {
-			if(!n.children)return
-			expect(n.value).toBeCloseTo(sum(n.children),6)
-			n.children.forEach(check)
-		}
-		t.out.forEach(check)
-		expect(sum(t.out)).toBeCloseTo(100,6)
+		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+		expect(sum(kidsOf(t))).toBeCloseTo(100,6)
+		const o = byId(kidsOf(t),"other:p")
+		if(o)expect(sum(o.children)).toBeCloseTo(o.value,6)
 	})
 
 	test("it reaches every level", () => {
-		const t = groupTail(wrap([N("big",100,[N("b1",88),N("b2",5),N("b3",4),N("b4",3)])]),opt2)
-		const inner = byId(byId(t.out,"big").children,"other:big")
-		expect(inner).toBeDefined()
-		expect(inner.children.map(n => n.id).sort()).toEqual(["b3","b4"])
+		const deep = N("q",100,[N("q1",10),N("q2",10),N("q3",10),N("q4",10),N("q5",10),
+			N("q6",10),N("q7",10),N("q8",10),N("q9",10),N("q10",10)])
+		const t = groupTail(wrap([deep,N("r",40)]),gopt)
+		const q = byId(kidsOf(t),"q")
+		expect(q.children.map(n => n.id)).toContain("other:q")
 	})
 
 	test("an Other is never gathered inside another Other", () => {
-		const many = [N("big",90)]
-		for(let i=0;i<12;i++)many.push(N("t"+i,10/12))
-		const t = groupTail(wrap(many),opt2)
-		const o = byId(t.out,"other:__out")
-		expect(o.children.length).toBe(12)
-		expect(o.children.filter(n => /^other:/.test(n.id))).toEqual([])
+		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+		const o = byId(kidsOf(t),"other:p")
+		expect(o.children.filter(n => String(n.id).indexOf("other:")===0)).toEqual([])
 	})
 
 	test("its id names its parent, so it is the same stream between two bases", () => {
-		const a = groupTail(wrap([N("big",70),N("mid",22),N("x",5),N("y",3)]),opt2)
-		const b = groupTail(wrap([N("big",60),N("mid",32),N("x",4),N("y",4)]),opt2)
-		expect(byId(a.out,"other:__out").id).toBe(byId(b.out,"other:__out").id)
+		const a = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+		const b = groupTail(wrap([N("a",11),N("b",11),N("c",11),N("d",11),N("e",11),N("f",11),N("g",11),N("h",11),N("i",11),N("j",11)]),gopt)
+		expect(byId(kidsOf(a),"other:p").id).toBe(byId(kidsOf(b),"other:p").id)
 	})
 
 	test("it is a stream like any other: you can open it", () => {
-		const t = groupTail(wrap([N("big",70),N("mid",22),N("a",5),N("b",3)]),opt2)
-		const g = compose(t,["other:__out"],opt2).g
-		expect(g.nodeAt(["other:__out"])).toBeTruthy()
-		expect(g.names["a"]).toBeDefined()
-		expect(g.names["b"]).toBeDefined()
+		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+		const g = compose(t,["p","other:p"],opt).g
+		expect(g.boxes["other:p"]).toBeDefined()
 	})
 })

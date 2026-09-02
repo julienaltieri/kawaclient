@@ -87,49 +87,49 @@ sum of what SURVIVED (1.3), and the difference lands in the residual 1.2 already
 tween pairs by position within a stable shape. A shape that changed cannot be tweened, and the engine
 falls back to a rebuild rather than interpolating mismatched trees.
 
-**1.10 The tail is gathered, and that is the ONE thing the picture invents.** Wherever a set of
-children has a tail, the smallest of them whose values together come to no more than a tenth of their
-parent are gathered into a single **Other**, which is then a stream like any other: a band, a name, an
-amount, children, and opening it is how you see what is in it. A stream with a dozen children
-otherwise spends most of its height on the two or three that matter and the rest on a fringe of
-hairlines — unreadable, unnameable, and in the way of the ones worth reading.
+**1.10 The tail is gathered into an "Other", and HOW MUCH tail is decided by the display.** The
+question is not what share of the money the small streams are — it is how many of a set of siblings
+can carry a name at once. A stream with a dozen children otherwise spends most of its height on the
+two or three that matter and the rest on a fringe of hairlines: unreadable, unnameable, and in the way
+of the ones worth reading.
 
-No such stream exists in the portfolio; nothing is categorised into it and the reporting core has
-never heard of it. That is why it is computed in the engine (`groupTail`) rather than in the adapter:
-it is a decision about what is worth drawing, not about what the money did.
+It is answerable from the values alone because 5.3 makes the room a constant: whichever stream you
+open, its children fill the frame less one strip at each end, so every set of siblings gets the SAME
+height when it is exploded. A label is centred on its band (7.16), so two neighbours can both be named
+when the distance between their band centres covers a line of type — half of each band, plus the
+separations between them. Gathering the smallest few buys room twice over, removing their labels and
+merging their heights into one thicker band, so the tail grows by one until every surviving neighbour
+clears that distance, and no further.
 
-Two guards. A tail must be at least two streams, or the group trades one name for a worse one. And
-something has to be left outside it — a set that is entirely tail is not a tail. An Other is never
-gathered inside another Other: its members' own children are gathered, its own list is not, because
-"Other inside Other" says nothing. Its id names its parent, so it is the same stream between one basis
-and the other (1.5), and 1.3 survives because it is worth exactly what it contains.
+Only labelled streams are counted. The leftover declines a name (1.2), so it needs no room for one —
+and it pushes its labelled neighbours further apart rather than crowding them. Counting it as another
+label to place is what made the macro categories at the root look unnameable.
 
-**Children are ordered biggest first, at every level.** The eye reads down the list in the order the
-money is worth reading, and the tail — and so the Other it becomes — lands at the bottom, where it
-belongs.
+**The macro categories are never gathered**, whatever the arithmetic says. They are the spine the app
+is organised around, the type reads its levels off them (9.6), and an "Other" standing where Savings
+used to be says something false about the portfolio rather than something true about the room.
 
-**With one exception: at the top of the out side, what is SAVED sits above what is spent**, whatever
-the two are worth. Everywhere else in the app puts them in that order, and a chart that re-ordered
-them by size would say the two conventions disagree about which is which. Size still decides within
-each of the two groups, and a gathered tail lands at the bottom of whichever group it belongs to,
-since an Other takes the tone of the largest thing in it. The leftover (`__unallocated`) carries the
-savings tone and so sits with the savings: it is the money that was not spent.
+This is a VISUALISATION ARTIFACT, computed in the engine and nowhere else. No such stream exists in
+the portfolio, nothing is categorised into it, and the reporting core has never heard of it — which is
+why it does not live in the adapter: it is a decision about what is worth drawing, not about what the
+money did.
 
-The exception is the top level of the out side only. Inside a category the two tones do not mix, so
-there is nothing for it to decide, and applying it at every level would be a rule that never fires
-anywhere it could be seen.
+Two guards. The tail has to be at least two streams, or the group replaces one name with another and
+hides a stream for nothing. And something has to be left outside it — a set that is entirely tail is
+not a tail. An "Other" is never gathered inside another "Other": its members' own children are
+grouped, but its own list is left as it is, because "Other inside Other" says nothing.
 
-**A gathered tail is named once, as itself.** The view still runs two columns whatever it holds
-— how deep it reaches must depend on the level and not on the subject, or two subjects side by side
-stop framing to the same width (5.6) — so an unopened Other's members are still drawn, as the several
-thin bands they are. They are simply not NAMED: the tier names the Other. Naming them instead put five
-names in the tier where the gathering had just been arranged to put two, and the group's own name went
-missing, because a band made of hairlines is too thin to carry one.
+**Where this rule is weak, and it is worth knowing.** Gathering a TAIL only helps when there is one.
+Where every stream is the same size, removing the smallest few leaves the rest exactly as crowded, so
+the rule gathers until a single stream stands beside the Other — two labels where the reader might
+have hoped for several. Real portfolios are heavy-tailed and this does not fire; a uniform one is
+told, bluntly, that its streams cannot all be named. The alternative would be to keep as many as fit
+and let the rest go unnamed (7.16), which trades a true statement for a quieter one.
 
-**1.6 Ragged depth is normal.** Branches bottom out at different levels and nothing may assume a
-uniform depth.
+Measured against the share-of-money rule it replaced, over eighteen exploded views of randomly
+generated portfolios: 96 names shown of 120 offered, against 89 of 281. Much the same number of names,
+against a third as many nameless bands.
 
----
 
 ## §2 Reading the numbers
 

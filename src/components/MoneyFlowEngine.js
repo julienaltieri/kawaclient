@@ -44,7 +44,7 @@ export const TUNE = {
 	leadMs:250, driftPx:8, edgePx:5,                     // §7.6 §7.16 §7.21  the labels
 	minBandPx:6,                                         // §7.5  thinner than this carries no name
 	smooth:0.13, labelEase:0.25,
-	otherShare:0.10, otherMin:2,                         // §1.10  the tail, gathered
+	otherMin:2,                                          // §1.10  the tail, gathered
 	moveMs:620, dataMs:380,                              // §8.1 §8.4  one clock, and the value tween
 	ratio:2.25, tail:"push"                              // §9.3
 };
@@ -88,20 +88,59 @@ const clamp01 = v => Math.max(0,Math.min(1,v));
    are grouped, but its own list is left as it is, because "Other inside Other" says nothing.
    ------------------------------------------------------------------------------------------------ */
 export function groupTail(tree,opt){
-	const share = opt.otherShare, least = opt.otherMin;
+	const least = opt.otherMin;
+	/* §1.10  HOW MUCH TAIL IS DECIDED BY THE DISPLAY, not by a share of the money. The question is
+	   "how many of these can be named at once", and it is answerable from the values because §5.3
+	   makes the room a constant: whichever stream you open, its children fill the frame less one strip
+	   at each end. Every set of siblings therefore gets the SAME height when it is exploded, so this
+	   can still be settled once, off-screen, without knowing where the camera is.
+
+	   A label is centred on its band (§7.16), so two neighbours can both be named when the distance
+	   between their band centres covers a line of type: half of each band, plus the separation between
+	   them. Gathering the smallest few into one band buys room twice over - it removes their labels
+	   and it merges their heights into one thicker band - so the tail is grown by one until every
+	   surviving neighbour clears that distance, and no further. */
+	const cardH = Math.max(1,opt.cssW/opt.ratio);
+	const H = Math.max(1,cardH-2*opt.neighbourPx);            // §5.3  the room an exploded set gets
+	const GAP = opt.l1Px;                                     // §4.1  its children take the wide one
+	const SPAN = 20*(opt.smallPx/opt.bodyPx);                 // §7.13 one line of tier type, with lead
+	const fits = list => {
+		const V = list.reduce((a,b) => a+b.value,0)||1;
+		const avail = Math.max(1,H-(list.length-1)*GAP);
+		const h = n => n.value/V*avail;
+		/* between CONSECUTIVE LABELLED bands, and everything lying between them counts toward the
+		   distance. A stream that declines a name (§1.2, the leftover) needs no room for one, and it
+		   pushes its labelled neighbours apart rather than crowding them - treating it as another
+		   label to place is what made the categories at the root look unnameable. */
+		let prev = -1;
+		for(let i=0;i<list.length;i++){
+			if(list[i].label===false)continue;
+			if(prev>=0){
+				let d = h(list[prev])/2+h(list[i])/2+GAP*(i-prev);
+				for(let j=prev+1;j<i;j++)d += h(list[j]);
+				if(d<SPAN)return false;
+			}
+			prev = i;
+		}
+		return true;
+	};
 	const gather = (list,total,key) => {
 		if(!list||!list.length)return list;
 		/* depth first: a member's own children are gathered before it is considered for the tail */
 		const kids = list.map(n => Object.assign({},n,
 			{children:n.children ? gather(n.children,n.value,n.id) : null}));
-		const cap = total*share;
-		let acc = 0; const tail = [];
-		kids.slice().sort((a,b) => a.value-b.value).forEach(n => {
-			/* a hair of tolerance: a tail that comes to exactly the cap is a tail, and summing a dozen
-			   equal shares lands either side of it depending on the arithmetic */
-			if(acc+n.value>cap+1e-6)return;
-			acc += n.value; tail.push(n);
-		});
+		/* the minimum tail that lets the rest be named: grow it by one until the survivors fit */
+		const asc = kids.slice().sort((a,b) => a.value-b.value);
+		let tail = [], acc = 0;
+		if(!fits(kids.slice().sort((a,b) => b.value-a.value))){
+			for(let k=least;k<=asc.length-1;k++){
+				const t = asc.slice(0,k), v = t.reduce((x,y) => x+y.value,0);
+				const trial = kids.filter(n => t.indexOf(n)<0)
+					.concat([{value:v}]).sort((a,b) => b.value-a.value);
+				tail = t; acc = v;
+				if(fits(trial))break;
+			}
+		}
 		/* Biggest first, top to bottom, at every level: the eye reads down the list in the order the
 		   money is worth reading, and the tail - and so the Other it becomes - lands at the bottom
 		   where it belongs.
@@ -114,6 +153,11 @@ export function groupTail(tree,opt){
 		   of savings takes the savings tone (above). */
 		const rank = key==="__out" ? (n => n.tone==="savings"?0:1) : (() => 0);
 		const down = a => a.slice().sort((x,y) => (rank(x)-rank(y))||(y.value-x.value));
+		/* §1.10  THE MACRO CATEGORIES ARE NEVER GATHERED. They are the spine the whole app is
+		   organised around, the type reads its levels off them (§9.6), and "Other" standing where
+		   Savings used to be says something false about the portfolio rather than something true about
+		   the room. Whatever the arithmetic says, the top of each side keeps its own names. */
+		if(key==="__out"||key==="__in")return down(kids);
 		if(tail.length<least)return down(kids);
 		const inTail = {}; tail.forEach(n => inTail[n.id]=1);
 		const rest = kids.filter(n => !inTail[n.id]);
@@ -637,7 +681,10 @@ export default class MoneyFlowEngine {
 	}
 	/* §8.4  a new tree tweens the values and re-derives the layout each frame; the focus is dropped
 	   if the stream it names has gone. */
-	setTree(raw){
+	/* `replace` swaps the tree outright instead of tweening to it. The tween pairs streams by id and
+	   animates the UNION of the two bases, which is right for the same portfolio on two bases and
+	   meaningless between two unrelated trees - there the union is simply both of them at once. */
+	setTree(raw,replace){
 		/* The same tree is not a change. Opening a stream calls back to the host, which re-renders and
 		   hands the tree straight back; without this the value tween starts, and its per-frame rebuild
 		   overwrites the geometry and camera that the focus transition is in the middle of animating.
@@ -645,8 +692,11 @@ export default class MoneyFlowEngine {
 		   value, since the gathering below produces a new object every time. */
 		if(raw===this.raw)return;
 		this.raw = raw;
-		const tree = groupTail(raw,this.tune);                    // §1.10
-		if(!this.shown){this.tree=tree; this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
+		/* the full options, not just the tune: the gathering now asks how much room a set of siblings
+		   will have on screen (§1.10), and that needs the card's width. */
+		const tree = groupTail(raw,this.opts());                  // §1.10
+		if(!this.shown||replace){this.tree=tree;
+			this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		this.tree = tree;
 		if(this.reduced){this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		const from = this.shown, t0 = performance.now();
