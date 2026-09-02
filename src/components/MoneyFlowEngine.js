@@ -1183,7 +1183,13 @@ export default class MoneyFlowEngine {
 				const shift = (sign<0?far<lim:far>lim) ? lim-far : 0;      // the group slides as one
 				ids.forEach((id,i) => {const n=G.names[id];if(!n)return;
 					pinned[n._k]=edge+sign*(INSET+i*STEP)+shift;
-					n.pin=1;n.rail=false;n.x=fn.x});
+					/* §7.23  and the pin takes the focused name's ANCHOR as well as its x. A pin is placed
+					   in a slot of the camera's, in a column shared with the subject - but it keeps
+					   whatever form its own name had, and a name that was a tier entry is anchored at
+					   its END. Given the subject's x and its own anchor it drew right-aligned to that
+					   x, hanging off the left of the column while its neighbour ran to the right of
+					   it. Same slot, same edge. */
+					n.pin=1;n.rail=false;n.x=fn.x;n.anchor=fn.anchor});
 			};
 			place2(pins.up,-1,fTop); place2(pins.down,1,fBot);
 		}

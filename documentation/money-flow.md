@@ -610,6 +610,12 @@ belong to the focused branch is read from the destination, once. Reading it from
 makes it a coin toss on the first frames, when the two states nearly coincide — and a name that
 flickers in and out of the set bounces between the slot it would take and the bar it sits on.
 
+**A pin takes the focused name's ANCHOR as well as its x.** It is placed in a slot of the camera's, in
+a column shared with the subject — but it keeps whatever form its own name had, and a name that was a
+tier entry is anchored at its END. Given the subject's x and its own anchor, it drew right-aligned to
+that x: hanging off the left of the column while its neighbour ran to the right of it, which looks
+exactly like one label having come loose. Same slot, same edge.
+
 **7.23 The neighbour slots belong to the CAMERA, not to the geometry.** By 5.3 the subject lands
 filling the frame less one strip at each end, so at rest these are the same two lines. During a move
 they are not: the geometry is a blend, and the subject's band starts wherever it sat in the view you
