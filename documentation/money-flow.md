@@ -385,23 +385,35 @@ A consequence worth knowing: the frame pump stops once nothing is moving appreci
 frames it took to get there. Two runs land a hundredth of a screen pixel apart — do not write a test
 that demands exact reproducibility here.
 
-**7.25 A name that changes ROLE leaves and comes back; it does not travel.** What a name is in a
-given view — the subject, the neighbour pinned above, the neighbour pinned below, an entry in the
-tier, a caption inside the diagram — decides where it belongs. Moving sideways swaps two of those
-round: the stream you were in becomes the neighbour above the one you moved to, and its name belongs
-somewhere else entirely.
+**7.25 A name that changes place stays VISIBLE while it moves.** Fading it out and back in was tried
+and rejected: it keeps the motion short, but the eye loses the word entirely for a moment and with it
+any sense that the thing it names is the thing that just moved. Keeping it visible is only affordable
+because of the three rules below, which between them cut a sideways move from 174px of travel with a
+53px jump to 62px, monotone, at full opacity.
 
-Smoothing across that is what made a label fly. Measured on a sideways move: 174px of visible travel
-on a 145px card, with a 53px jump in a single frame. So a role change is treated the way the tier is
-(7.7): the name fades out over `lead` and returns over `lead` at its new place, and while it is
-invisible its position is reset rather than smoothed.
+**7.23 The neighbour slots belong to the CAMERA, not to the geometry.** By 5.3 the subject lands
+filling the frame less one strip at each end, so at rest these are the same two lines. During a move
+they are not: the geometry is a blend, and the subject's band starts wherever it sat in the view you
+came from and grows into place. Anchored to it, the pins' target swept the height of the card and the
+names chased it.
 
-One half of that is not enough on its own. A name on its way out must also STAY where it is until it
-has gone — left to smooth it starts for its new place the moment the focus changes, and covers most
-of the distance while still perfectly legible, which is the same flight seen from the other end.
-Holding it still costs nothing: it is about to be invisible, and the reset puts it where it belongs
-before it comes back. With both halves, the same move measures 10 to 21px of visible travel and no
-single step over 4px.
+**7.26 WHICH names are pinned is settled once, from the destination.** During a move the subject's
+band starts where it was in the view you came from, so "is this neighbour above or below it" is a coin
+toss on the first frames and the answer flickers — pinning and unpinning a name frame by frame and
+sending it bouncing between the slot and its own band. Decided from where the move is going, it holds.
+
+**7.26b A pinned name smooths its ABSOLUTE position.** 7.18 smooths a caption's displacement from its
+bar, which is right for a caption. A pinned name is attached to the frame instead, and smoothing a
+displacement from a bar it is not on made it inherit that bar's motion: leaving focus, a stream's band
+swings from filling the frame to far outside it, and the name rode that swing with a lagging
+correction on top. Either store seeds itself from where the name was last drawn, so switching between
+the two is continuous.
+
+**7.27 All of this is in SCREEN pixels.** The world is not a fixed scale: opening a stream re-scales
+it so the subject fills the frame, by a factor that can be ten. Smoothing a world coordinate toward a
+world target while the world is being re-scaled leaves a name apparently still in a space that is
+moving underneath it, which was most of the flying. In screen pixels, where the reader's eye is,
+"barely moved" means what it says.
 
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.

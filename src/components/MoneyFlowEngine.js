@@ -428,6 +428,41 @@ export function siblingIds(tree,path){
 	const kin = parent ? (parent.children||[]) : top;
 	return kin.filter(n => n.value>0 && n.id!==q[q.length-1]).map(n => n.id);
 }
+/* §3.5 §3.6 §7.23  WHICH names are pinned, and on which side. Decided from one geometry and never
+   from a blend: during a move the subject's band starts wherever it sat in the view you came from, so
+   "is this neighbour above or below it" is a coin toss on the first frames and the answer flickers -
+   which pinned and unpinned a name from frame to frame, and sent it bouncing between the slot and its
+   own band. Made once, from where the move is going, it simply holds. */
+function pinsFor(G,focus){
+	const out = {up:[],down:[]};
+	if(!focus.length)return out;
+	const fn = G.names[focus[focus.length-1]];
+	if(!fn)return out;
+	const fMid = fn.y+fn.h/2;
+	const mySide = focus[0]===INC?-1:1;
+	const sideOfId = id => {const q=G.pathOf[id];return q?(q[0]===INC?-1:1):0};
+	const heads = [];
+	Object.keys(G.names).forEach(q => {const n=G.names[q], path=G.pathOf[n.id];
+		if(!path)return;
+		let d=0; while(d<focus.length&&d<path.length&&path[d]===focus[d])d++;
+		if(d>=focus.length||path.length!==d+1)return;
+		const s = sideOfId(n.id);
+		if(s!==0&&s!==mySide)return;                                  // §3.7
+		/* the map key, not `_k`: this runs on the destination before any of it has been painted, and
+		   `_k` is stamped on during painting. Reading it there gave undefined and pinned nobody. */
+		heads.push({n:n,d:d,key:q})});
+	const mid = n => n.y+n.h/2;
+	const pick = side => {
+		for(let d=focus.length-1;d>=0;d--){
+			const c = heads.filter(h => h.d===d&&(side<0?mid(h.n)<fMid:mid(h.n)>=fMid));
+			if(c.length)return c.sort((a,b) => side<0?mid(b.n)-mid(a.n):mid(a.n)-mid(b.n))
+				.slice(0,1).map(h => h.key);
+		}
+		return []};
+	out.up = pick(-1); out.down = pick(1);
+	return out;
+}
+
 /* §8.2  pair by key — which is why §4.7 insists the key set never depends on the focus. */
 export function blend(A,B,e){
 	const out = {flows:{},bars:{},names:{},boxes:B.boxes,pathOf:B.pathOf,
@@ -487,7 +522,7 @@ export default class MoneyFlowEngine {
 		this.frameSeq = 0;
 		/* label state — the only thing that lives between frames (§7.5 §7.18 §7.19) */
 		this.fade={}; this.offY={}; this.offX={}; this.fadeAtStart={};
-		this.roles={}; this.rolesAtStart={}; this.lastCy={}; this.heldCy={};
+		this.sY={}; this.sOff={}; this.sPos={};
 
 		this.focus = [];
 		this.tree = null; this.shown = null;
@@ -598,14 +633,15 @@ export default class MoneyFlowEngine {
 		const litA = litIn(A,from), litB = litIn(B,toFocus);
 		this.focus = toFocus; this.onFocusChange(toFocus.slice());
 		cancelAnimationFrame(this.clock);
-		const settle = () => {this.animating=false;this.G=B;this.cam=camB;this.dimNow=dimTo;this.paint()};
+		const settle = () => {this.animating=false;this.pinsHeld=null;
+			this.G=B;this.cam=camB;this.dimNow=dimTo;this.paint()};
 		if(this.reduced)return settle();
 		this.animating = true;
 		const t0 = performance.now(), D = opt.moveMs;
 		this.moveStart = t0; this.moveEnds = t0+D;
 		this.fadeAtStart = Object.assign({},this.fade);
-		this.rolesAtStart = Object.assign({},this.roles);              // §7.25
-		this.heldCy = Object.assign({},this.lastCy);
+		/* §7.23  who is pinned where, settled once from the destination and held for the move */
+		this.pinsHeld = pinsFor(B,toFocus);
 		this.maskFrom = from.slice();
 		this.maskBack = toFocus.length<from.length;
 		const step = now => {
@@ -831,40 +867,39 @@ export default class MoneyFlowEngine {
 		const pinned = {};
 		/* §7.23 §3.5 §3.6  neighbours pinned just outside the focused band, so a move sideways is a
 		   tap on something already in front of you. */
+		const pins = (this.animating&&this.pinsHeld) ? this.pinsHeld : pinsFor(G,focus);
 		if(focus.length&&G.names[focus[focus.length-1]]){
 			const fn = G.names[focus[focus.length-1]];
-			const fTop = fn.y, fBot = fn.y+fn.h, fMid = fn.y+fn.h/2;
-			const heads = [];
-			Object.keys(G.names).forEach(q => {const n=G.names[q], path=G.pathOf[n.id];
-				if(!path)return;
-				let d=0; while(d<focus.length&&d<path.length&&path[d]===focus[d])d++;
-				if(d>=focus.length||path.length!==d+1)return;
-				if(crosses(n.id))return;                                     // §3.7
-				heads.push({n:n,d:d})});
-			const pick = side => {const mid2 = n => n.y+n.h/2;
-				for(let d=focus.length-1;d>=0;d--){
-					const c = heads.filter(h => h.d===d&&(side<0?mid2(h.n)<fMid:mid2(h.n)>=fMid));
-					/* §3.5  One each side, not two. Two of them cost a second strip of the frame's height
-					   at both ends, and that height is the subject's - which is the whole point of the
-					   view. The way to the rest is to move to one of these and look from there. */
-					if(c.length)return c.sort((a,b) => side<0?mid2(b.n)-mid2(a.n):mid2(a.n)-mid2(b.n))
-						.slice(0,1).map(h => h.n);
-				}
-				return []};
+			/* §7.23  The strips are the camera's, not the geometry's. By §5.3 the subject lands filling
+			   the frame less one strip at each end, so at rest these are the same two lines - but
+			   DURING a move the geometry is a blend, and the subject's band starts wherever it sat in
+			   the view you came from and grows into place. Anchoring the pins to it made their target
+			   sweep the height of the card and the names chased it. Anchored to the camera the slots
+			   barely move, so a name that changes place crosses a short distance and can simply be
+			   watched doing it. */
+			const strip = opt.neighbourPx*k;
+			const fTop = cam.y+strip, fBot = cam.y+cam.h-strip;
 			const INSET = 13*k, STEP = 17*k, MARGIN = inset+4*k;
-			const place2 = (list,sign,edge) => {
-				if(!list.length)return;
+			const place2 = (ids,sign,edge) => {
+				if(!ids.length)return;
 				const lim = sign<0 ? cam.y+MARGIN : cam.y+cam.h-MARGIN;
-				const far = edge+sign*(INSET+(list.length-1)*STEP);
+				const far = edge+sign*(INSET+(ids.length-1)*STEP);
 				const shift = (sign<0?far<lim:far>lim) ? lim-far : 0;      // the group slides as one
-				list.forEach((n,i) => {pinned[n._k]=edge+sign*(INSET+i*STEP)+shift;
-					n.pin=1;n.pinSide=sign;n.rail=false;n.x=fn.x});
+				ids.forEach((id,i) => {const n=G.names[id];if(!n)return;
+					pinned[n._k]=edge+sign*(INSET+i*STEP)+shift;
+					n.pin=1;n.rail=false;n.x=fn.x});
 			};
-			place2(pick(-1),-1,fTop); place2(pick(1),1,fBot);
+			place2(pins.up,-1,fTop); place2(pins.down,1,fBot);
 		}
-		/* §7.21 §7.22  the last few pixels only, and a pinned control is exempt. */
+		/* §7.5 §7.21 §7.22  The last few pixels only, and a pinned control is exempt - and so is the
+		   subject's own name, on both tests. Its band always fills the frame at rest, so neither test
+		   can fire except mid-move, on the way IN, while the band is still the small one it was in the
+		   view you came from and still sitting against the edge. The name of the stream you are moving
+		   to would fade out and back in on its way to the middle, which is exactly the loss of contact
+		   this is all trying to avoid. */
+		const subjectId = focus.length ? focus[focus.length-1] : null;
 		const EDGE = opt.edgePx*k;
-		const frameAt = (c,n) => {if(n.pin)return 1;const ext=n.rail?0:10*k;
+		const frameAt = (c,n) => {if(n.pin||n.id===subjectId)return 1;const ext=n.rail?0:10*k;
 			return clamp01(Math.min((c-ext)-cam.y,(cam.y+cam.h)-(c+ext))/EDGE)};
 		const frameF = n => frameAt(n.y+n.h/2,n);
 		/* §7.5  A name is either readable or absent. Ramping it over a range of band heights put a
@@ -873,7 +908,7 @@ export default class MoneyFlowEngine {
 		   missing, and there was no telling which. The test is a step now and the ease below smooths
 		   it; what stops two names sharing a spot is the overlap test, which is unambiguous about who
 		   wins - the thicker stream. */
-		const thickF = n => (n.rail||n.pin||n.h/k>=opt.minBandPx) ? 1 : 0;
+		const thickF = n => (n.rail||n.pin||n.id===subjectId||n.h/k>=opt.minBandPx) ? 1 : 0;
 		const shown = Object.keys(G.names).map(q => G.names[q]).filter(n => vis(n)>0.02||n.pin);
 		/* §7.3  How much room a name has, and whether it needs two lines for it. Inside the diagram
 		   that is one pitch; in the rail it is whatever is left to the edge of the frame. A rail name
@@ -959,49 +994,66 @@ export default class MoneyFlowEngine {
 		const goneF = (!this.animating||opt.leadMs<=0) ? 0 : clamp01(1-elapsed/opt.leadMs);
 		const gate = !this.animating ? 1 : (opt.leadMs<=0?0:clamp01((opt.leadMs-remain)/opt.leadMs));
 
-		/* §7.25  What a name IS in this view: the subject, a neighbour pinned above, a neighbour pinned
-		   below, an entry in the tier, or a caption inside the diagram. Moving sideways swaps two of
-		   those round - the stream you were in becomes the neighbour above the one you moved to, and
-		   its name belongs somewhere else entirely. Smoothing across that is what made a label fly the
-		   height of the card and more: measured at 174px of travel on a 145px card, with a 53px jump in
-		   a single frame. So a name that changes role does what the tier does (§7.7) - it leaves over
-		   `lead` and comes back over `lead` at its new place. While it is away its position is reset
-		   rather than smoothed, which is what stops it travelling there. */
-		const subjectId = focus.length ? focus[focus.length-1] : null;
-		const roleOf = n => n.pin ? ("pin"+n.pinSide)
-			: (n.rail ? "rail" : (n.id===subjectId ? "subject" : "inside"));
-		const roles = {};
+		/* §7.25  A name that changes place STAYS VISIBLE while it moves. Fading it out and back in was
+		   tried: it keeps the motion short, but the eye loses the word entirely for a moment and with
+		   it any sense that the thing it names is the thing that just moved. What makes that affordable
+		   is §7.23 - the slots a name moves between barely move themselves - so the journey is short
+		   enough to simply watch. */
 		const placed = [];
 		shown.sort((a,b) => b.h-a.h).forEach(n => {
 			const key = n._k;
-			const role = roleOf(n); roles[key] = role;
-			const swapped = this.animating && this.rolesAtStart[key]
-				&& this.rolesAtStart[key]!==role;
-			/* §7.18  the bar is followed exactly; the displacement from it is smoothed. */
-			const band = n.y+n.h/2;
-			const raw = pinned[key]!==undefined ? pinned[key]-band
+			/* §7.18  A caption is attached to a bar: the bar is followed exactly and only the
+			   displacement from it is smoothed, so the name never lags the thing it names.
+
+			   §7.26  A PINNED name is attached to the frame instead (§7.23), and smoothing a
+			   displacement from a bar it is not on made it inherit that bar's motion. Leaving focus,
+			   a stream's own band swings from filling the frame to far outside it; the name rode that
+			   swing with a lagging correction on top, overshot its slot and came back - 256px of
+			   travel with two reversals. What is smoothed for a pinned name is therefore its ABSOLUTE
+			   position, straight toward a slot that barely moves. Either store seeds itself from where
+			   the name was last drawn, so switching between the two is continuous. */
+			/* §7.27  ALL OF THIS IS IN SCREEN PIXELS. The world is not a fixed scale: opening a stream
+			   re-scales it so the subject fills the frame (§5.3), by a factor that can be ten. Smoothing
+			   a world coordinate toward a world target while the world itself is being re-scaled leaves
+			   a name apparently still in a space that is moving underneath it - which is most of what
+			   the flying was. In screen pixels, where the reader's eye is, "barely moved" means what it
+			   says. */
+			const band = n.y+n.h/2, bandS = (band-cam.y)/k;
+			const isPin = pinned[key]!==undefined;
+			const raw = isPin ? pinned[key]-band
 				: ((n.rail&&railY[n.id]!==undefined)?railY[n.id]-band:0);
-			const prev = this.offY[key];
-			const off = prev===undefined ? raw : prev+(raw-prev)*opt.smooth;
-			this.offY[key] = off;
-			let cy = band+off;
-			/* §7.25  A name on its way out stays exactly where it was until it has gone. Left to
-			   smooth, it starts for its new place the moment the focus changes and covers most of the
-			   distance while still legible - which is the flight, seen from the other end. Holding it
-			   still costs nothing: it is about to be invisible, and the reset below puts it at its new
-			   place before it comes back. */
-			if(swapped&&goneF>0&&this.heldCy[key]!==undefined)cy = this.heldCy[key];
-			this.lastCy[key] = cy;
-			if(Math.abs(raw-off)>0.4)more = true;
+			let cyS;
+			if(isPin){
+				/* §7.18 §7.26  a pinned name is attached to the frame, not to a bar, so what is smoothed
+				   is where it IS - straight toward a slot that hardly moves. */
+				const tS = (pinned[key]-cam.y)/k;
+				let pS = this.sY[key];
+				if(pS===undefined)pS = this.sPos[key]!==undefined ? this.sPos[key] : tS;
+				cyS = pS+(tS-pS)*opt.smooth;
+				this.sY[key] = cyS; delete this.sOff[key];
+				if(Math.abs(tS-cyS)>0.3)more = true;
+			}else{
+				/* §7.18  a caption is attached to its bar: the bar is followed exactly and only the
+				   displacement from it is smoothed. */
+				const rawS = raw/k;
+				let pOff = this.sOff[key];
+				if(pOff===undefined)pOff = this.sPos[key]!==undefined ? this.sPos[key]-bandS : rawS;
+				const offS = pOff+(rawS-pOff)*opt.smooth;
+				this.sOff[key] = offS; delete this.sY[key];
+				cyS = bandS+offS;
+				if(Math.abs(rawS-offS)>0.3)more = true;
+			}
+			this.sPos[key] = cyS;
+			const cy = cam.y+cyS*k;
 			let want = (n.pin?1:vis(n))*frameAt(cy,n)*thickF(n);            // §7.5
-			if(swapped)want *= Math.min(1,goneF+gate);                      // §7.25  out, then back
-			else if(n.rail){
+			if(n.rail){
 				const held = this.animating?(this.fadeAtStart[key]||0):0;   // §7.8
 				want *= railY[n.id]===undefined ? (this.animating?held*goneF:0)
 				                                : (this.animating?Math.max(gate,held):1);
 			}
 			const was = this.fade[key]===undefined?0:this.fade[key];
-			if(want<=0.02&&was<=0.02){this.fade[key]=0;delete this.offY[key];delete this.offX[key];
+			if(want<=0.02&&was<=0.02){this.fade[key]=0;delete this.offX[key];
+				delete this.sY[key];delete this.sOff[key];delete this.sPos[key];
 				this.dropText(key);return}
 			const two = n.pin ? false : (n.rail?isTwo(n):eligible(n));
 			const g = this.text(key,n,cy,two,k);
@@ -1010,11 +1062,13 @@ export default class MoneyFlowEngine {
 				x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
 			/* §7.19  the drawn LEFT EDGE is smoothed, so an anchor flip slides instead of hopping by
 			   the name's own width. */
-			const px = this.offX[key], tgt = x0;
+			/* §7.27  in screen pixels, for the same reason the vertical is */
+			const tgt = (x0-cam.x)/k;
+			const px = this.offX[key];
 			const sx = px===undefined ? tgt : px+(tgt-px)*opt.smooth;
 			this.offX[key] = sx;
-			if(Math.abs(tgt-sx)>0.4)more = true;
-			const dx = sx-tgt;
+			if(Math.abs(tgt-sx)>0.3)more = true;
+			const dx = (sx-tgt)*k;
 			if(Math.abs(dx)>0.01){g.forEach(e => this.set(e,{x:(+e.getAttribute("x"))+dx}));x0+=dx;x1+=dx}
 			/* §7.20  Two names may not overlap, and the one on the bigger band wins - which is what the
 			   sort above already arranges, placing them thickest first. Only rail-against-rail is
@@ -1029,7 +1083,9 @@ export default class MoneyFlowEngine {
 			const a = (n.rail&&this.animating) ? want : was+(want-was)*opt.labelEase;
 			this.fade[key] = a;
 			if(Math.abs(want-a)>0.005)more = true;
-			if(a<=0.02){this.dropText(key);this.offY[key]=raw;this.offX[key]=tgt;return}
+			if(a<=0.02){this.dropText(key);this.offX[key]=tgt;
+				if(isPin)this.sY[key]=(pinned[key]-cam.y)/k; else this.sOff[key]=raw/k;
+				return}
 			g.forEach(e => this.set(e,{opacity:(n.pin?1:lit(n.id))*a}));    // §7.22
 			if(blocked)return;
 			placed.push({x0:x0,y0:y0,x1:x1,y1:y1,rail:!!n.rail});
@@ -1043,7 +1099,6 @@ export default class MoneyFlowEngine {
 				g.forEach(e => dest?arm(e,dest):disarm(e));
 			}
 		});
-		this.roles = roles;
 		this.sweepText();
 		/* §8.6  once a move has settled nothing else drives the clock, so a fade still in flight asks
 		   for the next frame itself. */
