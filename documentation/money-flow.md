@@ -188,11 +188,6 @@ wide one it kept reading as the same gap rather than as a lesser one. What a sep
 make the division visible, and past that it is height taken from the bands — which is the whole
 budget the view is competing for.
 
-**5.4 also gave room back**: the share of the frame reserved for the tier came down, because the
-names in it are set smaller now (9.6) and no longer need the width they did. Measured across nine
-focuses, the tier went from naming two streams to naming five on the widest of them, with every name
-still within a few pixels of its own bar.
-
 **3.2** Tap the stream you are in to come back out. Tapping it does nothing useful otherwise — you
 are already looking at it — so the gesture is free, and it puts the way out **on the subject** rather
 than on a control beside the picture. A "Back to all" button appears in the header for the jump
@@ -329,6 +324,10 @@ part of the card at the root and most of it once zoomed in — and paying for it
 forced the frame so wide that the aspect correction handed the height straight back and the zoom did
 nothing.
 
+That share came down once the names in the rail were set smaller (9.6) and no longer needed the width
+they had. It paid twice: measured across nine focuses, the tier went from naming two streams to naming
+five on the widest of them, every name still within a few pixels of its own bar.
+
 **5.5 Padding is asked for in screen pixels and solved for**, not iterated: the padding is part of
 the frame, so widening the frame widens the padding and the two settle at once.
 
@@ -369,43 +368,43 @@ opacity everything out of focus falls to; `softFrac` is the plume's length as a 
 pitch, so it scales with the grid rather than with the zoom; `leftShare` is how much of that run the
 left end gets, which is shorter because the left is where a stream's own name sits (6.3).
 
-**6.5 Whether a stream trails off or stops dead is a fact about the DATA**, and the geometry carries
-it as a number per side: *does any stream whose own column is the front column have children*. It
-blends across a move like every other number, and it is deliberately not derived from the front's
-position at render time — the front is a blended coordinate, so a move back a level sweeps it
-leftwards across the tier and a ramp keyed off it draws a plume for the length of the sweep, over a
-tier with nothing inside it. Only the reveal half is scaled; **the window's cut keeps its full run**, and that is not a detail: "the
-view stops here" is true whether or not there is more inside, so only the reveal ramp is the band's own
-business. Building the hard-cut gradient with no ramp at either end took the window's feather away with
-it, and the picture gained a sheared edge wherever the camera cuts through it — which, once you are
-zoomed in, is most of the time.
+**6.5 Whether a stream trails off or stops dead is a fact about the DATA, and it is asked PER BAND**:
+does this stream's own column end at the front, and does it have children. Two bands can sit side by
+side at the same front and answer differently — one continues inside, its neighbour is terminal — so a
+single gradient across the whole picture, giving them one edge, made a terminal stream trail off
+because a sibling had something behind it. Everything is cut hard at the front and the softened edge is
+laid over only the bands that continue, one extra rect each in the mask, at both ends. A stream that
+bottomed out earlier and slid out to the end column is not one of them: it has nothing behind it
+however far the view runs.
 
-**It is decided PER BAND, not per side.** Two bands can sit side by side at the same front and
-disagree — one stream continues inside, its neighbour is terminal — and a single horizontal gradient
-across the whole picture gives them the same edge, so a terminal stream trailed off because a sibling
-had something behind it. Everything is cut hard at the front, and the softened edge is laid over only
-the bands that continue, as one extra rect each in the mask. Both ends work this way, or the rule is
-only half made. **Each of those rects is clipped to its own side.** A full-width one covers that band's
-rows across the whole picture, so a stream continuing on the out side also softened the IN edge at that
-height — and because the two sides stack independently, an income band's rect landed over whatever
-out-side band happened to share its rows and gave that one a plume it had no claim to. On screen it
-read as the plume breaking into stripes of different strength, and as the leftover band trailing off
-for no reason at all. A band's edge is a statement about its own end. A stream that bottomed out earlier and slid out to the end column is not one of them:
-it has nothing behind it however far the view runs.
+It is deliberately not derived from the front's POSITION at render time. The front is a blended
+coordinate, so moving back a level sweeps it leftwards across the tier, and a ramp keyed off it draws a
+plume for the length of that sweep over a tier with nothing inside it.
 
-**Across a move the ramp is that band's own number, not a threshold on it.** "Does this stream
-continue" blends like every other number, so a band losing the level behind it shortens its plume as
-that level goes away, and one gaining a level grows the plume as it arrives. Testing the number against
-a half instead made a band jump out of the plumed set at the midpoint — the plume vanished in a single
-frame rather than animating, which is what a threshold does to a quantity. The band's own VISIBILITY
-scales it for the same reason rather than gating it: a bar arriving at the front fades in, and
-admitting it only once it passed half meant the plume appeared already a third of the way out, in one
-frame. Both numbers multiply, so the plume grows and shrinks with the band it belongs to. Measured
-across a move, in and out: 0, 0, 0.04, 0.24, 0.64, 0.90, 0.99, 1 — and the reverse.
+**Each rect is clipped to its own side.** A full-width one covers that band's rows across the whole
+picture, so a stream continuing on the out side also softened the IN edge at that height — and because
+the two sides stack independently, an income band's rect landed over whatever out-side band shared its
+rows and gave that one a plume it had no claim to. On screen that read as the plume breaking into
+stripes of different strength, and as the leftover band trailing off for no reason. A band's edge is a
+statement about its own end.
 
-This retires the per-SIDE flag that used to carry the same fact for a whole side, along with the rule
-that made it hold at the value the two states agreed on and arrive with the camera. Per band, none of
-that is needed: a stream terminal in both states carries a zero in both, so it cannot plume at any
+**The window's cut keeps its full run** whatever the band answers. "The view stops here" is true
+whether or not there is more inside, so only the reveal ramp is the band's business. Building the
+hard-cut gradient with no ramp at either end took the window's feather with it, and the picture gained
+a sheared edge wherever the camera cuts through it — which, once you are zoomed in, is most of the time.
+
+**The ramp is the band's number, not a threshold on it.** The answer blends like every other number
+across a move, so a band losing the level behind it shortens its plume as that level goes away and one
+gaining a level grows the plume as it arrives. Testing it against a half instead made a band jump out
+of the plumed set at the midpoint — the plume vanished in a single frame, which is what a threshold
+does to a quantity. The band's own VISIBILITY scales it for the same reason rather than gating it: a
+bar arriving at the front fades in, and admitting it only once it passed half meant the plume appeared
+already a third of the way out. Both numbers multiply, so the plume grows and shrinks with its band.
+Measured on one band, in and out: 0, 0, 0.04, 0.24, 0.64, 0.90, 0.99, 1 — and the reverse.
+
+Asking it per band retired a per-SIDE flag that carried the same fact for a whole side, together with
+the rule that made it hold at the value both states agreed on and then arrive with the camera. None of
+that is needed here: a stream terminal in both states answers zero in both, so it cannot plume at any
 point of a move, which is the whole of what the flag was protecting.
 
 **6.6 The vertical fade applies only to what is out of focus, and never at a hub place.** A hub place
@@ -453,35 +452,32 @@ being explained.
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption
 on the thing it names; the amounts then line up in a column of their own out at the edge, which is what
 a column of numbers wants. It also puts the two on ONE line — the amount used to be a second line
-beneath the name, which cost the tier more than twice the height per entry and was the first thing
-given up when it ran short (7.14).
+beneath the name, which cost the tier more than twice the height per entry and made it the first thing
+given up when the tier ran short (7.14).
 
 **Only when nothing stands between the focus and the tier**, decided once for the whole view. When the
-tier IS the focus's children the run inside each bar is empty and the names can have it. As soon as
-there is a column of names in between, that run is shared with them — and those two are not strangers:
-a tier entry's parent IS the name it would meet, and its band contains the entry's band, so they want
-the same place as a rule rather than by accident. Whichever entries lose then fall back outside the bar
-without their amounts, and the tier ends up holding two spellings: one name against its bar wearing its
+tier IS the focus's children, the run inside each bar is empty and the names can have it. As soon as
+there is a column of names in between, that run is shared — and those two are not strangers: a tier
+entry's parent IS the name it would meet, and its band contains the entry's band, so they arrive on
+nearly the same row and want the same place as a rule rather than by accident. There is often not room
+for both: at the root, "Spending" alone is over half the pitch, and a single word cannot be folded to
+fit. Whichever entries lose then **fall back outside the bar**, giving up their amounts for the place
+the amounts were in — and the tier ends up holding two spellings, one name against its bar wearing its
 amount beside a sibling out past the bar with none. That reads as the labels being inconsistent rather
-than as the data differing. The view is either at the end of the branch or it is not, and every entry
-is written the same way.
+than as the data differing, which is why the question is asked of the view and not of each entry: the
+view is either at the end of the branch or it is not.
 
-"Is anything behind the front" was the first test used here, and it is not the same question. The
-income side bottoms out at two levels, so its view can have nothing behind the front AND a column of
-names in the middle — which is exactly where the mixed spelling came back. The test also has to be
-asked about the FOCUSED branch: a stream in another branch at the same depth is not standing between
-this focus and its tier, and letting one veto the fan-out answers a question about the whole tree
-instead of about the view.
-
-**A tier name that cannot fit inside falls back to the outside** and gives up its amount for the place
-the amount was in. The run inside the bar is one pitch shared with the name at the previous column, and
-those two are not strangers: a tier entry's parent IS that name, and its band contains the entry's band,
-so they arrive on nearly the same row and want the same place as a rule rather than by accident. There
-is often not room for both — at the root, "Spending" alone is over half the pitch and a single word
-cannot be folded to fit.
+Two ways of asking it were wrong before this one. "Is anything behind the front" is the plume's fact
+(6.5), not this one — the income side bottoms out at two levels, so its view can have nothing behind
+the front AND a column of names in the middle, which is exactly where the mixed spelling came back.
+And the question has to be asked of the FOCUSED branch: a stream in another branch at the same depth is
+not standing between this focus and its tier, and letting one veto the fan-out answers a question about
+the whole tree instead of about the view.
 
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
-the room it has is one column pitch. Zoomed in, a long name is longer than that and reaches into the
+the room it has is one column pitch. A tier entry is the exception and 7.2 has it: written inside its
+bar it gets half that run, because the other half belongs to the name at the previous column; written
+outside it gets the rail, which is its own. Zoomed in, a long name is longer than that and reaches into the
 rail beyond, which is how two names came to be printed in the same place; a name too long for its room
 folds onto two lines rather than being given up (7.17).
 
@@ -548,13 +544,17 @@ entry, anything outside the focused branch goes before anything inside it, and w
 smallest band goes first. A name's importance here is the branch it belongs to, then the money it
 stands for.
 
-**7.14 The amount is given up before any name is.** It is worth twice the room the name is, and
-zoomed in nearly every end qualifies for the two-line form. **7.16 A name that has drifted off its
-own bar has stopped naming it**, so names are given up until the focused branch's names sit on
-their bars again — and never while the camera is moving, which would be a second source of jitter.
-Alignment is the inviolable half of the rule and MEMBERSHIP is what gives: a name that cannot sit on
-its bar is not shown at all. Out-of-focus names go first and the smallest band next, never the
-subject's own — which is 3.2's ordering again, the largest bands being what the view is for.
+**7.14 The amount costs width, not height.** It sits beside its name on one line (7.2), so it takes
+nothing from the tier's budget and is never what gets given up when the tier runs short. It was a
+second line beneath the name once, worth twice the room the name was, and it WAS the first thing given
+up — that rule is gone with the stacking that made it necessary.
+
+**7.16 A name that has drifted off its own bar has stopped naming it**, so names are given up until
+the focused branch's names sit on their bars again — and never while the camera is moving, which would
+be a second source of jitter. Alignment is the inviolable half of the rule and MEMBERSHIP is what
+gives: a name that cannot sit on its bar is not shown at all. Out-of-focus names go first and the
+smallest band next, never the subject's own — the biggest-first ordering of §1 again, the largest
+bands being what the view is for.
 
 That second clause was missing for a while and the rule could not fire at all: the rail is built
 from in-focus names only, so the search for something out-of-focus to give up found nobody and gave
@@ -822,7 +822,10 @@ feature's history the external probe was the thing that was wrong.
 
 Beyond the engine, the properties worth holding are: nothing in focus is ever cropped, two subjects
 at the same level frame to the same `x` and width, the key set is identical at every focus, and no
-label reverses direction during a move. The rail-name rule and the key-set rule are asserted directly
+label reverses direction during a move. Two more earned their place by regressing repeatedly, and both
+are cheap to sweep on the bench: **a terminal band never plumes**, at rest or at any frame of a move
+(6.5) — count the frames in which one could, and the answer must be zero — and **no label leaves the
+card** on any move between siblings, in either direction or back out to the parent. The rail-name rule and the key-set rule are asserted directly
 against `layout()` in [`moneyFlowEngine.test.js`](../src/tests/moneyFlowEngine.test.js), which needs
 no screen.
 
@@ -872,7 +875,14 @@ in two ways that catch different things:
   through real navigation and read what was actually drawn — label positions frame by frame, opacity,
   the type each name was set in. Anything about motion or text metrics can only be measured here:
   jsdom has no layout and no text measurement, so the engine declines to paint and every label rule
-  (7.10–7.17, 7.23–7.28) is invisible to jest. **The bench is where the label rules are tested.**
+  (7.10–7.17, 7.23–7.29) is invisible to jest. **The bench is where the label rules are tested.**
+- *As a picture.* The same browser will screenshot the card, and some faults have no number to read:
+  the plume breaking into stripes, an edge going sheared, a word cut through. Render the state, look
+  at it, then render it again with the change reverted — a before/after pair of the SAME state is what
+  distinguishes "I fixed it" from "I changed something". It is also how to read a bug report that
+  arrives as a photograph: measuring the screenshot itself (the left edge of each label, the spacing
+  between columns) turns "the labels don't line up" into a number, and twice that number said the
+  fault was not where the words suggested.
 
 Three habits, each bought with a wasted hour. A bench runner must **rebuild from the engine on disk
 every run**, or a before/after comparison silently runs the same build twice and reports a real fix as
