@@ -385,6 +385,24 @@ A consequence worth knowing: the frame pump stops once nothing is moving appreci
 frames it took to get there. Two runs land a hundredth of a screen pixel apart — do not write a test
 that demands exact reproducibility here.
 
+**7.25 A name that changes ROLE leaves and comes back; it does not travel.** What a name is in a
+given view — the subject, the neighbour pinned above, the neighbour pinned below, an entry in the
+tier, a caption inside the diagram — decides where it belongs. Moving sideways swaps two of those
+round: the stream you were in becomes the neighbour above the one you moved to, and its name belongs
+somewhere else entirely.
+
+Smoothing across that is what made a label fly. Measured on a sideways move: 174px of visible travel
+on a 145px card, with a 53px jump in a single frame. So a role change is treated the way the tier is
+(7.7): the name fades out over `lead` and returns over `lead` at its new place, and while it is
+invisible its position is reset rather than smoothed.
+
+One half of that is not enough on its own. A name on its way out must also STAY where it is until it
+has gone — left to smooth it starts for its new place the moment the focus changes, and covers most
+of the distance while still perfectly legible, which is the same flight seen from the other end.
+Holding it still costs nothing: it is about to be invisible, and the reset puts it where it belongs
+before it comes back. With both halves, the same move measures 10 to 21px of visible travel and no
+single step over 4px.
+
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.
 

@@ -487,6 +487,7 @@ export default class MoneyFlowEngine {
 		this.frameSeq = 0;
 		/* label state — the only thing that lives between frames (§7.5 §7.18 §7.19) */
 		this.fade={}; this.offY={}; this.offX={}; this.fadeAtStart={};
+		this.roles={}; this.rolesAtStart={}; this.lastCy={}; this.heldCy={};
 
 		this.focus = [];
 		this.tree = null; this.shown = null;
@@ -603,6 +604,8 @@ export default class MoneyFlowEngine {
 		const t0 = performance.now(), D = opt.moveMs;
 		this.moveStart = t0; this.moveEnds = t0+D;
 		this.fadeAtStart = Object.assign({},this.fade);
+		this.rolesAtStart = Object.assign({},this.roles);              // §7.25
+		this.heldCy = Object.assign({},this.lastCy);
 		this.maskFrom = from.slice();
 		this.maskBack = toFocus.length<from.length;
 		const step = now => {
@@ -855,7 +858,7 @@ export default class MoneyFlowEngine {
 				const far = edge+sign*(INSET+(list.length-1)*STEP);
 				const shift = (sign<0?far<lim:far>lim) ? lim-far : 0;      // the group slides as one
 				list.forEach((n,i) => {pinned[n._k]=edge+sign*(INSET+i*STEP)+shift;
-					n.pin=1;n.rail=false;n.x=fn.x});
+					n.pin=1;n.pinSide=sign;n.rail=false;n.x=fn.x});
 			};
 			place2(pick(-1),-1,fTop); place2(pick(1),1,fBot);
 		}
@@ -956,9 +959,24 @@ export default class MoneyFlowEngine {
 		const goneF = (!this.animating||opt.leadMs<=0) ? 0 : clamp01(1-elapsed/opt.leadMs);
 		const gate = !this.animating ? 1 : (opt.leadMs<=0?0:clamp01((opt.leadMs-remain)/opt.leadMs));
 
+		/* §7.25  What a name IS in this view: the subject, a neighbour pinned above, a neighbour pinned
+		   below, an entry in the tier, or a caption inside the diagram. Moving sideways swaps two of
+		   those round - the stream you were in becomes the neighbour above the one you moved to, and
+		   its name belongs somewhere else entirely. Smoothing across that is what made a label fly the
+		   height of the card and more: measured at 174px of travel on a 145px card, with a 53px jump in
+		   a single frame. So a name that changes role does what the tier does (§7.7) - it leaves over
+		   `lead` and comes back over `lead` at its new place. While it is away its position is reset
+		   rather than smoothed, which is what stops it travelling there. */
+		const subjectId = focus.length ? focus[focus.length-1] : null;
+		const roleOf = n => n.pin ? ("pin"+n.pinSide)
+			: (n.rail ? "rail" : (n.id===subjectId ? "subject" : "inside"));
+		const roles = {};
 		const placed = [];
 		shown.sort((a,b) => b.h-a.h).forEach(n => {
 			const key = n._k;
+			const role = roleOf(n); roles[key] = role;
+			const swapped = this.animating && this.rolesAtStart[key]
+				&& this.rolesAtStart[key]!==role;
 			/* §7.18  the bar is followed exactly; the displacement from it is smoothed. */
 			const band = n.y+n.h/2;
 			const raw = pinned[key]!==undefined ? pinned[key]-band
@@ -966,10 +984,18 @@ export default class MoneyFlowEngine {
 			const prev = this.offY[key];
 			const off = prev===undefined ? raw : prev+(raw-prev)*opt.smooth;
 			this.offY[key] = off;
-			const cy = band+off;
+			let cy = band+off;
+			/* §7.25  A name on its way out stays exactly where it was until it has gone. Left to
+			   smooth, it starts for its new place the moment the focus changes and covers most of the
+			   distance while still legible - which is the flight, seen from the other end. Holding it
+			   still costs nothing: it is about to be invisible, and the reset below puts it at its new
+			   place before it comes back. */
+			if(swapped&&goneF>0&&this.heldCy[key]!==undefined)cy = this.heldCy[key];
+			this.lastCy[key] = cy;
 			if(Math.abs(raw-off)>0.4)more = true;
 			let want = (n.pin?1:vis(n))*frameAt(cy,n)*thickF(n);            // §7.5
-			if(n.rail){
+			if(swapped)want *= Math.min(1,goneF+gate);                      // §7.25  out, then back
+			else if(n.rail){
 				const held = this.animating?(this.fadeAtStart[key]||0):0;   // §7.8
 				want *= railY[n.id]===undefined ? (this.animating?held*goneF:0)
 				                                : (this.animating?Math.max(gate,held):1);
@@ -1017,6 +1043,7 @@ export default class MoneyFlowEngine {
 				g.forEach(e => dest?arm(e,dest):disarm(e));
 			}
 		});
+		this.roles = roles;
 		this.sweepText();
 		/* §8.6  once a move has settled nothing else drives the clock, so a fade still in flight asks
 		   for the next frame itself. */
