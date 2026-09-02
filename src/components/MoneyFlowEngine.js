@@ -40,13 +40,26 @@ export const TUNE = {
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
 	baseOp:0.46, curve:0.50,                             // §6.12 the ribbons
-	leadMs:250, yieldLit:0.15, driftPx:8, edgePx:5,      // §7.6 §7.11 §7.16 §7.21  the labels
+	leadMs:250, driftPx:8, edgePx:5,                     // §7.6 §7.16 §7.21  the labels
 	minBandPx:6,                                         // §7.5  thinner than this carries no name
 	smooth:0.13, labelEase:0.25,
 	moveMs:620, dataMs:380,                              // §8.1 §8.4  one clock, and the value tween
 	ratio:2.25, tail:"push"                              // §9.3
 };
 const WORLD_W = 1000, BAR = 6, GUTTER = 6, COLPAD = 10;
+
+/* Fold a name in two at the space that leaves the halves most even. A name with no space cannot be
+   folded and is left to the overlap rule. */
+function splitTwo(name){
+	const parts = name.split(" ");
+	if(parts.length<2)return null;
+	let best = 1, bestGap = Infinity;
+	for(let i=1;i<parts.length;i++){
+		const a = parts.slice(0,i).join(" ").length, b = parts.slice(i).join(" ").length;
+		if(Math.abs(a-b)<bestGap){bestGap=Math.abs(a-b);best=i}
+	}
+	return [parts.slice(0,best).join(" "), parts.slice(best).join(" ")];
+}
 
 const lerp = (a,b,e) => a+(b-a)*e;
 const ease = t => t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
@@ -201,6 +214,11 @@ export function layout(tree,focus,opt){
 			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
 			   id:id,tap:id,vis:show,rail:true}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
+			   /* §7.3  A name inside the diagram runs from its own bar toward the next column, so the
+			      room it has is one pitch. Zoomed in, a long name is longer than that and reaches into
+			      the rail beyond - which is how two names came to be printed in the same place. It
+			      folds onto a second line rather than being given up. */
+			   maxW:PITCH-20,
 			   strong:Math.abs(c)===1,id:id,tap:id,vis:show};
 	});
 
@@ -349,6 +367,11 @@ export default class MoneyFlowEngine {
 		this.gBars.forEach(g => this.gHull.appendChild(g));
 		this.svg.appendChild(this.gDefs); this.svg.appendChild(this.gHull); this.svg.appendChild(this.gText);
 
+		/* Something to measure text with before it is placed. The rail's sweep reserves each entry a
+		   height, so whether a name folds has to be known before the sweep runs, not while drawing. */
+		this.meas = this.mk("text",{opacity:0,"pointer-events":"none"});
+		this.svg.appendChild(this.meas);
+
 		this.uid = "mf"+Math.random().toString(36).slice(2,8);   // ids are private to this instance
 		this.pool = {grad:new Map(),flow:new Map(),bar:new Map(),text:new Map()};
 		this.frameSeq = 0;
@@ -394,22 +417,44 @@ export default class MoneyFlowEngine {
 		if(!this.shown){this.tree=tree; this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		this.tree = tree;
 		if(this.reduced){this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
-		const from = JSON.parse(JSON.stringify(this.shown)), t0 = performance.now();
+		const from = this.shown, t0 = performance.now();
 		cancelAnimationFrame(this.dataClock);
-		/* Values are paired by POSITION here, so a tree whose shape changed cannot be tweened. That is
-		   the §1.5 contract: ids — and therefore the shape — are stable across period and basis. */
-		const sameShape = (a,b) => a.length===b.length &&
-			a.every((n,i) => n.id===b[i].id && (!n.children)===(!b[i].children) &&
-				(!n.children||sameShape(n.children,b[i].children)));
-		if(!(sameShape(from.in,tree.in)&&sameShape(from.out,tree.out))){
-			this.shown = JSON.parse(JSON.stringify(tree)); return this.rebuild();
-		}
-		const rec = (cur,f,t2,e) => cur.forEach((n,i) => {n.value=lerp(f[i].value,t2[i].value,e);
-			if(n.children)rec(n.children,f[i].children,t2[i].children,e)});
+		/* §1.5  Values are paired by ID, not by position. The two bases do not hold the same streams -
+		   one with no transactions this period is absent from the actuals and present in the target -
+		   so pairing by position could not match them and the picture snapped from one to the other
+		   instead of moving. What animates is the UNION: a stream in both travels between its two
+		   values, one in only one of them grows out of, or shrinks into, nothing.
+
+		   §1.3 survives this. Both trees satisfy it for the streams they hold, a missing stream counts
+		   as zero on its side, and interpolation is linear - so a parent stays the sum of its children
+		   at every step. */
+		const union = (fs,ts) => {
+			const byId = {}; (fs||[]).forEach(n => byId[n.id]=n);
+			const seen = {}, out = [];
+			(ts||[]).forEach(t => {seen[t.id]=1; const f=byId[t.id];
+				out.push(Object.assign({},t,{children:(t.children||(f&&f.children))
+					? union(f&&f.children,t.children) : null}))});
+			(fs||[]).forEach(f => {if(seen[f.id])return;
+				out.push(Object.assign({},f,{children:f.children?union(f.children,null):null}))});
+			return out;
+		};
+		const values = (ns,m) => {(ns||[]).forEach(n => {m[n.id]=n.value; values(n.children,m)}); return m};
+		const vFrom = values(from.in,values(from.out,{}));
+		const vTo   = values(tree.in,values(tree.out,{}));
+		this.shown = {hubName:tree.hubName, inTotal:from.inTotal,
+			in:union(from.in,tree.in), out:union(from.out,tree.out)};
+		const rec = (cur,e) => cur.forEach(n => {
+			n.value = lerp(vFrom[n.id]||0, vTo[n.id]||0, e);
+			if(n.children)rec(n.children,e)});
+		const fromTotal = from.inTotal;
+		/* Seed the union at where it is coming FROM. Built from the destination's nodes it would
+		   otherwise hold the destination's values for one frame - a snap, and an unbalanced one,
+		   since the streams carried over from the old tree still hold the old numbers. */
+		rec(this.shown.in,0); rec(this.shown.out,0);
 		const step = now => {
 			const e = ease(Math.min(1,(now-t0)/this.tune.dataMs));
-			rec(this.shown.in,from.in,tree.in,e); rec(this.shown.out,from.out,tree.out,e);
-			this.shown.inTotal = lerp(from.inTotal,tree.inTotal,e);
+			rec(this.shown.in,e); rec(this.shown.out,e);
+			this.shown.inTotal = lerp(fromTotal,tree.inTotal,e);
 			if(this.focus.length&&this.G&&!this.G.nodeAt(this.focus)){this.focus=[];this.onFocusChange([])}
 			this.rebuild();
 			if(e<1)this.dataClock=requestAnimationFrame(step);
@@ -480,10 +525,11 @@ export default class MoneyFlowEngine {
 	}
 	sweepText(){
 		this.pool.text.forEach((r,k) => {if(r.__seen!==this.frameSeq){
-			[r.a,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)}); this.pool.text.delete(k)}});
+			[r.a,r.a2,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
+			this.pool.text.delete(k)}});
 	}
 	dropText(key){const r=this.pool.text.get(key);if(!r)return;
-		[r.a,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
+		[r.a,r.a2,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
 		r.__seen = this.frameSeq;
 	}
 	tone(t){return this.palette[t]||this.palette.bodyTextSecondary}
@@ -603,7 +649,12 @@ export default class MoneyFlowEngine {
 			return "url(#"+mid2+")";
 		};
 		const inViewFor = (fp,id) => {
-			if(!fp.length||!id||id===HUB||id===INC)return true;
+			/* §6.6  A hub place frames the whole height, so nothing in it is ever cut and nothing needs
+			   the fade that exists to prevent cutting. Fading the far side there did to the junction
+			   exactly what §6.2 says dimming income does: the two sides meet at the hub, one faded and
+			   one not, and the step between them is a hard vertical seam. The root never showed it
+			   because an empty focus already took this branch. */
+			if(isHubPlace(fp)||!id||id===HUB||id===INC)return true;
 			const q = G.pathOf[id]; if(!q)return false;
 			for(let i=0;i<fp.length;i++)if(q[i]!==fp[i])return false;
 			return q.length>=fp.length};
@@ -699,6 +750,19 @@ export default class MoneyFlowEngine {
 		   wins - the thicker stream. */
 		const thickF = n => (n.rail||n.pin||n.h/k>=opt.minBandPx) ? 1 : 0;
 		const shown = Object.keys(G.names).map(q => G.names[q]).filter(n => vis(n)>0.02||n.pin);
+		/* §7.3  How much room a name has, and whether it needs two lines for it. Inside the diagram
+		   that is one pitch; in the rail it is whatever is left to the edge of the frame. A rail name
+		   too long for the rail used to be dropped outright by the window test below - a thick stream
+		   with a long name simply went unnamed, which is the other half of why labels went missing. */
+		const roomFor = n => n.pin ? 1e9
+			: n.rail ? (n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k))
+			: (n.maxW||1e9);
+		shown.forEach(n => {
+			this.set(this.meas,{"font-size":((n.strong&&!n.pin)?13:12)*k,
+				"font-family":this.opt.fontFamily||"inherit","font-weight":(n.strong&&!n.pin)?600:500});
+			this.meas.textContent = n.name;
+			n._fold = this.meas.getComputedTextLength()>roomFor(n) ? splitTwo(n.name) : null;
+		});
 		/* §7.24  membership by where the move is GOING, not by how lit a name is right now. */
 		const kin = id => !!(G.inFocus&&G.inFocus(id));
 		const rails = shown.filter(n => n.rail&&vis(n)>=0.5&&frameF(n)>0.05&&kin(n.id))
@@ -706,8 +770,12 @@ export default class MoneyFlowEngine {
 		/* §7.13 §7.14 §7.17  measured extents, and the amount is the first thing given up. */
 		let twoLine = true;
 		const eligible = n => n.h/k>=26&&n.val!==undefined;
-		const isTwo = n => twoLine&&eligible(n);
-		const upOf = () => 8*k, downOf = n => (isTwo(n)?24:10)*k, LEAD = 2*k;
+		/* A folded name is already two lines; the amount under it would be a third, and §7.14 gives the
+		   amount up before anything else anyway. */
+		const isTwo = n => twoLine&&eligible(n)&&!n._fold;
+		const upOf = n => (n._fold?15:8)*k;
+		const downOf = n => (n._fold?17:(isTwo(n)?24:10))*k;
+		const LEAD = 2*k;
 		const spanOf = n => upOf(n)+downOf(n)+LEAD;
 		const room = bot-top;
 		if(rails.reduce((t,n) => t+spanOf(n),0)>room)twoLine = false;
@@ -721,7 +789,11 @@ export default class MoneyFlowEngine {
 		/* §7.10 §7.11 §7.12  the rail is relaxed as a SET: neighbours push each other apart, weighted
 		   so the faded ends absorb a crowded tier, and whichever end escapes is pinned. */
 		const railY = {};
-		const yields = n => kin(n.id)?opt.yieldLit:1;
+		/* §7.11  What a name gives up when the rail is crowded is the inverse of what it has to say.
+		   Weighting every focused name alike let four hairlines shove the one thick stream's name off
+		   its own band - and that band is the point of the view. A thick band barely yields, a thin
+		   one absorbs the push, and anything out of focus yields first of all. */
+		const yields = n => kin(n.id) ? 1/(1+n.h/k) : 1;
 		const relax = () => {
 			Object.keys(railY).forEach(q => delete railY[q]);
 			rails.forEach(n => {railY[n.id]=n.y+n.h/2});
@@ -795,8 +867,12 @@ export default class MoneyFlowEngine {
 			if(Math.abs(tgt-sx)>0.4)more = true;
 			const dx = sx-tgt;
 			if(Math.abs(dx)>0.01){g.forEach(e => this.set(e,{x:(+e.getAttribute("x"))+dx}));x0+=dx;x1+=dx}
-			/* §7.20  two names may not overlap; the rail is exempt, its sweep already settled. */
-			const blocked = (!n.rail&&placed.some(p => x0<p.x1&&p.x0<x1&&y0<p.y1&&p.y0<y1))
+			/* §7.20  Two names may not overlap, and the one on the bigger band wins - which is what the
+			   sort above already arranges, placing them thickest first. Only rail-against-rail is
+			   exempt: that order was settled by the sweep, which reserved each entry its room.
+			   Exempting the rail from the test ENTIRELY, as this did, let a rail name print straight
+			   through an interior one - two words in the same place and neither of them readable. */
+			const blocked = placed.some(p => !(p.rail&&n.rail) && x0<p.x1&&p.x0<x1&&y0<p.y1&&p.y0<y1)
 				||x0<cam.x||x1>cam.x+cam.w;
 			if(blocked)want = 0;
 			/* §7.7 §7.9  across a move the tier follows its clock exactly; everywhere else it eases,
@@ -807,7 +883,7 @@ export default class MoneyFlowEngine {
 			if(a<=0.02){this.dropText(key);this.offY[key]=raw;this.offX[key]=tgt;return}
 			g.forEach(e => this.set(e,{opacity:(n.pin?1:lit(n.id))*a}));    // §7.22
 			if(blocked)return;
-			placed.push({x0:x0,y0:y0,x1:x1,y1:y1});
+			placed.push({x0:x0,y0:y0,x1:x1,y1:y1,rail:!!n.rail});
 			/* §3.1 §3.2  a name goes one level down, except the subject's own, which goes back up. */
 			if(n.tap&&G.pathOf[n.tap]){
 				const q = G.pathOf[n.tap];
@@ -826,9 +902,10 @@ export default class MoneyFlowEngine {
 			this.fadePump = requestAnimationFrame(() => this.paint());
 		}
 	}
-	/* a label is one or two <text> under a shared key */
+	/* A label is one or two lines of name, plus the amount under a rail entry. */
 	text(key,n,cy,two,k){
-		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),b:this.mk("text",{})}));
+		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
+			b:this.mk("text",{})}));
 		const one = (e,dy,txt,strong,sec) => {
 			if(e.textContent!==txt)e.textContent = txt;
 			this.set(e,{x:n.x,y:cy+dy,"text-anchor":n.anchor,
@@ -837,7 +914,15 @@ export default class MoneyFlowEngine {
 				"font-size":(strong?13:12)*k,"font-weight":strong?600:500});
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
-		const out = [one(rec.a,4.5*k,n.name,n.strong&&!n.pin,!!n.pin)];
+		const strong = n.strong&&!n.pin, sec = !!n.pin;
+		const out = [one(rec.a,4.5*k,n.name,strong,sec)];
+		/* Whether it folds was settled before the rail was swept, so the room reserved for it and the
+		   room it takes are the same decision. */
+		const folded = n._fold;
+		if(folded){
+			one(rec.a,-3*k,folded[0],strong,sec);
+			out.push(one(rec.a2,12*k,folded[1],strong,sec));
+		}else if(rec.a2.parentNode)rec.a2.parentNode.removeChild(rec.a2);
 		if(two)out.push(one(rec.b,19.5*k,n.val,false,true));
 		else if(rec.b.parentNode)rec.b.parentNode.removeChild(rec.b);
 		return out;

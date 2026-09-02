@@ -245,7 +245,11 @@ position at render time — the front is a blended coordinate, so a move back a 
 leftwards across the tier and a ramp keyed off it draws a plume for the length of the sweep, over a
 tier with nothing inside it. Only the reveal half is scaled; the window's cut keeps its full run.
 
-**6.6 The vertical fade applies only to what is out of focus.** The camera holds the focused stream
+**6.6 The vertical fade applies only to what is out of focus, and never at a hub place.** A hub place
+frames the whole height, so nothing in it is ever cut and nothing needs the fade that exists to prevent
+cutting. Fading the far side there did to the junction exactly what 6.2 says dimming income does: the
+two sides meet at the hub, one faded and one not, and the step between them is a hard vertical seam.
+The root never showed it, because an empty focus already took that branch. Otherwise: The camera holds the focused stream
 whole, so it never meets the top or bottom of the window and never needs softening. Neighbours do run
 off, and rather than dissolving the window's edge — which softens exactly what should stay crisp —
 they are brought to zero *by* the time they reach it.
@@ -303,8 +307,10 @@ kindness, but its place in the rail comes from a relaxation over a set that is i
 geometry blends, so it spends the move stuttering after the camera.
 
 **7.10 The rail is placed as a set**: each name starts on its own bar and neighbours push each *other*
-apart. A one-way sweep accumulates. **7.11 Pressure is weighted** so the faded ends absorb a crowded
-tier rather than the branch being explained, and **7.12 whichever end escapes is pinned** — shifting
+apart. A one-way sweep accumulates. **7.11 Pressure is weighted by how little a name has to give** —
+a thick band barely yields, a thin one absorbs the push — so the faded ends absorb a crowded tier
+rather than the branch being explained. Weighting every focused name alike let four hairlines shove
+the one thick stream's name off its own band, and that band is the point of the view. And **7.12 whichever end escapes is pinned** — shifting
 the whole column only works while one end has slack.
 
 **7.14 The amount is given up before any name is.** It is worth twice the room the name is, and
@@ -321,6 +327,19 @@ that demands exact reproducibility here.
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.
 
+**A long name folds rather than being given up.** A name inside the diagram has one pitch of room
+before the next column; a rail name has whatever is left to the edge of the frame. Zoomed in a long
+name is longer than that: an interior one printed straight through the rail beside it, and a rail one
+was dropped outright by the window test, so a thick stream with a long name simply went unnamed. Both
+fold onto two lines instead, split at the space that leaves the halves most even. Whether a name folds
+is decided BEFORE the rail is swept, so the room reserved for it and the room it takes are one
+decision — and a folded rail name gives up its amount, which 7.14 gives up first anyway.
+
+**7.20 Two names may not overlap, and the one on the bigger band wins** — which is what the draw order
+already arranges, placing them thickest first. Only rail-against-rail is exempt, that order having been
+settled by the sweep. Exempting the rail from the test entirely let a rail name print through an
+interior one: two words in the same place, and neither of them readable.
+
 **7.22 A pinned neighbour is a control, not a caption**: exempt from the edge and thickness fades,
 single line, secondary colour, drawn at full opacity even though its stream is dimmed — a way out at
 a fifth of full strength is not a way out. **7.23** They sit just *outside* the focused band, so each
@@ -335,7 +354,13 @@ together. A transition lays out both states and blends per key — numeric field
 everything else takes the destination's value. `lit` is blended too, or a sideways move between two
 siblings shows as an instant swap of what is bright.
 
-Changing period or basis tweens the values and re-derives the layout each frame. `prefers-reduced-
+Changing period or basis tweens the values and re-derives the layout each frame. **The values are
+paired by ID, not by position.** The two bases do not hold the same streams — one with no transactions
+this period is absent from the actuals and present in the target — so pairing by position could not
+match them at all, and the picture snapped from one state to the other instead of moving. What animates
+is the UNION: a stream in both travels between its two values, one in only one of them grows out of, or
+shrinks into, nothing. 1.3 survives it, because a missing stream counts as zero on its own side and
+interpolation is linear, so a parent stays the sum of its children at every step. `prefers-reduced-
 motion` settles immediately.
 
 ---

@@ -4,7 +4,7 @@
  * The engine has no imports, so its pure half (layout/frame) can be asserted directly. These are the
  * invariants that decide whether the picture is readable, as opposed to whether it is correct.
  */
-import {layout, frame, siblingIds} from '../components/MoneyFlowEngine'
+import MoneyFlowEngine, {layout, frame, siblingIds} from '../components/MoneyFlowEngine'
 
 const opt = {l1:7, l2:2, gapShare:0.35, railFrac:0.28, padPx:4, reachFrac:0.15,
 	softFrac:0.4, leftShare:0.7, cssW:360, worldH:444, tail:"push",
@@ -57,4 +57,54 @@ test("every focus produces the same key set", () => {
 		return [Object.keys(g.flows).sort().join("|"), Object.keys(g.bars).sort().join("|")].join("#")
 	})
 	expect(new Set(keys).size).toBe(1)
+})
+
+describe("a change of basis is a move, not a jump", () => {
+	// The two bases do not hold the same streams: one with no transactions this period is absent from
+	// the actuals and present in the target. Paired by position, they could not be matched at all and
+	// the picture snapped from one to the other.
+	const N = (id,v,kids) => ({id:id,name:id,tone:"expenses",value:v,children:kids||null})
+	const A = {hubName:"Income", inTotal:100,
+		in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}],
+		out:[N("keep",60), N("goes",40)]}
+	const B = {hubName:"Income", inTotal:250,
+		in:[{id:"inc",name:"inc",tone:"income",value:250,children:null}],
+		out:[N("keep",150), N("arrives",100)]}
+	const flat = t => t.in.concat(t.out)
+	const value = (t,id) => (flat(t).filter(n => n.id===id)[0]||{}).value
+
+	let eng, host
+	beforeEach(() => {
+		host = document.createElement("div"); document.body.appendChild(host)
+		eng = new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
+			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => String(v)})
+		eng.setTree(A)
+	})
+	afterEach(() => eng.destroy())
+
+	test("what animates is the union of both", () => {
+		eng.setTree(B)
+		expect(flat(eng.shown).map(n => n.id).sort()).toEqual(["arrives","goes","inc","keep"])
+	})
+
+	test("and it starts where it came from, not where it is going", () => {
+		eng.setTree(B)
+		expect(value(eng.shown,"keep")).toBeCloseTo(60,6)     // its old value, not 150
+		expect(value(eng.shown,"goes")).toBeCloseTo(40,6)     // still here, on its way out
+		expect(value(eng.shown,"arrives")).toBeCloseTo(0,6)   // grows out of nothing
+		expect(eng.shown.inTotal).toBeCloseTo(100,6)
+	})
+
+	test("money in equals money out at the moment the move begins", () => {
+		eng.setTree(B)
+		const sum = a => a.reduce((x,y) => x+y.value,0)
+		expect(sum(eng.shown.in)).toBeCloseTo(sum(eng.shown.out),6)
+	})
+
+	test("the same tree is not a change", () => {
+		const spy = jest.spyOn(window,"requestAnimationFrame")
+		eng.setTree(A)
+		expect(spy).not.toHaveBeenCalled()
+		spy.mockRestore()
+	})
 })
