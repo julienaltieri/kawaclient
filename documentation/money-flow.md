@@ -792,6 +792,18 @@ shrinks into, nothing. 1.3 survives it, because a missing stream counts as zero 
 interpolation is linear, so a parent stays the sum of its children at every step. `prefers-reduced-
 motion` settles immediately.
 
+**8.5 A tween needs the two trees to have the same SHAPE.** It animates the union, pairing by id, and
+that is only a tree while every stream sits under the same parent on both sides. The gathering is
+decided from the values (1.10), so a different window can gather differently — and then a stream is a
+child of its category on one side and a member of that category's Other on the other. The union holds
+it in BOTH places, its value is counted twice, and what comes out is not a Sankey of anything: ribbons
+crossing, parents smaller than their children. Switching period back and forth was enough to see it.
+
+When the shapes disagree the change is a replacement rather than a movement, and nothing is lost by
+that: a stream moving into or out of an Other is not travelling anywhere the eye could follow. When
+they agree — the ordinary case, including actuals against target on the same window — it tweens as
+before.
+
 **8.6 A fade still in flight keeps its own pump running.** Once a move has settled, nothing else is
 driving the clock — so a label part-way through appearing would freeze at whatever opacity it had
 reached. Anything still easing asks for another frame on its own behalf, and the loop stops only when
@@ -814,6 +826,12 @@ observation period is different and stays as it is: "this year" is the thing bei
 being unfinished is the whole point. The word in front of the unit says which it is — "this" for the
 period in progress, "last" for the one that closed — and it is not a control: only the two underlined
 words are.
+
+**The slot does not clip.** An inline-block whose overflow is not visible takes its baseline from its
+bottom margin edge rather than from the text inside it, so a clipped slot sits the word a few pixels
+high against the ones beside it. There is nothing to clip anyway: the word travels less than its own
+height, is transparent by the time it arrives, and the title is a single line with nothing to bleed
+into.
 
 **It swaps like a digit on a counter.** It changes when the unit beside it does, and a word that
 simply replaces itself between two frames reads as a glitch rather than as an answer changing. The one

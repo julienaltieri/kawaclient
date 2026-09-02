@@ -267,6 +267,38 @@ describe("the type is decided from the level, not the column", () => {
 	})
 })
 
+describe("a change of basis that reshapes the tree", () => {
+	// The value tween animates the UNION of the two trees, paired by id, and that is only a tree while
+	// every stream sits under the same parent on both sides. The gathering is decided from the values,
+	// so a different window can gather differently - and then a stream is a child of its category on
+	// one side and a member of that category's Other on the other. The union holds it in both places
+	// and counts it twice; the picture that comes out is not a Sankey of anything.
+	const mk = vals => ({hubName:"Income", inTotal:vals.reduce((a,b)=>a+b,0),
+		in:[{id:"inc",name:"inc",tone:"income",value:vals.reduce((a,b)=>a+b,0),children:null}],
+		out:[{id:"p",name:"P",tone:"expenses",value:vals.reduce((a,b)=>a+b,0),
+			children:vals.map((v,i) => ({id:"s"+i,name:"s"+i,tone:"expenses",value:v,children:null}))}]})
+	const places = t => {const m={}
+		const walk = (l,p) => (l||[]).forEach(n => {(m[n.id]=m[n.id]||[]).push(p); walk(n.children,n.id)})
+		walk(t.in,"__in"); walk(t.out,"__out"); return m}
+
+	test("is replaced, not blended into the old one", () => {
+		const host = document.createElement("div"); document.body.appendChild(host)
+		const eng = new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
+			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => "$"+Math.round(v)})
+		// one window with a long thin tail, another where the same streams are all of a size: the two
+		// gather differently, so some stream changes parent between them
+		eng.setTree(mk([1000,10,10,10,10,10,10,10,10,10]))
+		const before = places(eng.shown)
+		eng.setTree(mk([100,100,100,100,100,100,100,100,100,100]))
+		const after = places(eng.shown)
+		const moved = Object.keys(after).some(id => before[id] && before[id][0] !== after[id][0])
+		expect(moved).toBe(true)                       // the fixture really does reshape
+		// and nothing is left holding a stream in two places at once
+		Object.keys(after).forEach(id => expect(after[id].length).toBe(1))
+		host.remove()
+	})
+})
+
 describe("the tail is gathered into Other", () => {
 	// The tail is decided by the DISPLAY: how many of a set of siblings can carry a name at once when
 	// that set is exploded. §5.3 makes the room a constant — whichever stream you open, its children

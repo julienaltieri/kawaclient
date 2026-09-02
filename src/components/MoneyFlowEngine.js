@@ -726,7 +726,25 @@ export default class MoneyFlowEngine {
 		   will have on screen (§1.10), and that needs the card's width. */
 		this.groupedAt = this.host.clientWidth||0;
 		const tree = groupTail(raw,this.opts());                  // §1.10
-		if(!this.shown||replace){this.tree=tree;
+		/* §8.5  A TWEEN NEEDS THE TWO TREES TO HAVE THE SAME SHAPE. It animates the UNION, pairing by
+		   id, and that is only a tree while every stream sits under the same parent on both sides. The
+		   gathering is decided from the values (§1.10), so a different window can gather differently -
+		   and then a stream is a child of its category on one side and a member of that category's
+		   Other on the other. The union holds it in BOTH places, its value is counted twice, and the
+		   picture that comes out is not a Sankey of anything: ribbons crossing, parents smaller than
+		   their children. Switching period back and forth was enough to see it.
+
+		   When the shapes disagree the change is a replacement, not a movement. Nothing is lost by
+		   that: a stream moving in or out of an Other is not travelling anywhere the eye could follow
+		   it. When they agree - the ordinary case, including actuals against target on the same
+		   window - it tweens as before. */
+		const placeOf = t => {const m={};
+			const walk = (l,p) => (l||[]).forEach(n => {m[n.id]=p; walk(n.children,n.id)});
+			walk(t.in,"__in"); walk(t.out,"__out"); return m};
+		const reshaped = () => {const a=placeOf(this.tree||this.shown), b=placeOf(tree);
+			for(const id in b)if(a[id]!==undefined&&a[id]!==b[id])return true;
+			return false};
+		if(!this.shown||replace||reshaped()){this.tree=tree;
 			this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		this.tree = tree;
 		if(this.reduced){this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}

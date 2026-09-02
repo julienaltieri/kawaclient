@@ -77,8 +77,13 @@ const riseIn = keyframes`from{opacity:0;transform:translateY(90%)} to{opacity:1;
 const riseOut = keyframes`from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-90%)}`;
 const dropIn = keyframes`from{opacity:0;transform:translateY(-90%)} to{opacity:1;transform:translateY(0)}`;
 const dropOut = keyframes`from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(90%)}`;
+/* No overflow clipping. An inline-block whose overflow is not visible takes its BASELINE from its
+   bottom margin edge instead of from the text inside it, so the word sat a few pixels high against
+   the two beside it - which is what a clipped slot costs. There is nothing to clip anyway: the word
+   travels less than its own height and is transparent by the time it gets there, and the title is a
+   single line, so it has nothing to bleed into. */
 const Slot = styled.span`
-	display:inline-block; position:relative; overflow:hidden; vertical-align:baseline;
+	display:inline-block; position:relative; vertical-align:baseline;
 	line-height:1.15; text-align:left;
 `
 const Wordy = styled.span`
