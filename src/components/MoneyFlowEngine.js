@@ -357,8 +357,13 @@ export function layout(tree,focus,opt){
 export function frame(g,focus,opt){
 	const WH = opt.worldH;
 	const b0 = focus.length ? g.boxes[focus[focus.length-1]] : null;
-	if(focus.length&&!b0)return {cam:{x:0,y:0,w:WORLD_W,h:WH},squeeze:null};
-	const S = g.side||1, hub = isHubPlace(focus);
+	/* A focus naming a stream this geometry does not hold is a stale path, not a view - and it is
+	   framed the way the root is, on the whole picture. This used to return early with the shape
+	   frame() handed back BEFORE compose() existed, {cam,squeeze}, so its caller read x, w and h off
+	   an object that had none of them and the entire scene came out NaN - which draws nothing at all
+	   rather than falling back to anything. Treating it as a hub place is the same answer compose()
+	   reaches for the value scale, so the two agree. */
+	const S = g.side||1, hub = isHubPlace(focus)||(focus.length>0&&!b0);
 	/* §5.2  an ordinary subject is framed by its own box out to the view's end; a hub place runs from
 	   the far end of the focused side to the far end of the other. */
 	const b = hub ? (S>0 ? {x0:g.otherX,y0:0,x1:g.endX,y1:WH}
@@ -387,16 +392,22 @@ export function frame(g,focus,opt){
    will be drawn at - can be settled before anything vertical is decided. Only then is the layout run
    for real, told how much room the subject has and what a pixel is worth. */
 export function compose(tree,focus,opt){
-	const hub = isHubPlace(focus);
 	const measure = layout(tree,focus,Object.assign({},opt,{gapUnit:WORLD_W/opt.cssW}));
+	/* A focus naming a stream the tree does not hold is a stale path, not a view - the guard in
+	   setTree drops it, and this is the second line of that defence. It cannot be patched over
+	   downstream: the placement resolves the path to find where the view begins, and a path that
+	   resolves to nothing puts NaN through every column, which draws NOTHING rather than falling back
+	   to anything. The root is what the path no longer says. */
+	if(focus.length&&!measure.nodeAt(focus))return compose(tree,[],opt);
+	const hub = isHubPlace(focus);
+	const subject = hub ? null : measure.nodeAt(focus);
 	const f = frame(measure,focus,opt);
 	const k = f.w/opt.cssW;                                   // world units per screen pixel
 	/* §5.3  one strip at each end for a neighbour's name; a hub place has no neighbours (§3.7). */
 	const strip = hub ? 0 : opt.neighbourPx*k;
-	const subject = hub ? null : measure.nodeAt(focus);
 	const fit = hub
 		? {v:tree.inTotal, h:Math.min(opt.worldH-COLPAD*2, f.h-2*f.pad)}
-		: {v:(subject?subject.value:tree.inTotal), h:Math.max(1,f.h-2*strip)};
+		: {v:subject.value, h:Math.max(1,f.h-2*strip)};
 	const g = layout(tree,focus,Object.assign({},opt,{gapUnit:k,fit:fit}));
 	const b = hub ? {y0:COLPAD,y1:opt.worldH-COLPAD} : g.boxes[focus[focus.length-1]];
 	const cy = b ? (b.y0+b.y1)/2 : opt.worldH/2;
@@ -976,14 +987,26 @@ export default class MoneyFlowEngine {
 			}
 		};
 		relax();
-		/* §7.16  a name off its own bar has stopped naming it. Settled once, on arrival. */
+		/* §7.16  a name off its own bar has stopped naming it: the label says which stream this is, and
+		   a label floating between two bands says it about the wrong one. Alignment is the inviolable
+		   half and MEMBERSHIP is what gives - a name that cannot sit on its bar is not shown at all.
+		   Settled once, on arrival, so the set does not change under a moving camera.
+
+		   The out-of-focus pass below used to be the whole rule, and it could not fire: `rails` is
+		   filtered by kin() when it is built, so nothing in it is ever out of focus, the search found
+		   nobody, and the loop broke on its first turn. The rule was dead in exactly the case it was
+		   written for - a subject whose own children crowd their own rail, which is the ordinary case
+		   for anything with five or more streams in it. Falling back to the smallest band gives up the
+		   name that has least to say, and never the subject's own, which is the point of the view. */
 		const DRIFT = opt.driftPx*k;
 		const worstDrift = () => {let m=0;
 			rails.forEach(n => {if(kin(n.id))m=Math.max(m,Math.abs(railY[n.id]-(n.y+n.h/2)))});return m};
-		while(!this.animating&&worstDrift()>DRIFT){
+		while(!this.animating&&rails.length>1&&worstDrift()>DRIFT){
 			let give = -1;
 			for(let i=0;i<rails.length;i++)
 				if(!kin(rails[i].id)&&(give<0||rails[i].h<rails[give].h))give = i;
+			if(give<0)for(let i=0;i<rails.length;i++)
+				if(rails[i].id!==subjectId&&(give<0||rails[i].h<rails[give].h))give = i;
 			if(give<0)break;
 			rails.splice(give,1); relax();
 		}

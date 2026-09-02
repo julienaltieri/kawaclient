@@ -142,6 +142,19 @@ describe("the subject fills the frame", () => {
 		expect(hi).toBeLessThan(r.cam.y+r.cam.h)
 	})
 
+	test("a focus naming nothing is the whole picture, not a shrunken one", () => {
+		// A stale path - a stream that has gone away under a change of basis - used to fall back to
+		// fitting the PORTFOLIO's total into the room meant for one stream, so every band came out at
+		// a fraction of its size and the fit looked broken rather than the focus. It is a hub place.
+		const ghost = compose(TREE,["spd","no-such-stream"],opt)
+		const root = compose(TREE,[],opt)
+		const span = r => {
+			const all = Object.keys(r.g.bars).map(q => r.g.bars[q]).filter(b => b.vis>0.5)
+			return Math.max.apply(null,all.map(b => b.y+b.h)) - Math.min.apply(null,all.map(b => b.y))
+		}
+		expect(span(ghost)/ghost.cam.h).toBeCloseTo(span(root)/root.cam.h, 4)
+	})
+
 	test("two subjects at the same level still land at the same x", () => {
 		const a = fit(["spd"]).cam, b = fit(["sav"]).cam
 		expect(a.x).toBeCloseTo(b.x, 6)

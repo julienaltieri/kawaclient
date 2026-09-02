@@ -255,6 +255,14 @@ was mostly filled by neighbours nobody was looking at. The subject is the thing 
 gets the room. Scaling to fit also standardises the view — every subject is framed the same way,
 whatever it happens to be worth.
 
+**A focus that names no subject is the root.** A path can go stale — a stream that has vanished under
+a change of basis, or a caller's own bookkeeping — and there is then nothing to give the height TO.
+`compose` resolves the path first and falls back to the root outright when it resolves to nothing.
+That cannot be patched further downstream: the placement uses the path to find where the view begins,
+and a path resolving to nothing puts NaN through every column, which draws nothing at all rather than
+falling back to anything. `frame` frames such a path as a hub place, so the two agree if it is ever
+called on its own.
+
 This replaced an earlier rule that extended the frame TOWARD each sibling's bar by a fraction of its
 height. That rule existed so neighbours could be seen and tapped, which the strips now do directly
 — and it is the rule that let a small subject stay small.
@@ -383,8 +391,23 @@ the whole column only works while one end has slack.
 
 **7.14 The amount is given up before any name is.** It is worth twice the room the name is, and
 zoomed in nearly every end qualifies for the two-line form. **7.16 A name that has drifted off its
-own bar has stopped naming it**, so faded ends are given up until the focused branch's names sit on
+own bar has stopped naming it**, so names are given up until the focused branch's names sit on
 their bars again — and never while the camera is moving, which would be a second source of jitter.
+Alignment is the inviolable half of the rule and MEMBERSHIP is what gives: a name that cannot sit on
+its bar is not shown at all. Out-of-focus names go first and the smallest band next, never the
+subject's own — which is 3.2's ordering again, the largest bands being what the view is for.
+
+That second clause was missing for a while and the rule could not fire at all: the rail is built
+from in-focus names only, so the search for something out-of-focus to give up found nobody and gave
+up instead. It was dead in exactly the case it was written for — a subject whose own children crowd
+their own rail, the ordinary case at five children or more — and five names packed into room for
+four, with the top of the stack clamped to the frame and the largest band's name pushed fifteen
+pixels off it.
+
+Measured on the bench at nine focuses, the worst offset of any rail name from the band it names is
+ten screen pixels, about half of which is the text baseline sitting below the centre. Note this is
+not reachable from jest: the relaxation needs real text metrics and a real width, and jsdom has
+neither, so the engine declines to paint. The bench IS the test for anything in 7.10–7.17.
 
 **7.18** A name's displacement from its bar is smoothed while the bar itself is followed exactly.
 A consequence worth knowing: the frame pump stops once nothing is moving appreciably, so a label's
