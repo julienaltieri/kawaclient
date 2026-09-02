@@ -181,9 +181,12 @@ are and the hub keeps its default name.
 ## §3 Navigation
 
 **3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one,
-and its siblings step back. The narrow separation is half the width it first had: at a quarter of the
-wide one the two levels read as a single set, and the grouping the separation exists to show was not
-legible.
+and its siblings step back. Both have been halved from their first values, in two steps and for
+opposite reasons: the narrow one because at a quarter of the wide one the two levels read as a single
+set and the grouping the separation exists to show was not legible, and the wide one because a gap
+that is easily read is still too much room to spend when the subject's own children are what the view
+is for. What the separations have to do is make the division visible; anything past that is height
+taken from the bands.
 
 **3.2** Tap the stream you are in to come back out. Tapping it does nothing useful otherwise — you
 are already looking at it — so the gesture is free, and it puts the way out **on the subject** rather
@@ -367,6 +370,14 @@ blends across a move like every other number, and it is deliberately not derived
 position at render time — the front is a blended coordinate, so a move back a level sweeps it
 leftwards across the tier and a ramp keyed off it draws a plume for the length of the sweep, over a
 tier with nothing inside it. Only the reveal half is scaled; the window's cut keeps its full run.
+
+**Across a move it is the statement the two states AGREE on.** Interpolating it says something true of
+neither: opening a stream whose grandchildren are terminal takes the value from 1 to 0 over the move,
+so those terminal bands trail off for the first half of it and then stop — a plume on streams with
+nothing behind them, which is the whole thing the flag exists to prevent, and it reads as the plume
+being unstable rather than as the data changing. It holds at the lower of the two values and then
+ARRIVES with the camera (7.6) over the last stretch, so a level that is genuinely appearing gets its
+plume as it lands rather than while it is still on its way.
 
 **6.6 The vertical fade applies only to what is out of focus, and never at a hub place.** A hub place
 frames the whole height, so nothing in it is ever cut and nothing needs the fade that exists to prevent
@@ -671,37 +682,34 @@ hands the tree straight back. If that counted as a change, its value tween would
 every frame and overwrite the focus transition running underneath it. The tile memoises, so an
 unchanged tree arrives as the same reference and the engine returns early on identity.
 
-**9.6 One face, and the type says two things.** There is a single typeface for every name. A second,
-condensed face for the macro categories was a third thing for the type to say on top of the two it
-already said, and with weight and size in play as well the tier read as four unrelated treatments
-rather than one system. The amount under a name is still set in the numeric face — it is a number, and
-that is what numbers are set in throughout the app — and a pinned neighbour keeps the quieter colour
-that marks it as a control rather than a caption (7.22).
+**9.6 One face, one channel: SIZE, and it says which level you are standing on.** There is a single
+typeface for every name, at one of two sizes. The level in focus — the subject and the siblings beside
+it, which are the same level — is body; both levels the view reaches below it are small. That puts the
+weight of the type on the row you are reading, and lets the two levels of detail underneath stack in
+less height, which is what the tier is always short of. Small names reserve proportionally less room
+in the sweep (7.13), so the extra stacking space is real rather than cosmetic; every size, extent and
+baseline is measured against `bodyPx`, so they travel together.
 
-**SIZE says which level a name is at, counted from the level you are standing on.** The level you are
-on and the one below it are body size; the level below that is small. Standing somewhere, the TIER is
-the small level whatever depth its entries came from: a branch that bottoms out early lands there, and
-so does a gathered Other, which is one level above its neighbours in the tier and would otherwise be
-the only large name among them. A true leaf is small wherever it appears. Small names reserve
-proportionally less room in the rail's sweep, and that is where the tier's extra stacking space
-actually comes from — the sizes and baselines are all measured against `bodyPx`, so they travel
-together.
+At the root the level you are standing on is the macro categories — one column out, not zero — and the
+hub carries the name of the thing you are standing on, so it is body too. This is why the rule counts
+from the FOCUS and not from the column, or from being in the tier: the same column means a different
+level in a root view and in a focused one, and the column cannot tell them apart. A pinned neighbour
+is body whatever level it came from: by 3.6 a stream that is its parent's first child borrows the
+parent's neighbour, so one member of that row can be a level up — but it is the same control, and
+setting it smaller says the two are different kinds of thing.
 
-At the root nothing shrinks but a true leaf, because there the tier is one level below the categories
-rather than two: you are standing on the whole portfolio, the hub carries its name, and the categories
-and the streams inside them are both body. This is why the rule is keyed to depth-from-focus and not
-to the column, or to being in the tier: the last column of a root view and the last column of a
-focused view are different levels, and the column cannot tell them apart. The layout hands each name
-the two facts the rule needs — how far below the focus it sits, and whether its stream ends there.
+**Nothing is bold, and there is no second face.** Both were tried. A condensed face for the macro
+categories was a third thing for the type to say; weight then said what was in focus while size said
+what level it was at, and two channels for two facts read as four unrelated treatments. The framing
+already says what is in focus, far louder than a weight can — the subject fills the frame (5.3). What
+is left is one face, two sizes, one meaning.
 
-**WEIGHT says what is in focus, and nothing else.** The stream you are standing in is bold and nothing
-else is — except at the root, where you are standing on the whole portfolio and every category is.
-Bold does not change the size: a name that gains weight on its way into focus should not also change
-its measure. Tying the weight to the COLUMN instead, as it was, meant the stream in focus came out
-bold only when it happened to be a top-level one: open Home and its own name was lighter than the
-neighbours around it. Which of the two a stream is used to come from the DATA for the face as well —
-the adapter still marks the master's children, since the column cannot tell a macro category from an
-income stream standing the same distance from the hub (2.7).
+The amount under a name is set in the numeric face and follows its name's size — it is a number, and
+that is what numbers are set in throughout the app. A pinned neighbour keeps the quieter colour that
+marks it as a control rather than a caption (7.22). Which streams are the macro categories still comes
+from the DATA rather than the column (the adapter marks the master's children), because the root needs
+to know where its own level is — the income streams stand one column from the hub exactly as the
+categories do, but they are a level below them (2.7).
 
 **9.4 The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
 state has no way to end — the browser leaves it applied after the tap, sitting on the label of the

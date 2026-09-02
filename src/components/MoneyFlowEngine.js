@@ -35,7 +35,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
 /* §11 — the settled values, in one place. Every one of them was converged on a bench; none of them
    is a control the product exposes. */
 export const TUNE = {
-	l1Px:7, l2Px:1, gapShare:0.35,
+	l1Px:3.5, l2Px:1, gapShare:0.35,
 	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
 	railFrac:0.28, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
@@ -487,12 +487,23 @@ function pinsFor(G,focus){
 	return out;
 }
 
+/* §6.5  "is there another level behind the front" is a statement about the DATA, and across a move it
+   must be one BOTH states agree on. Interpolating it says something that is true of neither: moving
+   into a stream whose grandchildren are terminal, the value falls 1 -> 0 over the move, so those
+   terminal bands trail off for the first half of it and then stop - a plume on streams that have
+   nothing behind them, which is the whole thing the flag exists to prevent. Coming back out it grows
+   in the same way, before the level behind it exists.
+
+   So it holds at the value the two agree on - the lower - and then ARRIVES with the camera (§7.6),
+   over the last stretch of the move, rather than being interpolated across the whole of it. */
+const plume = (a,b,e) => {const lo=Math.min(a,b);return lo+(b-lo)*clamp01((e-0.6)/0.4)};
+
 /* §8.2  pair by key — which is why §4.7 insists the key set never depends on the focus. */
 export function blend(A,B,e){
 	const out = {flows:{},bars:{},names:{},boxes:B.boxes,pathOf:B.pathOf,
 		inFocus:B.inFocus,nodeAt:B.nodeAt,capped:B.capped,side:B.side,pitch:B.pitch,hubX:B.hubX,
 		frontOut:lerp(A.frontOut,B.frontOut,e), frontIn:lerp(A.frontIn,B.frontIn,e),
-		plumeOut:lerp(A.plumeOut,B.plumeOut,e), plumeIn:lerp(A.plumeIn,B.plumeIn,e)};
+		plumeOut:plume(A.plumeOut,B.plumeOut,e), plumeIn:plume(A.plumeIn,B.plumeIn,e)};
 	["flows","bars","names"].forEach(kind => {
 		const keys={}; Object.keys(A[kind]).forEach(k => keys[k]=1); Object.keys(B[kind]).forEach(k => keys[k]=1);
 		Object.keys(keys).forEach(k => {
@@ -724,22 +735,30 @@ export default class MoneyFlowEngine {
 	   neighbours around it. Bold no longer changes the size: a name that gains weight on the way into
 	   focus should not also change its measure. */
 	typeOf(n){
-		const f = this.focus, subject = f.length ? f[f.length-1] : null;
-		const bold = !n.pin && (n.id===subject || (!f.length && !!n.top));
-		const t = this.tune;
-		/* Counting from the level you are STANDING on. At the root that is the macro categories - you
-		   are on the whole portfolio, and the hub carries its name - so they and the streams inside
-		   them are both body, and it takes one level more before anything shrinks. Keying this to the
-		   tier instead is wrong for exactly that reason: the last column of a root view is one level
-		   below the categories, and the last column of a focused view is two. */
-		/* Standing somewhere, the tier IS the small level, whatever depth its entries came from: a
-		   branch that bottoms out early lands there, and so does a gathered Other, which is one level
-		   above its neighbours in the tier and would otherwise be the only large name among them.
-		   At the root nothing shrinks but a true leaf, because the tier there is one level below the
-		   categories rather than two. */
-		const small = !!n.leaf || (f.length ? !!n.rail : (n.rel||0)-1>=2);
-		return {bold:bold, family:this.opt.fontFamily||"inherit",
-			size:small ? t.smallPx : t.bodyPx};
+		const f = this.focus, t = this.tune;
+		/* §9.6  SIZE is the only thing the type says, and it says one thing: is this the level you are
+		   standing on. The level in focus - the subject and the siblings beside it, which are the same
+		   level - is body; everything below it, both of the levels the view reaches, is small. That
+		   puts the weight of the type on the row you are reading and lets the two levels of detail
+		   underneath stack in less height, which is what the tier is always short of.
+
+		   At the root the level you are standing on is the macro categories, one column out rather
+		   than zero, which is why this counts from the focus rather than from the column: the same
+		   column means a different level in a root view and a focused one. The hub carries the name of
+		   the thing you are standing on at the root, so it is body too.
+
+		   NOTHING IS BOLD. Weight was saying what is in focus while size said what level it was at,
+		   and two channels for two facts read as four treatments; the framing already says what is in
+		   focus, far louder than a weight can.
+
+		   A pinned neighbour is body whatever level it came from. By §3.6 a stream that is its parent's
+		   first child borrows the parent's neighbour, so one of the names in that row can be a level
+		   up - but the row is the row you can step sideways into, and setting one member of it smaller
+		   than the rest says they are different kinds of thing when they are the same control. */
+		const bodyRel = f.length ? 0 : 1;
+		const body = !!n.pin || n.id===INC || (n.rel||0)===bodyRel;
+		return {bold:false, family:this.opt.fontFamily||"inherit",
+			size:body ? t.bodyPx : t.smallPx};
 	}
 
 	/* ---- §6 §7  paint ----------------------------------------------------------------------- */
