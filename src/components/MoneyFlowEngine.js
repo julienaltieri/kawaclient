@@ -383,12 +383,22 @@ export function layout(tree,focus,opt){
 		const within = s>0 ? c<=e : c>=e;
 		/* §7.1  names on the focused side from the focus's depth to +2; the other side only at the
 		   root.  §7.4  only the focused side has a rail. */
-		/* §7.1  A macro category is never a tier entry. One with no streams inside it bottoms out at
-		   its own column and its band slides out to the end like any other (§9.3) - but its NAME
-		   belongs with its siblings, in the column the categories occupy, not down the tier among the
-		   leaves. Sending it to the tier put Recurring Expenses on the right-hand edge between two
-		   leaf names, which reads as a demotion rather than as a category that happens to be empty. */
-		const leafHere = own(id) && !n.top && (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
+		/* §7.1  THE TIER IS A LEVEL, NOT A LEFTOVER. A name belongs in the column its own level
+		   occupies; only the level the view ends on is written down the tier. A stream that bottoms
+		   out early has its band slid out to the end column like any other (§9.3), and its name used
+		   to follow the band there - so a gathered Other, or a category with nothing inside it, was
+		   written on the right-hand edge among the leaf names while its own siblings were named a
+		   column to the left. It reads as a demotion, and it jumps a whole column when you open it,
+		   which is the one moment the eye is following it.
+
+		   The band still slides; only the name stays put, and it is still on its own band, because
+		   that band runs the width of the view. When the view ends at the level below the focus - an
+		   exploded last level, where there is no column in between - that level IS the tier, and its
+		   names are written there with their amounts (§7.2). A macro category is never a tier entry
+		   at all: it always has a column of its own. */
+		const atTier = (dep(id)-fDep)>=2 || fanOut;
+		const leafHere = own(id) && !n.top && atTier
+			&& (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
 		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within && shows(id))?1:0)
 		                     : ((!focus.length&&within)?1:0);
 		const railX = xs[ie]+(s>0?BAR+6:-6);                                 // §7.2
@@ -711,6 +721,7 @@ export default class MoneyFlowEngine {
 		this.raw = raw;
 		/* the full options, not just the tune: the gathering now asks how much room a set of siblings
 		   will have on screen (§1.10), and that needs the card's width. */
+		this.groupedAt = this.host.clientWidth||0;
 		const tree = groupTail(raw,this.opts());                  // §1.10
 		if(!this.shown||replace){this.tree=tree;
 			this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
@@ -769,7 +780,29 @@ export default class MoneyFlowEngine {
 	rebuild(){
 		if(!this.shown)return;
 		if(!this.host.clientWidth)return;              // nothing to measure against yet
+		this.regroup();
 		const r = this.place(this.focus,this.opts()); this.G=r.g; this.cam=r.cam; this.paint();
+	}
+	/* §1.10  THE GATHERING DEPENDS ON THE CARD'S WIDTH, so it cannot be settled once when the tree
+	   arrives. How many names a set can carry is a question about physical room: the bands scale with
+	   the card, a line of type does not, so a wider card holds more names and gathers less. setTree
+	   runs before the host has been measured - on a fresh mount `clientWidth` is still zero - so a
+	   grouping made there is made against the fallback width and never revisited, which is how a card
+	   326px wide came to show the gathering for one of 360. It is redone whenever the width it was
+	   computed for stops being the width on screen, which also covers a rotation or a resize. */
+	regroup(){
+		const w = this.host.clientWidth||0;
+		if(!w||!this.raw||Math.abs(w-(this.groupedAt||0))<1)return;
+		this.groupedAt = w;
+		const tree = groupTail(this.raw,this.opts());
+		this.tree = tree;
+		this.shown = JSON.parse(JSON.stringify(tree));
+		/* a focus naming a stream the new grouping does not hold is a stale path (§5.3) */
+		const holds = path => {let ns = path[0]===INC?this.shown.in:this.shown.out, n=null;
+			for(let i=path[0]===INC?1:0;i<path.length;i++){
+				n=(ns||[]).filter(x => x.id===path[i])[0]; if(!n)return false; ns=n.children}
+			return true};
+		if(this.focus.length&&this.focus[0]!==INC&&!holds(this.focus))this.focus = [];
 	}
 	/* §8.1 §8.2 §8.3  one clock: state interpolates and the geometry is re-derived from it. */
 	go(toFocus){
@@ -1259,9 +1292,17 @@ export default class MoneyFlowEngine {
 		   written for - a subject whose own children crowd their own rail, which is the ordinary case
 		   for anything with five or more streams in it. Falling back to the smallest band gives up the
 		   name that has least to say, and never the subject's own, which is the point of the view. */
+		/* §7.16  How far is too far depends on the BAND. A flat tolerance says nothing about whether the
+		   name still points at anything: eight pixels is comfortably inside a fat band and completely
+		   outside a seven-pixel one, and that is exactly where it was landing - a name floating clear
+		   of the hairline it named, beside the one above it. A name's centre has to stay on its own
+		   band, so the tolerance is half the band, and never more than driftPx however fat it gets. */
 		const DRIFT = opt.driftPx*k;
+		const tolOf = n => Math.min(DRIFT,Math.max(1,n.h/2));
 		const worstDrift = () => {let m=0;
-			rails.forEach(n => {if(kin(n.id))m=Math.max(m,Math.abs(railY[n.id]-(n.y+n.h/2)))});return m};
+			rails.forEach(n => {if(kin(n.id))
+				m=Math.max(m,Math.abs(railY[n.id]-(n.y+n.h/2))-tolOf(n)+DRIFT)});
+			return m};
 		while(!this.animating&&rails.length>1&&worstDrift()>DRIFT){
 			let give = -1;
 			for(let i=0;i<rails.length;i++)

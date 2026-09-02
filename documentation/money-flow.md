@@ -95,7 +95,12 @@ of the ones worth reading.
 
 It is answerable from the values alone because 5.3 makes the room a constant: whichever stream you
 open, its children fill the frame less one strip at each end, so every set of siblings gets the SAME
-height when it is exploded. A label is centred on its band (7.16), so two neighbours can both be named
+height when it is exploded. **But that room is measured in real pixels, so it depends on the card's
+width** — the bands scale with the card and a line of type does not, so a wider card holds more names
+and gathers less. It therefore cannot be settled once when the tree arrives: `setTree` runs before the
+host has been measured, and a grouping made there is made against a fallback width and never revisited.
+It is redone whenever the width it was computed for stops being the width on screen, which also covers
+a rotation or a resize. A label is centred on its band (7.16), so two neighbours can both be named
 when the distance between their band centres covers a line of type — half of each band, plus the
 separations between them. Gathering the smallest few buys room twice over, removing their labels and
 merging their heights into one thicker band, so the tail grows by one until every surviving neighbour
@@ -456,11 +461,17 @@ constantly, so the base opacity is chosen for how the overlaps read, not for how
 
 **7.1 Which names exist.** On the focused side, from the focus's depth to two below it; on the other
 side, only at the root. Anywhere else the other side is context, and naming it competes with the side
-being explained. **A macro category is never a tier entry**: one with no streams inside it bottoms out
-at its own column and its band slides to the end like any other (9.3), but its NAME belongs with its
-siblings, in the column the categories occupy. Sending it down the tier put Recurring Expenses on the
-right-hand edge between two leaf names, which reads as a demotion rather than as a category that
-happens to be empty.
+being explained.
+
+**The tier is a LEVEL, not a leftover.** A name belongs in the column its own level occupies, and only
+the level the view ends on is written down the tier. A stream that bottoms out early has its band slid
+out to the end column like any other (9.3), and its name used to follow the band there — so a gathered
+Other, or a category with nothing inside it, was written on the right-hand edge among the leaf names
+while its own siblings were named a column to the left. It reads as a demotion, and it jumps a whole
+column when you open it, which is the one moment the eye is following it. The band still slides; only
+the name stays put, and it is still on its own band, because that band runs the width of the view.
+Where the view ends at the level below the focus — an exploded last level, with no column in between —
+that level IS the tier and its names are written there with their amounts (7.2).
 
 **7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption
