@@ -1,5 +1,5 @@
 import React from 'react'
-import styled from 'styled-components'
+import styled, {keyframes, css} from 'styled-components'
 import memoize from 'memoize-one'
 import BaseComponent from './BaseComponent'
 import DS from '../DesignSystem.js'
@@ -34,8 +34,12 @@ import {buildFlowTree} from '../processors/MoneyFlow'
    Page one's is 30 units on a 450-unit chart, so what it comes to on screen depends on how wide the
    tile is — about 1.2rem at the width one gets on a phone, which is `title`. Sizing it from a wider
    card put it a step too large. */
+/* Laid out as a SENTENCE, not as a row of boxes. Spacing the three words with a flex gap left no
+   actual space between them, so the heading's text - what a screen reader says, and what a test
+   reads - came out as "Actualsthisyear". Ordinary inline text with real spaces also gets the baseline
+   alignment for free, which is what the flex row was there to do. */
 const Title = styled.h2`
-	display:flex; align-items:baseline; gap:0.3rem; margin:0;
+	margin:0; line-height:1.15;
 	font-size:${DS.fontSize.title}rem; font-weight:400;
 	color:${props => DS.getStyle().bodyText};
 `
@@ -61,6 +65,53 @@ const ResetButton = styled.button`
    width of the "Back to all" button the moment that button appeared, which reads as the heading moving
    when you open a stream. Taking the tile's full width pins the title to the left edge and lets the
    button sit at the other end, whether or not it is there. */
+/* §9.7  THE WORD IN FRONT OF THE UNIT SWAPS LIKE A DIGIT ON A COUNTER. It is not a control - only
+   the two underlined words are - so it must not look like one, but it does change when the unit
+   beside it does, and a word that simply replaces itself between two frames reads as a glitch rather
+   than as an answer changing. The one leaving fades and slides out of the way; the one arriving fades
+   in from the other side, so the two are plainly the same slot holding a different word. The
+   direction follows the toggle: going to the closed period the words travel one way, coming back the
+   other, which is what makes it read as a counter rather than a shuffle. */
+const WORD_MS = 260;
+const riseIn = keyframes`from{opacity:0;transform:translateY(90%)} to{opacity:1;transform:translateY(0)}`;
+const riseOut = keyframes`from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(-90%)}`;
+const dropIn = keyframes`from{opacity:0;transform:translateY(-90%)} to{opacity:1;transform:translateY(0)}`;
+const dropOut = keyframes`from{opacity:1;transform:translateY(0)} to{opacity:0;transform:translateY(90%)}`;
+const Slot = styled.span`
+	display:inline-block; position:relative; overflow:hidden; vertical-align:baseline;
+	line-height:1.15; text-align:left;
+`
+const Wordy = styled.span`
+	display:inline-block; white-space:nowrap;
+	${props => props.$leaving?"position:absolute; left:0; top:0;":""}
+	animation:${props => (props.$up
+		? (props.$leaving?riseOut:riseIn)
+		: (props.$leaving?dropOut:dropIn))} ${WORD_MS}ms ease both;
+	@media (prefers-reduced-motion:reduce){ animation:none; ${props => props.$leaving?"display:none;":""} }
+`
+/* Keeping the outgoing word mounted is the whole trick: React would otherwise replace the text in
+   place and there would be nothing left to animate out. It is taken out of flow so the slot's width
+   follows the word arriving, and dropped once it has gone. */
+class SlideWord extends React.Component{
+	constructor(p){super(p); this.state={word:p.word, out:null, up:true}; this.timer=null}
+	componentDidUpdate(prev){
+		if(this.props.word!==this.state.word){
+			clearTimeout(this.timer)
+			const out = this.state.word
+			this.setState({word:this.props.word, out:out, up:!!this.props.up})
+			this.timer = setTimeout(() => this.setState({out:null}), WORD_MS)
+		}
+	}
+	componentWillUnmount(){clearTimeout(this.timer)}
+	render(){return <Slot aria-live="polite">
+		{/* the word on its way out is a copy kept alive to animate; it is not part of the sentence,
+		    so it is hidden from anything that reads rather than looks */}
+		{this.state.out===null?null:<Wordy aria-hidden="true" key={"o"+this.state.out}
+			$leaving $up={this.state.up}>{this.state.out}</Wordy>}
+		<Wordy key={this.state.word} $up={this.state.up}>{this.state.word}</Wordy>
+	</Slot>}
+}
+
 const Head = styled.div`
 	display:flex; align-items:center; justify-content:space-between;
 	width:100%; align-self:stretch; text-align:left;
@@ -103,15 +154,21 @@ export default class MoneyFlowChart extends BaseComponent{
 	   stream's own period. Where that is yearly, the "current period" is a year, and both halves of
 	   the toggle showed the same twelve months. Asking the schedule for the subdivision's boundaries
 	   is independent of how the analysis happened to be sliced. */
+	/* The sub-period is the last one that COMPLETED, not the one running. A month that is three days
+	   old is not a month of spending, and a picture of it says the household has stopped buying food.
+	   The observation period is different and stays as it is: "this year" is the thing being tracked,
+	   and its whole point is that it is unfinished. That is what the word in front of the unit says -
+	   "this" for the period in progress, "last" for the one that closed. */
 	windows(){
 		const a = this.props.analysis
 		const sub = a.reportingPeriod.subdivision
 		const sched = a.getReportingSchedule(sub)
 		const to = sched[sched.length-1]                 // the first boundary after now
+		const closed = sub.previousDate(to)              // ...so this one is the last that finished
 		return {
-			observation:{from:a.reportingStartDate, to:a.reportingDate,
+			observation:{from:a.reportingStartDate, to:a.reportingDate, when:"this",
 				periodName:a.reportingPeriod.name, label:a.reportingPeriod.unitName},
-			subPeriod:{from:sub.previousDate(to), to:to,
+			subPeriod:{from:sub.previousDate(closed), to:closed, when:"last",
 				periodName:sub.name, label:sub.unitName}
 		}
 	}
@@ -150,17 +207,18 @@ export default class MoneyFlowChart extends BaseComponent{
 		const w = this.windows()
 		const basisWord = this.state.basis==="target"?"Target":"Actuals"
 		const periodWord = w[this.state.period].label
+		const whenWord = w[this.state.period].when
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
 			<Head>
 				<Title>
 					<TitleButton type="button" onClick={() =>
-						this.updateState({basis:this.state.basis==="actual"?"target":"actual"})}>
-						{basisWord}</TitleButton>
-					<span>this</span>
+						this.updateState({basis:this.state.basis==="actual"?"target":"actual"})}
+					>{basisWord}</TitleButton>{" "}
+					<SlideWord word={whenWord} up={this.state.period==="subPeriod"}/>{" "}
 					<TitleButton type="button" onClick={() =>
-						this.updateState({period:this.state.period==="observation"?"subPeriod":"observation"})}>
-						{periodWord}</TitleButton>
+						this.updateState({period:this.state.period==="observation"?"subPeriod":"observation"})}
+					>{periodWord}</TitleButton>
 				</Title>
 				{this.state.focused?<ResetButton type="button" onClick={() => this.engine.reset()}>
 					Back to all</ResetButton>:null}
@@ -170,8 +228,8 @@ export default class MoneyFlowChart extends BaseComponent{
 			<ChartArea>
 				<ChartHost data-no-drag ref={this.host}/>
 				{this.tree().inTotal>0?null:<Empty>{this.state.basis==="target"
-					?"Nothing budgeted for this "+periodWord
-					:"Nothing yet this "+periodWord}</Empty>}
+					?"Nothing budgeted for "+whenWord+" "+periodWord
+					:(whenWord==="this"?"Nothing yet this ":"Nothing ")+periodWord}</Empty>}
 			</ChartArea>
 		</DS.component.ContentTile>
 	}

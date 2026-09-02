@@ -808,6 +808,26 @@ reproducibility of a resting label.
 something else made tappable. There is nothing to label and nothing to explain; the sentence already
 says which of the four views this is, and changing it is changing the thing.
 
+**9.7 The sub-period is the last one that CLOSED, not the one running.** A month three days old is
+not a month of spending, and a picture of it says the household has stopped buying food. The
+observation period is different and stays as it is: "this year" is the thing being tracked, and its
+being unfinished is the whole point. The word in front of the unit says which it is — "this" for the
+period in progress, "last" for the one that closed — and it is not a control: only the two underlined
+words are.
+
+**It swaps like a digit on a counter.** It changes when the unit beside it does, and a word that
+simply replaces itself between two frames reads as a glitch rather than as an answer changing. The one
+leaving fades and slides out of the way, the one arriving fades in from the other side, and the
+direction follows the toggle so that going to the closed period and coming back are opposites. Keeping
+the outgoing word mounted is what makes that possible — React would otherwise replace the text in
+place and leave nothing to animate — so it is taken out of flow, hidden from anything that reads
+rather than looks, and dropped once it has gone.
+
+**The title is laid out as a SENTENCE, not a row of boxes.** Spacing the three words with a flex gap
+left no actual space between them, so the heading's text came out as "Actualsthisyear" to a screen
+reader. Ordinary inline text with real spaces also gets the baseline alignment the flex row was there
+to provide.
+
 **9.2 A period can legitimately hold nothing.** "A period is the whole of itself", so early in a
 sub-period the sub-period is nearly empty and there is no picture to draw — and the boundary is the
 reporting anchor rather than midnight, so this is not only a first-of-the-month case. That is the

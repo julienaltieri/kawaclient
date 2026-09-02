@@ -12,7 +12,7 @@
 jest.mock('dateformat', () => ({__esModule: true, default: () => ''}))
 
 import React from 'react'
-import {render, screen, fireEvent} from '@testing-library/react'
+import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import {Period} from '../Time'
@@ -162,11 +162,39 @@ test("the month is a month, however the analysis was sliced", () => {
 	const days = (w.subPeriod.to - w.subPeriod.from) / (24 * 3600 * 1000)
 	expect(days).toBeGreaterThan(27)
 	expect(days).toBeLessThan(32)
-	// and it is the month we are actually in
-	expect(w.subPeriod.from.getTime()).toBeLessThanOrEqual(Date.now())
-	expect(w.subPeriod.to.getTime()).toBeGreaterThan(Date.now())
-	// while the observation window is the whole year around it
+	// and it is the last month that COMPLETED, not the one running: a month three days old is not a
+	// month of spending, and a picture of it says the household has stopped buying food
+	expect(w.subPeriod.to.getTime()).toBeLessThanOrEqual(Date.now())
+	const sinceItClosed = (Date.now() - w.subPeriod.to.getTime()) / (24 * 3600 * 1000)
+	expect(sinceItClosed).toBeLessThan(32)              // and it is the most recent one that did
+	expect(w.subPeriod.when).toBe("last")
+	// while the observation window is the whole year around it, and that one IS in progress
 	expect(w.observation.to - w.observation.from).toBeGreaterThan(360 * 24 * 3600 * 1000)
+	expect(w.observation.when).toBe("this")
+})
+
+test("the title says which period it is showing, and the toggle changes the word with it", () => {
+	jest.useFakeTimers()
+	// The word in front of the unit is not a control - only the two underlined words are - but it has
+	// to keep up with them, because "this month" would be a lie about a window that has closed.
+	const yearly = new CompoundStream(Object.assign({}, MASTER_JSON, {period: "yearly"}))
+	Core.globalState = Object.assign({}, Core.globalState, {userData: Object.assign(
+		{}, Core.globalState.userData, {masterStream: yearly, getAllStreams: () => yearly.getAllStreams()})})
+	const a = getStreamAnalysis(new Date(), yearly, [], Period.yearly)
+	render(<MoneyFlowChart stream={yearly} transactions={[]} analysis={a}/>)
+
+	// the word leaving is kept mounted for the length of its animation, so read the sentence once it
+	// has settled - which is also the only state a reader would ever be given
+	const settle = () => act(() => {jest.advanceTimersByTime(400)})
+	const said = () => screen.getByRole("heading").textContent.replace(/\s+/g," ").trim()
+	expect(said()).toBe("Actuals this year")
+	fireEvent.click(screen.getByRole("button",{name:"year"}))
+	settle()
+	expect(said()).toBe("Actuals last month")
+	fireEvent.click(screen.getByRole("button",{name:"month"}))
+	settle()
+	expect(said()).toBe("Actuals this year")
+	jest.useRealTimers()
 })
 
 test("unmounts without throwing", () => {
