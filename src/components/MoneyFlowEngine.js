@@ -152,7 +152,13 @@ export function groupTail(tree,opt){
 		   group it belongs to - an Other made of expenses takes the expense tone (below) and one made
 		   of savings takes the savings tone (above). */
 		const rank = key==="__out" ? (n => n.tone==="savings"?0:1) : (() => 0);
-		const down = a => a.slice().sort((x,y) => (rank(x)-rank(y))||(y.value-x.value));
+		/* §3.2  An "Other" always sits at the BOTTOM of its set, whatever it comes to. It is not a
+		   stream competing for position, it is the remainder - "and the rest" reads as the last line
+		   of a list, and a gathered band that sorted above real ones claimed a standing it does not
+		   have. Its own members are still ordered by size inside it. */
+		const isO = n => String(n.id).indexOf("other:")===0;
+		const down = a => a.slice().sort((x,y) =>
+			(rank(x)-rank(y))||((isO(x)?1:0)-(isO(y)?1:0))||(y.value-x.value));
 		/* §1.10  THE MACRO CATEGORIES ARE NEVER GATHERED. They are the spine the whole app is
 		   organised around, the type reads its levels off them (§9.6), and "Other" standing where
 		   Savings used to be says something false about the portfolio rather than something true about
@@ -164,8 +170,14 @@ export function groupTail(tree,opt){
 		if(!rest.length)return down(kids);
 		/* it takes the colour and the standing of the largest thing in it */
 		const head = down(tail)[0];
+		/* §1.10  AND ITS OWN MEMBERS ARE GATHERED IN TURN. Opening an Other is a view like any other,
+		   so it is subject to the same rule: if its members cannot all be named at that level, the
+		   smallest of them gather into a further Other inside it. Leaving the list alone - on the
+		   grounds that "Other inside Other" says nothing - meant the one view guaranteed to hold the
+		   thinnest streams in the tree was the one view where nothing was gathered, and it showed
+		   bands with no name at all. Every band is either named or inside something that is. */
 		return down(rest.concat([{id:"other:"+key,name:"Other",tone:head.tone,top:!!head.top,
-			value:acc,children:down(tail)}]));
+			value:acc,children:gather(down(tail),acc,"other:"+key)}]));
 	};
 	const sum = a => (a||[]).reduce((x,y) => x+y.value,0);
 	return {hubName:tree.hubName, inTotal:tree.inTotal,
@@ -371,7 +383,12 @@ export function layout(tree,focus,opt){
 		const within = s>0 ? c<=e : c>=e;
 		/* §7.1  names on the focused side from the focus's depth to +2; the other side only at the
 		   root.  §7.4  only the focused side has a rail. */
-		const leafHere = own(id) && (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
+		/* §7.1  A macro category is never a tier entry. One with no streams inside it bottoms out at
+		   its own column and its band slides out to the end like any other (§9.3) - but its NAME
+		   belongs with its siblings, in the column the categories occupy, not down the tier among the
+		   leaves. Sending it to the tier put Recurring Expenses on the right-hand edge between two
+		   leaf names, which reads as a demotion rather than as a category that happens to be empty. */
+		const leafHere = own(id) && !n.top && (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
 		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within && shows(id))?1:0)
 		                     : ((!focus.length&&within)?1:0);
 		const railX = xs[ie]+(s>0?BAR+6:-6);                                 // §7.2

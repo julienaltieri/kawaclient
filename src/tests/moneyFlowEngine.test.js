@@ -358,10 +358,41 @@ describe("the tail is gathered into Other", () => {
 		expect(q.children.map(n => n.id)).toContain("other:q")
 	})
 
-	test("an Other is never gathered inside another Other", () => {
-		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
+	test("an Other gathers its own members in turn, so no band is left unnamed", () => {
+		// Opening an Other is a view like any other and gets the same rule. It used to be exempt, on
+		// the grounds that "Other inside Other" says nothing - which meant the one view guaranteed to
+		// hold the thinnest streams in the tree was the one view where nothing was gathered, and it
+		// showed bands with no name at all.
+		const many = Array.from({length:20},(_,i) => N("s"+i,10))
+		const t = groupTail(wrap(many),gopt)
 		const o = byId(kidsOf(t),"other:p")
-		expect(o.children.filter(n => String(n.id).indexOf("other:")===0)).toEqual([])
+		expect(o).toBeDefined()
+		expect(o.children.map(n => n.id).filter(id => String(id).indexOf("other:")===0).length)
+			.toBeGreaterThan(0)
+	})
+
+	test("every set is either nameable or has an Other in it, all the way down", () => {
+		const many = Array.from({length:20},(_,i) => N("s"+i,10))
+		const t = groupTail(wrap(many),gopt)
+		const walk = list => {
+			if(!list||list.length<2)return true
+			const o = list.filter(n => String(n.id).indexOf("other:")===0)
+			// a set that was gathered keeps exactly one Other; either way, recurse into the members
+			expect(o.length).toBeLessThanOrEqual(1)
+			return list.every(n => walk(n.children))
+		}
+		expect(walk(kidsOf(t))).toBe(true)
+	})
+
+	test("an Other sits at the bottom of its set, whatever it comes to", () => {
+		// it is the remainder, not a stream competing for position
+		const t = groupTail(wrap([N("a",30),N("b",9),N("c",9),N("d",9),N("e",9),N("f",9),
+			N("g",9),N("h",9),N("i",9)]),gopt)
+		const ids = kidsOf(t).map(n => n.id)
+		const o = ids.filter(id => String(id).indexOf("other:")===0)[0]
+		expect(o).toBeDefined()
+		expect(ids[ids.length-1]).toBe(o)
+		expect(byId(kidsOf(t),o).value).toBeGreaterThan(kidsOf(t)[0].value)
 	})
 
 	test("its id names its parent, so it is the same stream between two bases", () => {

@@ -114,10 +114,20 @@ the portfolio, nothing is categorised into it, and the reporting core has never 
 why it does not live in the adapter: it is a decision about what is worth drawing, not about what the
 money did.
 
+**An Other sits at the bottom of its set, whatever it comes to.** It is not a stream competing for
+position, it is the remainder — "and the rest" reads as the last line of a list — and a gathered band
+that sorted above real ones by weight of numbers claimed a standing it does not have. Its own members
+are still ordered by size inside it.
+
+**And its members are gathered in turn.** Opening an Other is a view like any other and gets the same
+rule: if its members cannot all be named at that level, the smallest of them gather into a further
+Other inside it. Exempting it — on the grounds that "Other inside Other" says nothing — meant the one
+view guaranteed to hold the thinnest streams in the tree was the one view where nothing was gathered,
+and it showed bands with no name at all.
+
 Two guards. The tail has to be at least two streams, or the group replaces one name with another and
 hides a stream for nothing. And something has to be left outside it — a set that is entirely tail is
-not a tail. An "Other" is never gathered inside another "Other": its members' own children are
-grouped, but its own list is left as it is, because "Other inside Other" says nothing.
+not a tail.
 
 **Where this rule is weak, and it is worth knowing.** Gathering a TAIL only helps when there is one.
 Where every stream is the same size, removing the smallest few leaves the rest exactly as crowded, so
@@ -446,7 +456,11 @@ constantly, so the base opacity is chosen for how the overlaps read, not for how
 
 **7.1 Which names exist.** On the focused side, from the focus's depth to two below it; on the other
 side, only at the root. Anywhere else the other side is context, and naming it competes with the side
-being explained.
+being explained. **A macro category is never a tier entry**: one with no streams inside it bottoms out
+at its own column and its band slides to the end like any other (9.3), but its NAME belongs with its
+siblings, in the column the categories occupy. Sending it down the tier put Recurring Expenses on the
+right-hand edge between two leaf names, which reads as a demotion rather than as a category that
+happens to be empty.
 
 **7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption
