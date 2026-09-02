@@ -449,12 +449,22 @@ a column of numbers wants. It also puts the two on ONE line — the amount used 
 beneath the name, which cost the tier more than twice the height per entry and was the first thing
 given up when it ran short (7.14).
 
-**Only at the last level, and that is the same fact as the plume.** While something is still behind the
-front (6.5), the tier is a list of places to go next and is written as one: outside the bar, no amounts.
-Deciding it per ENTRY instead — fanning out whichever streams happen to have bottomed out early — puts
-two spellings in one tier, one name against its bar wearing its amount beside a sibling out past the bar
-with none, which reads as the labels being inconsistent rather than as the data differing. The view is
-either at the end of the branch or it is not, and every entry is written the same way.
+**Only when nothing stands between the focus and the tier**, decided once for the whole view. When the
+tier IS the focus's children the run inside each bar is empty and the names can have it. As soon as
+there is a column of names in between, that run is shared with them — and those two are not strangers:
+a tier entry's parent IS the name it would meet, and its band contains the entry's band, so they want
+the same place as a rule rather than by accident. Whichever entries lose then fall back outside the bar
+without their amounts, and the tier ends up holding two spellings: one name against its bar wearing its
+amount beside a sibling out past the bar with none. That reads as the labels being inconsistent rather
+than as the data differing. The view is either at the end of the branch or it is not, and every entry
+is written the same way.
+
+"Is anything behind the front" was the first test used here, and it is not the same question. The
+income side bottoms out at two levels, so its view can have nothing behind the front AND a column of
+names in the middle — which is exactly where the mixed spelling came back. The test also has to be
+asked about the FOCUSED branch: a stream in another branch at the same depth is not standing between
+this focus and its tier, and letting one veto the fan-out answers a question about the whole tree
+instead of about the view.
 
 **A tier name that cannot fit inside falls back to the outside** and gives up its amount for the place
 the amount was in. The run inside the bar is one pitch shared with the name at the previous column, and

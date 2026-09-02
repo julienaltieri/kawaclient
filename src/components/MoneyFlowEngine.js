@@ -211,14 +211,7 @@ export function layout(tree,focus,opt){
 	const beyond = s => {const e=endFor(s);
 		for(const id in firstC)if(sideOf[id]===s&&firstC[id]===e&&kidsOf[id])return 1;
 		return 0};
-	/* §7.2  and the same fact decides how the tier is written. When nothing is behind the front you
-	   have reached the last level of this branch: there is no deeper view to go to, so the tier is the
-	   answer rather than a step on the way to it, and it fans out into a name against its bar and an
-	   amount beyond it. While there IS something behind, the tier is a list of places to go next and
-	   is written as one, out beyond the bar, with no amounts — a stream that happens to bottom out
-	   early would otherwise be the only entry wearing its amount, which is exactly the inconsistency
-	   this rule removes. */
-	const fanOut = beyond(FSIDE)===0;
+
 
 	/* §4.1  the spacing rule, and it is the whole of it: the gap between two neighbours is decided by
 	   where their PATHS diverge, measured from the focus. */
@@ -295,6 +288,30 @@ export function layout(tree,focus,opt){
 		name:tree.hubName,anchor:"start",top:true,id:INC,tap:INC,vis:1};
 
 	const slides = opt.tail!=="grow";
+	/* §7.2  HOW THE TIER IS WRITTEN, decided once for the whole view. It fans out - a name against the
+	   inside of its bar, its amount beyond - only when nothing stands between the focus and the tier:
+	   when the tier IS the focus's children, the run inside each bar is empty and the names can have
+	   it. As soon as there is a column of names in between, that run is shared with them, and those
+	   two are not strangers - a tier entry's parent IS the name it would meet - so they want the same
+	   place as a rule rather than by accident, and whichever entries lose fall back outside the bar
+	   without their amounts. That is the mixed spelling this rule exists to prevent: one name against
+	   its bar wearing its amount beside a sibling out past the bar with none.
+
+	   "Is anything behind the front" was the first test here and it is not the same question. The
+	   income side bottoms out at two levels, so its view can have nothing behind the front AND a
+	   column of names in the middle - which is exactly where the mixed spelling came back. */
+	const interiorNamed = Object.keys(nodeById).some(id => {
+		const n=nodeById[id], s=sideOf[id], c=firstC[id], e=endFor(s);
+		/* under the FOCUS, not merely at that depth: a stream in another branch entirely is not
+		   standing between this focus and its tier, and letting one veto the fan-out meant the rule
+		   was answering a question about the whole tree instead of about the view. */
+		if(!own(id)||!inFocus(id)||n.label===false||!shows(id))return false;
+		const d = dep(id)-fDep;
+		if(d<1||d>2)return false;
+		return !(!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
+	});
+	const fanOut = !interiorNamed;
+
 	Object.keys(nodeById).forEach(id => {
 		const n=nodeById[id], s=sideOf[id], e=endFor(s), ie=at(e), c=firstC[id];
 		/* A stream may decline a name (§1: `label:false`). Its band is still drawn and still
@@ -949,7 +966,7 @@ export default class MoneyFlowEngine {
 		   - so a folded one reaches past the bottom of the card and the viewport cut it clean through
 		   the second line. Fading over the last few pixels costs nothing to a name that fits and turns
 		   a sheared word into one that runs out of room. */
-		const tfr = Math.min(0.45,Math.max(1,6*k)/Math.max(1,cam.h));
+		const tfr = Math.min(0.45,Math.max(1,12*k)/Math.max(1,cam.h));
 		const tgId = this.uid+"-textG", tmId = this.uid+"-textM";
 		const tg = this.reuse("grad","textG",() => {const e=this.mk("linearGradient",
 				{id:tgId,gradientUnits:"userSpaceOnUse",x1:0,x2:0});
