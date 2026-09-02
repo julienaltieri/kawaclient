@@ -445,6 +445,36 @@ world target while the world is being re-scaled leaves a name apparently still i
 moving underneath it, which was most of the flying. In screen pixels, where the reader's eye is,
 "barely moved" means what it says.
 
+**7.28 Across a move a name travels on the MOVE's clock, not on a per-frame fraction.** Both stores
+above close the gap to their target by a constant share of it each frame. That is right at rest —
+the gap is small and its cause is jitter — and wrong on a move, where the gap can be the height of
+the card and the *bar* is travelling too, on the camera's eased clock over `moveMs`. At 13% a frame
+the displacement is all but gone in 150ms while the bar still has 470ms to run, so the name lands on
+its bar early and then rides it the rest of the way.
+
+Invisible while the name was already near its bar, and glaring in the one case it matters: a pinned
+neighbour tapped into focus. A pin sits in a camera slot, on screen by construction (7.23), while the
+bar it names is the one just off the top of the frame — so the name jumped to the off-screen bar
+within a few frames and sailed back down into place, which reads as arriving from off screen rather
+than as moving from where it was. Measured on a bench shaped like the real portfolio, tapping the
+neighbour above from the last of three categories:
+
+    before   10 → −16 → −30 → −32 → −22 → 4 → 37 → 58 → 69 → 73
+    after    10 →  10 →  11 →  12 →  17 → 30 → 48 → 62 → 70 → 72
+
+with the card 145px tall, so the "before" row spends its first 250ms above the top edge. 148px of
+travel with two reversals becomes 62px with none.
+
+The seed is taken once, at whatever progress the name first appears, and the remaining travel is what
+is left of the move — so a name appearing midway is not asked to cover the whole distance in the time
+that is left. Both at-rest stores are kept current underneath, so the exponential smoother picks up
+where the move leaves off.
+
+This is also why the at-rest rule cannot simply smooth the absolute position the way the move does:
+bars move at rest too — a change of basis tweens them over `dataMs` with no move running — and a name
+smoothing its absolute position would lag the very bar it is naming, which is what 7.18 exists to
+prevent.
+
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.
 

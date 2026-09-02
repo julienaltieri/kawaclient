@@ -533,7 +533,7 @@ export default class MoneyFlowEngine {
 		this.frameSeq = 0;
 		/* label state — the only thing that lives between frames (§7.5 §7.18 §7.19) */
 		this.fade={}; this.offY={}; this.offX={}; this.fadeAtStart={};
-		this.sY={}; this.sOff={}; this.sPos={};
+		this.sY={}; this.sOff={}; this.sPos={}; this.sSeed={};
 
 		this.focus = [];
 		this.tree = null; this.shown = null;
@@ -1014,6 +1014,10 @@ export default class MoneyFlowEngine {
 		   and a name already being read is never pulled down. */
 		const remain = this.animating?Math.max(0,this.moveEnds-now):0;
 		const elapsed = this.animating?Math.max(0,now-this.moveStart):0;
+		/* §7.28  the move's own eased progress - the SAME clock the geometry is blended on, so a name
+		   and the bar it names arrive together. */
+		const mv = this.animating
+			? ease(clamp01((now-this.moveStart)/Math.max(1,this.moveEnds-this.moveStart))) : 1;
 		const goneF = (!this.animating||opt.leadMs<=0) ? 0 : clamp01(1-elapsed/opt.leadMs);
 		const gate = !this.animating ? 1 : (opt.leadMs<=0?0:clamp01((opt.leadMs-remain)/opt.leadMs));
 
@@ -1045,11 +1049,41 @@ export default class MoneyFlowEngine {
 			const isPin = pinned[key]!==undefined;
 			const raw = isPin ? pinned[key]-band
 				: ((n.rail&&railY[n.id]!==undefined)?railY[n.id]-band:0);
+			const tS = isPin ? (pinned[key]-cam.y)/k : bandS+raw/k;
 			let cyS;
-			if(isPin){
+			if(this.animating){
+				/* §7.28  ACROSS A MOVE THE NAME TRAVELS ON THE MOVE'S OWN CLOCK, not on a per-frame
+				   fraction. The two stores below close a gap by a constant share of it each frame, which
+				   is right at rest - the gap is small and its cause is jitter - and wrong on a move,
+				   where the gap can be the height of the card and the BAND is travelling too, on the
+				   camera's eased clock over moveMs. At 13% a frame the displacement is all but gone in
+				   150ms while the band still has 470ms to run, so the name lands on its bar early and
+				   then rides it the rest of the way.
+
+				   That is invisible while the name was already near its bar, and glaring in the one case
+				   it matters: a pinned neighbour tapped into focus. A pin sits in a camera slot, on
+				   screen by construction (§7.23), while the band it names is the one just off the top of
+				   the frame - so the name would jump to the off-screen band within a few frames and
+				   sail back down into place, which reads as arriving from off screen rather than as
+				   moving from where it was. Decayed on the move's clock instead, it leaves where it was
+				   drawn and reaches its bar exactly as the bar reaches its place: a straight short path.
+
+				   The seed is taken once, at whatever progress the name first appears, and the remaining
+				   travel is what is left of the move - so a name that appears midway is not asked to
+				   cover the whole distance in the time that is left. */
+				if(this.sSeed[key]===undefined){
+					const prev = this.sPos[key];
+					this.sSeed[key] = {d:(prev===undefined?0:prev-tS), e:mv};
+				}
+				const sd = this.sSeed[key], span = 1-sd.e;
+				cyS = tS + sd.d*(span>1e-3 ? clamp01((1-mv)/span) : 0);
+				/* both stores are kept current so the at-rest smoother picks up where this leaves off */
+				if(isPin){this.sY[key] = cyS; delete this.sOff[key]}
+				else{this.sOff[key] = cyS-bandS; delete this.sY[key]}
+			}else if(isPin){
 				/* §7.18 §7.26  a pinned name is attached to the frame, not to a bar, so what is smoothed
 				   is where it IS - straight toward a slot that hardly moves. */
-				const tS = (pinned[key]-cam.y)/k;
+				delete this.sSeed[key];
 				let pS = this.sY[key];
 				if(pS===undefined)pS = this.sPos[key]!==undefined ? this.sPos[key] : tS;
 				cyS = pS+(tS-pS)*opt.smooth;
@@ -1057,7 +1091,11 @@ export default class MoneyFlowEngine {
 				if(Math.abs(tS-cyS)>0.3)more = true;
 			}else{
 				/* §7.18  a caption is attached to its bar: the bar is followed exactly and only the
-				   displacement from it is smoothed. */
+				   displacement from it is smoothed. This is why the at-rest rule cannot simply smooth
+				   the absolute position the way the move above does: bars move at rest too - a change of
+				   basis tweens them over dataMs with no move running - and a name smoothing its absolute
+				   position would lag the very bar it is naming. */
+				delete this.sSeed[key];
 				const rawS = raw/k;
 				let pOff = this.sOff[key];
 				if(pOff===undefined)pOff = this.sPos[key]!==undefined ? this.sPos[key]-bandS : rawS;
@@ -1081,7 +1119,7 @@ export default class MoneyFlowEngine {
 			}else if(this.animating)want *= Math.max(gate,held);
 			const was = this.fade[key]===undefined?0:this.fade[key];
 			if(want<=0.02&&was<=0.02){this.fade[key]=0;delete this.offX[key];
-				delete this.sY[key];delete this.sOff[key];delete this.sPos[key];
+				delete this.sY[key];delete this.sOff[key];delete this.sPos[key];delete this.sSeed[key];
 				this.dropText(key);return}
 			const two = n.pin ? false : (n.rail?isTwo(n):eligible(n));
 			const g = this.text(key,n,cy,two,k);
@@ -1111,7 +1149,7 @@ export default class MoneyFlowEngine {
 			const a = (n.rail&&this.animating) ? want : was+(want-was)*opt.labelEase;
 			this.fade[key] = a;
 			if(Math.abs(want-a)>0.005)more = true;
-			if(a<=0.02){this.dropText(key);this.offX[key]=tgt;
+			if(a<=0.02){this.dropText(key);this.offX[key]=tgt;delete this.sSeed[key];
 				if(isPin)this.sY[key]=(pinned[key]-cam.y)/k; else this.sOff[key]=raw/k;
 				return}
 			g.forEach(e => this.set(e,{opacity:(n.pin?1:lit(n.id))*a}));    // §7.22
