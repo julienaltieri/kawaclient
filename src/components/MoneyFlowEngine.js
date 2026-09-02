@@ -887,7 +887,15 @@ export default class MoneyFlowEngine {
 		   `sr`. BOTH ends are per band, or the fix is only half made - an income stream with nothing
 		   inside it would keep trailing off to the left because a sibling has something. */
 		const edge = name => {const gid = this.uid+"-"+name;
-			return (sl,sr) => {
+			return (sl0,sr0) => {
+				/* §6.5  THE WINDOW'S CUT KEEPS ITS FULL RUN whatever the band does. "The view stops
+				   here" is true whether or not there is more inside, so only the REVEAL ramp - a
+				   stream trailing off past its tail - is the band's own business. Building the
+				   hard-cut gradient with no ramp at either end took the window's feather with it, and
+				   the picture gained a sheared edge wherever the camera cuts through it, which is
+				   most of the time once you are zoomed in. */
+				const sl = (cam.x>frontIn+0.01) ? softL : sl0;
+				const sr = (camR<frontOut-0.01) ? soft : sr0;
 				const Lz = Math.max(cam.x,frontIn-sl);
 				const Lop = Lz>frontIn-sl+0.01 ? 1-clamp01((cam.x-frontIn)/Math.max(1,softL)) : 0;
 				const Rz = Math.min(camR,frontOut+sr);
@@ -934,6 +942,27 @@ export default class MoneyFlowEngine {
 			nR++});
 		while(fm.childNodes.length>nR)fm.removeChild(fm.lastChild);
 		this.set(this.gHull,{mask:"url(#"+fmId+")"});
+		/* §7.29  A NAME THAT RUNS PAST THE EDGE OF THE CARD FADES OUT rather than being chopped. Most
+		   names cannot: a name is dropped outright if it leaves the frame sideways (§7.20), and one
+		   whose bar approaches the top or bottom fades on its own (§7.5). A PINNED name is exempt from
+		   both - it is a control, placed against the edge by the camera rather than by its bar (§7.23)
+		   - so a folded one reaches past the bottom of the card and the viewport cut it clean through
+		   the second line. Fading over the last few pixels costs nothing to a name that fits and turns
+		   a sheared word into one that runs out of room. */
+		const tfr = Math.min(0.45,Math.max(1,6*k)/Math.max(1,cam.h));
+		const tgId = this.uid+"-textG", tmId = this.uid+"-textM";
+		const tg = this.reuse("grad","textG",() => {const e=this.mk("linearGradient",
+				{id:tgId,gradientUnits:"userSpaceOnUse",x1:0,x2:0});
+			for(let i=0;i<4;i++)e.appendChild(this.mk("stop",{"stop-color":"#fff"}));
+			this.gDefs.appendChild(e);return e});
+		this.set(tg,{y1:cam.y,y2:cam.y+cam.h});
+		[[0,0],[tfr,1],[1-tfr,1],[1,0]].forEach((p,i) =>
+			this.set(tg.childNodes[i],{offset:(p[0]*100)+"%","stop-opacity":p[1]}));
+		const tm = this.reuse("grad","textM",() => {const e=this.mk("mask",{id:tmId,maskUnits:"userSpaceOnUse"});
+			e.appendChild(this.mk("rect",{}));this.gDefs.appendChild(e);return e});
+		this.set(tm,big);
+		this.set(tm.firstChild,Object.assign({fill:"url(#"+tgId+")"},big));
+		this.set(this.gText,{mask:"url(#"+tmId+")"});
 
 		/* ---- §6.6 §6.7 §6.8  down: only what is out of focus, on its own lagged clock ---------- */
 		const DUR = Math.max(1,this.moveEnds-this.moveStart);

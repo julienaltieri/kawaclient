@@ -374,7 +374,11 @@ it as a number per side: *does any stream whose own column is the front column h
 blends across a move like every other number, and it is deliberately not derived from the front's
 position at render time — the front is a blended coordinate, so a move back a level sweeps it
 leftwards across the tier and a ramp keyed off it draws a plume for the length of the sweep, over a
-tier with nothing inside it. Only the reveal half is scaled; the window's cut keeps its full run.
+tier with nothing inside it. Only the reveal half is scaled; **the window's cut keeps its full run**, and that is not a detail: "the
+view stops here" is true whether or not there is more inside, so only the reveal ramp is the band's own
+business. Building the hard-cut gradient with no ramp at either end took the window's feather away with
+it, and the picture gained a sheared edge wherever the camera cuts through it — which, once you are
+zoomed in, is most of the time.
 
 **It is decided PER BAND, not per side.** Two bands can sit side by side at the same front and
 disagree — one stream continues inside, its neighbour is terminal — and a single horizontal gradient
@@ -637,6 +641,15 @@ prevent.
 `driftPx` is how far a name may sit from its own bar before it has stopped naming it (7.16); `edgePx`
 is the distance over which a name fades as its bar reaches the edge of the frame. They are named
 because each is a decision, not a magic number, and they live together in `TUNE`.
+
+**7.29 A name that runs past the edge of the card fades out** rather than being chopped by the
+viewport. Most names cannot get there: one that leaves the frame sideways is dropped outright (7.20),
+and one whose bar approaches the top or bottom fades on its own (7.5). A PINNED name is exempt from
+both — it is a control, placed against the edge by the camera rather than by its bar (7.23) — so a
+folded one reaches past the bottom of the card and was cut clean through its second line. The fade is
+a few pixels at each edge, which costs a name that fits nothing at all and turns a sheared word into
+one that visibly runs out of room. It cannot be prevented at placement instead: whether a name folds
+is settled after the pins are placed, because folding depends on the room the camera gives it.
 
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.
