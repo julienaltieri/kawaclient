@@ -103,7 +103,10 @@ export function groupTail(tree,opt){
 	const cardH = Math.max(1,opt.cssW/opt.ratio);
 	const H = Math.max(1,cardH-2*opt.neighbourPx);            // §5.3  the room an exploded set gets
 	const GAP = opt.l1Px;                                     // §4.1  its children take the wide one
-	const SPAN = 20*(opt.smallPx/opt.bodyPx);                 // §7.13 one line of tier type, with lead
+	/* §7.13  the same line of type the tier reserves: what it inks, plus the lead. Measured by the
+	   engine and handed in; the fallback is the ratio Inter happens to have, for a caller that groups
+	   before anything has been drawn. */
+	const SPAN = opt.smallPx*(opt.inkR||1.25) + 2;
 	const fits = list => {
 		const V = list.reduce((a,b) => a+b.value,0)||1;
 		const avail = Math.max(1,H-(list.length-1)*GAP);
@@ -774,7 +777,8 @@ export default class MoneyFlowEngine {
 
 	opts(){
 		const cssW = this.host.clientWidth||0;
-		return Object.assign({},this.tune,{cssW:cssW||360,worldH:this.worldH,format:this.format});
+		return Object.assign({},this.tune,{cssW:cssW||360,worldH:this.worldH,format:this.format,
+			inkR:this.inkR});
 	}
 	place(focus,opt){return compose(this.shown,focus,opt)}
 	rebuild(){
@@ -1270,11 +1274,20 @@ export default class MoneyFlowEngine {
 		   never the thing given up when the tier runs short. What it costs is width in the rail, which
 		   is what the rail is now for. */
 		const showVal = n => !!n.rail&&n.val!==undefined;
-		/* The extents below were measured at bodyPx; a name set smaller reserves proportionally less,
-		   which is where the tier's extra stacking room actually comes from. */
-		const szF = n => this.typeOf(n).size/opt.bodyPx;
-		const upOf = n => (n._fold?15:8)*szF(n)*k;
-		const downOf = n => (n._fold?17:10)*szF(n)*k;
+		/* §7.13  WHAT A NAME RESERVES IS WHAT IT MEASURES, plus a lead. The constants here were
+		   calibrated when the amount was stacked under the name, and they reserved half again what a
+		   line of type actually occupies: at ten pixels a tier name inks twelve and was given
+		   sixteen and a half. The tier then pushed names off bands they would have fitted on, and the
+		   gathering (§1.10) asked for more room than it needed and gathered streams that could have
+		   kept their names. One measurement replaces the guess; the split between above and below the
+		   baseline is kept, because the baseline does not sit in the middle of the ink. */
+		this.set(this.meas,{"font-size":100*k,"font-family":opt.fontFamily||"inherit","font-weight":500});
+		this.meas.textContent = "Agy";
+		const inkR = Math.max(0.8,Math.min(2,this.meas.getBBox().height/(100*k)));
+		this.inkR = inkR;
+		const ink = n => this.typeOf(n).size*inkR*k, unit = n => ink(n)/18;
+		const upOf = n => 8*unit(n) + (n._fold?ink(n):0);
+		const downOf = n => 10*unit(n);
 		const LEAD = 2*k;
 		const spanOf = n => upOf(n)+downOf(n)+LEAD;
 		const room = bot-top;
@@ -1581,6 +1594,10 @@ export default class MoneyFlowEngine {
 	text(key,n,cy,two,k,size,outboard){
 		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
 			b:this.mk("text",{})}));
+		/* the stream each element names, on the element. Several streams are called "Other", so
+		   matching a drawn label back to its band by TEXT is guesswork - which cost several
+		   measurements that looked like faults and were not. */
+		[rec.a,rec.a2,rec.b].forEach(e => {if(e.getAttribute("data-k")!==key)e.setAttribute("data-k",key)});
 		const ty = this.typeOf(n);
 		const px = size===undefined ? ty.size : size;
 		const one = (e,dy,txt,amount) => {

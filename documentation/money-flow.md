@@ -572,7 +572,16 @@ subject — so measuring it against the width of the card while pinned and again
 made it change shape at the moment the eye was following it. Two subjects at one level frame identically
 (5.6), so the same name at the same level now folds the same way whether it is pinned or focused.
 
-**7.13 The room a name reserves is measured, not assumed.** The sweep has to know each entry's height
+**7.13 The room a name reserves is what it MEASURES, plus a lead.** The extents here were once
+constants calibrated at body size, from the layout that stacked the amount beneath the name, and they
+reserved half again what a line of type occupies: at ten pixels a tier name inks twelve and was given
+sixteen and a half. The tier then pushed names off bands they would have fitted on, and the gathering
+(1.10) asked for more room than it needed and gathered streams that could have kept their names. One
+measurement replaces the guess, and the gathering asks for the same number, so the two cannot drift
+apart. The split between above and below the baseline is kept, because the baseline does not sit in
+the middle of the ink.
+
+**The room a name reserves is measured, not assumed.** The sweep has to know each entry's height
 before it places anything, so whether a name folds onto two lines and whether its amount is shown are
 settled first, and the extents are then read from the type it will actually be set in — which is why a
 small name reserves proportionally less and the tier gains stacking room (9.6).

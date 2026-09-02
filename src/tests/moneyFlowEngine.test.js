@@ -296,10 +296,12 @@ describe("the tail is gathered into Other", () => {
 
 	test("and not before it must be: the boundary is one stream wide", () => {
 		// the rule gathers nothing until the set genuinely cannot be named, so the boundary is sharp.
-		// On this fixture's card seven equal streams each clear a line of type and eight do not.
+		// On this fixture's card eight equal streams each clear a line of type and nine do not. The
+		// boundary moves with what a line of type actually measures (7.13), which is the point: it is
+		// a statement about the type, not a constant.
 		const eq = n => Array.from({length:n},(_,i) => N("s"+i,10))
-		expect(kidsOf(groupTail(wrap(eq(7)),gopt)).map(n => n.id)).not.toContain("other:p")
-		expect(kidsOf(groupTail(wrap(eq(8)),gopt)).map(n => n.id)).toContain("other:p")
+		expect(kidsOf(groupTail(wrap(eq(8)),gopt)).map(n => n.id)).not.toContain("other:p")
+		expect(kidsOf(groupTail(wrap(eq(9)),gopt)).map(n => n.id)).toContain("other:p")
 	})
 
 	test("a uniform set has no tail to speak of, and the rule says so", () => {
