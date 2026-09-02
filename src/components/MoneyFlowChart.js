@@ -29,11 +29,14 @@ import {buildFlowTree} from '../processors/MoneyFlow'
 /* The title is set like page one's. That chart draws its own title inside the plot — the year, at
    `fontSizeTitle` in the body colour at normal weight — and the two tiles sit in one carousel, a
    thumb-flick apart, so a heavier and quieter heading on the second one reads as a different kind of
-   thing rather than the same thing about a different picture. Page one's is 30 units on a 450-unit
-   chart, which lands near `header` at the width these tiles get on a phone. */
+   thing rather than the same thing about a different picture.
+
+   Page one's is 30 units on a 450-unit chart, so what it comes to on screen depends on how wide the
+   tile is — about 1.2rem at the width one gets on a phone, which is `title`. Sizing it from a wider
+   card put it a step too large. */
 const Title = styled.h2`
 	display:flex; align-items:baseline; gap:0.3rem; margin:0;
-	font-size:${DS.fontSize.header}rem; font-weight:400;
+	font-size:${DS.fontSize.title}rem; font-weight:400;
 	color:${props => DS.getStyle().bodyText};
 `
 const TitleButton = styled.button`
@@ -53,9 +56,15 @@ const ResetButton = styled.button`
 	padding:0.15rem 0.5rem; border-radius:${DS.borderRadiusSmall};
 	&:hover{color:${props => DS.getStyle().bodyText};}
 `
+/* THE TITLE IS LEFT-ALIGNED, ALWAYS. The tile is a FlexColumn and centres what it holds, so a header
+   row only as wide as its contents gets centred with them — and the title then slid right by half the
+   width of the "Back to all" button the moment that button appeared, which reads as the heading moving
+   when you open a stream. Taking the tile's full width pins the title to the left edge and lets the
+   button sit at the other end, whether or not it is there. */
 const Head = styled.div`
 	display:flex; align-items:center; justify-content:space-between;
-	gap:${DS.spacing.xs}rem; margin-bottom:${DS.spacing.xs}rem; min-height:2rem;
+	width:100%; align-self:stretch; text-align:left;
+	gap:${DS.spacing.xs}rem; margin-bottom:${DS.spacing.xs}rem; min-height:1.8rem;
 `
 /* §9.4  nothing in the diagram is text to be selected or a link to be flashed blue. The hover
    affordance the labels carry is gated inside the engine on a pointer that can actually hover; on a
@@ -64,7 +73,7 @@ const Head = styled.div`
    a month the month is nearly empty and the picture has nothing to draw. That is the truth rather
    than a failure, but an empty card does not say it, so a line does. It names the DATA, not the
    interface. */
-const ChartArea = styled.div`position:relative;`
+const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
 const Empty = styled.div`
 	position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
 	text-align:center; padding:${DS.spacing.xs}rem;

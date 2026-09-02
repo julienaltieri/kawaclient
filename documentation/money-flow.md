@@ -818,10 +818,18 @@ is the tile's job.
 **It is set the way page one sets its own.** The macro graph draws its title inside the plot — the
 year, at its title size, in the body colour at normal weight — and the two tiles sit in one carousel a
 thumb-flick apart, so a heavier or quieter heading on the second reads as a different kind of thing
-rather than as the same thing about a different picture. Page one's is 30 units on a 450-unit chart,
-which lands near `header` at the width these tiles get on a phone. The dashed rule under the two
-changeable words is then the only thing marking them, which is enough: it is what said so before, and
-the colour it used to lean on was never the affordance.
+rather than as the same thing about a different picture. The dashed rule under the two changeable
+words is then the only thing marking them, which is enough: it is what said so before, and the colour
+it used to lean on was never the affordance.
+
+Page one's is 30 units on a 450-unit chart, so what it comes to on screen depends on how wide the tile
+is — about `title` at the width one gets on a phone. Deriving it from a wider card put it a step too
+large.
+
+**And the title is left-aligned, always.** The tile is a flex column that centres what it holds, so a
+header row only as wide as its contents is centred with them — and the title slid right by half the
+width of the "Back to all" button the moment that button appeared, which reads as the heading moving
+when you open a stream. The row takes the tile's full width instead.
 
 Not copied: page one also carries a second, smaller line under its title with the period spelled out.
 This tile says the period in the title itself, so the line would repeat it.
