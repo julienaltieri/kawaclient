@@ -393,13 +393,20 @@ read as the plume breaking into stripes of different strength, and as the leftov
 for no reason at all. A band's edge is a statement about its own end. A stream that bottomed out earlier and slid out to the end column is not one of them:
 it has nothing behind it however far the view runs.
 
-**Across a move it is the statement the two states AGREE on.** Interpolating it says something true of
-neither: opening a stream whose grandchildren are terminal takes the value from 1 to 0 over the move,
-so those terminal bands trail off for the first half of it and then stop — a plume on streams with
-nothing behind them, which is the whole thing the flag exists to prevent, and it reads as the plume
-being unstable rather than as the data changing. It holds at the lower of the two values and then
-ARRIVES with the camera (7.6) over the last stretch, so a level that is genuinely appearing gets its
-plume as it lands rather than while it is still on its way.
+**Across a move the ramp is that band's own number, not a threshold on it.** "Does this stream
+continue" blends like every other number, so a band losing the level behind it shortens its plume as
+that level goes away, and one gaining a level grows the plume as it arrives. Testing the number against
+a half instead made a band jump out of the plumed set at the midpoint — the plume vanished in a single
+frame rather than animating, which is what a threshold does to a quantity. The band's own VISIBILITY
+scales it for the same reason rather than gating it: a bar arriving at the front fades in, and
+admitting it only once it passed half meant the plume appeared already a third of the way out, in one
+frame. Both numbers multiply, so the plume grows and shrinks with the band it belongs to. Measured
+across a move, in and out: 0, 0, 0.04, 0.24, 0.64, 0.90, 0.99, 1 — and the reverse.
+
+This retires the per-SIDE flag that used to carry the same fact for a whole side, along with the rule
+that made it hold at the value the two states agreed on and arrive with the camera. Per band, none of
+that is needed: a stream terminal in both states carries a zero in both, so it cannot plume at any
+point of a move, which is the whole of what the flag was protecting.
 
 **6.6 The vertical fade applies only to what is out of focus, and never at a hub place.** A hub place
 frames the whole height, so nothing in it is ever cut and nothing needs the fade that exists to prevent

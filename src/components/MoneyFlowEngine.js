@@ -205,12 +205,7 @@ export function layout(tree,focus,opt){
 	endF = FSIDE>0 ? Math.min(term(1),endF) : Math.max(term(-1),endF);
 	const endO = -FSIDE, endR = FSIDE>0?endF:endO, endL = FSIDE>0?endO:endF;
 	const endFor = s => s===FSIDE ? endF : endO;
-	/* §6.5  is there another level behind the front, on each side? A stream trails off past its tail
-	   only when there is, and that is a fact about the DATA — not about where the front happens to
-	   sit this frame. Carried as a number so a move blends it like everything else. */
-	const beyond = s => {const e=endFor(s);
-		for(const id in firstC)if(sideOf[id]===s&&firstC[id]===e&&kidsOf[id])return 1;
-		return 0};
+
 
 
 	/* §4.1  the spacing rule, and it is the whole of it: the gap between two neighbours is decided by
@@ -412,7 +407,6 @@ export function layout(tree,focus,opt){
 		endX:xs[at(endF)]+(FSIDE>0?BAR:0), otherX:xs[at(endO)]+(FSIDE>0?0:BAR),
 		side:FSIDE, pitch:PITCH, hubX:xs[at(0)],
 		frontOut:xs[at(endR)]+BAR, frontIn:xs[at(endL)],
-		plumeOut:beyond(1), plumeIn:beyond(-1),
 		inFocus:inFocus, nodeAt:nodeAt, capped:gapScale<1};
 }
 
@@ -539,16 +533,6 @@ function pinsFor(G,focus){
 	return out;
 }
 
-/* §6.5  "is there another level behind the front" is a statement about the DATA, and across a move it
-   must be one BOTH states agree on. Interpolating it says something that is true of neither: moving
-   into a stream whose grandchildren are terminal, the value falls 1 -> 0 over the move, so those
-   terminal bands trail off for the first half of it and then stop - a plume on streams that have
-   nothing behind them, which is the whole thing the flag exists to prevent. Coming back out it grows
-   in the same way, before the level behind it exists.
-
-   So it holds at the value the two agree on - the lower - and then ARRIVES with the camera (§7.6),
-   over the last stretch of the move, rather than being interpolated across the whole of it. */
-const plume = (a,b,e) => {const lo=Math.min(a,b);return lo+(b-lo)*clamp01((e-0.6)/0.4)};
 
 /* §8.2  Numbers interpolate, and everything else takes the destination's value - but some numbers are
    not quantities, they are FACTS with a number for a name, and interpolating one produces a state that
@@ -564,7 +548,7 @@ export function blend(A,B,e){
 	const out = {flows:{},bars:{},names:{},boxes:B.boxes,pathOf:B.pathOf,
 		inFocus:B.inFocus,nodeAt:B.nodeAt,capped:B.capped,side:B.side,pitch:B.pitch,hubX:B.hubX,
 		frontOut:lerp(A.frontOut,B.frontOut,e), frontIn:lerp(A.frontIn,B.frontIn,e),
-		plumeOut:plume(A.plumeOut,B.plumeOut,e), plumeIn:plume(A.plumeIn,B.plumeIn,e)};
+		};
 	["flows","bars","names"].forEach(kind => {
 		const keys={}; Object.keys(A[kind]).forEach(k => keys[k]=1); Object.keys(B[kind]).forEach(k => keys[k]=1);
 		Object.keys(keys).forEach(k => {
@@ -898,8 +882,7 @@ export default class MoneyFlowEngine {
 		   run, because "the view stops here" is true whether or not there is more inside. Without the
 		   first half of that, moving back a level sweeps the front leftwards across a tier with
 		   nothing inside it and draws a plume for the length of the sweep. */
-		const pOut = G.plumeOut===undefined?1:G.plumeOut, pIn = G.plumeIn===undefined?1:G.plumeIn;
-		const softLe = softL*pIn;
+
 		/* One edge, built twice: a hard cut on both ends, and the same edge softened over `sl` and
 		   `sr`. BOTH ends are per band, or the fix is only half made - an income stream with nothing
 		   inside it would keep trailing off to the left because a sibling has something. */
@@ -927,7 +910,7 @@ export default class MoneyFlowEngine {
 				[[0,Lop],[mid,1],[Math.max(mid,atX(Rz-sr)),1],[1,Rop]].forEach((p,i) =>
 					this.set(g.childNodes[i],{offset:(p[0]*100)+"%","stop-opacity":p[1]}));
 				return gid}};
-		const cutId = edge("frontC")(0,0), plumeId = edge("frontG")(softLe,soft*pOut);
+		const cutId = edge("frontC")(0,0);
 		const big = {x:cam.x-cam.w,y:cam.y-cam.h,width:cam.w*3,height:cam.h*3};
 		const fmId = this.uid+"-frontM";
 		const fm = this.reuse("grad","frontM",() => {const e=this.mk("mask",{id:fmId,maskUnits:"userSpaceOnUse"});
@@ -940,8 +923,21 @@ export default class MoneyFlowEngine {
 		   had something behind it. Everything is cut hard, and the softened edge is laid over only the
 		   bands that continue. A stream that bottomed out earlier and slid to the end is not one of
 		   them: it has nothing behind it however far the view runs. */
+		/* §6.5  THE RAMP IS THAT BAND'S OWN NUMBER, not a threshold on it. "Does this stream continue"
+		   blends like every other number across a move, so a band losing the level behind it shortens
+		   its plume as that level goes away, and one gaining a level grows the plume as it arrives.
+		   Testing the number against a half instead made a band jump out of the plumed set at the
+		   midpoint - the plume vanished in a single frame rather than animating, which is what a
+		   threshold does to a quantity. It also retires the old per-SIDE flag: a band terminal in both
+		   states carries a zero in both, so it can never plume at any point of a move, which is the
+		   whole of what that flag was protecting.
+		   And the band's own VISIBILITY scales the ramp for the same reason rather than gating it. A
+		   bar arriving at the front fades in, and admitting it only once it passed half meant the
+		   plume appeared at whatever length it had reached by then - a third of the way out, in one
+		   frame. Both numbers multiply, so the plume grows with the band it belongs to. */
+		const rampOf = b => clamp01(b.vis)*clamp01(b.more||0);
 		const conts = Object.keys(G.bars).map(q => G.bars[q])
-			.filter(b => b.vis>0.5&&(b.more||0)>0.5&&b.h>0);
+			.filter(b => rampOf(b)>0.005&&b.h>0);
 		/* AND EACH RECT IS CLIPPED TO ITS OWN SIDE. A full-width one covers that band's y across the
 		   whole picture, so a stream continuing on the out side also softened the IN edge at that
 		   height - and since the two sides stack independently, an income band's rect landed over
@@ -955,7 +951,9 @@ export default class MoneyFlowEngine {
 			let r = fm.childNodes[nR];
 			if(!r){r=this.mk("rect",{});fm.appendChild(r)}
 			const x0 = (b.sd||1)>0 ? hubX : big.x, x1 = (b.sd||1)>0 ? bigR : hubX;
-			this.set(r,{x:x0,width:Math.max(0,x1-x0),y:b.y-0.5,height:b.h+1,fill:"url(#"+plumeId+")"});
+			const m = rampOf(b);
+			const gid = edge("frontG:"+b.id)(softL*m,soft*m);
+			this.set(r,{x:x0,width:Math.max(0,x1-x0),y:b.y-0.5,height:b.h+1,fill:"url(#"+gid+")"});
 			nR++});
 		while(fm.childNodes.length>nR)fm.removeChild(fm.lastChild);
 		this.set(this.gHull,{mask:"url(#"+fmId+")"});
