@@ -21,7 +21,14 @@ a bench instead of from production — see [The instrument](#the-instrument) —
 reused later by handing it a different tree.
 
 **Section numbers below are stable addresses**: the code cites them (`§7.19`), so anything learned
-later is appended to its section rather than inserted.
+later is appended to its section rather than inserted. Every citation in the three files resolves to a
+numbered statement here; if you add one, add the address too.
+
+**Every constant is a named decision**, and they live together in `TUNE` at the top of the engine —
+the two separations, the plume's length and the amount things dim by, the label timings and
+tolerances, the two type sizes, the card's proportion, where the tail is gathered. The sections below
+say what each one decides; the values themselves are in the code, which is the only place they stay
+true. `TUNE` is exported, so a caller may override any of it without touching the engine.
 
 ---
 
@@ -37,12 +44,20 @@ FlowTree = {
   inTotal : number
 }
 Stream = {
-  id, name,
+  id, name,                           // id unique across the whole tree — see below
   tone     : "income" | "savings" | "expenses" | "alert",
   value    : number,                  // >= 0
-  children : Stream[] | null
+  children : Stream[] | null,
+  top?     : boolean,                 // one of the macro categories (9.6)
+  label?   : boolean                  // false to draw the band but never name it (1.2)
 }
 ```
+
+**Ids must be unique across the whole tree**, not merely among siblings. The geometry keys a stream's
+bounding box by id, so two streams sharing one union into a single box spanning both of them — and
+since a box rolls up into its ancestors, the damage propagates to the root and presents as a broken
+fit rather than as a duplicate. Nothing checks this at runtime; production ids come from stream ids
+and are unique by construction.
 
 **1.1 Money in equals money out.** The diagram has no way to draw an imbalance and nothing honest to
 say about one.
@@ -165,10 +180,10 @@ are and the hub keeps its default name.
 
 ## §3 Navigation
 
-**3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one —
-and the narrow one is half what it was, because at a quarter of the wide gap the two levels read as
-one and the grouping the separation exists to show was not legible,
-its siblings step back.
+**3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one,
+and its siblings step back. The narrow separation is half the width it first had: at a quarter of the
+wide one the two levels read as a single set, and the grouping the separation exists to show was not
+legible.
 
 **3.2** Tap the stream you are in to come back out. Tapping it does nothing useful otherwise — you
 are already looking at it — so the gesture is free, and it puts the way out **on the subject** rather
@@ -200,6 +215,11 @@ Savings to Income, only back through the middle and out the other way. The rule 
 the same view mirrored. Its frame is not the income subtree alone — that leaves the hub, the thing
 you are standing on, outside the window.
 
+**3.9 `__inc` is a place you can stand, not a path prefix.** It is a focus value in its own right, and
+the first element of the focus is what says which side you are on. Treating it as a prefix on the
+income paths would make "standing on income" unrepresentable — there would be a focus for every income
+stream and none for the group they belong to — and it is precisely the view 3.8 exists to describe.
+
 ---
 
 ## §4 Layout
@@ -213,8 +233,14 @@ you are standing on, outside the window.
 | deeper | none |
 
 Moving a level re-indexes every gap automatically, which is what makes levels translate rather than
-needing to be re-specified. Pairs not on the focused side read as one set; pairs outside the focus
-get nothing.
+needing to be re-specified.
+
+**4.2 The other side is one set.** A pair that is not on the focused side takes a single separation
+between them whatever their paths do, because the other side is context: its internal structure is
+not the thing being explained, and spacing it as if it were competes with the side that is.
+
+**4.3 A pair outside the focus gets nothing.** Two streams that are not under the focus at all are not
+being distinguished from each other, so no space is spent saying that they differ.
 
 **A separation is a number of SCREEN pixels**, converted with the scale the view will actually be
 drawn at. It used to be converted once against the world and then carried through the vertical fit
@@ -246,9 +272,14 @@ Structurally pruning what a view does not show changes the column count, which c
 which means two diagrams get drawn on top of each other during a move — seen as a bright overlap
 where the ribbons double. Everything a view does not show is present and masked to zero instead.
 
-**4.8** The focused side runs two columns past the focus, capped at that branch's terminal; the other
-side shows exactly one, because it is context rather than subject. **Two columns always**: a view one
-column wide gives a frame half as tall, and the focused band then overflows it.
+**4.8** The focused side runs two columns past the focus, capped at the deepest column the tree has.
+**Two columns always**: a view one column wide gives a frame half as tall, and the focused band then
+overflows it. The cap is the tree's depth and not the subject's, so two subjects side by side frame to
+the same width even when one branch bottoms out earlier than the other (5.6).
+
+**4.9 The other side shows exactly one column**, because it is context rather than subject. It is
+there to say where the money came from, which one column does; a second would spend the frame's width
+on structure nobody asked to see.
 
 ---
 
@@ -256,6 +287,11 @@ column wide gives a frame half as tall, and the focused band then overflows it.
 
 **5.1 No scrolling and no panning.** The frame always holds one whole thing, so there is nothing
 outside it to reach for.
+
+**5.2 What the frame is drawn around** depends on where you are standing. An ordinary subject is framed
+from its own box out to the end of the view. A hub place is framed from the far end of the focused side
+to the far end of the other, because at the hub both sides are below you and the subject is the whole
+picture rather than any one band in it.
 
 **5.3 THE SUBJECT FILLS THE FRAME.** What is left is one strip at each end, holding one neighbour's
 name above and one below — and, because the picture is continuous, the top of the band above and
@@ -320,6 +356,11 @@ junction.
 whichever falls further in. The left fades over a shorter run than the right, because the left is
 where a stream's own name sits.
 
+**6.4 How far a stream steps back, and how long the plume runs, are each one constant.** `dim` is the
+opacity everything out of focus falls to; `softFrac` is the plume's length as a fraction of the column
+pitch, so it scales with the grid rather than with the zoom; `leftShare` is how much of that run the
+left end gets, which is shorter because the left is where a stream's own name sits (6.3).
+
 **6.5 Whether a stream trails off or stops dead is a fact about the DATA**, and the geometry carries
 it as a number per side: *does any stream whose own column is the front column have children*. It
 blends across a move like every other number, and it is deliberately not derived from the front's
@@ -354,14 +395,30 @@ its slope is not, and the eye draws a line at the kink.
 parent, the opposite way round from the out side; reading it off "source" and "destination" instead
 puts the child's strength at the parent's end and produces a hard step in colour exactly at the hub.
 
+**6.12 A ribbon is a cubic, filled flat.** Its control points sit at a fixed fraction (`curve`) of the
+horizontal span, so every ribbon in the picture has the same shape of bend regardless of how far it
+travels, and the fill is one base opacity (`baseOp`) rather than a gradient along its length — the
+gradient it does carry is the horizontal fade of 6.3, which is a different statement. Ribbons overlap
+constantly, so the base opacity is chosen for how the overlaps read, not for how one ribbon reads.
+
 ---
 
 ## §7 Labels
 
-Names exist for the focused side from the focus's depth to two below it, and for the other side only
-at the root. The last named tier goes in a **rail** beyond the end of the view, on the focused side
-only — the other side's names belong beside their own bars, because there is no room reserved out
-there for them.
+**7.1 Which names exist.** On the focused side, from the focus's depth to two below it; on the other
+side, only at the root. Anywhere else the other side is context, and naming it competes with the side
+being explained.
+
+**7.2 The rail sits just beyond the terminal bar**, a few pixels clear of it, so the tier reads as a
+list attached to the picture rather than as part of it.
+
+**7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
+the room it has is one column pitch. Zoomed in, a long name is longer than that and reaches into the
+rail beyond, which is how two names came to be printed in the same place; a name too long for its room
+folds onto two lines rather than being given up (7.17).
+
+**7.4 Only the focused side has a rail.** The other side's names belong beside their own bars, because
+there is no room reserved out there for them.
 
 **7.5 Appearing is a fade, not a switch.** Every test that decides whether a name is drawn — is its
 bar in frame, is its stream thick enough, did the rail have room — yields a *number*. They multiply
@@ -395,12 +452,27 @@ the same clock, in every direction** — holding a name visible across a move lo
 kindness, but its place in the rail comes from a relaxation over a set that is itself changing as the
 geometry blends, so it spends the move stuttering after the camera.
 
+**7.9 The tier follows that clock exactly; everything else eases.** Across a move the tier's opacity is
+the clock's value outright, because the whole point of 7.6 and 7.7 is that it lands with the camera.
+Every other name eases from whatever opacity it currently has — never from zero — so a name that was
+already partly drawn continues from there instead of restarting.
+
 **7.10 The rail is placed as a set**: each name starts on its own bar and neighbours push each *other*
 apart. A one-way sweep accumulates. **7.11 Pressure is weighted by how little a name has to give** —
 a thick band barely yields, a thin one absorbs the push — so the faded ends absorb a crowded tier
 rather than the branch being explained. Weighting every focused name alike let four hairlines shove
 the one thick stream's name off its own band, and that band is the point of the view. And **7.12 whichever end escapes is pinned** — shifting
 the whole column only works while one end has slack.
+
+**7.13 The room a name reserves is measured, not assumed.** The sweep has to know each entry's height
+before it places anything, so whether a name folds onto two lines and whether its amount is shown are
+settled first, and the extents are then read from the type it will actually be set in — which is why a
+small name reserves proportionally less and the tier gains stacking room (9.6).
+
+**7.15 What gets dropped is decided by focus first, size second.** When the tier cannot hold every
+entry, anything outside the focused branch goes before anything inside it, and within a group the
+smallest band goes first. A name's importance here is the branch it belongs to, then the money it
+stands for.
 
 **7.14 The amount is given up before any name is.** It is worth twice the room the name is, and
 zoomed in nearly every end qualifies for the two-line form. **7.16 A name that has drifted off its
@@ -422,17 +494,22 @@ ten screen pixels, about half of which is the text baseline sitting below the ce
 not reachable from jest: the relaxation needs real text metrics and a real width, and jsdom has
 neither, so the engine declines to paint. The bench IS the test for anything in 7.10–7.17.
 
-**7.18** A name's displacement from its bar is smoothed while the bar itself is followed exactly.
-A consequence worth knowing: the frame pump stops once nothing is moving appreciably, so a label's
-*resting* position is within that tolerance of its solved position and depends slightly on how many
-frames it took to get there. Two runs land a hundredth of a screen pixel apart — do not write a test
-that demands exact reproducibility here.
+**7.18** A name's displacement from its bar is smoothed while the bar itself is followed exactly, so
+the name never lags the thing it names. This is why the at-rest rule cannot simply smooth the absolute
+position the way a move does (7.28): bars move at rest too — a change of basis tweens them over its own
+clock with no move running — and a name smoothing its absolute position would lag its own bar. What a
+resting position is reproducible to is a property of the pump; see 8.6.
 
 **7.25 A name that changes place stays VISIBLE while it moves.** Fading it out and back in was tried
 and rejected: it keeps the motion short, but the eye loses the word entirely for a moment and with it
 any sense that the thing it names is the thing that just moved. Keeping it visible is only affordable
 because of the three rules below, which between them cut a sideways move from 174px of travel with a
 53px jump to 62px, monotone, at full opacity.
+
+**7.24 Membership is decided by where the move is GOING, not by how lit a name is now.** Which names
+belong to the focused branch is read from the destination, once. Reading it from the blend instead
+makes it a coin toss on the first frames, when the two states nearly coincide — and a name that
+flickers in and out of the set bounces between the slot it would take and the bar it sits on.
 
 **7.23 The neighbour slots belong to the CAMERA, not to the geometry.** By 5.3 the subject lands
 filling the frame less one strip at each end, so at rest these are the same two lines. During a move
@@ -503,6 +580,11 @@ bars move at rest too — a change of basis tweens them over `dataMs` with no mo
 smoothing its absolute position would lag the very bar it is naming, which is what 7.18 exists to
 prevent.
 
+**7.21 The label constants.** `leadMs` is how long a name has to leave or arrive inside a move;
+`driftPx` is how far a name may sit from its own bar before it has stopped naming it (7.16); `edgePx`
+is the distance over which a name fades as its bar reaches the edge of the frame. They are named
+because each is a decision, not a magic number, and they live together in `TUNE`.
+
 **7.19 The drawn left edge is smoothed too.** A name that swaps which side of its bar it sits on
 jumps by its own width, because the anchor changes in one step while its x interpolates.
 
@@ -528,12 +610,25 @@ sits over the stream it names and does not compete with the subject's own name f
 
 ## §8 Motion
 
-**One clock.** Focus, camera, dim, masks and labels are driven from the same interval and land
-together. A transition lays out both states and blends per key — numeric fields interpolate,
-everything else takes the destination's value. `lit` is blended too, or a sideways move between two
-siblings shows as an instant swap of what is bright.
+**8.1 One clock.** Focus, camera, dim, masks and labels are driven from the same interval and land
+together. The state is what interpolates and the geometry is re-derived from it each frame, rather
+than each part animating itself — which is the only way the picture can be internally consistent
+mid-move: a ribbon, the bar it lands on and the name beside it are all read from one geometry.
 
-Changing period or basis tweens the values and re-derives the layout each frame. **The values are
+**8.2 A transition blends per KEY.** It lays out both states and pairs entities by their key — numeric
+fields interpolate, everything else takes the destination's value. This is exactly why 4.7 insists the
+key set never depends on the focus: if the two sides hold different keys, the pairing fails and two
+diagrams draw at once. `lit` is blended too, or a sideways move between two siblings shows as an
+instant swap of what is bright.
+
+**8.3 The move's own progress is eased**, and everything keyed to it — camera, geometry, the distance a
+name has left to travel (7.28) — reads that same eased value, so nothing arrives early or late relative
+to the picture it belongs to.
+
+**8.4 The value tween is a separate clock from the move.** Changing period or basis tweens the values
+and re-derives the layout each frame, over its own duration: it is a change of *what is being shown*
+rather than of *where you are standing*, the two can overlap, and giving them one duration would make
+a basis change feel like navigation. **The values are
 paired by ID, not by position.** The two bases do not hold the same streams — one with no transactions
 this period is absent from the actuals and present in the target — so pairing by position could not
 match them at all, and the picture snapped from one state to the other instead of moving. What animates
@@ -542,27 +637,41 @@ shrinks into, nothing. 1.3 survives it, because a missing stream counts as zero 
 interpolation is linear, so a parent stays the sum of its children at every step. `prefers-reduced-
 motion` settles immediately.
 
+**8.6 A fade still in flight keeps its own pump running.** Once a move has settled, nothing else is
+driving the clock — so a label part-way through appearing would freeze at whatever opacity it had
+reached. Anything still easing asks for another frame on its own behalf, and the loop stops only when
+nothing is moving appreciably. A consequence worth knowing: a label's *resting* position is therefore
+within that tolerance of its solved position, and depends slightly on how many frames it took to get
+there. Two runs land a hundredth of a screen pixel apart — do not write a test that demands exact
+reproducibility of a resting label.
+
 ---
 
 ## §9 The tile
 
-**The header IS the title**: one line — *"Actuals this year"* — with the two words that could be
+**9.1 The header IS the title**: one line — *"Actuals this year"* — with the two words that could be
 something else made tappable. There is nothing to label and nothing to explain; the sentence already
 says which of the four views this is, and changing it is changing the thing.
 
-**A period can legitimately hold nothing.** "A period is the whole of itself", so early in a
+**9.2 A period can legitimately hold nothing.** "A period is the whole of itself", so early in a
 sub-period the sub-period is nearly empty and there is no picture to draw — and the boundary is the
 reporting anchor rather than midnight, so this is not only a first-of-the-month case. That is the
 truth rather than a failure, but an empty card does not say it, so a line does: *"Nothing yet this
 month"*. It names the data, not the interface. The engine survives an empty tree on its own; the line
 is the tile's job.
 
-**The same tree is not a change.** Opening a stream calls back to the tile, which re-renders and
+**9.3 The card's proportion is fixed, and the tail slides.** The aspect ratio is a constant, not a
+measurement of whatever box the tile happens to get: the frame's height follows its width (5.6), so
+letting the proportion vary would make where a view lands depend on the container. `tail` chooses what
+a stream that has bottomed out does with the columns beyond it — it slides its bar out to the end of
+the view, so the tier is a straight edge rather than a ragged one.
+
+**9.5 The same tree is not a change.** Opening a stream calls back to the tile, which re-renders and
 hands the tree straight back. If that counted as a change, its value tween would rebuild the geometry
 every frame and overwrite the focus transition running underneath it. The tile memoises, so an
 unchanged tree arrives as the same reference and the engine returns early on identity.
 
-**One face, and the type says two things.** There is a single typeface for every name. A second,
+**9.6 One face, and the type says two things.** There is a single typeface for every name. A second,
 condensed face for the macro categories was a third thing for the type to say on top of the two it
 already said, and with weight and size in play as well the tier read as four unrelated treatments
 rather than one system. The amount under a name is still set in the numeric face — it is a number, and
@@ -594,7 +703,7 @@ neighbours around it. Which of the two a stream is used to come from the DATA fo
 the adapter still marks the master's children, since the column cannot tell a macro category from an
 income stream standing the same distance from the hub (2.7).
 
-**The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
+**9.4 The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
 state has no way to end — the browser leaves it applied after the tap, sitting on the label of the
 stream you just opened, at the moment it should be brightest. A renderer that rebuilt its nodes every
 frame would hide this by accident; this one reuses them by key, so it does not.
@@ -629,7 +738,8 @@ numbers are produced.
 ## The instrument
 
 `documentation/visualisation-carousel.md` records what it cost to converge the last visualisation
-without one: five rounds, four of them shipped to production and judged by eye. This one has two.
+without one: five rounds, four of them shipped to production and judged by eye. This one is built
+against instruments instead, at four levels.
 
 **The numbers** — [`moneyFlow.test.js`](../src/tests/moneyFlow.test.js), run with
 `npx react-scripts test`. It drives `buildFlowTree` through **real** `CompoundStream`,
@@ -643,10 +753,42 @@ actually has — a typo there costs a blank tile in production and nothing at bu
 layout, so the engine measures its host at zero width and declines to paint, which is the other thing
 under test: a page that is not on screen yet must not throw.
 
-**The picture** — the engine has no imports, so a bench page can load it with its `export` keywords
-stripped, drive it beside the original prototype from one mock provider, and diff every `path`,
-`rect`, `text`, gradient stop and mask the two produce. That comparison is what the port was signed
-off on: identical across twelve states.
+**The layout** — [`moneyFlowEngine.test.js`](../src/tests/moneyFlowEngine.test.js) asserts the pure
+half directly, because `groupTail`, `layout`, `frame` and `compose` need no screen. It holds the
+invariants that decide whether the picture is *readable* as opposed to *correct*: the subject fills
+the frame at every focus, two subjects at the same level land at the same x, a separation measures the
+same number of screen pixels wherever you stand, a name sits on the bar it names, and no number in any
+scene is ever NaN. That last one exists because a unit conversion missed one branch and turned the
+whole income side into NaN while every other invariant kept passing — NaN compares false with
+everything.
+
+**The picture** — the engine has no imports, which is what makes it drivable from outside production,
+in two ways that catch different things:
+
+- *In a VM, with no browser at all.* The engine's source loads into a Node context with its `export`
+  keywords stripped, and the pure functions can then be run over a realistic tree — every focus in a
+  portfolio-shaped fixture, checked in about a second. This is the first thing to reach for: it found
+  a framing fault at four focuses that had survived a browser sweep, and then showed the fault was in
+  the fixture rather than the engine.
+- *In a headless browser, over CDP.* A bench page loads the same stripped source, and probes drive it
+  through real navigation and read what was actually drawn — label positions frame by frame, opacity,
+  the type each name was set in. Anything about motion or text metrics can only be measured here:
+  jsdom has no layout and no text measurement, so the engine declines to paint and every label rule
+  (7.10–7.17, 7.23–7.28) is invisible to jest. **The bench is where the label rules are tested.**
+
+Three habits, each bought with a wasted hour. A bench runner must **rebuild from the engine on disk
+every run**, or a before/after comparison silently runs the same build twice and reports a real fix as
+inert. A probe must have a **deadline per step**, or one unanswerable question — asking to open a node
+with no children, which is not a view — hangs the whole sweep. And a fixture must have **unique ids**:
+boxes are keyed by id, so two nodes sharing one union into a box spanning both halves of the picture,
+which propagates through every ancestor and reads exactly like a broken fit.
+
+The bench and its probes are scratch, rebuilt per session rather than committed. What is durable is
+the property that allows them: **the engine imports nothing**. Keep it that way.
+
+Historically, this same diffing rig is what the port was signed off on — the shipped engine and the
+prototype it came from were driven side by side from one mock provider and compared node by node,
+identical across twelve states.
 
 ---
 

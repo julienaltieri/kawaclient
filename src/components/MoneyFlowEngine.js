@@ -311,11 +311,11 @@ export function layout(tree,focus,opt){
 			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
 			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
-			   /* §9.6  what a name IS - a macro category or a stream inside one - decides its face;
-			      what it is DOING decides its weight. Which of the two it is comes from the DATA, not
-			      from the column: the income streams sit one column from the hub exactly as the macro
-			      categories do, but they are a level below them - the single income group above them
-			      was unwrapped into the hub itself (§2.7). */
+			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
+			      comes from the DATA and not from the column: the income streams sit one column from
+			      the hub exactly as the macro categories do, but they are a level below them - the
+			      single income group above them was unwrapped into the hub itself (§2.7). It no longer
+			      chooses a FACE; there is one face now, and size says the level (§9.6). */
 			   top:!!n.top,
 			   /* §9.6  how far below the focus this name sits, and whether the stream ends here. The
 			      type is decided from these rather than from the column: the column cannot tell the
