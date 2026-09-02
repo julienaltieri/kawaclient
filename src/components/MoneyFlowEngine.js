@@ -726,29 +726,48 @@ export default class MoneyFlowEngine {
 		   will have on screen (§1.10), and that needs the card's width. */
 		this.groupedAt = this.host.clientWidth||0;
 		const tree = groupTail(raw,this.opts());                  // §1.10
-		/* §8.5  A TWEEN NEEDS THE TWO TREES TO HAVE THE SAME SHAPE. It animates the UNION, pairing by
-		   id, and that is only a tree while every stream sits under the same parent on both sides. The
-		   gathering is decided from the values (§1.10), so a different window can gather differently -
-		   and then a stream is a child of its category on one side and a member of that category's
-		   Other on the other. The union holds it in BOTH places, its value is counted twice, and the
-		   picture that comes out is not a Sankey of anything: ribbons crossing, parents smaller than
-		   their children. Switching period back and forth was enough to see it.
-
-		   When the shapes disagree the change is a replacement, not a movement. Nothing is lost by
-		   that: a stream moving in or out of an Other is not travelling anywhere the eye could follow
-		   it. When they agree - the ordinary case, including actuals against target on the same
-		   window - it tweens as before. */
-		const placeOf = t => {const m={};
-			const walk = (l,p) => (l||[]).forEach(n => {m[n.id]=p; walk(n.children,n.id)});
-			walk(t.in,"__in"); walk(t.out,"__out"); return m};
-		const reshaped = () => {const a=placeOf(this.tree||this.shown), b=placeOf(tree);
-			for(const id in b)if(a[id]!==undefined&&a[id]!==b[id])return true;
-			return false};
-		if(!this.shown||replace||reshaped()){this.tree=tree;
+		if(!this.shown||replace){this.tree=tree;
 			this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		this.tree = tree;
 		if(this.reduced){this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
-		const from = this.shown, t0 = performance.now();
+		/* §8.5  THE TWO SIDES OF A TWEEN MUST SHARE A SHAPE. It animates the union, pairing by id, and
+		   that is only a tree while every stream sits under the same parent on both sides. The
+		   gathering is decided from the values (§1.10), so a different window gathers differently -
+		   and then a stream is a child of its category on one side and a member of that category's
+		   Other on the other. The union holds it in BOTH places, counts its value twice, and what
+		   comes out is not a Sankey of anything: ribbons crossing, parents smaller than their
+		   children. Switching period back and forth was enough to see it.
+
+		   Refusing to animate was the first answer and it was worse than the fault: the picture jumped
+		   on every change of window, which is the one moment the streams are all still there and only
+		   their sizes have changed - exactly what an animation is for. So the state it starts FROM is
+		   rebuilt on the destination's shape, carrying the values that are on screen now: every id
+		   lands under one parent, every parent is the sum of its children, and the tween is a pure
+		   change of size from there. What is not animated is a stream moving into or out of an Other,
+		   which happens on the first frame - and that is the right frame for it, since nothing has
+		   moved yet and it is not a journey the eye could follow anyway. */
+		const onto = (dst,src) => {
+			const val = {};
+			const scan = l => (l||[]).forEach(n => {val[n.id]=n.value; scan(n.children)});
+			scan(src.in); scan(src.out);
+			const build = l => (l||[]).map(n => {
+				const kids = n.children ? build(n.children) : null;
+				return Object.assign({},n,{children:kids,
+					value: kids&&kids.length ? kids.reduce((a,b) => a+b.value,0)
+					                         : (val[n.id]===undefined?0:val[n.id])})});
+			const [i,o] = [build(dst.in),build(dst.out)];
+			const sum = a => a.reduce((x,y) => x+y.value,0);
+			return {hubName:dst.hubName, in:i, out:o, inTotal:Math.max(sum(i),sum(o))};
+		};
+		const placeOf = t => {const m={};
+			const walk = (l,p) => (l||[]).forEach(n => {m[n.id]=p; walk(n.children,n.id)});
+			walk(t.in,"__in"); walk(t.out,"__out"); return m};
+		const shapes = [placeOf(this.shown),placeOf(tree)];
+		const reshaped = Object.keys(shapes[1]).some(id =>
+			shapes[0][id]!==undefined&&shapes[0][id]!==shapes[1][id]);
+		const from = reshaped ? onto(tree,this.shown) : this.shown;
+		if(reshaped)this.shown = JSON.parse(JSON.stringify(from));
+		const t0 = performance.now();
 		cancelAnimationFrame(this.dataClock);
 		/* §1.5  Values are paired by ID, not by position. The two bases do not hold the same streams -
 		   one with no transactions this period is absent from the actuals and present in the target -

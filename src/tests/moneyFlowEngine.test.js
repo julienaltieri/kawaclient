@@ -281,20 +281,32 @@ describe("a change of basis that reshapes the tree", () => {
 		const walk = (l,p) => (l||[]).forEach(n => {(m[n.id]=m[n.id]||[]).push(p); walk(n.children,n.id)})
 		walk(t.in,"__in"); walk(t.out,"__out"); return m}
 
-	test("is replaced, not blended into the old one", () => {
+	test("animates from the old values onto the new shape, holding nothing twice", () => {
 		const host = document.createElement("div"); document.body.appendChild(host)
 		const eng = new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
 			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => "$"+Math.round(v)})
 		// one window with a long thin tail, another where the same streams are all of a size: the two
 		// gather differently, so some stream changes parent between them
-		eng.setTree(mk([1000,10,10,10,10,10,10,10,10,10]))
+		eng.setTree(mk([1000,10,10,10,10,10,10,10,10,10]))       // heavy tail: gathers
 		const before = places(eng.shown)
-		eng.setTree(mk([100,100,100,100,100,100,100,100,100,100]))
+		eng.setTree(mk([500,500,500,500,500,500,500,500,500,500])) // all of a size: gathers otherwise
 		const after = places(eng.shown)
+
 		const moved = Object.keys(after).some(id => before[id] && before[id][0] !== after[id][0])
 		expect(moved).toBe(true)                       // the fixture really does reshape
-		// and nothing is left holding a stream in two places at once
+		// nothing is held in two places at once - the union of two shapes counted a stream twice, and
+		// the picture that came out had ribbons crossing and parents smaller than their children
 		Object.keys(after).forEach(id => expect(after[id].length).toBe(1))
+		// and it MOVES rather than jumping: the first frame still carries the old values, on the new
+		// shape, so the change of window is a change of size the eye can follow
+		expect(eng.shown.inTotal).toBeCloseTo(1090, 0)
+		expect(eng.tree.inTotal).toBeCloseTo(5000, 0)
+		// every parent is still exactly the sum of its children (§1.3), on that first frame too
+		const check = l => (l||[]).forEach(n => {
+			if(n.children&&n.children.length)
+				expect(n.children.reduce((a,b) => a+b.value,0)).toBeCloseTo(n.value,6)
+			check(n.children)})
+		check(eng.shown.out); check(eng.shown.in)
 		host.remove()
 	})
 })

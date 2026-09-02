@@ -792,17 +792,24 @@ shrinks into, nothing. 1.3 survives it, because a missing stream counts as zero 
 interpolation is linear, so a parent stays the sum of its children at every step. `prefers-reduced-
 motion` settles immediately.
 
-**8.5 A tween needs the two trees to have the same SHAPE.** It animates the union, pairing by id, and
-that is only a tree while every stream sits under the same parent on both sides. The gathering is
-decided from the values (1.10), so a different window can gather differently — and then a stream is a
-child of its category on one side and a member of that category's Other on the other. The union holds
-it in BOTH places, its value is counted twice, and what comes out is not a Sankey of anything: ribbons
-crossing, parents smaller than their children. Switching period back and forth was enough to see it.
+**8.5 The two sides of a tween must share a SHAPE.** It animates the union, pairing by id, and that is
+only a tree while every stream sits under the same parent on both sides. The gathering is decided from
+the values (1.10), so a different window gathers differently — and then a stream is a child of its
+category on one side and a member of that category's Other on the other. The union holds it in BOTH
+places, counts its value twice, and what comes out is not a Sankey of anything: ribbons crossing,
+parents smaller than their children. Switching period back and forth was enough to see it.
 
-When the shapes disagree the change is a replacement rather than a movement, and nothing is lost by
-that: a stream moving into or out of an Other is not travelling anywhere the eye could follow. When
-they agree — the ordinary case, including actuals against target on the same window — it tweens as
-before.
+**Refusing to animate was the first answer, and it was worse than the fault.** The picture jumped on
+every change of window — which is the one moment when all the streams are still there and only their
+sizes have changed, exactly what an animation is for. Instead, the state the tween starts FROM is
+rebuilt on the DESTINATION's shape, carrying the values that are on screen now: every id lands under
+one parent, every parent is the sum of its children (1.3), and the tween is a pure change of size from
+there.
+
+What is not animated is a stream moving into or out of an Other. That happens on the first frame —
+and that is the right frame for it: nothing has moved yet, and it is not a journey the eye could
+follow in any case. Where the two shapes already agree, which is most changes, nothing is rebuilt and
+the tween runs exactly as before.
 
 **8.6 A fade still in flight keeps its own pump running.** Once a move has settled, nothing else is
 driving the clock — so a label part-way through appearing would freeze at whatever opacity it had
