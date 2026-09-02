@@ -396,12 +396,25 @@ It is deliberately not derived from the front's POSITION at render time. The fro
 coordinate, so moving back a level sweeps it leftwards across the tier, and a ramp keyed off it draws a
 plume for the length of that sweep over a tier with nothing inside it.
 
-**Each rect is clipped to its own side.** A full-width one covers that band's rows across the whole
+**Each rect covers only the region BEYOND the front, on its own side.** A mask paints its shapes over
+one another, and two semi-transparent whites composite to something brighter than either — so a rect
+laid over the background across a whole side doubled the mask wherever both were partly open, which is
+exactly the window's fade. Where the mask was already 1 it saturated and nothing showed; in the fade,
+at about a fifth, it doubled, and the cut edge gained a brighter strip on every band that had a plume.
+There is nothing to lay over until past the front anyway: up to it the two gradients say the same
+thing, and past it the background is cut to zero, so the plume adds to nothing and lands as drawn.
+
+**And each is clipped to its own side.** A full-width one covers that band's rows across the whole
 picture, so a stream continuing on the out side also softened the IN edge at that height — and because
 the two sides stack independently, an income band's rect landed over whatever out-side band shared its
 rows and gave that one a plume it had no claim to. On screen that read as the plume breaking into
 stripes of different strength, and as the leftover band trailing off for no reason. A band's edge is a
 statement about its own end.
+
+**The two ends of the gradient are independent.** Taking the minimum of "where the left ramp ends" and
+"where the right ramp starts" truncated the LEFT ramp whenever the right one began earlier — and the
+right ramp is the plume, whose length is the band's own business, so each band's left edge faded over a
+different distance. They meet only if the two ramps overlap, and then they meet in the middle.
 
 **The window's cut keeps its full run** whatever the band answers. "The view stops here" is true
 whether or not there is more inside, so only the reveal ramp is the band's business. Building the
@@ -575,8 +588,17 @@ second line beneath the name once, worth twice the room the name was, and it WAS
 up — that rule is gone with the stacking that made it necessary.
 
 **7.16 A name that has drifted off its own bar has stopped naming it**, so names are given up until
-the focused branch's names sit on their bars again — and never while the camera is moving, which would
-be a second source of jitter. Alignment is the inviolable half of the rule and MEMBERSHIP is what
+the focused branch's names sit on their bars again. **How far is too far depends on the BAND**: a flat
+tolerance says nothing about whether the name still points at anything, and eight pixels is comfortably
+inside a fat band and completely outside a seven-pixel one — which is where names were landing, clear
+of the hairline they named. The tolerance is half the band, never more than `driftPx`.
+
+This runs DURING a move as well as at rest. Held back until the camera stopped, every name that could
+not keep its bar was given up in the single frame after it landed, and the survivors shifted two or
+three pixels as the tier re-solved around the gap — a shuffle at exactly the moment the eye has settled
+and is reading. Run continuously, a name losing its bar fades out over the move instead, and nothing
+changes on arrival. The jitter the old guard protected against does not appear: the set only shrinks as
+the geometry blends toward a view that holds fewer names, so it moves one way. Alignment is the inviolable half of the rule and MEMBERSHIP is what
 gives: a name that cannot sit on its bar is not shown at all. Out-of-focus names go first and the
 smallest band next, never the subject's own — the biggest-first ordering of §1 again, the largest
 bands being what the view is for.
@@ -677,8 +699,13 @@ is already still.
 The seed is taken once, at whatever progress the name first appears, and the remaining travel is what
 is left of the move — so a name appearing midway is not asked to cover the whole distance in the time
 that is left. Both at-rest stores are kept current underneath, so the exponential smoother picks up
-where the move leaves off — which also absorbs the small error for a name that will land in the rail,
-whose relaxation is not solved for the destination in advance.
+where the move leaves off.
+
+**The landing place is the destination's bar PLUS what the tier's relaxation owes it there.** Aiming at
+the bare bar meant a name arrived a couple of pixels off its resting place and then eased the rest of
+the way once the camera had stopped — the same shuffle 7.16 is about, seen from the other direction.
+The relaxation is solved on the blend and converges to the destination's as the move completes, so by
+the time it matters it is the right number.
 
 This is also why the at-rest rule cannot simply smooth the absolute position the way the move does:
 bars move at rest too — a change of basis tweens them over `dataMs` with no move running — and a name

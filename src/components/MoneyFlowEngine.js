@@ -1001,13 +1001,21 @@ export default class MoneyFlowEngine {
 				const Rz = Math.min(camR,frontOut+sr);
 				const Rop = Rz<frontOut+sr-0.01 ? 1-clamp01((frontOut-camR)/Math.max(1,soft)) : 0;
 				const spanX = Math.max(1,Rz-Lz), atX = x => clamp01((x-Lz)/spanX);
-				const mid = Math.min(atX(Lz+sl),atX(Rz-sr));
+				/* §6.5  THE TWO ENDS ARE INDEPENDENT. Taking the minimum of "where the left ramp ends"
+				   and "where the right ramp starts" truncated the LEFT ramp whenever the right one
+				   began earlier - and the right ramp is the plume, whose length is the band's own
+				   business. So each band's left edge faded over a different distance, which is the
+				   banding: horizontal strips of different strength down the cut edge, on bands whose
+				   only real difference is what is behind them. They meet only if the two ramps
+				   overlap, and then they meet in the middle. */
+				let a2 = atX(Lz+sl), b2 = atX(Rz-sr);
+				if(a2>b2){const m=(a2+b2)/2; a2=m; b2=m}
 				const g = this.reuse("grad",name,() => {const e=this.mk("linearGradient",
 						{id:gid,gradientUnits:"userSpaceOnUse",y1:0,y2:0});
 					for(let i=0;i<4;i++)e.appendChild(this.mk("stop",{"stop-color":"#fff"}));
 					this.gDefs.appendChild(e);return e});
 				this.set(g,{x1:Lz,x2:Rz});
-				[[0,Lop],[mid,1],[Math.max(mid,atX(Rz-sr)),1],[1,Rop]].forEach((p,i) =>
+				[[0,Lop],[a2,1],[b2,1],[1,Rop]].forEach((p,i) =>
 					this.set(g.childNodes[i],{offset:(p[0]*100)+"%","stop-opacity":p[1]}));
 				return gid}};
 		const cutId = edge("frontC")(0,0);
@@ -1050,10 +1058,29 @@ export default class MoneyFlowEngine {
 		conts.forEach(b => {
 			let r = fm.childNodes[nR];
 			if(!r){r=this.mk("rect",{});fm.appendChild(r)}
-			const x0 = (b.sd||1)>0 ? hubX : big.x, x1 = (b.sd||1)>0 ? bigR : hubX;
+			/* BEYOND THE FRONT ONLY. A mask paints its shapes over one another, and two semi-transparent
+			   whites composite to something brighter than either - so a rect laid over the background
+			   across the whole side doubled the mask wherever both were partly open, which is exactly
+			   the window's fade. Where the mask was already 1 it saturated and nothing showed; in the
+			   fade, at about a fifth, it doubled, and the cut edge gained a brighter strip on every
+			   band that had a plume. That is the banding, and the ±0.5 seam guard was not it.
+
+			   There is nothing to lay over anyway until past the front: up to it the two gradients say
+			   the same thing, and past it the background is cut to zero, so the plume adds to nothing
+			   and lands exactly as drawn. */
+			const out = (b.sd||1)>0;
+			const x0 = out ? Math.max(hubX,frontOut) : big.x;
+			const x1 = out ? bigR : Math.min(hubX,frontIn);
 			const m = rampOf(b);
 			const gid = edge("frontG:"+b.id)(softL*m,soft*m);
-			this.set(r,{x:x0,width:Math.max(0,x1-x0),y:b.y-0.5,height:b.h+1,fill:"url(#"+gid+")"});
+			/* exactly the band, with no bleed. Overlapping the neighbour by half a pixel each side -
+			   which is what a seam guard looks like - makes the two fills composite where they meet,
+			   and a mask adds coverage: the shared row comes out brighter than either. Where the mask
+			   is already 1 that saturates and is invisible; in the fade, where it is a fifth, it
+			   doubles, and the cut edge gains a bright line at every band boundary. That is the
+			   banding. There is no seam to guard against - the cut gradient underneath covers the
+			   whole card, and the two agree everywhere except past the front. */
+			this.set(r,{x:x0,width:Math.max(0,x1-x0),y:b.y,height:b.h,fill:"url(#"+gid+")"});
 			nR++});
 		while(fm.childNodes.length>nR)fm.removeChild(fm.lastChild);
 		this.set(this.gHull,{mask:"url(#"+fmId+")"});
@@ -1309,7 +1336,15 @@ export default class MoneyFlowEngine {
 			rails.forEach(n => {if(kin(n.id))
 				m=Math.max(m,Math.abs(railY[n.id]-(n.y+n.h/2))-tolOf(n)+DRIFT)});
 			return m};
-		while(!this.animating&&rails.length>1&&worstDrift()>DRIFT){
+		/* §7.16  This runs DURING a move as well as at rest. Held back until the camera stopped, every
+		   name that could not keep its bar was given up in the single frame after it landed, and the
+		   survivors shifted two or three pixels as the tier re-solved around the gap - a shuffle that
+		   happens exactly when the eye has settled and is reading. Run continuously, a name that is
+		   losing its bar fades out over the move instead, on the ease every other name uses (§7.5),
+		   and nothing changes at the moment of arrival. The jitter this guard was protecting against
+		   does not appear: the set only shrinks as the geometry blends toward a view that holds fewer
+		   names, so it moves one way. */
+		while(rails.length>1&&worstDrift()>DRIFT){
 			let give = -1;
 			for(let i=0;i<rails.length;i++)
 				if(!kin(rails[i].id)&&(give<0||rails[i].h<rails[give].h))give = i;
@@ -1398,8 +1433,15 @@ export default class MoneyFlowEngine {
 				let pF = tS;
 				if(!isPin&&this.moveTo){
 					const nb = this.moveTo.g.names[key];
+					/* §7.16  plus the displacement the tier has pushed it to. The landing place is the
+					   destination's bar PLUS whatever the relaxation owes it there - aiming at the bare
+					   bar meant the name arrived a couple of pixels off its resting place and then
+					   eased the rest of the way once the camera had stopped, which is a shuffle at the
+					   one moment the eye has settled. The relaxation is solved on the blend and
+					   converges to the destination's as the move completes, so by the time it matters
+					   it is the right number. */
 					if(nb){const kB = this.moveTo.cam.w/opt.cssW;
-						pF = ((nb.y+nb.h/2)-this.moveTo.cam.y)/kB}
+						pF = ((nb.y+nb.h/2)-this.moveTo.cam.y)/kB + raw/k}
 				}
 				if(sd.p0===null)cyS = pF;
 				else{const span = 1-sd.e, u = span>1e-3 ? clamp01((mv-sd.e)/span) : 1;
