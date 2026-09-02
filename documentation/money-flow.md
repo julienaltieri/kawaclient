@@ -690,10 +690,16 @@ less height, which is what the tier is always short of. Small names reserve prop
 in the sweep (7.13), so the extra stacking space is real rather than cosmetic; every size, extent and
 baseline is measured against `bodyPx`, so they travel together.
 
-At the root the level you are standing on is the macro categories — one column out, not zero — and the
-hub carries the name of the thing you are standing on, so it is body too. This is why the rule counts
-from the FOCUS and not from the column, or from being in the tier: the same column means a different
-level in a root view and in a focused one, and the column cannot tell them apart. A pinned neighbour
+At the root the level you are standing on is the macro categories, and **which streams those are is
+read from the DATA, not from a count**. Depth cannot tell: the income streams stand one column from the
+hub exactly as the categories do and their depth says the same thing, but they are a level *below*
+them — the single income group above them was unwrapped into the hub itself (2.7). Counting made
+Activity Income a category, which is the same mistake the face used to make before it was removed.
+`top` marks the master's children and nothing else, and it is the only thing that knows. Away from the
+root there is a real subject to count from and the depth is right; the hub carries the name of the
+thing you are standing on, so it is body wherever it is drawn. This is also why the rule counts from
+the FOCUS and not from the column, or from being in the tier: the same column means a different level
+in a root view and in a focused one. A pinned neighbour
 is body whatever level it came from: by 3.6 a stream that is its parent's first child borrows the
 parent's neighbour, so one member of that row can be a level up — but it is the same control, and
 setting it smaller says the two are different kinds of thing.

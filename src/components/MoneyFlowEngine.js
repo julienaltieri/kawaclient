@@ -742,10 +742,15 @@ export default class MoneyFlowEngine {
 		   puts the weight of the type on the row you are reading and lets the two levels of detail
 		   underneath stack in less height, which is what the tier is always short of.
 
-		   At the root the level you are standing on is the macro categories, one column out rather
-		   than zero, which is why this counts from the focus rather than from the column: the same
-		   column means a different level in a root view and a focused one. The hub carries the name of
-		   the thing you are standing on at the root, so it is body too.
+		   At the ROOT the level you are standing on is the macro categories, and which streams those
+		   are is read from the DATA rather than from a count. Depth cannot tell: the income streams
+		   stand one column from the hub exactly as the categories do and their depth says the same
+		   thing, but they are a level BELOW them - the single income group above them was unwrapped
+		   into the hub itself (§2.7) - so counting made Activity Income a category, which is the same
+		   mistake the face used to make before it was removed. `top` marks the master's children and
+		   nothing else, and it is the only thing that knows. Away from the root there is a real subject
+		   to count from, and the depth is right. The hub carries the name of the thing you are standing
+		   on at the root, so it is body too.
 
 		   NOTHING IS BOLD. Weight was saying what is in focus while size said what level it was at,
 		   and two channels for two facts read as four treatments; the framing already says what is in
@@ -755,8 +760,7 @@ export default class MoneyFlowEngine {
 		   first child borrows the parent's neighbour, so one of the names in that row can be a level
 		   up - but the row is the row you can step sideways into, and setting one member of it smaller
 		   than the rest says they are different kinds of thing when they are the same control. */
-		const bodyRel = f.length ? 0 : 1;
-		const body = !!n.pin || n.id===INC || (n.rel||0)===bodyRel;
+		const body = !!n.pin || n.id===INC || (f.length ? (n.rel||0)===0 : !!n.top);
 		return {bold:false, family:this.opt.fontFamily||"inherit",
 			size:body ? t.bodyPx : t.smallPx};
 	}
