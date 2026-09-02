@@ -181,12 +181,17 @@ are and the hub keeps its default name.
 ## §3 Navigation
 
 **3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one,
-and its siblings step back. Both have been halved from their first values, in two steps and for
-opposite reasons: the narrow one because at a quarter of the wide one the two levels read as a single
-set and the grouping the separation exists to show was not legible, and the wide one because a gap
-that is easily read is still too much room to spend when the subject's own children are what the view
-is for. What the separations have to do is make the division visible; anything past that is height
-taken from the bands.
+and its siblings step back. Both have come down a long way from their first values, in three steps:
+the wide one halved, because a gap that is easily read is still too much room to spend when the
+subject's own children are what the view is for, and the narrow one quartered, because next to the
+wide one it kept reading as the same gap rather than as a lesser one. What a separation has to do is
+make the division visible, and past that it is height taken from the bands — which is the whole
+budget the view is competing for.
+
+**5.4 also gave room back**: the share of the frame reserved for the tier came down, because the
+names in it are set smaller now (9.6) and no longer need the width they did. Measured across nine
+focuses, the tier went from naming two streams to naming five on the widest of them, with every name
+still within a few pixels of its own bar.
 
 **3.2** Tap the stream you are in to come back out. Tapping it does nothing useful otherwise — you
 are already looking at it — so the gesture is free, and it puts the way out **on the subject** rather
@@ -376,7 +381,12 @@ disagree — one stream continues inside, its neighbour is terminal — and a si
 across the whole picture gives them the same edge, so a terminal stream trailed off because a sibling
 had something behind it. Everything is cut hard at the front, and the softened edge is laid over only
 the bands that continue, as one extra rect each in the mask. Both ends work this way, or the rule is
-only half made. A stream that bottomed out earlier and slid out to the end column is not one of them:
+only half made. **Each of those rects is clipped to its own side.** A full-width one covers that band's
+rows across the whole picture, so a stream continuing on the out side also softened the IN edge at that
+height — and because the two sides stack independently, an income band's rect landed over whatever
+out-side band happened to share its rows and gave that one a plume it had no claim to. On screen it
+read as the plume breaking into stripes of different strength, and as the leftover band trailing off
+for no reason at all. A band's edge is a statement about its own end. A stream that bottomed out earlier and slid out to the end column is not one of them:
 it has nothing behind it however far the view runs.
 
 **Across a move it is the statement the two states AGREE on.** Interpolating it says something true of

@@ -35,9 +35,9 @@ const SVGNS = "http://www.w3.org/2000/svg";
 /* §11 — the settled values, in one place. Every one of them was converged on a bench; none of them
    is a control the product exposes. */
 export const TUNE = {
-	l1Px:3.5, l2Px:1, gapShare:0.35,
+	l1Px:3.5, l2Px:0.5, gapShare:0.35,
 	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
-	railFrac:0.28, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
+	railFrac:0.22, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
 	baseOp:0.46, curve:0.50,                             // §6.12 the ribbons
@@ -293,9 +293,10 @@ export function layout(tree,focus,opt){
 		   nothing behind it however long the view is. Carried per band, because the answer differs
 		   between two bands sitting side by side at the same front. */
 		const more = (c===e&&!!kidsOf[id]) ? 1 : 0;
-		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0,more:more};
+		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0,more:more,sd:s};
 		for(let k=c; s>0 ? k<=term(1) : k>=term(-1); k+=s){const q=pos[at(k)]&&pos[at(k)][id];if(!q)continue;
-			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0,more:more}}
+			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0,
+			                        more:more,sd:s}}
 		const q0 = pos[at(c)][id];
 		const within = s>0 ? c<=e : c>=e;
 		/* §7.1  names on the focused side from the focus's depth to +2; the other side only at the
@@ -510,7 +511,7 @@ const plume = (a,b,e) => {const lo=Math.min(a,b);return lo+(b-lo)*clamp01((e-0.6
    compares it against a level, so a lerped value tests false for the whole move and only becomes true
    on the last frame - which is a snap at the end of a move rather than the change travelling with it.
    The SIZE is what travels; the level is decided by where you are going. */
-const DISCRETE = {rel:1, leaf:1, top:1, vis:0};
+const DISCRETE = {rel:1, leaf:1, top:1, sd:1, vis:0};
 
 /* §8.2  pair by key — which is why §4.7 insists the key set never depends on the focus. */
 export function blend(A,B,e){
@@ -887,11 +888,20 @@ export default class MoneyFlowEngine {
 		   them: it has nothing behind it however far the view runs. */
 		const conts = Object.keys(G.bars).map(q => G.bars[q])
 			.filter(b => b.vis>0.5&&(b.more||0)>0.5&&b.h>0);
+		/* AND EACH RECT IS CLIPPED TO ITS OWN SIDE. A full-width one covers that band's y across the
+		   whole picture, so a stream continuing on the out side also softened the IN edge at that
+		   height - and since the two sides stack independently, an income band's rect landed over
+		   whatever out-side band happened to share its y and gave that one a plume it had no claim to.
+		   On screen it read as the plume breaking into stripes of different strength, and as the
+		   leftover band trailing off for no reason. A band's edge is a statement about its own end. */
+		const hubX = G.hubX===undefined ? (cam.x+cam.w/2) : G.hubX;
+		const bigR = big.x+big.width;
 		let nR = 1;
 		conts.forEach(b => {
 			let r = fm.childNodes[nR];
 			if(!r){r=this.mk("rect",{});fm.appendChild(r)}
-			this.set(r,{x:big.x,width:big.width,y:b.y-0.5,height:b.h+1,fill:"url(#"+plumeId+")"});
+			const x0 = (b.sd||1)>0 ? hubX : big.x, x1 = (b.sd||1)>0 ? bigR : hubX;
+			this.set(r,{x:x0,width:Math.max(0,x1-x0),y:b.y-0.5,height:b.h+1,fill:"url(#"+plumeId+")"});
 			nR++});
 		while(fm.childNodes.length>nR)fm.removeChild(fm.lastChild);
 		this.set(this.gHull,{mask:"url(#"+fmId+")"});
