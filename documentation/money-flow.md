@@ -361,8 +361,15 @@ one put the name beside a band it did not name, and 7.16 then saw a name that ha
 and gave it up altogether. That is why labels went missing on a ragged tree, and why which ones went
 looked arbitrary.
 
-**7.6 The tier arrives with the camera.** An ease cannot do that: it approaches asymptotically and
-has no idea when the move ends. The tier is driven by the time *left* in the move. **7.7 It leaves on
+**7.6 ANYTHING that arrives lands with the camera, and not before it.** An ease cannot do that: it
+approaches asymptotically and has no idea when the move ends. What arrives is driven by the time
+*left* in the move instead. A name already being read is never pulled down (7.8), so this only holds
+back the ones that were not there.
+
+This used to apply to the tier alone. A neighbour's name coming into a view therefore ramped up on
+its own ease — about 135ms — and then sat at full strength while the camera was still travelling,
+which reads as appearing from nowhere rather than arriving. Measured after: every arriving name ramps
+over about 220ms and reaches full between 610 and 660ms, against a move of 620. **7.7 It leaves on
 the same clock, in every direction** — holding a name visible across a move looks like the right
 kindness, but its place in the rail comes from a relaxation over a set that is itself changing as the
 geometry blends, so it spends the move stuttering after the camera.

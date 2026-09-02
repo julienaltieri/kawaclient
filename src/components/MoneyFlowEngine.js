@@ -1046,11 +1046,16 @@ export default class MoneyFlowEngine {
 			this.sPos[key] = cyS;
 			const cy = cam.y+cyS*k;
 			let want = (n.pin?1:vis(n))*frameAt(cy,n)*thickF(n);            // §7.5
+			/* §7.6  ANYTHING that arrives lands with the camera, not before it. A name already being
+			   read is never pulled down (§7.8), so this only gates the ones that were not there. It
+			   used to apply to the tier alone, and a neighbour's name coming into a view therefore
+			   ramped up on its own ease - about 135ms - and sat there at full strength while the camera
+			   was still travelling, which reads as appearing from nowhere rather than arriving. */
+			const held = this.animating ? (this.fadeAtStart[key]||0) : 0;   // §7.8
 			if(n.rail){
-				const held = this.animating?(this.fadeAtStart[key]||0):0;   // §7.8
 				want *= railY[n.id]===undefined ? (this.animating?held*goneF:0)
 				                                : (this.animating?Math.max(gate,held):1);
-			}
+			}else if(this.animating)want *= Math.max(gate,held);
 			const was = this.fade[key]===undefined?0:this.fade[key];
 			if(want<=0.02&&was<=0.02){this.fade[key]=0;delete this.offX[key];
 				delete this.sY[key];delete this.sOff[key];delete this.sPos[key];
