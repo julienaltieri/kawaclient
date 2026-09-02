@@ -4,7 +4,7 @@
  * The engine has no imports, so its pure half (layout/frame) can be asserted directly. These are the
  * invariants that decide whether the picture is readable, as opposed to whether it is correct.
  */
-import MoneyFlowEngine, {layout, frame, compose, siblingIds} from '../components/MoneyFlowEngine'
+import MoneyFlowEngine, {layout, frame, compose, groupTail, siblingIds} from '../components/MoneyFlowEngine'
 
 const opt = {l1Px:7, l2Px:2, gapShare:0.35, railFrac:0.28, padPx:4, neighbourPx:22,
 	softFrac:0.4, leftShare:0.7, cssW:360, worldH:444, tail:"push",
@@ -203,5 +203,81 @@ test("no number in the scene is ever NaN", () => {
 		Object.keys(g.boxes).forEach(q => check("box "+q, g.boxes[q],["x0","y0","x1","y1"]))
 		check("scene",g,["frontIn","frontOut","hubX","endX","otherX","pitch"])
 		expect({focus:f.join(">")||"root", bad:bad}).toEqual({focus:f.join(">")||"root", bad:[]})
+	})
+})
+
+describe("the tail is gathered into Other", () => {
+	const N = (id,v,kids) => ({id:id,name:id,tone:"expenses",value:v,children:kids||null})
+	const opt2 = Object.assign({},opt,{otherShare:0.10, otherMin:2})
+	const wrap = out => ({hubName:"Income", inTotal:100,
+		in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}], out:out})
+	const byId = (list,id) => (list||[]).filter(n => n.id===id)[0]
+	const sum = a => a.reduce((x,y) => x+y.value,0)
+
+	test("the smallest streams adding to a tenth or less are gathered; the rest are not", () => {
+		const t = groupTail(wrap([N("big",70),N("mid",22),N("a",4),N("b",3),N("c",1)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["big","mid","other:__out"])
+		const o = byId(t.out,"other:__out")
+		expect(o.children.map(n => n.id).sort()).toEqual(["a","b","c"])
+		expect(o.value).toBeCloseTo(8,6)          // 8 of 100, under the tenth
+	})
+
+	test("it stops at the tenth rather than swallowing the next one up", () => {
+		const t = groupTail(wrap([N("big",70),N("mid",20),N("a",6),N("b",4)]),opt2)
+		// a+b is 10, exactly the cap; adding mid would be 30
+		expect(byId(t.out,"other:__out").children.map(n => n.id).sort()).toEqual(["a","b"])
+	})
+
+	test("one small stream is not a tail - it would trade its own name for a worse one", () => {
+		const t = groupTail(wrap([N("big",95),N("small",5)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["big","small"])
+	})
+
+	test("a set that is entirely tail is not a tail", () => {
+		const t = groupTail(wrap([N("a",1),N("b",1)]),opt2)
+		expect(t.out.map(n => n.id)).toEqual(["a","b"])
+	})
+
+	test("§1.3 survives it: a parent is still the sum of its children", () => {
+		const t = groupTail(wrap([
+			N("big",60,[N("b1",50),N("b2",4),N("b3",3),N("b4",3)]),
+			N("mid",30),N("a",5),N("b",3),N("c",2)]),opt2)
+		const check = n => {
+			if(!n.children)return
+			expect(n.value).toBeCloseTo(sum(n.children),6)
+			n.children.forEach(check)
+		}
+		t.out.forEach(check)
+		expect(sum(t.out)).toBeCloseTo(100,6)
+	})
+
+	test("it reaches every level", () => {
+		const t = groupTail(wrap([N("big",100,[N("b1",88),N("b2",5),N("b3",4),N("b4",3)])]),opt2)
+		const inner = byId(byId(t.out,"big").children,"other:big")
+		expect(inner).toBeDefined()
+		expect(inner.children.map(n => n.id).sort()).toEqual(["b3","b4"])
+	})
+
+	test("an Other is never gathered inside another Other", () => {
+		const many = [N("big",90)]
+		for(let i=0;i<12;i++)many.push(N("t"+i,10/12))
+		const t = groupTail(wrap(many),opt2)
+		const o = byId(t.out,"other:__out")
+		expect(o.children.length).toBe(12)
+		expect(o.children.filter(n => /^other:/.test(n.id))).toEqual([])
+	})
+
+	test("its id names its parent, so it is the same stream between two bases", () => {
+		const a = groupTail(wrap([N("big",70),N("mid",22),N("x",5),N("y",3)]),opt2)
+		const b = groupTail(wrap([N("big",60),N("mid",32),N("x",4),N("y",4)]),opt2)
+		expect(byId(a.out,"other:__out").id).toBe(byId(b.out,"other:__out").id)
+	})
+
+	test("it is a stream like any other: you can open it", () => {
+		const t = groupTail(wrap([N("big",70),N("mid",22),N("a",5),N("b",3)]),opt2)
+		const g = compose(t,["other:__out"],opt2).g
+		expect(g.nodeAt(["other:__out"])).toBeTruthy()
+		expect(g.names["a"]).toBeDefined()
+		expect(g.names["b"]).toBeDefined()
 	})
 })

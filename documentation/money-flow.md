@@ -72,6 +72,30 @@ sum of what SURVIVED (1.3), and the difference lands in the residual 1.2 already
 tween pairs by position within a stable shape. A shape that changed cannot be tweened, and the engine
 falls back to a rebuild rather than interpolating mismatched trees.
 
+**1.10 The tail is gathered, and that is the ONE thing the picture invents.** Wherever a set of
+children has a tail, the smallest of them whose values together come to no more than a tenth of their
+parent are gathered into a single **Other**, which is then a stream like any other: a band, a name, an
+amount, children, and opening it is how you see what is in it. A stream with a dozen children
+otherwise spends most of its height on the two or three that matter and the rest on a fringe of
+hairlines — unreadable, unnameable, and in the way of the ones worth reading.
+
+No such stream exists in the portfolio; nothing is categorised into it and the reporting core has
+never heard of it. That is why it is computed in the engine (`groupTail`) rather than in the adapter:
+it is a decision about what is worth drawing, not about what the money did.
+
+Two guards. A tail must be at least two streams, or the group trades one name for a worse one. And
+something has to be left outside it — a set that is entirely tail is not a tail. An Other is never
+gathered inside another Other: its members' own children are gathered, its own list is not, because
+"Other inside Other" says nothing. Its id names its parent, so it is the same stream between one basis
+and the other (1.5), and 1.3 survives because it is worth exactly what it contains.
+
+What it does NOT do is stop the view. From a distance an Other is one band in the tier, and opening it
+is how its members are read; standing on its own parent the view already reaches two levels and the
+members are back in the tier — which is right, because that is the level you asked for. Making the
+view stop short at an unopened Other was tried and reverted: how deep the view runs would then depend
+on the subject rather than on the level, and two subjects side by side would no longer frame to the
+same width (5.6).
+
 **1.6 Ragged depth is normal.** Branches bottom out at different levels and nothing may assume a
 uniform depth.
 
@@ -415,6 +439,17 @@ is the tile's job.
 hands the tree straight back. If that counted as a change, its value tween would rebuild the geometry
 every frame and overwrite the focus transition running underneath it. The tile memoises, so an
 unchanged tree arrives as the same reference and the engine returns early on identity.
+
+**The type says two things, and only two.** The FACE says what a name is: a macro category takes the
+condensed face, a stream inside a category takes the text one. The WEIGHT says what it is doing: the
+stream you are standing in is bold and nothing else is — except at the root, where you are standing
+on the whole portfolio and every category is. The amount under a name is always in the numeric face,
+whatever the name above it is set in, and a pinned neighbour keeps the quieter colour that marks it as
+a control rather than a caption (7.22).
+
+Tying the weight to the COLUMN instead, as it was, meant the stream in focus came out bold only when
+it happened to be a top-level one: open Home and its own name was lighter than the neighbours around
+it.
 
 **The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
 state has no way to end — the browser leaves it applied after the tap, sitting on the label of the

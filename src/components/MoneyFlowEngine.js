@@ -43,6 +43,7 @@ export const TUNE = {
 	leadMs:250, driftPx:8, edgePx:5,                     // §7.6 §7.16 §7.21  the labels
 	minBandPx:6,                                         // §7.5  thinner than this carries no name
 	smooth:0.13, labelEase:0.25,
+	otherShare:0.10, otherMin:2,                         // §1.10  the tail, gathered
 	moveMs:620, dataMs:380,                              // §8.1 §8.4  one clock, and the value tween
 	ratio:2.25, tail:"push"                              // §9.3
 };
@@ -65,6 +66,54 @@ const lerp = (a,b,e) => a+(b-a)*e;
 const ease = t => t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 const isHubPlace = f => !f.length || (f.length===1 && f[0]===INC);
 const clamp01 = v => Math.max(0,Math.min(1,v));
+
+/* ------------------------------------------------------------------------------------------------
+   §1.10  THE TAIL, GATHERED.  A FlowTree in, a FlowTree out.
+
+   A stream with a dozen children spends most of its height on the two or three that matter and the
+   rest on a fringe of hairlines - unreadable, unnameable, and in the way of the ones worth reading.
+   So wherever a set of children has a tail, the smallest of them whose values together come to no
+   more than a tenth of their parent are gathered into one "Other", which is a stream like any other:
+   it has a band, a name, an amount, and children, so opening it is how you see what is in it.
+
+   This is a VISUALISATION ARTIFACT, computed here and nowhere else. No such stream exists in the
+   portfolio, nothing is categorised into it, and the reporting core has never heard of it. Which is
+   why it lives in this file rather than in the adapter: it is a decision about what is worth drawing,
+   not about what the money did.
+
+   Two guards. The tail has to be at least two streams, or the group replaces one name with another
+   and hides a stream for nothing. And something has to be left outside it - a set that is entirely
+   tail is not a tail. An "Other" is never gathered inside another "Other": its members' own children
+   are grouped, but its own list is left as it is, because "Other inside Other" says nothing.
+   ------------------------------------------------------------------------------------------------ */
+export function groupTail(tree,opt){
+	const share = opt.otherShare, least = opt.otherMin;
+	const gather = (list,total,key) => {
+		if(!list||!list.length)return list;
+		/* depth first: a member's own children are gathered before it is considered for the tail */
+		const kids = list.map(n => Object.assign({},n,
+			{children:n.children ? gather(n.children,n.value,n.id) : null}));
+		const cap = total*share;
+		let acc = 0; const tail = [];
+		kids.slice().sort((a,b) => a.value-b.value).forEach(n => {
+			/* a hair of tolerance: a tail that comes to exactly the cap is a tail, and summing a dozen
+			   equal shares lands either side of it depending on the arithmetic */
+			if(acc+n.value>cap+1e-6)return;
+			acc += n.value; tail.push(n);
+		});
+		if(tail.length<least)return kids;
+		const inTail = {}; tail.forEach(n => inTail[n.id]=1);
+		const rest = kids.filter(n => !inTail[n.id]);
+		if(!rest.length)return kids;
+		/* it takes the colour of the largest thing in it, and sits at the end where the small ones
+		   already were, so the tail reads as one band at the edge of the parent's */
+		const tone = tail.slice().sort((a,b) => b.value-a.value)[0].tone;
+		return rest.concat([{id:"other:"+key,name:"Other",tone:tone,value:acc,children:tail}]);
+	};
+	const sum = a => (a||[]).reduce((x,y) => x+y.value,0);
+	return {hubName:tree.hubName, inTotal:tree.inTotal,
+		in:gather(tree.in,sum(tree.in),"__in"), out:gather(tree.out,sum(tree.out),"__out")};
+}
 
 /* ------------------------------------------------------------------------------------------------
    §2, §4  LAYOUT.  (tree, focus, opt) -> Scene.  Pure: no DOM, no clock, no instance state.
@@ -116,7 +165,14 @@ export function layout(tree,focus,opt){
 		return q.length>=focus.length};
 
 	/* §4.8 §4.9  two columns past the focus on the side in focus, capped at that branch's terminal;
-	   exactly one on the other side, because it is context rather than subject. */
+	   exactly one on the other side, because it is context rather than subject.
+
+	   §1.10  Note what this means for a gathered tail: from a distance an "Other" is one band in the
+	   tier, and opening it is how its members are read. Standing on its own parent, though, the view
+	   already reaches two levels and the members are back in the tier - which is right, because that
+	   is the level you asked for. Making the view stop short at an unopened Other was tried and
+	   reverted: how deep the view runs would then depend on the subject rather than on the level, and
+	   two subjects side by side would no longer frame to the same width (§5.6). */
 	let endF = (focus.length?firstC[focus[focus.length-1]]:0) + 2*FSIDE;
 	Object.keys(firstC).forEach(id => {
 		if(!own(id)||!inFocus(id)||dep(id)-fDep>2)return;
@@ -197,7 +253,7 @@ export function layout(tree,focus,opt){
 
 	/* the hub's own name, which doubles as the way into the in side (§3.9) */
 	names[INC] = {x:xs[at(0)]+5,y:pos[at(0)][HUB].y,h:pos[at(0)][HUB].h,
-		name:tree.hubName,anchor:"start",strong:true,id:INC,tap:INC,vis:1};
+		name:tree.hubName,anchor:"start",top:true,id:INC,tap:INC,vis:1};
 
 	const slides = opt.tail!=="grow";
 	Object.keys(nodeById).forEach(id => {
@@ -230,12 +286,15 @@ export function layout(tree,focus,opt){
 			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
 			   id:id,tap:id,vis:show,rail:true}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
+			   /* §9.6  what a name IS - a macro category or a stream inside one - decides its face;
+			      what it is DOING decides its weight. */
+			   top:dep(id)===1,
 			   /* §7.3  A name inside the diagram runs from its own bar toward the next column, so the
 			      room it has is one pitch. Zoomed in, a long name is longer than that and reaches into
 			      the rail beyond - which is how two names came to be printed in the same place. It
 			      folds onto a second line rather than being given up. */
 			   maxW:PITCH-20,
-			   strong:Math.abs(c)===1,id:id,tap:id,vis:show};
+			   id:id,tap:id,vis:show};
 	});
 
 	/* boxes: a stream's own bars unioned with its whole subtree — what the camera frames. */
@@ -440,12 +499,15 @@ export default class MoneyFlowEngine {
 	}
 	/* §8.4  a new tree tweens the values and re-derives the layout each frame; the focus is dropped
 	   if the stream it names has gone. */
-	setTree(tree){
+	setTree(raw){
 		/* The same tree is not a change. Opening a stream calls back to the host, which re-renders and
 		   hands the tree straight back; without this the value tween starts, and its per-frame rebuild
 		   overwrites the geometry and camera that the focus transition is in the middle of animating.
-		   The caller memoises, so an unchanged tree arrives as the same reference. */
-		if(tree===this.tree)return;
+		   The caller memoises, so an unchanged tree arrives as the same reference. Compared on the RAW
+		   value, since the gathering below produces a new object every time. */
+		if(raw===this.raw)return;
+		this.raw = raw;
+		const tree = groupTail(raw,this.tune);                    // §1.10
 		if(!this.shown){this.tree=tree; this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
 		this.tree = tree;
 		if(this.reduced){this.shown=JSON.parse(JSON.stringify(tree)); return this.rebuild()}
@@ -558,6 +620,19 @@ export default class MoneyFlowEngine {
 		r.__seen = this.frameSeq;
 	}
 	tone(t){return this.palette[t]||this.palette.bodyTextSecondary}
+	/* §9.6  The type says two things, and only two. The FACE says what a name is: a macro category
+	   takes the condensed one, a stream inside a category takes the text one. The WEIGHT says what it
+	   is doing: the stream you are standing in is bold and nothing else is - except at the root, where
+	   you stand on the whole portfolio and every category is. Tying weight to the column instead, as
+	   it was, meant the stream in focus was bold only when it happened to be a top-level one; open
+	   Home and its own name came out lighter than the neighbours around it. */
+	typeOf(n){
+		const f = this.focus, subject = f.length ? f[f.length-1] : null;
+		const bold = !n.pin && (n.id===subject || (!f.length && !!n.top));
+		return {bold:bold,
+			family:(n.top?this.opt.numberFamily:this.opt.fontFamily)||"inherit",
+			size:bold?13:12};
+	}
 
 	/* ---- §6 §7  paint ----------------------------------------------------------------------- */
 	paint(){
@@ -786,8 +861,9 @@ export default class MoneyFlowEngine {
 			: n.rail ? (n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k))
 			: (n.maxW||1e9);
 		shown.forEach(n => {
-			this.set(this.meas,{"font-size":((n.strong&&!n.pin)?13:12)*k,
-				"font-family":this.opt.fontFamily||"inherit","font-weight":(n.strong&&!n.pin)?600:500});
+			const ty = this.typeOf(n);
+			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
+				"font-weight":ty.bold?600:500});
 			this.meas.textContent = n.name;
 			n._fold = this.meas.getComputedTextLength()>roomFor(n) ? splitTwo(n.name) : null;
 		});
@@ -934,24 +1010,27 @@ export default class MoneyFlowEngine {
 	text(key,n,cy,two,k){
 		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
 			b:this.mk("text",{})}));
-		const one = (e,dy,txt,strong,sec) => {
+		const ty = this.typeOf(n);
+		const one = (e,dy,txt,amount) => {
 			if(e.textContent!==txt)e.textContent = txt;
 			this.set(e,{x:n.x,y:cy+dy,"text-anchor":n.anchor,
-				fill:sec?this.palette.bodyTextSecondary:this.palette.bodyText,
-				"font-family":(sec?this.opt.numberFamily:this.opt.fontFamily)||"inherit",
-				"font-size":(strong?13:12)*k,"font-weight":strong?600:500});
+				/* a pinned neighbour is a control rather than a caption (§7.22), which is what the
+				   quieter colour says; the amount under a name is the other thing set in the numeric
+				   face, whatever the name above it is set in. */
+				fill:(amount||n.pin)?this.palette.bodyTextSecondary:this.palette.bodyText,
+				"font-family":amount?(this.opt.numberFamily||"inherit"):ty.family,
+				"font-size":(amount?12:ty.size)*k,"font-weight":amount?500:(ty.bold?600:500)});
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
-		const strong = n.strong&&!n.pin, sec = !!n.pin;
-		const out = [one(rec.a,4.5*k,n.name,strong,sec)];
+		const out = [one(rec.a,4.5*k,n.name,false)];
 		/* Whether it folds was settled before the rail was swept, so the room reserved for it and the
 		   room it takes are the same decision. */
 		const folded = n._fold;
 		if(folded){
-			one(rec.a,-3*k,folded[0],strong,sec);
-			out.push(one(rec.a2,12*k,folded[1],strong,sec));
+			one(rec.a,-3*k,folded[0],false);
+			out.push(one(rec.a2,12*k,folded[1],false));
 		}else if(rec.a2.parentNode)rec.a2.parentNode.removeChild(rec.a2);
-		if(two)out.push(one(rec.b,19.5*k,n.val,false,true));
+		if(two)out.push(one(rec.b,19.5*k,n.val,true));
 		else if(rec.b.parentNode)rec.b.parentNode.removeChild(rec.b);
 		return out;
 	}
