@@ -130,19 +130,35 @@ export function layout(tree,focus,opt){
 	const divergeAt = (a,b) => {const p=pathOf[a]||[],q=pathOf[b]||[];
 		let i=0;while(i<p.length&&i<q.length&&p[i]===q[i])i++;return i};
 	const gapBetween = (a,b) => {
-		if(sideOf[a.id]!==FSIDE||sideOf[b.id]!==FSIDE)return opt.l2;   // §4.2  the other side is one set
+		if(sideOf[a.id]!==FSIDE||sideOf[b.id]!==FSIDE)                  // §4.2  the other side is one set
+			return opt.l2Px*opt.gapUnit;
 		if(!inFocus(a.id)||!inFocus(b.id))return 0;                    // §4.3
 		const rel = divergeAt(a.id,b.id)-focus.length;
-		return rel<=0 ? opt.l1 : (rel===1?opt.l2:0);
+		/* §4.1  A separation is a number of SCREEN pixels, converted with the scale this view will
+		   actually be drawn at. It used to be converted once against the world and then carried through
+		   the vertical fit like any other length - so zooming into a small stream multiplied the gaps
+		   by the same factor as the streams, and a seven-pixel separation arrived on screen at seventy,
+		   eating the room the fit had just been arranged to give the subject. The rules of the picture
+		   are fixed; what stretches is the money. */
+		return (rel<=0 ? opt.l1Px : (rel===1?opt.l2Px:0)) * opt.gapUnit;
 	};
 	const colH = WH-COLPAD*2;
-	let want = 0;
+	/* §4.5  What is being fitted, and into how much room. Left to itself the whole portfolio fills the
+	   card; given a budget it is one stream's subtree filling the frame (§5.3). Either way the value
+	   scale is solved for AFTER the gaps are known, so the two together come to exactly the budget. */
+	const budgetV = Math.max(1, opt.fit ? opt.fit.v : tree.inTotal);
+	const budgetH = opt.fit ? opt.fit.h : colH;
+	const inBudget = opt.fit ? (id => own(id)&&inFocus(id)) : (() => true);
+	let wantAny = 0, wantBudget = 0;
 	columns.forEach((c,i) => {const k=i-OFF;if(k<endL||k>endR)return;
-		let g=0;for(let j=0;j<c.length-1;j++)g+=gapBetween(c[j],c[j+1]);
-		want = Math.max(want,g)});
-	const room = colH*opt.gapShare;                                    // §4.4
-	const gapScale = want>room ? room/want : 1;
-	const scale = (colH-Math.min(want,room))/Math.max(tree.inTotal,1);  // §4.5
+		let all=0, mine=0;
+		for(let j=0;j<c.length-1;j++){const g=gapBetween(c[j],c[j+1]);
+			all += g;
+			if(inBudget(c[j].id)&&inBudget(c[j+1].id))mine += g}
+		wantAny = Math.max(wantAny,all); wantBudget = Math.max(wantBudget,mine)});
+	const room = budgetH*opt.gapShare;                                 // §4.4
+	const gapScale = wantAny>room ? room/wantAny : 1;
+	const scale = Math.max(0,budgetH-wantBudget*gapScale)/budgetV;
 	const gapAt = (a,b) => gapBetween(a,b)*gapScale;
 
 	/* §4.6  pitch is fixed by the ROOT span — one in column, the hub, two out columns — so that view
@@ -281,30 +297,32 @@ export function frame(g,focus,opt){
 	const f = Math.min(0.45,opt.padPx/opt.cssW);
 	const w2 = w/(1-2*f), pad = f*w2;
 	x0 -= pad; w = w2;
-	/* §5.6  the height follows the width, so left and right always land at the same x. */
+	/* §5.6  the height follows the width, so left and right always land at the same x. This function
+	   only MEASURES: what the picture is scaled to is settled in the layout (§4.5), which is the only
+	   place that can keep the separations a fixed size while the streams stretch. */
 	const nh = w/(WORLD_W/WH);
-	const cy = (b.y0+b.y1)/2;
-	let squeeze = null;
-	if(hub){
-		/* Nothing stands beside a hub place (§3.7), so the whole picture is simply centred, and
-		   squeezed only if it is taller than the frame. */
-		const h = (b.y1-b.y0)+2*pad;
-		if(nh<h-0.5)squeeze = {k:nh/h,cy:cy};
-	}else{
-		/* §5.3 §5.7  THE SUBJECT FILLS THE FRAME. What is left is one strip at each end, holding one
-		   neighbour's name above and one below - and, because the picture is continuous, the top of
-		   the band above and the bottom of the band below, which is what makes them tappable.
+	return {x:x0,w:w,h:nh,pad:pad};
+}
 
-		   Framing the subject at whatever height its own share of the money happened to give it is
-		   what made a small stream unreadable: Day Care held a tenth of the frame, so everything
-		   downstream of it was a tenth as tall again, its leaves were hairlines, and their names went
-		   with them. The subject is the thing being explained; it gets the room. Scaling to fit also
-		   standardises the view - every subject is framed the same way, whatever it is worth. */
-		const strip = opt.neighbourPx*(w/opt.cssW);
-		const avail = Math.max(1,nh-2*strip);
-		squeeze = {k:avail/Math.max(1e-6,b.y1-b.y0),cy:cy};
-	}
-	return {cam:{x:x0,y:cy-nh/2,w:w,h:nh},squeeze:squeeze};
+/* The whole placement, in the order the numbers actually depend on each other. The frame's WIDTH
+   comes from the columns alone, so it - and therefore the height, and therefore the scale the view
+   will be drawn at - can be settled before anything vertical is decided. Only then is the layout run
+   for real, told how much room the subject has and what a pixel is worth. */
+export function compose(tree,focus,opt){
+	const hub = isHubPlace(focus);
+	const measure = layout(tree,focus,Object.assign({},opt,{gapUnit:WORLD_W/opt.cssW}));
+	const f = frame(measure,focus,opt);
+	const k = f.w/opt.cssW;                                   // world units per screen pixel
+	/* §5.3  one strip at each end for a neighbour's name; a hub place has no neighbours (§3.7). */
+	const strip = hub ? 0 : opt.neighbourPx*k;
+	const subject = hub ? null : measure.nodeAt(focus);
+	const fit = hub
+		? {v:tree.inTotal, h:Math.min(opt.worldH-COLPAD*2, f.h-2*f.pad)}
+		: {v:(subject?subject.value:tree.inTotal), h:Math.max(1,f.h-2*strip)};
+	const g = layout(tree,focus,Object.assign({},opt,{gapUnit:k,fit:fit}));
+	const b = hub ? {y0:COLPAD,y1:opt.worldH-COLPAD} : g.boxes[focus[focus.length-1]];
+	const cy = b ? (b.y0+b.y1)/2 : opt.worldH/2;
+	return {g:g, cam:{x:f.x, y:cy-f.h/2, w:f.w, h:f.h}};
 }
 export function squeezeScene(g,q){
 	if(!q)return g;
@@ -478,16 +496,9 @@ export default class MoneyFlowEngine {
 
 	opts(){
 		const cssW = this.host.clientWidth||0;
-		const px = WORLD_W/(cssW||360);
-		return Object.assign({},this.tune,{cssW:cssW||360,worldH:this.worldH,format:this.format,
-			l1:this.tune.l1Px*px, l2:this.tune.l2Px*px});
+		return Object.assign({},this.tune,{cssW:cssW||360,worldH:this.worldH,format:this.format});
 	}
-	place(focus,opt){
-		const g = layout(this.shown,focus,opt);
-		const r = frame(g,focus,opt);
-		squeezeScene(g,r.squeeze);
-		return {g:g,cam:r.cam};
-	}
+	place(focus,opt){return compose(this.shown,focus,opt)}
 	rebuild(){
 		if(!this.shown)return;
 		if(!this.host.clientWidth)return;              // nothing to measure against yet

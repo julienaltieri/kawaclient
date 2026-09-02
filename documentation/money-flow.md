@@ -175,8 +175,26 @@ Moving a level re-indexes every gap automatically, which is what makes levels tr
 needing to be re-specified. Pairs not on the focused side read as one set; pairs outside the focus
 get nothing.
 
-**4.4 Gaps are capped** at a share of the column height, scaling down together, or a wide tier of
+**A separation is a number of SCREEN pixels**, converted with the scale the view will actually be
+drawn at. It used to be converted once against the world and then carried through the vertical fit
+like any other length — so zooming into a small stream multiplied the separations by the same
+factor as the streams, and a seven-pixel gap arrived on screen at seventy, eating the room 5.3 had
+just been arranged to give the subject. The rules of the picture are fixed; what stretches is the
+money.
+
+**4.4 Gaps are capped** at a share of the budgeted height, scaling down together, or a wide tier of
 thin streams pushes the bars out of the card.
+
+**4.5 The value scale is solved for last, against a budget.** The budget is a height and a value:
+left to itself it is the whole portfolio filling the card; given one it is a stream's subtree filling
+the frame (5.3). Either way the separations are settled first and the scale is whatever makes the two
+together come to exactly the budget — so the subject fills its room, gaps included.
+
+This is why the placement runs in two passes (`compose`). The frame's WIDTH comes from the columns
+alone, so it — and therefore its height, and therefore the scale the view will be drawn at — can be
+settled before anything vertical is decided. Only then is the layout run for real, told how much room
+the subject has and what a pixel is worth. Fitting afterwards, by scaling a finished layout, is what
+magnified the separations.
 
 **4.6 Pitch is fixed by the root span** — one in column, the hub, two out columns — so the root view
 fills the card and every other view is a camera move over the same grid, never a re-layout at a
@@ -225,11 +243,12 @@ the frame, so widening the frame widens the padding and the two settle at once.
 *both* edges of the diagram, so the same stream lands somewhere different depending on what else is
 on screen. **Left and right always land at the same x.**
 
-**5.7 The picture is scaled in `y` to make 5.3 true** — up as well as down. Every `y` scales
-toward the frame's centre; no `x` moves and no text is scaled, only where text is anchored. The flows
-are stretchable — the landing is what must not move. A hub place is the exception: nothing stands
-beside it (3.7), so it is centred rather than fitted, and squeezed only if it is taller than the
-frame.
+**5.7 The fit is done by the LAYOUT, not by scaling a finished picture.** 5.3 is made true by
+choosing the value scale (4.5), which is the only place that can give the subject its room while
+leaving the separations the size they are meant to be. No `x` moves and no text is scaled, only where
+text is anchored. The flows are stretchable — the landing, and the rules, are what must not move. A
+hub place is the exception: nothing stands beside it (3.7), so the whole picture is fitted to the card
+as it always was.
 
 **5.8 The junction is snapped to the device pixel grid.** Two translucent ribbons sharing an edge
 cannot join cleanly unless that edge falls *on* a device pixel: split a pixel between them and

@@ -4,19 +4,20 @@
  * The engine has no imports, so its pure half (layout/frame) can be asserted directly. These are the
  * invariants that decide whether the picture is readable, as opposed to whether it is correct.
  */
-import MoneyFlowEngine, {layout, frame, squeezeScene, siblingIds} from '../components/MoneyFlowEngine'
+import MoneyFlowEngine, {layout, frame, compose, siblingIds} from '../components/MoneyFlowEngine'
 
-const opt = {l1:7, l2:2, gapShare:0.35, railFrac:0.28, padPx:4, neighbourPx:22,
+const opt = {l1Px:7, l2Px:2, gapShare:0.35, railFrac:0.28, padPx:4, neighbourPx:22,
 	softFrac:0.4, leftShare:0.7, cssW:360, worldH:444, tail:"push",
-	format:v => "$"+Math.round(v)}
+	gapUnit:1000/360, format:v => "$"+Math.round(v)}
 
 // Ragged on purpose: Annual bottoms out a level before its cousins, which is the shape that puts a
 // leaf's own column and the end of the view in different places.
 const TREE = {
 	hubName:"Income",
-	in:[{id:"salary",name:"Salary",tone:"income",value:6000,children:[
-			{id:"base",name:"Base pay",tone:"income",value:5200,children:null},
-			{id:"bonus",name:"Bonus",tone:"income",value:800,children:null}]}],
+	in:[{id:"salary",name:"Salary",tone:"income",value:5200,children:[
+			{id:"base",name:"Base pay",tone:"income",value:4600,children:null},
+			{id:"bonus",name:"Bonus",tone:"income",value:600,children:null}]},
+		{id:"side",name:"Side work",tone:"income",value:800,children:null}],
 	out:[
 		{id:"spd",name:"Spending",tone:"expenses",value:4500,children:[
 			{id:"rec",name:"Recurring",tone:"expenses",value:3000,children:[
@@ -35,7 +36,7 @@ const FOCUSES = [[], ["__inc"], ["__inc","salary"], ["spd"], ["spd","rec"], ["sp
 describe("a name sits on the bar it names", () => {
 	FOCUSES.forEach(f => {
 		test("at " + (f.join(">")||"the root"), () => {
-			const g = layout(TREE,f,opt)
+			const g = compose(TREE,f,opt).g
 			Object.keys(g.names).forEach(key => {
 				const n = g.names[key]
 				if(!n.rail) return                       // interior names sit beside their own column
@@ -53,7 +54,7 @@ describe("a name sits on the bar it names", () => {
 
 test("every focus produces the same key set", () => {
 	const keys = FOCUSES.map(f => {
-		const g = layout(TREE,f,opt)
+		const g = compose(TREE,f,opt).g
 		return [Object.keys(g.flows).sort().join("|"), Object.keys(g.bars).sort().join("|")].join("#")
 	})
 	expect(new Set(keys).size).toBe(1)
@@ -115,10 +116,8 @@ describe("the subject fills the frame", () => {
 	// were hairlines and their names went with them. The subject is what is being explained; it gets
 	// the height, less one strip at each end for a neighbour's name.
 	const fit = f => {
-		const g = layout(TREE,f,opt)
-		const r = frame(g,f,opt)
-		squeezeScene(g,r.squeeze)
-		return {g:g, cam:r.cam, box:g.boxes[f[f.length-1]]}
+		const r = compose(TREE,f,opt)
+		return {g:r.g, cam:r.cam, box:r.g.boxes[f[f.length-1]]}
 	}
 	const strip = cam => opt.neighbourPx*(cam.w/opt.cssW)
 
@@ -134,15 +133,75 @@ describe("the subject fills the frame", () => {
 		})
 	})
 
-	test("a hub place is not scaled to fill - nothing stands beside it", () => {
-		const {g,cam} = fit([])
-		expect(frame(layout(TREE,[],opt),[],opt).squeeze).toBeNull()
-		expect(cam.h).toBeGreaterThan(opt.worldH)
+	test("a hub place keeps the whole picture, with no strips to leave", () => {
+		const r = compose(TREE,[],opt)
+		const all = Object.keys(r.g.bars).map(k => r.g.bars[k]).filter(b => b.vis>0.5)
+		const lo = Math.min.apply(null,all.map(b => b.y))
+		const hi = Math.max.apply(null,all.map(b => b.y+b.h))
+		expect(lo).toBeGreaterThan(r.cam.y)
+		expect(hi).toBeLessThan(r.cam.y+r.cam.h)
 	})
 
 	test("two subjects at the same level still land at the same x", () => {
 		const a = fit(["spd"]).cam, b = fit(["sav"]).cam
 		expect(a.x).toBeCloseTo(b.x, 6)
 		expect(a.w).toBeCloseTo(b.w, 6)
+	})
+})
+
+describe("the rules of the picture are a fixed size; the money stretches", () => {
+	// A separation is a number of screen pixels. It used to be converted against the world once and
+	// then carried through the vertical fit like any other length, so zooming into a small stream
+	// multiplied the gaps by the same factor as the streams: a seven-pixel separation arrived at
+	// seventy and ate the room the fit had just been arranged to give the subject.
+	const gapBelow = (r,a,b) => {
+		const sa = r.g.selfBox[a], sb = r.g.selfBox[b]
+		return (sb.y0 - sa.y1) / (r.cam.w/opt.cssW)          // in screen pixels
+	}
+	const cases = [
+		[["spd"], "rec", "annual"],                          // the subject's children, one level down
+		[["spd","rec"], "home", "living"],                   // and two
+		[["sav"], "buffer", null]
+	]
+	test("the separation between a subject's children is the same wherever you are", () => {
+		const seen = []
+		cases.forEach(([f,a,b]) => {
+			if(!b)return
+			seen.push(gapBelow(compose(TREE,f,opt),a,b))
+		})
+		seen.forEach(px => expect(px).toBeCloseTo(opt.l1Px, 1))
+	})
+
+	test("and it does not grow when the subject is small", () => {
+		// Home is a fraction of the portfolio, and framing it fills the card - so its own separations
+		// are the ones most at risk of being magnified by the fit.
+		const big = compose(TREE,["spd"],opt), deep = compose(TREE,["spd","rec","home"],opt)
+		expect(gapBelow(deep,"rent","utils")).toBeCloseTo(gapBelow(big,"rec","annual"), 1)
+	})
+
+	test("the subject still fills the frame, gaps included", () => {
+		const r = compose(TREE,["spd"],opt)
+		const box = r.g.boxes.spd
+		const strip = opt.neighbourPx*(r.cam.w/opt.cssW)
+		expect(box.y1-box.y0).toBeCloseTo(r.cam.h-2*strip, 4)
+	})
+})
+
+test("no number in the scene is ever NaN", () => {
+	// The separations are asked for in pixels and converted with the view's scale. One of the three
+	// branches that hands one back was left converting against a constant that no longer existed, and
+	// the whole income side came out NaN - invisible, and every invariant still passing, because NaN
+	// compares false with everything. This is the cheapest possible guard against that class.
+	FOCUSES.forEach(f => {
+		const g = compose(TREE,f,opt).g
+		const bad = []
+		const check = (where,o,keys) => keys.forEach(q => {
+			if(o[q]!==undefined && !Number.isFinite(o[q]))bad.push(where+"."+q)})
+		Object.keys(g.flows).forEach(q => check("flow "+q,g.flows[q],["x0","y0","x1","y1","th"]))
+		Object.keys(g.bars ).forEach(q => check("bar "+q, g.bars[q], ["x","y","h"]))
+		Object.keys(g.names).forEach(q => check("name "+q,g.names[q],["x","y","h","maxW"]))
+		Object.keys(g.boxes).forEach(q => check("box "+q, g.boxes[q],["x0","y0","x1","y1"]))
+		check("scene",g,["frontIn","frontOut","hubX","endX","otherX","pitch"])
+		expect({focus:f.join(">")||"root", bad:bad}).toEqual({focus:f.join(">")||"root", bad:[]})
 	})
 })
