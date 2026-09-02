@@ -4,9 +4,9 @@
  * The engine has no imports, so its pure half (layout/frame) can be asserted directly. These are the
  * invariants that decide whether the picture is readable, as opposed to whether it is correct.
  */
-import MoneyFlowEngine, {layout, frame, siblingIds} from '../components/MoneyFlowEngine'
+import MoneyFlowEngine, {layout, frame, squeezeScene, siblingIds} from '../components/MoneyFlowEngine'
 
-const opt = {l1:7, l2:2, gapShare:0.35, railFrac:0.28, padPx:4, reachFrac:0.15,
+const opt = {l1:7, l2:2, gapShare:0.35, railFrac:0.28, padPx:4, neighbourPx:22,
 	softFrac:0.4, leftShare:0.7, cssW:360, worldH:444, tail:"push",
 	format:v => "$"+Math.round(v)}
 
@@ -106,5 +106,43 @@ describe("a change of basis is a move, not a jump", () => {
 		eng.setTree(A)
 		expect(spy).not.toHaveBeenCalled()
 		spy.mockRestore()
+	})
+})
+
+describe("the subject fills the frame", () => {
+	// The room a stream gets used to be the room its own share of the money gave it, so a small
+	// stream was framed small - and everything downstream of it was smaller again, until its leaves
+	// were hairlines and their names went with them. The subject is what is being explained; it gets
+	// the height, less one strip at each end for a neighbour's name.
+	const fit = f => {
+		const g = layout(TREE,f,opt)
+		const r = frame(g,f,opt)
+		squeezeScene(g,r.squeeze)
+		return {g:g, cam:r.cam, box:g.boxes[f[f.length-1]]}
+	}
+	const strip = cam => opt.neighbourPx*(cam.w/opt.cssW)
+
+	;[["spd"],["spd","rec"],["spd","rec","home"],["sav"],["__inc","salary"]].forEach(f => {
+		test("at " + f.join(">"), () => {
+			const {cam,box} = fit(f)
+			expect(box.y1-box.y0).toBeCloseTo(cam.h-2*strip(cam), 4)
+			// and it is centred, so the two strips are equal
+			expect((box.y0+box.y1)/2).toBeCloseTo(cam.y+cam.h/2, 4)
+			// which means nothing of the subject is outside the frame
+			expect(box.y0).toBeGreaterThan(cam.y)
+			expect(box.y1).toBeLessThan(cam.y+cam.h)
+		})
+	})
+
+	test("a hub place is not scaled to fill - nothing stands beside it", () => {
+		const {g,cam} = fit([])
+		expect(frame(layout(TREE,[],opt),[],opt).squeeze).toBeNull()
+		expect(cam.h).toBeGreaterThan(opt.worldH)
+	})
+
+	test("two subjects at the same level still land at the same x", () => {
+		const a = fit(["spd"]).cam, b = fit(["sav"]).cam
+		expect(a.x).toBeCloseTo(b.x, 6)
+		expect(a.w).toBeCloseTo(b.w, 6)
 	})
 })

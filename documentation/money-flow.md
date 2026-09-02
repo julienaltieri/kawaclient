@@ -140,8 +140,9 @@ the diagram is already answering, and the smaller answer is the one made of word
 **3.4 The whole band is the target** — a neighbour's ribbons, its bar and its name all navigate to
 it, not just the word at the end of it.
 
-**3.5 Sideways.** The focused band's neighbours are *named* at its top and bottom edges, up to two
-each side, so moving sideways is a tap on something already in front of you rather than a trip up a
+**3.5 Sideways.** The focused band's neighbours are *named* at its top and bottom edges, one each
+side (two of them cost a second strip of the frame's height at both ends, and that height is the
+subject's), so moving sideways is a tap on something already in front of you rather than a trip up a
 level and back down. Their own bands may be anywhere, including off frame; the name comes to the
 subject.
 
@@ -197,9 +198,20 @@ column wide gives a frame half as tall, and the focused band then overflows it.
 **5.1 No scrolling and no panning.** The frame always holds one whole thing, so there is nothing
 outside it to reach for.
 
-**5.3 Reach toward a neighbour, not around it.** The frame extends toward each sibling's own bar by a
-fraction of its height. Taking the union with a sibling's whole subtree meant focusing Savings pulled
-in Spending entire, so opening a stream did not appear to open anything.
+**5.3 THE SUBJECT FILLS THE FRAME.** What is left is one strip at each end, holding one neighbour's
+name above and one below — and, because the picture is continuous, the top of the band above and
+the bottom of the band below, which is what makes them tappable.
+
+Framing a subject at whatever height its own share of the money happened to give it is what made a
+small stream unreadable. A stream holding a tenth of the frame gave everything downstream of it a
+tenth of that again: its leaves came out as hairlines and their names went with them, while the frame
+was mostly filled by neighbours nobody was looking at. The subject is the thing being explained; it
+gets the room. Scaling to fit also standardises the view — every subject is framed the same way,
+whatever it happens to be worth.
+
+This replaced an earlier rule that extended the frame TOWARD each sibling's bar by a fraction of its
+height. That rule existed so neighbours could be seen and tapped, which the strips now do directly
+— and it is the rule that let a small subject stay small.
 
 **5.4 The rail is a share of the frame, not a slab of the world.** A constant world slab is a small
 part of the card at the root and most of it once zoomed in — and paying for it in world units is what
@@ -213,9 +225,11 @@ the frame, so widening the frame widens the padding and the two settle at once.
 *both* edges of the diagram, so the same stream lands somewhere different depending on what else is
 on screen. **Left and right always land at the same x.**
 
-**5.7 A subject taller than that height is squeezed, not cropped.** Every `y` scales toward the
-frame's centre until it fits; no `x` moves and no text is scaled, only where text is anchored. The
-flows are stretchable — the landing is what must not move.
+**5.7 The picture is scaled in `y` to make 5.3 true** — up as well as down. Every `y` scales
+toward the frame's centre; no `x` moves and no text is scaled, only where text is anchored. The flows
+are stretchable — the landing is what must not move. A hub place is the exception: nothing stands
+beside it (3.7), so it is centred rather than fitted, and squeezed only if it is taller than the
+frame.
 
 **5.8 The junction is snapped to the device pixel grid.** Two translucent ribbons sharing an edge
 cannot join cleanly unless that edge falls *on* a device pixel: split a pixel between them and

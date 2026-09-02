@@ -36,7 +36,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
    is a control the product exposes. */
 export const TUNE = {
 	l1Px:7, l2Px:2, gapShare:0.35,                       // §4.1 §4.4  the separations, and their cap
-	railFrac:0.28, padPx:4, reachFrac:0.15,              // §5.4 §5.5 §5.3  the frame
+	railFrac:0.28, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
 	baseOp:0.46, curve:0.50,                             // §6.12 the ribbons
@@ -260,7 +260,7 @@ export function layout(tree,focus,opt){
 /* ------------------------------------------------------------------------------------------------
    §5  FRAME.  Pure: it measures and hands back the squeeze for the caller to apply.
    ------------------------------------------------------------------------------------------------ */
-export function frame(g,focus,siblings,opt){
+export function frame(g,focus,opt){
 	const WH = opt.worldH;
 	const b0 = focus.length ? g.boxes[focus[focus.length-1]] : null;
 	if(focus.length&&!b0)return {cam:{x:0,y:0,w:WORLD_W,h:WH},squeeze:null};
@@ -271,31 +271,40 @@ export function frame(g,focus,siblings,opt){
 	                     : {x0:g.endX,y0:0,x1:g.otherX,y1:WH})
 	              : (S>0 ? {x0:b0.x0,y0:b0.y0,x1:g.endX,y1:b0.y1}
 	                     : {x0:g.endX,y0:b0.y0,x1:b0.x1,y1:b0.y1});
-	if(!hub){                                                            // §5.3  reach toward, not around
-		const LIM = opt.reachFrac*(b.y1-b.y0);
-		(siblings||[]).forEach(id => {const sb=g.selfBox&&g.selfBox[id];if(!sb)return;
-			if(sb.y1<=b.y0)b.y0=Math.max(b.y0-LIM,Math.min(b.y0,sb.y1-1));
-			else if(sb.y0>=b.y1)b.y1=Math.min(b.y1+LIM,Math.max(b.y1,sb.y0+1));
-		});
-	}
 	/* The far side plumes too (§6.3) and needs somewhere to fade; the focused side has the rail. */
 	const soft = opt.softFrac*(g.pitch||200);
 	if(S>0)b.x0 -= soft*opt.leftShare; else b.x1 += soft;
-	let y0 = b.y0, h = b.y1-b.y0;
 	let w = (b.x1-b.x0)/(1-opt.railFrac);                                // §5.4
 	let x0 = S>0 ? b.x0 : (b.x1-w);
 	/* §5.5  padding asked for in screen pixels and solved for, not iterated; the same world amount on
 	   every side. */
 	const f = Math.min(0.45,opt.padPx/opt.cssW);
 	const w2 = w/(1-2*f), pad = f*w2;
-	x0 -= pad; w = w2; y0 -= pad; h += 2*pad;
-	/* §5.6 §5.7  the height follows the width, so left and right always land at the same x; a subject
-	   taller than that height squeezes the picture rather than being cropped. */
+	x0 -= pad; w = w2;
+	/* §5.6  the height follows the width, so left and right always land at the same x. */
 	const nh = w/(WORLD_W/WH);
+	const cy = (b.y0+b.y1)/2;
 	let squeeze = null;
-	if(nh<h-0.5){const cy=y0+h/2; squeeze={k:nh/h,cy:cy}; y0=cy-nh/2}
-	else y0 -= (nh-h)/2;
-	return {cam:{x:x0,y:y0,w:w,h:nh},squeeze:squeeze};
+	if(hub){
+		/* Nothing stands beside a hub place (§3.7), so the whole picture is simply centred, and
+		   squeezed only if it is taller than the frame. */
+		const h = (b.y1-b.y0)+2*pad;
+		if(nh<h-0.5)squeeze = {k:nh/h,cy:cy};
+	}else{
+		/* §5.3 §5.7  THE SUBJECT FILLS THE FRAME. What is left is one strip at each end, holding one
+		   neighbour's name above and one below - and, because the picture is continuous, the top of
+		   the band above and the bottom of the band below, which is what makes them tappable.
+
+		   Framing the subject at whatever height its own share of the money happened to give it is
+		   what made a small stream unreadable: Day Care held a tenth of the frame, so everything
+		   downstream of it was a tenth as tall again, its leaves were hairlines, and their names went
+		   with them. The subject is the thing being explained; it gets the room. Scaling to fit also
+		   standardises the view - every subject is framed the same way, whatever it is worth. */
+		const strip = opt.neighbourPx*(w/opt.cssW);
+		const avail = Math.max(1,nh-2*strip);
+		squeeze = {k:avail/Math.max(1e-6,b.y1-b.y0),cy:cy};
+	}
+	return {cam:{x:x0,y:cy-nh/2,w:w,h:nh},squeeze:squeeze};
 }
 export function squeezeScene(g,q){
 	if(!q)return g;
@@ -307,7 +316,12 @@ export function squeezeScene(g,q){
 	return g;
 }
 /* §3.5 §3.6 §3.7  who is beside you. Kin come from the tree the path is IN, and a hub place has
-   nobody beside it: the other side of the money is not a sibling. */
+   nobody beside it: the other side of the money is not a sibling.
+
+   The camera no longer consults this - it reaches for no one, it fills itself with the subject and
+   leaves a strip at each end (§5.3). What navigates is `sibTarget` in the view, which reads the same
+   rule off the paths. This is kept because it states that rule in one place and the tests assert
+   against it. */
 export function siblingIds(tree,path){
 	if(!path.length||isHubPlace(path))return [];
 	const inc = path[0]===INC, top = inc?tree.in:tree.out, q = inc?path.slice(1):path;
@@ -470,7 +484,7 @@ export default class MoneyFlowEngine {
 	}
 	place(focus,opt){
 		const g = layout(this.shown,focus,opt);
-		const r = frame(g,focus,siblingIds(this.shown,focus),opt);
+		const r = frame(g,focus,opt);
 		squeezeScene(g,r.squeeze);
 		return {g:g,cam:r.cam};
 	}
@@ -722,8 +736,11 @@ export default class MoneyFlowEngine {
 			const pick = side => {const mid2 = n => n.y+n.h/2;
 				for(let d=focus.length-1;d>=0;d--){
 					const c = heads.filter(h => h.d===d&&(side<0?mid2(h.n)<fMid:mid2(h.n)>=fMid));
+					/* §3.5  One each side, not two. Two of them cost a second strip of the frame's height
+					   at both ends, and that height is the subject's - which is the whole point of the
+					   view. The way to the rest is to move to one of these and look from there. */
 					if(c.length)return c.sort((a,b) => side<0?mid2(b.n)-mid2(a.n):mid2(a.n)-mid2(b.n))
-						.slice(0,2).map(h => h.n);
+						.slice(0,1).map(h => h.n);
 				}
 				return []};
 			const INSET = 13*k, STEP = 17*k, MARGIN = inset+4*k;
