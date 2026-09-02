@@ -165,7 +165,9 @@ are and the hub keeps its default name.
 
 ## §3 Navigation
 
-**3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one,
+**3.1** Tap a stream to open it: its children take the wide separation, theirs take the narrow one —
+and the narrow one is half what it was, because at a quarter of the wide gap the two levels read as
+one and the grouping the separation exists to show was not legible,
 its siblings step back.
 
 **3.2** Tap the stream you are in to come back out. Tapping it does nothing useful otherwise — you
@@ -560,20 +562,37 @@ hands the tree straight back. If that counted as a change, its value tween would
 every frame and overwrite the focus transition running underneath it. The tile memoises, so an
 unchanged tree arrives as the same reference and the engine returns early on identity.
 
-**The type says two things, and only two.** The FACE says what a name is: a macro category takes the
-condensed face, a stream inside a category takes the text one. Which of the two a stream is comes from
-the DATA — the adapter marks the master's children and nothing else — and not from the column it sits
-in: the income streams stand one column from the hub exactly as the macro categories do, but they are
-a level below them, the single income group above them having been unwrapped into the hub itself
-(2.7). Reading it off the column made Activity Income look like a category. The WEIGHT says what it is doing: the
-stream you are standing in is bold and nothing else is — except at the root, where you are standing
-on the whole portfolio and every category is. The amount under a name is always in the numeric face,
-whatever the name above it is set in, and a pinned neighbour keeps the quieter colour that marks it as
-a control rather than a caption (7.22).
+**One face, and the type says two things.** There is a single typeface for every name. A second,
+condensed face for the macro categories was a third thing for the type to say on top of the two it
+already said, and with weight and size in play as well the tier read as four unrelated treatments
+rather than one system. The amount under a name is still set in the numeric face — it is a number, and
+that is what numbers are set in throughout the app — and a pinned neighbour keeps the quieter colour
+that marks it as a control rather than a caption (7.22).
 
-Tying the weight to the COLUMN instead, as it was, meant the stream in focus came out bold only when
-it happened to be a top-level one: open Home and its own name was lighter than the neighbours around
-it.
+**SIZE says which level a name is at, counted from the level you are standing on.** The level you are
+on and the one below it are body size; the level below that is small. Standing somewhere, the TIER is
+the small level whatever depth its entries came from: a branch that bottoms out early lands there, and
+so does a gathered Other, which is one level above its neighbours in the tier and would otherwise be
+the only large name among them. A true leaf is small wherever it appears. Small names reserve
+proportionally less room in the rail's sweep, and that is where the tier's extra stacking space
+actually comes from — the sizes and baselines are all measured against `bodyPx`, so they travel
+together.
+
+At the root nothing shrinks but a true leaf, because there the tier is one level below the categories
+rather than two: you are standing on the whole portfolio, the hub carries its name, and the categories
+and the streams inside them are both body. This is why the rule is keyed to depth-from-focus and not
+to the column, or to being in the tier: the last column of a root view and the last column of a
+focused view are different levels, and the column cannot tell them apart. The layout hands each name
+the two facts the rule needs — how far below the focus it sits, and whether its stream ends there.
+
+**WEIGHT says what is in focus, and nothing else.** The stream you are standing in is bold and nothing
+else is — except at the root, where you are standing on the whole portfolio and every category is.
+Bold does not change the size: a name that gains weight on its way into focus should not also change
+its measure. Tying the weight to the COLUMN instead, as it was, meant the stream in focus came out
+bold only when it happened to be a top-level one: open Home and its own name was lighter than the
+neighbours around it. Which of the two a stream is used to come from the DATA for the face as well —
+the adapter still marks the master's children, since the column cannot tell a macro category from an
+income stream standing the same distance from the hub (2.7).
 
 **The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
 state has no way to end — the browser leaves it applied after the tap, sitting on the label of the

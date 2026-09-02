@@ -237,6 +237,35 @@ test("no number in the scene is ever NaN", () => {
 	})
 })
 
+describe("the type is decided from the level, not the column", () => {
+	// typeOf reads two things off each name: how far below the focus it sits, and whether the stream
+	// ends there. Both come from the layout, so they are assertable without a screen.
+	const names = f => compose(TREE,f,opt).g.names
+	const of = (f,id) => names(f)[id]
+
+	test("a name knows how far below the focus it is", () => {
+		expect(of(["spd"],"spd").rel).toBe(0)
+		expect(of(["spd"],"rec").rel).toBe(1)
+		expect(of(["spd"],"home").rel).toBe(2)
+	})
+
+	test("the same stream reports a different level from a different focus", () => {
+		// which is the whole point: the column cannot tell these two apart.
+		expect(of(["spd"],"rec").rel).toBe(1)
+		expect(of(["spd","rec"],"rec").rel).toBe(0)
+	})
+
+	test("at the root the categories are one below the hub, and their streams two", () => {
+		expect(of([],"spd").rel).toBe(1)
+		expect(of([],"rec").rel).toBe(2)
+	})
+
+	test("a name says whether its stream ends there", () => {
+		expect(of(["spd"],"annual").leaf).toBe(true)
+		expect(of(["spd"],"rec").leaf).toBe(false)
+	})
+})
+
 describe("the tail is gathered into Other", () => {
 	const N = (id,v,kids) => ({id:id,name:id,tone:"expenses",value:v,children:kids||null})
 	const opt2 = Object.assign({},opt,{otherShare:0.10, otherMin:2})

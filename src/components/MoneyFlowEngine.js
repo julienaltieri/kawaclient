@@ -35,7 +35,8 @@ const SVGNS = "http://www.w3.org/2000/svg";
 /* §11 — the settled values, in one place. Every one of them was converged on a bench; none of them
    is a control the product exposes. */
 export const TUNE = {
-	l1Px:7, l2Px:2, gapShare:0.35,                       // §4.1 §4.4  the separations, and their cap
+	l1Px:7, l2Px:1, gapShare:0.35,
+	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
 	railFrac:0.28, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
@@ -308,7 +309,7 @@ export function layout(tree,focus,opt){
 		   labels went missing on a ragged tree and looked arbitrary about which. */
 		if(named)names[id] = leafHere
 			? {x:railX,y:qb.y,h:qb.h,name:n.name,val:opt.format(n.value),anchor:s>0?"start":"end",
-			   id:id,tap:id,vis:show,rail:true}
+			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  what a name IS - a macro category or a stream inside one - decides its face;
 			      what it is DOING decides its weight. Which of the two it is comes from the DATA, not
@@ -316,6 +317,10 @@ export function layout(tree,focus,opt){
 			      categories do, but they are a level below them - the single income group above them
 			      was unwrapped into the hub itself (§2.7). */
 			   top:!!n.top,
+			   /* §9.6  how far below the focus this name sits, and whether the stream ends here. The
+			      type is decided from these rather than from the column: the column cannot tell the
+			      root apart from a focused view, where the same column means a different level. */
+			   rel:dep(id)-fDep, leaf:!kidsOf[id],
 			   /* §7.3  A name inside the diagram runs from its own bar toward the next column, so the
 			      room it has is one pitch. Zoomed in, a long name is longer than that and reaches into
 			      the rail beyond - which is how two names came to be printed in the same place. It
@@ -701,18 +706,40 @@ export default class MoneyFlowEngine {
 		r.__seen = this.frameSeq;
 	}
 	tone(t){return this.palette[t]||this.palette.bodyTextSecondary}
-	/* §9.6  The type says two things, and only two. The FACE says what a name is: a macro category
-	   takes the condensed one, a stream inside a category takes the text one. The WEIGHT says what it
-	   is doing: the stream you are standing in is bold and nothing else is - except at the root, where
-	   you stand on the whole portfolio and every category is. Tying weight to the column instead, as
-	   it was, meant the stream in focus was bold only when it happened to be a top-level one; open
-	   Home and its own name came out lighter than the neighbours around it. */
+	/* §9.6  ONE FACE for every name. A second face for the macro categories was a third thing for the
+	   type to say on top of the two it already says, and with weight and size both in play as well the
+	   tier read as four unrelated treatments rather than one system.
+
+	   So: SIZE says which level a name is at, relative to where you are standing. The level you are on
+	   and the one below it are body size; the level below THAT - the leaves of the view, the tier down
+	   the right - is small. A branch that bottoms out early takes the small size as soon as it lands in
+	   the tier, so leaves are small wherever they appear and their names stack in less height, which is
+	   the whole reason the tier runs out of room. At the root you stand on the portfolio, so the macro
+	   categories are the level you are on, the streams inside them are body, and their children small.
+
+	   WEIGHT says what is in focus, and nothing else: the stream you are standing in is bold and
+	   nothing else is - except at the root, where you stand on the whole portfolio and every category
+	   is. Tying weight to the column instead, as it was, meant the stream in focus was bold only when
+	   it happened to be a top-level one; open Home and its own name came out lighter than the
+	   neighbours around it. Bold no longer changes the size: a name that gains weight on the way into
+	   focus should not also change its measure. */
 	typeOf(n){
 		const f = this.focus, subject = f.length ? f[f.length-1] : null;
 		const bold = !n.pin && (n.id===subject || (!f.length && !!n.top));
-		return {bold:bold,
-			family:(n.top?this.opt.numberFamily:this.opt.fontFamily)||"inherit",
-			size:bold?13:12};
+		const t = this.tune;
+		/* Counting from the level you are STANDING on. At the root that is the macro categories - you
+		   are on the whole portfolio, and the hub carries its name - so they and the streams inside
+		   them are both body, and it takes one level more before anything shrinks. Keying this to the
+		   tier instead is wrong for exactly that reason: the last column of a root view is one level
+		   below the categories, and the last column of a focused view is two. */
+		/* Standing somewhere, the tier IS the small level, whatever depth its entries came from: a
+		   branch that bottoms out early lands there, and so does a gathered Other, which is one level
+		   above its neighbours in the tier and would otherwise be the only large name among them.
+		   At the root nothing shrinks but a true leaf, because the tier there is one level below the
+		   categories rather than two. */
+		const small = !!n.leaf || (f.length ? !!n.rail : (n.rel||0)-1>=2);
+		return {bold:bold, family:this.opt.fontFamily||"inherit",
+			size:small ? t.smallPx : t.bodyPx};
 	}
 
 	/* ---- §6 §7  paint ----------------------------------------------------------------------- */
@@ -957,8 +984,11 @@ export default class MoneyFlowEngine {
 		/* A folded name is already two lines; the amount under it would be a third, and §7.14 gives the
 		   amount up before anything else anyway. */
 		const isTwo = n => twoLine&&eligible(n)&&!n._fold;
-		const upOf = n => (n._fold?15:8)*k;
-		const downOf = n => (n._fold?17:(isTwo(n)?24:10))*k;
+		/* The extents below were measured at bodyPx; a name set smaller reserves proportionally less,
+		   which is where the tier's extra stacking room actually comes from. */
+		const szF = n => this.typeOf(n).size/opt.bodyPx;
+		const upOf = n => (n._fold?15:8)*szF(n)*k;
+		const downOf = n => (n._fold?17:(isTwo(n)?24:10))*szF(n)*k;
 		const LEAD = 2*k;
 		const spanOf = n => upOf(n)+downOf(n)+LEAD;
 		const room = bot-top;
@@ -1217,18 +1247,21 @@ export default class MoneyFlowEngine {
 				   face, whatever the name above it is set in. */
 				fill:(amount||n.pin)?this.palette.bodyTextSecondary:this.palette.bodyText,
 				"font-family":amount?(this.opt.numberFamily||"inherit"):ty.family,
-				"font-size":(amount?12:ty.size)*k,"font-weight":amount?500:(ty.bold?600:500)});
+				"font-size":ty.size*k,"font-weight":amount?500:(ty.bold?600:500)});
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
-		const out = [one(rec.a,4.5*k,n.name,false)];
+		/* The baselines were measured at bodyPx too, so they travel with the size rather than leaving a
+		   small name sitting where a body-sized one would have been. */
+		const sc = ty.size/this.tune.bodyPx;
+		const out = [one(rec.a,4.5*sc*k,n.name,false)];
 		/* Whether it folds was settled before the rail was swept, so the room reserved for it and the
 		   room it takes are the same decision. */
 		const folded = n._fold;
 		if(folded){
-			one(rec.a,-3*k,folded[0],false);
-			out.push(one(rec.a2,12*k,folded[1],false));
+			one(rec.a,-3*sc*k,folded[0],false);
+			out.push(one(rec.a2,12*sc*k,folded[1],false));
 		}else if(rec.a2.parentNode)rec.a2.parentNode.removeChild(rec.a2);
-		if(two)out.push(one(rec.b,19.5*k,n.val,true));
+		if(two)out.push(one(rec.b,19.5*sc*k,n.val,true));
 		else if(rec.b.parentNode)rec.b.parentNode.removeChild(rec.b);
 		return out;
 	}
