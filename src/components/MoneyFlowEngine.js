@@ -288,9 +288,14 @@ export function layout(tree,focus,opt){
 		const named = n.label!==false;
 		const ends = !!(pos[ie]&&pos[ie][id]);
 		const qb = pos[ends?ie:at(c)][id];
-		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0};
+		/* §6.5  does THIS stream continue past the front? Only a stream whose own column IS the front
+		   column and that has children does; one that bottomed out earlier and slid out to the end has
+		   nothing behind it however long the view is. Carried per band, because the answer differs
+		   between two bands sitting side by side at the same front. */
+		const more = (c===e&&!!kidsOf[id]) ? 1 : 0;
+		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0,more:more};
 		for(let k=c; s>0 ? k<=term(1) : k>=term(-1); k+=s){const q=pos[at(k)]&&pos[at(k)][id];if(!q)continue;
-			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0}}
+			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0,more:more}}
 		const q0 = pos[at(c)][id];
 		const within = s>0 ? c<=e : c>=e;
 		/* §7.1  names on the focused side from the focus's depth to +2; the other side only at the
@@ -498,6 +503,15 @@ function pinsFor(G,focus){
    over the last stretch of the move, rather than being interpolated across the whole of it. */
 const plume = (a,b,e) => {const lo=Math.min(a,b);return lo+(b-lo)*clamp01((e-0.6)/0.4)};
 
+/* §8.2  Numbers interpolate, and everything else takes the destination's value - but some numbers are
+   not quantities, they are FACTS with a number for a name, and interpolating one produces a state that
+   never existed. `rel` is a name's level relative to the focus: a name moving from one below the focus
+   to the focus itself is at level 1 or level 0 and never at 0.4, and the type rule that reads it (§9.6)
+   compares it against a level, so a lerped value tests false for the whole move and only becomes true
+   on the last frame - which is a snap at the end of a move rather than the change travelling with it.
+   The SIZE is what travels; the level is decided by where you are going. */
+const DISCRETE = {rel:1, leaf:1, top:1, vis:0};
+
 /* §8.2  pair by key — which is why §4.7 insists the key set never depends on the focus. */
 export function blend(A,B,e){
 	const out = {flows:{},bars:{},names:{},boxes:B.boxes,pathOf:B.pathOf,
@@ -509,7 +523,8 @@ export function blend(A,B,e){
 		Object.keys(keys).forEach(k => {
 			const a=A[kind][k], b=B[kind][k];
 			if(a&&b){const o={};for(const q in b)
-					o[q] = (typeof b[q]==="number"&&typeof a[q]==="number") ? lerp(a[q],b[q],e) : b[q];
+					o[q] = (!DISCRETE[q]&&typeof b[q]==="number"&&typeof a[q]==="number")
+						? lerp(a[q],b[q],e) : b[q];
 				out[kind][k]=o}
 			else out[kind][k]=Object.assign({},a||b);
 		});
@@ -558,6 +573,7 @@ export default class MoneyFlowEngine {
 		/* label state — the only thing that lives between frames (§7.5 §7.18 §7.19) */
 		this.fade={}; this.offY={}; this.offX={}; this.fadeAtStart={};
 		this.sY={}; this.sOff={}; this.sPos={}; this.sSeed={};
+		this.sSz={}; this.szSeed={};
 
 		this.focus = [];
 		this.tree = null; this.shown = null;
@@ -836,24 +852,48 @@ export default class MoneyFlowEngine {
 		   first half of that, moving back a level sweeps the front leftwards across a tier with
 		   nothing inside it and draws a plume for the length of the sweep. */
 		const pOut = G.plumeOut===undefined?1:G.plumeOut, pIn = G.plumeIn===undefined?1:G.plumeIn;
-		const softR = soft*pOut, softLe = softL*pIn;
-		const Lz = Math.max(cam.x,frontIn-softLe), Rz = Math.min(camR,frontOut+softR);
-		const Lop = Lz>frontIn-softLe+0.01 ? 1-clamp01((cam.x-frontIn)/Math.max(1,softL)) : 0;
-		const Rop = Rz<frontOut+softR-0.01 ? 1-clamp01((frontOut-camR)/Math.max(1,soft)) : 0;
-		const spanX = Math.max(1,Rz-Lz), atX = x => clamp01((x-Lz)/spanX);
-		const mid = Math.min(atX(Lz+softLe),atX(Rz-softR));
-		const fgId = this.uid+"-frontG", fmId = this.uid+"-frontM";
-		const fg = this.reuse("grad","frontG",() => {const e=this.mk("linearGradient",
-				{id:fgId,gradientUnits:"userSpaceOnUse",y1:0,y2:0});
-			for(let i=0;i<4;i++)e.appendChild(this.mk("stop",{"stop-color":"#fff"}));
-			this.gDefs.appendChild(e);return e});
-		this.set(fg,{x1:Lz,x2:Rz});
-		[[0,Lop],[mid,1],[Math.max(mid,atX(Rz-softR)),1],[1,Rop]].forEach((p,i) =>
-			this.set(fg.childNodes[i],{offset:(p[0]*100)+"%","stop-opacity":p[1]}));
+		const softLe = softL*pIn;
+		/* One edge, built twice: a hard cut on both ends, and the same edge softened over `sl` and
+		   `sr`. BOTH ends are per band, or the fix is only half made - an income stream with nothing
+		   inside it would keep trailing off to the left because a sibling has something. */
+		const edge = name => {const gid = this.uid+"-"+name;
+			return (sl,sr) => {
+				const Lz = Math.max(cam.x,frontIn-sl);
+				const Lop = Lz>frontIn-sl+0.01 ? 1-clamp01((cam.x-frontIn)/Math.max(1,softL)) : 0;
+				const Rz = Math.min(camR,frontOut+sr);
+				const Rop = Rz<frontOut+sr-0.01 ? 1-clamp01((frontOut-camR)/Math.max(1,soft)) : 0;
+				const spanX = Math.max(1,Rz-Lz), atX = x => clamp01((x-Lz)/spanX);
+				const mid = Math.min(atX(Lz+sl),atX(Rz-sr));
+				const g = this.reuse("grad",name,() => {const e=this.mk("linearGradient",
+						{id:gid,gradientUnits:"userSpaceOnUse",y1:0,y2:0});
+					for(let i=0;i<4;i++)e.appendChild(this.mk("stop",{"stop-color":"#fff"}));
+					this.gDefs.appendChild(e);return e});
+				this.set(g,{x1:Lz,x2:Rz});
+				[[0,Lop],[mid,1],[Math.max(mid,atX(Rz-sr)),1],[1,Rop]].forEach((p,i) =>
+					this.set(g.childNodes[i],{offset:(p[0]*100)+"%","stop-opacity":p[1]}));
+				return gid}};
+		const cutId = edge("frontC")(0,0), plumeId = edge("frontG")(softLe,soft*pOut);
 		const big = {x:cam.x-cam.w,y:cam.y-cam.h,width:cam.w*3,height:cam.h*3};
+		const fmId = this.uid+"-frontM";
 		const fm = this.reuse("grad","frontM",() => {const e=this.mk("mask",{id:fmId,maskUnits:"userSpaceOnUse"});
-			e.appendChild(this.mk("rect",{fill:"url(#"+fgId+")"}));this.gDefs.appendChild(e);return e});
-		this.set(fm,big); this.set(fm.firstChild,big);
+			e.appendChild(this.mk("rect",{}));this.gDefs.appendChild(e);return e});
+		this.set(fm,big);
+		this.set(fm.firstChild,Object.assign({fill:"url(#"+cutId+")"},big));
+		/* §6.5  THE PLUME IS PER BAND. Two bands can sit side by side at the same front and disagree -
+		   one stream continues inside, its neighbour is terminal - and one horizontal gradient across
+		   the whole hull gives them the same edge, so a terminal stream trailed off because a sibling
+		   had something behind it. Everything is cut hard, and the softened edge is laid over only the
+		   bands that continue. A stream that bottomed out earlier and slid to the end is not one of
+		   them: it has nothing behind it however far the view runs. */
+		const conts = Object.keys(G.bars).map(q => G.bars[q])
+			.filter(b => b.vis>0.5&&(b.more||0)>0.5&&b.h>0);
+		let nR = 1;
+		conts.forEach(b => {
+			let r = fm.childNodes[nR];
+			if(!r){r=this.mk("rect",{});fm.appendChild(r)}
+			this.set(r,{x:big.x,width:big.width,y:b.y-0.5,height:b.h+1,fill:"url(#"+plumeId+")"});
+			nR++});
+		while(fm.childNodes.length>nR)fm.removeChild(fm.lastChild);
 		this.set(this.gHull,{mask:"url(#"+fmId+")"});
 
 		/* ---- §6.6 §6.7 §6.8  down: only what is out of focus, on its own lagged clock ---------- */
@@ -1204,9 +1244,27 @@ export default class MoneyFlowEngine {
 			const was = this.fade[key]===undefined?0:this.fade[key];
 			if(want<=0.02&&was<=0.02){this.fade[key]=0;delete this.offX[key];
 				delete this.sY[key];delete this.sOff[key];delete this.sPos[key];delete this.sSeed[key];
+				delete this.sSz[key];delete this.szSeed[key];
 				this.dropText(key);return}
+			/* §9.6  A NAME CHANGES SIZE BY GROWING, on the move's own clock (§7.28). The size says which
+			   level you are standing on, so it changes the instant the focus does - and a name that is
+			   also travelling across the card, at full opacity, snapping between two sizes on its way
+			   is the same loss of visual contact §7.25 is about. What is measured from stays the
+			   SETTLED size: whether a name folds, and the room it reserves in the sweep (§7.13), are
+			   decided once for the view being moved to, or a name would fold and unfold mid-flight and
+			   the tier would re-solve under it every frame. */
+			const szTo = this.typeOf(n).size;
+			let szNow = this.sSz[key];
+			if(szNow===undefined)szNow = szTo;
+			else if(this.animating){
+				if(this.szSeed[key]===undefined)this.szSeed[key] = {from:szNow, e:mv};
+				const zd = this.szSeed[key], zs = 1-zd.e;
+				szNow = zd.from+(szTo-zd.from)*(zs>1e-3?clamp01((mv-zd.e)/zs):1);
+			}else{delete this.szSeed[key];szNow = szTo}
+			this.sSz[key] = szNow;
+			if(Math.abs(szTo-szNow)>0.05)more = true;
 			const two = n.pin ? false : (n.rail?isTwo(n):eligible(n));
-			const g = this.text(key,n,cy,two,k);
+			const g = this.text(key,n,cy,two,k,szNow);
 			let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
 			g.forEach(e => {const b=e.getBBox();
 				x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.width);y1=Math.max(y1,b.y+b.height)});
@@ -1258,10 +1316,11 @@ export default class MoneyFlowEngine {
 		}
 	}
 	/* A label is one or two lines of name, plus the amount under a rail entry. */
-	text(key,n,cy,two,k){
+	text(key,n,cy,two,k,size){
 		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
 			b:this.mk("text",{})}));
 		const ty = this.typeOf(n);
+		const px = size===undefined ? ty.size : size;
 		const one = (e,dy,txt,amount) => {
 			if(e.textContent!==txt)e.textContent = txt;
 			this.set(e,{x:n.x,y:cy+dy,"text-anchor":n.anchor,
@@ -1270,12 +1329,12 @@ export default class MoneyFlowEngine {
 				   face, whatever the name above it is set in. */
 				fill:(amount||n.pin)?this.palette.bodyTextSecondary:this.palette.bodyText,
 				"font-family":amount?(this.opt.numberFamily||"inherit"):ty.family,
-				"font-size":ty.size*k,"font-weight":amount?500:(ty.bold?600:500)});
+				"font-size":px*k,"font-weight":amount?500:(ty.bold?600:500)});
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
 		/* The baselines were measured at bodyPx too, so they travel with the size rather than leaving a
 		   small name sitting where a body-sized one would have been. */
-		const sc = ty.size/this.tune.bodyPx;
+		const sc = px/this.tune.bodyPx;
 		const out = [one(rec.a,4.5*sc*k,n.name,false)];
 		/* Whether it folds was settled before the rail was swept, so the room reserved for it and the
 		   room it takes are the same decision. */

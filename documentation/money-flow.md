@@ -371,6 +371,14 @@ position at render time — the front is a blended coordinate, so a move back a 
 leftwards across the tier and a ramp keyed off it draws a plume for the length of the sweep, over a
 tier with nothing inside it. Only the reveal half is scaled; the window's cut keeps its full run.
 
+**It is decided PER BAND, not per side.** Two bands can sit side by side at the same front and
+disagree — one stream continues inside, its neighbour is terminal — and a single horizontal gradient
+across the whole picture gives them the same edge, so a terminal stream trailed off because a sibling
+had something behind it. Everything is cut hard at the front, and the softened edge is laid over only
+the bands that continue, as one extra rect each in the mask. Both ends work this way, or the rule is
+only half made. A stream that bottomed out earlier and slid out to the end column is not one of them:
+it has nothing behind it however far the view runs.
+
 **Across a move it is the statement the two states AGREE on.** Interpolating it says something true of
 neither: opening a stream whose grandchildren are terminal takes the value from 1 to 0 over the move,
 so those terminal bands trail off for the first half of it and then stop — a plume on streams with
@@ -627,7 +635,12 @@ than each part animating itself — which is the only way the picture can be int
 mid-move: a ribbon, the bar it lands on and the name beside it are all read from one geometry.
 
 **8.2 A transition blends per KEY.** It lays out both states and pairs entities by their key — numeric
-fields interpolate, everything else takes the destination's value. This is exactly why 4.7 insists the
+fields interpolate, everything else takes the destination's value. **Some numbers are not quantities**,
+though: they are facts that happen to be written as a number, and interpolating one produces a state
+that never existed. A name's level relative to the focus is 1 or 0 and never 0.4, and the type rule
+that reads it compares it against a level — so a lerped value tested false for the whole move and
+became true on the last frame, which is a snap at the end rather than a change travelling with the
+move. Those fields are listed and taken from the destination. This is exactly why 4.7 insists the
 key set never depends on the focus: if the two sides hold different keys, the pairing fails and two
 diagrams draw at once. `lit` is blended too, or a sideways move between two siblings shows as an
 instant swap of what is bright.
@@ -709,6 +722,13 @@ categories was a third thing for the type to say; weight then said what was in f
 what level it was at, and two channels for two facts read as four unrelated treatments. The framing
 already says what is in focus, far louder than a weight can — the subject fills the frame (5.3). What
 is left is one face, two sizes, one meaning.
+
+**A name changes size by GROWING**, on the move's own clock (7.28). The size says which level you are
+standing on, so it changes the instant the focus does — and a name that is also travelling across the
+card at full opacity, snapping between two sizes on the way, is the same loss of visual contact 7.25
+is about. What everything is MEASURED from stays the settled size: whether a name folds, and the room
+it reserves in the sweep (7.13), are decided once for the view being moved to, or a name would fold
+and unfold mid-flight and the tier would re-solve under it every frame.
 
 The amount under a name is set in the numeric face and follows its name's size — it is a number, and
 that is what numbers are set in throughout the app. A pinned neighbour keeps the quieter colour that
