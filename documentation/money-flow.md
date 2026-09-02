@@ -804,7 +804,7 @@ reproducibility of a resting label.
 
 ## §9 The tile
 
-**9.1 The header IS the title**: one line — *"Actuals this year"* — with the two words that could be
+**9.1 The header IS the title, set like page one's**: one line — *"Actuals this year"* — with the two words that could be
 something else made tappable. There is nothing to label and nothing to explain; the sentence already
 says which of the four views this is, and changing it is changing the thing.
 
@@ -814,6 +814,17 @@ reporting anchor rather than midnight, so this is not only a first-of-the-month 
 truth rather than a failure, but an empty card does not say it, so a line does: *"Nothing yet this
 month"*. It names the data, not the interface. The engine survives an empty tree on its own; the line
 is the tile's job.
+
+**It is set the way page one sets its own.** The macro graph draws its title inside the plot — the
+year, at its title size, in the body colour at normal weight — and the two tiles sit in one carousel a
+thumb-flick apart, so a heavier or quieter heading on the second reads as a different kind of thing
+rather than as the same thing about a different picture. Page one's is 30 units on a 450-unit chart,
+which lands near `header` at the width these tiles get on a phone. The dashed rule under the two
+changeable words is then the only thing marking them, which is enough: it is what said so before, and
+the colour it used to lean on was never the affordance.
+
+Not copied: page one also carries a second, smaller line under its title with the period spelled out.
+This tile says the period in the title itself, so the line would repeat it.
 
 **9.3 The card's proportion is fixed, and the tail slides.** The aspect ratio is a constant, not a
 measurement of whatever box the tile happens to get: the frame's height follows its width (5.6), so

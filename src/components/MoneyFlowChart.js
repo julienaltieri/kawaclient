@@ -26,14 +26,21 @@ import {buildFlowTree} from '../processors/MoneyFlow'
 /* §9.1  The header IS the title: one line saying what you are looking at, with the two words that
    could be something else made tappable. There is nothing to label and nothing to explain — the
    sentence already says which of the four views this is, and changing it is changing the thing. */
+/* The title is set like page one's. That chart draws its own title inside the plot — the year, at
+   `fontSizeTitle` in the body colour at normal weight — and the two tiles sit in one carousel, a
+   thumb-flick apart, so a heavier and quieter heading on the second one reads as a different kind of
+   thing rather than the same thing about a different picture. Page one's is 30 units on a 450-unit
+   chart, which lands near `header` at the width these tiles get on a phone. */
 const Title = styled.h2`
 	display:flex; align-items:baseline; gap:0.3rem; margin:0;
-	font-size:${DS.fontSize.title}rem; font-weight:600;
-	color:${props => DS.getStyle().bodyTextSecondary};
+	font-size:${DS.fontSize.header}rem; font-weight:400;
+	color:${props => DS.getStyle().bodyText};
 `
 const TitleButton = styled.button`
 	appearance:none; border:0; background:none; padding:0 0 1px; cursor:pointer; font:inherit;
 	color:${props => DS.getStyle().bodyText};
+	/* the whole title is body-coloured now, so the dashed rule is the only thing saying these two
+	   words can be changed — it carries the affordance on its own */
 	border-bottom:1px dashed ${props => DS.getStyle().borderColor};
 	&:hover{border-bottom-color:${props => DS.getStyle().bodyText};}
 	&:focus-visible{outline:2px solid ${props => DS.getStyle().savings}; outline-offset:2px;}
@@ -48,7 +55,7 @@ const ResetButton = styled.button`
 `
 const Head = styled.div`
 	display:flex; align-items:center; justify-content:space-between;
-	gap:${DS.spacing.xs}rem; margin-bottom:${DS.spacing.xs}rem; min-height:1.8rem;
+	gap:${DS.spacing.xs}rem; margin-bottom:${DS.spacing.xs}rem; min-height:2rem;
 `
 /* §9.4  nothing in the diagram is text to be selected or a link to be flashed blue. The hover
    affordance the labels carry is gated inside the engine on a pointer that can actually hover; on a
