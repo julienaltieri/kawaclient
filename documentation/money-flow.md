@@ -438,22 +438,26 @@ constantly, so the base opacity is chosen for how the overlaps read, not for how
 side, only at the root. Anywhere else the other side is context, and naming it competes with the side
 being explained.
 
-**7.2 The name sits INSIDE the terminal bar and the amount beyond it.** A name belongs to its band, so
-it goes on the side the band is and reads as a caption on the thing it names rather than as an entry in
-a list beside the picture; the amounts then line up in a column of their own out at the edge, which is
-what a column of numbers wants. It also puts the two on ONE line — the amount used to be a second line
+**7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
+amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption
+on the thing it names; the amounts then line up in a column of their own out at the edge, which is what
+a column of numbers wants. It also puts the two on ONE line — the amount used to be a second line
 beneath the name, which cost the tier more than twice the height per entry and was the first thing
 given up when it ran short (7.14).
 
-**A tier name that cannot fit inside falls back to the outside**, where the rail has room of its own
-and nothing to compete with, and gives up its amount for the place the amount was in. It has to: the
-run inside the bar is one pitch shared with the name at the previous column, and those two are not
-strangers — a tier entry's parent IS that name, and its band contains the entry's band, so they arrive
-on nearly the same row and want the same place as a rule rather than by accident. There is often not
-room for both. At the root, "Spending" alone is over half the pitch and a single word cannot be folded
-to fit, so without the fallback the three category names took the whole run and the tier went unnamed
-entirely — measured: three names, then none, then two with the fallback, while the views that have no
-column between the focus and the tier keep all of theirs, inside the bar, with their amounts.
+**Only at the last level, and that is the same fact as the plume.** While something is still behind the
+front (6.5), the tier is a list of places to go next and is written as one: outside the bar, no amounts.
+Deciding it per ENTRY instead — fanning out whichever streams happen to have bottomed out early — puts
+two spellings in one tier, one name against its bar wearing its amount beside a sibling out past the bar
+with none, which reads as the labels being inconsistent rather than as the data differing. The view is
+either at the end of the branch or it is not, and every entry is written the same way.
+
+**A tier name that cannot fit inside falls back to the outside** and gives up its amount for the place
+the amount was in. The run inside the bar is one pitch shared with the name at the previous column, and
+those two are not strangers: a tier entry's parent IS that name, and its band contains the entry's band,
+so they arrive on nearly the same row and want the same place as a rule rather than by accident. There
+is often not room for both — at the root, "Spending" alone is over half the pitch and a single word
+cannot be folded to fit.
 
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
 the room it has is one column pitch. Zoomed in, a long name is longer than that and reaches into the
@@ -506,6 +510,12 @@ a thick band barely yields, a thin one absorbs the push — so the faded ends ab
 rather than the branch being explained. Weighting every focused name alike let four hairlines shove
 the one thick stream's name off its own band, and that band is the point of the view. And **7.12 whichever end escapes is pinned** — shifting
 the whole column only works while one end has slack.
+
+**7.17 A pinned name folds against the run it will have when it is the SUBJECT**, not against the whole
+card. It is the same name in the same place a moment later — stepping sideways makes a neighbour the
+subject — so measuring it against the width of the card while pinned and against one pitch on arrival
+made it change shape at the moment the eye was following it. Two subjects at one level frame identically
+(5.6), so the same name at the same level now folds the same way whether it is pinned or focused.
 
 **7.13 The room a name reserves is measured, not assumed.** The sweep has to know each entry's height
 before it places anything, so whether a name folds onto two lines and whether its amount is shown are

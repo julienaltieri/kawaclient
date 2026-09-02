@@ -205,6 +205,20 @@ export function layout(tree,focus,opt){
 	endF = FSIDE>0 ? Math.min(term(1),endF) : Math.max(term(-1),endF);
 	const endO = -FSIDE, endR = FSIDE>0?endF:endO, endL = FSIDE>0?endO:endF;
 	const endFor = s => s===FSIDE ? endF : endO;
+	/* §6.5  is there another level behind the front, on each side? A stream trails off past its tail
+	   only when there is, and that is a fact about the DATA — not about where the front happens to
+	   sit this frame. Carried as a number so a move blends it like everything else. */
+	const beyond = s => {const e=endFor(s);
+		for(const id in firstC)if(sideOf[id]===s&&firstC[id]===e&&kidsOf[id])return 1;
+		return 0};
+	/* §7.2  and the same fact decides how the tier is written. When nothing is behind the front you
+	   have reached the last level of this branch: there is no deeper view to go to, so the tier is the
+	   answer rather than a step on the way to it, and it fans out into a name against its bar and an
+	   amount beyond it. While there IS something behind, the tier is a list of places to go next and
+	   is written as one, out beyond the bar, with no amounts — a stream that happens to bottom out
+	   early would otherwise be the only entry wearing its amount, which is exactly the inconsistency
+	   this rule removes. */
+	const fanOut = beyond(FSIDE)===0;
 
 	/* §4.1  the spacing rule, and it is the whole of it: the gap between two neighbours is decided by
 	   where their PATHS diverge, measured from the focus. */
@@ -321,16 +335,17 @@ export function layout(tree,focus,opt){
 			   eye wants. It also puts the two on ONE line: the amount used to be a second line beneath
 			   the name, which cost the tier more than twice the height per entry and was the first
 			   thing given up when it ran short. */
-			? {x:s>0?xs[ie]-6:xs[ie]+BAR+6, y:qb.y, h:qb.h, name:n.name, val:opt.format(n.value),
-			   anchor:s>0?"end":"start", vx:railX, vAnchor:s>0?"start":"end",
-			   /* §7.3  HALF the run back to the previous column. The other half belongs to the name at
-			      that column, which runs the other way - and the two are not strangers: a tier entry's
-			      parent IS the name it would meet, its own band contains the entry's band, so the two
-			      arrive on nearly the same row and collide as a rule rather than by accident. Splitting
-			      the run gives each the half nearest the bar it names. Before the split the thicker band
-			      won every one of those, which at the root meant the categories took the whole pitch and
-			      the tier went unnamed entirely. */
-			   maxW:(PITCH-BAR)/2-14,
+			? {x:fanOut ? (s>0?xs[ie]-6:xs[ie]+BAR+6) : railX, y:qb.y, h:qb.h, name:n.name,
+			   val:fanOut ? opt.format(n.value) : undefined,
+			   anchor:fanOut ? (s>0?"end":"start") : (s>0?"start":"end"),
+			   vx:railX, vAnchor:s>0?"start":"end",
+			   /* §7.3  Written inside the bar it has HALF the run back to the previous column, because
+			      the other half belongs to the name at that column, which runs the other way - and the
+			      two are not strangers: a tier entry's parent IS the name it would meet, its own band
+			      contains the entry's band, so they arrive on nearly the same row and want the same
+			      place as a rule rather than by accident. Written outside it has the rail, which is
+			      its own and competes with nothing. */
+			   maxW:(PITCH-BAR)/2-14, outer:!fanOut,
 			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
@@ -374,9 +389,7 @@ export function layout(tree,focus,opt){
 	/* §6.5  is there another level behind the front, on each side? A stream trails off past its tail
 	   only when there is, and that is a fact about the DATA — not about where the front happens to
 	   sit this frame. Carried as a number so a move blends it like everything else. */
-	const beyond = s => {const e=endFor(s);
-		for(const id in firstC)if(sideOf[id]===s&&firstC[id]===e&&kidsOf[id])return 1;
-		return 0};
+
 
 	return {flows:flows,bars:bars,names:names,boxes:boxes,selfBox:selfBox,pathOf:pathOf,
 		endX:xs[at(endF)]+(FSIDE>0?BAR:0), otherX:xs[at(endO)]+(FSIDE>0?0:BAR),
@@ -1053,9 +1066,17 @@ export default class MoneyFlowEngine {
 		   that is one pitch; in the rail it is whatever is left to the edge of the frame. A rail name
 		   too long for the rail used to be dropped outright by the window test below - a thick stream
 		   with a long name simply went unnamed, which is the other half of why labels went missing. */
-		/* Every name that is not pinned runs back toward the previous column, tier entries included
-		   now that they sit against the inside of their bar, so they all measure against the same run. */
-		const roomFor = n => n.pin ? 1e9 : (n.maxW||1e9);
+		/* A name written INSIDE the picture runs back toward the previous column and measures against
+		   that run. A tier name written outside the bar has the rail instead, and how wide the rail is
+		   is only known here, against the camera - which is why it cannot be settled in the layout.
+
+		   §7.17  A PINNED name measures against the same run it will have when it is the subject, not
+		   against the whole card. It is the same name in the same place a moment later, so letting it
+		   go unfolded while pinned and fold on arrival made it change shape at the moment it came into
+		   focus - a jump at exactly the point the eye is following it. */
+		const roomFor = n => (n.rail&&n.outer)
+			? (n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k))
+			: (n.maxW||1e9);
 		shown.forEach(n => {
 			const ty = this.typeOf(n);
 			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
