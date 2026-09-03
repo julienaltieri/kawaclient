@@ -639,6 +639,28 @@ lines is centred on the row.
 It cost nothing in names: measured across six trees at two card widths, the undrawn count did not move
 (6 of 78 on the phone, 14 of 87 on the desktop).
 
+**7.32 The run inside the bar is shared by what the two names TAKE, not half each.** A fanned tier
+name (7.2) runs back toward the previous column and meets the caption there, which is its own parent
+(7.3) — so half the pitch was the safe division to make without measuring. Measured, the halves are
+rarely fair. At the last level of a branch there are only two labels in play: the node's name, left
+aligned, and the leaf's, right aligned against its bar. "Loki" wants a fifth of the run; "Loki
+Groceries & Hygiene" wanted two-fifths, so it folded to four lines with an ampersand alone on the third
+while most of the other half went unused:
+
+```
+half the pitch        room 111   needs 313   four lines
+measured to "Loki"    room 578   needs 313   one line, with its $388 beside it
+```
+
+The tier name now has the run up to where its parent's caption actually ends, floored at the half it
+had and capped by the window — wider than the card would trade a folded name for no name at all, since
+7.20 drops what runs off it. Where the parent is not on screen there is nothing to measure against and
+the half stands, which is what it was for.
+
+This only reaches the FANNED case, and that is the point: 7.2 fans out only when nothing stands between
+the focus and the tier, so the caption being measured against is the only one in that run. A tier name
+written outside its bar keeps the rail, which is its own and competes with nothing.
+
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
 the room it has is one column pitch. A tier entry is the exception and 7.2 has it: written inside its
 bar it gets half that run, because the other half belongs to the name at the previous column; written
@@ -1272,8 +1294,10 @@ Known and not yet done, as of the last session. Nothing here is started.
 **Features**
 
 - **Value labels on the nodes in focus**, except at the root.
-- **A wider rail where nothing contests the interior.** At three levels in, the rail has 160 world
-  units and a four-word name folds to three lines. Measured against `railFrac`:
+- **A wider rail for names written OUTSIDE the bar.** 7.32 fixed the fanned case by measuring; the
+  rail case is untouched, and at three levels in it has 160 world units, which folds a four-word name
+  into three lines. Widening `railFrac` globally is not free — it trades interior captions for tier
+  line-count, and nothing past 0.26 buys anything:
 
   ```
   railFrac   Loki Groceries & Hygiene   phone names undrawn
@@ -1282,12 +1306,9 @@ Known and not yet done, as of the last session. Nothing here is started.
   0.30       2 lines                    8 of 78
   ```
 
-  So widening it globally trades interior captions for tier line-count, and nothing past 0.26 buys
-  anything. The answer is to make it conditional, as the fan-out already is: where no column of
-  captions stands between the focus and the tier, the interior room is uncontested and belongs to the
-  rail. That needs `fanOut` computed before `PITCH` in `layout`, which is a reordering — `interiorNamed`
-  reads only depths and columns, not positions, so it can move, but it should be done deliberately
-  rather than at the end of a session.
+  The same answer as 7.32 probably applies: measure rather than fix a fraction. The rail's competitor
+  is the card's edge rather than another name, so what it would measure against is the widest amount
+  in the column beside it.
 
 **Found in passing, not asked for**
 

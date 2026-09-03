@@ -1472,9 +1472,39 @@ export default class MoneyFlowEngine {
 		   against the whole card. It is the same name in the same place a moment later, so letting it
 		   go unfolded while pinned and fold on arrival made it change shape at the moment it came into
 		   focus - a jump at exactly the point the eye is following it. */
-		const roomFor = n => (n.rail&&n.outer)
-			? (n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k))
-			: (n.maxW||1e9);
+		/* §7.32  THE RUN INSIDE THE BAR IS SHARED BY WHAT THE TWO NAMES TAKE, not half each. A fanned
+		   tier name runs back toward the previous column and meets the caption there - which is its own
+		   parent (§7.3) - so half the pitch was the safe division to make without measuring. Measured,
+		   the halves are rarely fair: "Loki" wants a fifth of it and "Loki Groceries & Hygiene" wanted
+		   two, so the long name folded to four lines with an ampersand alone on the third while most of
+		   the other half went unused. The tier name now has the run up to where its parent's caption
+		   actually ends. Where that parent is not on screen there is nothing to measure against and the
+		   half stands, which is what it was for. */
+		const capEnd = {};
+		shown.forEach(n => {
+			if(n.rail||n.pin)return;                      // captions only: the rail has its own room
+			const ty = this.typeOf(n);
+			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
+				"font-weight":ty.bold?600:500});
+			this.meas.textContent = n.name;
+			const w = this.meas.getComputedTextLength();
+			capEnd[n.id] = n.anchor==="start" ? n.x+w : n.x-w;
+		});
+		const parentEnd = n => {const q = G.pathOf[n.id];
+			if(!q||q.length<2)return undefined;
+			return capEnd[q[q.length-2]]};
+		const roomFor = n => {
+			if(n.rail&&n.outer)
+				return n.anchor==="start" ? (cam.x+cam.w-n.x-4*k) : (n.x-cam.x-4*k);
+			const half = n.maxW||1e9;
+			if(!n.rail)return half;
+			const edge = parentEnd(n);
+			if(edge===undefined)return half;
+			/* and never wider than the window, or §7.20 drops it for running off the card - which would
+			   trade a folded name for no name at all. */
+			const win = n.anchor==="end" ? (n.x-cam.x-4*k) : (cam.x+cam.w-n.x-4*k);
+			return Math.max(half,Math.min(Math.abs(n.x-edge)-8,win));
+		};
 		shown.forEach(n => {
 			const ty = this.typeOf(n);
 			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
