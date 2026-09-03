@@ -47,6 +47,21 @@ const Track = styled.div`
 //cursor + tap highlight for the padded target around each pager dot, matching tappableStyle in
 //CategorizeAction.js so the mobile blue flash is gone here too
 const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightColor:"transparent"};
+//A GRIP IN THE CORNER OF EVERY PAGE. The deck's gesture is invisible: nothing on a tile says it can be
+//dragged, and on a desktop, where there is no swipe habit to fall back on, the pager dots are the only
+//hint that there is anything either side. Three diagonals in the corner are the one mark a reader already
+//reads as "take hold of this".
+//Decorative, and deliberately so: pointer-events none, aria-hidden, and no handler of its own, so the
+//corner it sits in stays a plain drag surface. A control there would have to do something a drag does not,
+//and there is nothing else it should do.
+const gripLines = [24,20,16];   //x+y=c inside a 14-box: the nearer the corner, the shorter the line
+const Grip = () => <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"
+	style={{position:"absolute",right:DS.spacing.xxs+"rem",bottom:DS.spacing.xxs+"rem",
+		pointerEvents:"none",opacity:0.3}}>
+	{gripLines.map(c => <line key={c} x1={c-14} y1={14} x2={14} y2={c-14}
+		stroke={DS.getStyle().bodyTextSecondary} strokeWidth="1.5" strokeLinecap="round"/>)}
+</svg>
+
 //The modal's own side padding, which the deck reaches back into so a page slides all the way to the edge
 //of the sheet instead of stopping at the text column. Read from the same values BaseModalWrapper uses
 //rather than guessed: clipping a page short of the sheet edge makes the neighbour appear out of nowhere
@@ -304,8 +319,12 @@ export default class Deck extends BaseComponent{
 				<Track ref={this.trackRef}
 					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:gap+"rem",
 						touchAction:"pan-y",willChange:"transform"}}>
-					{pages.map((p,i) => <div key={i} style={{flex:"0 0 100%",minWidth:0,
-							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}</div>)}
+					{/*The grip is per PAGE rather than one for the deck, because it belongs to the thing being
+					   dragged - and it is opt-in, since a page that is not a tile has no corner to put it in.
+					   Never with a single page: there is nowhere to go, and an affordance for that is a lie.*/}
+					{pages.map((p,i) => <div key={i} style={{position:"relative",flex:"0 0 100%",minWidth:0,
+							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}
+						{this.props.grip&&pages.length>1?<Grip/>:null}</div>)}
 				</Track>
 			</div>
 			{this.renderPager()}

@@ -114,6 +114,17 @@ The gesture sits on the **whole component** rather than on the track, so the ban
 pager drags too — it is where a thumb lands and it used to be dead. The pager opts out with the same marker,
 since its dots are tap targets.
 
+**Every page carries a grip in its bottom-right corner.** The gesture is otherwise invisible — nothing
+on a tile says it can be dragged, and on desktop, where there is no swipe habit to fall back on, the pager
+dots were the only hint that there was anything either side at all. Three diagonals in a corner are the one
+mark a reader already reads as "take hold of this".
+
+It is decorative and deliberately so: `pointer-events:none`, `aria-hidden`, and no handler of its own, so
+the corner it sits in stays a plain drag surface. A control there would have to do something a drag does
+not, and there is nothing else it should do. It is opt-in per deck (`grip`) rather than automatic, since a
+page that is not a tile has no corner to put it in, and it is never drawn for a single page — there is
+nowhere to go, and an affordance for that is a lie.
+
 ## Where the page index lives
 
 In `ChartCarousel`, not in `MasterStreamAuditView`. That parent rebuilds three full `MultiStreamAnalysis`

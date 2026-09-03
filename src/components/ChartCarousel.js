@@ -57,7 +57,7 @@ export default class ChartCarousel extends BaseComponent{
 	}
 	render(){
 		return <Deck pageLabel="View" bleedRem={bleedRem} padRem={padRem} gapRem={gapRem}
-			fadeEdgesRem={fadeEdgesRem} stretchPages={true}
+			fadeEdgesRem={fadeEdgesRem} stretchPages={true} grip={true}
 			pagerGapRem={DS.spacing.s/2}
 			pages={this.props.pages||[]}
 			index={this.state.index}
