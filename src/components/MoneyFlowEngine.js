@@ -82,6 +82,44 @@ const isHubPlace = f => !f.length || (f.length===1 && f[0]===INC);
 const clamp01 = v => Math.max(0,Math.min(1,v));
 
 /* ------------------------------------------------------------------------------------------------
+   §3.2 §1.2b  THE STACKING ORDER OF A SET OF SIBLINGS.
+
+   Lifted out of the gathering because it is now asked twice: once when the tree is gathered, and once
+   per frame while the values are tweening (§8.7). One definition, so the order the picture settles
+   into and the order it travels through cannot disagree.
+
+   Biggest first, top to bottom, at every level: the eye reads down the list in the order the money is
+   worth reading, and a gathered tail lands at the bottom where it belongs.
+
+   ONE EXCEPTION, at the top of the out side: what is saved sits above what is spent, whatever the two
+   are worth. Everywhere else in the app puts them in that order, and a chart that re-ordered them by
+   size would say the two conventions disagree about which is which. Size still decides within each of
+   the two groups.
+
+   §3.2  An "Other" always sits at the BOTTOM of its set, whatever it comes to. It is not a stream
+   competing for position, it is the remainder - "and the rest" reads as the last line of a list, and a
+   gathered band that sorted above real ones claimed a standing it does not have.
+
+   §1.2b  AND "UNALLOCATED" ALWAYS SITS AT THE TOP OF THE SAVINGS IT BELONGS TO - the mirror of that
+   rule, read the other way. It is not competing on size either: it is what the month did not spend,
+   which is the FIRST thing true about the savings side rather than a remainder appended to it. Sorted
+   by size it wandered up and down the stack from one window to the next, and a band that moves for no
+   reason the reader can see is a band they have to re-find every time.
+
+   `valOf` lets the caller sort on something other than the value currently on the node - which is what
+   §8.7 needs, to hold a stream that is only arriving or only leaving in one slot instead of letting it
+   travel the stack on its way in or out.
+   ------------------------------------------------------------------------------------------------ */
+export function stackOrder(list,key,valOf){
+	const v = valOf || (n => n.value);
+	const rank = key==="__out" ? (n => n.tone==="savings"?0:1) : (() => 0);
+	const isO = n => String(n.id).indexOf("other:")===0;
+	const isU = n => n.id==="__unallocated";
+	return list.slice().sort((x,y) =>
+		(rank(x)-rank(y))||((isU(y)?1:0)-(isU(x)?1:0))||((isO(x)?1:0)-(isO(y)?1:0))||(v(y)-v(x)));
+}
+
+/* ------------------------------------------------------------------------------------------------
    §1.10  THE TAIL, GATHERED.  A FlowTree in, a FlowTree out.
 
    A stream with a dozen children spends most of its height on the two or three that matter and the
@@ -167,31 +205,10 @@ export function groupTail(tree,opt){
 				if(fits(trial))break;
 			}
 		}
-		/* Biggest first, top to bottom, at every level: the eye reads down the list in the order the
-		   money is worth reading, and the tail - and so the Other it becomes - lands at the bottom
-		   where it belongs.
-
-		   ONE EXCEPTION, at the top of the out side: what is saved sits above what is spent, whatever
-		   the two are worth. Everywhere else in the app puts them in that order, and a chart that
-		   re-orders them by size would say the two conventions disagree about which is which. Size
-		   still decides within each of the two groups, and the tail lands at the bottom of whichever
-		   group it belongs to - an Other made of expenses takes the expense tone (below) and one made
-		   of savings takes the savings tone (above). */
-		const rank = key==="__out" ? (n => n.tone==="savings"?0:1) : (() => 0);
-		/* §3.2  An "Other" always sits at the BOTTOM of its set, whatever it comes to. It is not a
-		   stream competing for position, it is the remainder - "and the rest" reads as the last line
-		   of a list, and a gathered band that sorted above real ones claimed a standing it does not
-		   have. Its own members are still ordered by size inside it. */
-		const isO = n => String(n.id).indexOf("other:")===0;
-		/* §1.2  AND "UNALLOCATED" ALWAYS SITS AT THE TOP OF THE SAVINGS IT BELONGS TO - the mirror of
-		   the rule above, and for the same reason read the other way. It is not a stream competing on
-		   size either: it is what the month did not spend, which is the FIRST thing true about the
-		   savings side rather than a remainder appended to it. Sorted by size it wandered up and down
-		   the stack from one window to the next, and a band that moves for no reason the reader can
-		   see is a band they have to re-find every time. */
-		const isU = n => n.id==="__unallocated";
-		const down = a => a.slice().sort((x,y) =>
-			(rank(x)-rank(y))||((isU(y)?1:0)-(isU(x)?1:0))||((isO(x)?1:0)-(isO(y)?1:0))||(y.value-x.value));
+		/* §3.2 §1.2b  the stacking order, defined once at the top of this file. An Other made of
+		   expenses takes the expense tone and one made of savings takes the savings tone, so a tail
+		   lands at the bottom of whichever of the two groups it belongs to. */
+		const down = a => stackOrder(a,key);
 		/* §1.10  THE MACRO CATEGORIES ARE NEVER GATHERED. They are the spine the whole app is
 		   organised around, the type reads its levels off them (§9.6), and "Other" standing where
 		   Savings used to be says something false about the portfolio rather than something true about
@@ -970,17 +987,55 @@ export default class MoneyFlowEngine {
 		const vTo   = values(tree.in,values(tree.out,{}));
 		this.shown = {hubName:tree.hubName, inTotal:from.inTotal,
 			in:union(from.in,tree.in), out:union(from.out,tree.out)};
-		const rec = (cur,e) => cur.forEach(n => {
-			n.value = lerp(vFrom[n.id]||0, vTo[n.id]||0, e);
-			if(n.children)rec(n.children,e)});
+		/* §8.7  THE STACK RE-SORTS AS THE VALUES MOVE. Siblings are stacked biggest first (§3.2), so a
+		   change of window that changes two siblings' relative size changes their slots - and the union
+		   is built in the DESTINATION's order, so on the first frame every such pair swapped places
+		   while still holding the sizes it had before. Measured on the bench: a change of window put 43
+		   to 54 nodes of about 150 in a different slot among their siblings, and at a focus that read as
+		   four to six bands jumping between 10 and 160 world units of 440 in a single frame while the
+		   median band did not move at all. It is the loudest thing about a change of window and it was
+		   invisible to every probe that read values or checked §1.3, because nothing is wrong with the
+		   numbers - only with where they are drawn.
+
+		   Sorting on the value each frame makes the order a function of the picture rather than of the
+		   destination: at the start it IS the order on screen, at the end the destination's, and in
+		   between two bands that trade rank cross over as their sizes cross, which is the only reading
+		   of "biggest first" that is true at every instant. A pair crosses at most once, because the
+		   values between two fixed endpoints are monotonic - so this cannot flicker.
+
+		   A stream on only ONE side of the tween sorts by the value it has where it exists, not by its
+		   live one. It is either arriving from nothing or leaving for it, and sorting it on a value
+		   sweeping through the whole range would walk it down the stack past every sibling on its way
+		   out - which is what §8.5 stopped it doing when it fixed the slot a leaver keeps. It holds one
+		   slot and only grows or shrinks in place.
+
+		   WHAT IS LEFT, and why it is left alone. Where the shape also changes (§8.5), the from-state
+		   takes the destination's shape in one step, a set that gains or loses a member needs a
+		   different height for its stack, and the world is re-scaled per focus (§5.3) - so at a focus
+		   the whole picture still breathes by a few percent on the first frame. Holding the camera
+		   where it was and easing it in looks like the fix and measurably is not: without it the median
+		   band moves 4 screen pixels and the worst 18; holding the camera those become 9 and 12. The
+		   camera's re-solve is not a step to be smoothed away, it is what COMPENSATES for the re-scale
+		   and keeps the picture still while the world changes size underneath it. Every band moving
+		   together by a few pixels is a coherent breath and reads as one; it is bands moving by
+		   DIFFERENT amounts that reads as a glitch, and that is what the re-sort above removes. */
+		const sortVal = n => vFrom[n.id]===undefined ? (vTo[n.id]||0)
+			: (vTo[n.id]===undefined ? vFrom[n.id] : n.value);
+		const rec = (cur,key,e) => {
+			cur.forEach(n => {
+				n.value = lerp(vFrom[n.id]||0, vTo[n.id]||0, e);
+				if(n.children)rec(n.children,n.id,e)});
+			const o = stackOrder(cur,key,sortVal);
+			for(let i=0;i<o.length;i++)cur[i] = o[i];
+		};
 		const fromTotal = from.inTotal;
 		/* Seed the union at where it is coming FROM. Built from the destination's nodes it would
 		   otherwise hold the destination's values for one frame - a snap, and an unbalanced one,
 		   since the streams carried over from the old tree still hold the old numbers. */
-		rec(this.shown.in,0); rec(this.shown.out,0);
+		rec(this.shown.in,"__in",0); rec(this.shown.out,"__out",0);
 		const step = now => {
 			const e = ease(Math.min(1,(now-t0)/this.tune.dataMs));
-			rec(this.shown.in,e); rec(this.shown.out,e);
+			rec(this.shown.in,"__in",e); rec(this.shown.out,"__out",e);
 			this.shown.inTotal = lerp(fromTotal,tree.inTotal,e);
 			if(this.focus.length&&this.G&&!this.G.nodeAt(this.focus)){this.focus=[];this.onFocusChange([])}
 			this.rebuild();

@@ -143,7 +143,8 @@ Recorded so far:
 | [`zero-sum-streams.md`](zero-sum-streams.md) | Streams whose transactions are expected to cancel out: how debits and credits are paired, and how an Amazon return auto-splits the charge that funds it. |
 | [`macro-graph.md`](macro-graph.md) | The chart at the top of the stream view: what it plots, the projection, why hover bypasses React state, and the traps in it. |
 | [`visualisation-carousel.md`](visualisation-carousel.md) | The swipeable container at the top of the stream view: one deck shared with the Amazon charge modal, how its geometry is derived, and how to add a visualisation. |
-| [`money-flow.md`](money-flow.md) | Page two of that carousel: where the money came from and where it went, as one navigable picture — the data contract behind it, the layout, camera and label rules, and the instruments it is built against. |
+| [`money-flow.md`](money-flow.md) | Page two of that carousel: where the money came from and where it went, as one navigable picture — the data contract behind it, and the layout, camera and label rules. |
+| [`debugging-the-picture.md`](debugging-the-picture.md) | How to find out what a drawn thing is actually doing: the four levels of instrument, the order to reach for them in, and the catalogue of ways a measurement lied. Read before debugging anything visual. |
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
 
 ---

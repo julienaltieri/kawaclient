@@ -1053,6 +1053,35 @@ within that tolerance of its solved position, and depends slightly on how many f
 there. Two runs land a hundredth of a screen pixel apart — do not write a test that demands exact
 reproducibility of a resting label.
 
+**8.7 The stack re-sorts as the values move.** Siblings are stacked biggest first (3.2) and the union
+is built in the DESTINATION's order, so on the first frame of a change of window every pair that had
+traded rank swapped slots while still holding the sizes it had before. It was the loudest thing about
+a change of window: 43 to 54 nodes of about 150 landed in a different slot among their siblings, and
+at a focus that read as four to six bands jumping between 10 and 160 world units of 440 in a single
+frame while the median band did not move at all. Every probe that read values or checked 1.3 called
+it clean, because nothing was wrong with the numbers — only with where they were drawn.
+
+Sorting on the value each frame makes the order a function of the picture rather than of where it is
+going: at the start it *is* the order on screen, at the end the destination's, and in between two
+bands that trade rank cross over as their sizes cross, which is the only reading of "biggest first"
+that is true at every instant. A pair crosses at most once, because the values between two fixed
+endpoints are monotonic, so this cannot flicker.
+
+A stream on only ONE side of the tween sorts by the value it has where it exists, not by its live one.
+It is either arriving from nothing or leaving for it, and sorting it on a value sweeping through the
+whole range would walk it down the stack past every sibling on its way out — the travel 8.5 stopped it
+doing when it fixed the slot a leaver keeps. It holds one slot and grows or shrinks in place.
+
+What is left, and why it is left alone: where the shape also changes (8.5) the from-state takes the
+destination's shape in one step, a set that gains or loses a member needs a different height for its
+stack, and the world is re-scaled per focus (5.3) — so at a focus the whole picture still breathes by
+a few percent on the first frame. Holding the camera where it was and easing it in looks like the fix
+and measurably is not: without it the median band moves 4 screen pixels and the worst 18; holding the
+camera those become 9 and 12. The camera's re-solve is not a step to be smoothed away, it is what
+COMPENSATES for the re-scale and keeps the picture still while the world changes size underneath it.
+Every band moving together by a few pixels is a coherent breath and reads as one; it is bands moving
+by DIFFERENT amounts that reads as a glitch.
+
 ---
 
 ## §9 The tile
@@ -1242,95 +1271,19 @@ numbers are produced.
 
 ## The instrument
 
-`documentation/visualisation-carousel.md` records what it cost to converge the last visualisation
-without one: five rounds, four of them shipped to production and judged by eye. This one is built
-against instruments instead, at four levels.
+Everything this picture was debugged with — the four levels of instrument, the traps each one sets, and
+the order to reach for them in — is [`debugging-the-picture.md`](debugging-the-picture.md). It was
+lifted out of this file because it is not about money flow: it is about how to find out what a drawn
+thing is actually doing, and every hour lost here was lost to a measurement that lied rather than to a
+rule that was wrong.
 
-**The numbers** — [`moneyFlow.test.js`](../src/tests/moneyFlow.test.js), run with
-`npx react-scripts test`. It drives `buildFlowTree` through **real** `CompoundStream`,
-`TerminalStream` and `GenericTransaction` objects rather than stand-ins, so what it asserts is what
-production does. It caught the sign convention on savings: a transfer into savings leaves a
-*checking* account, and typed the other way round it is worth nothing at all.
+What belongs here is the property that makes all of it possible: **the engine imports nothing.** That
+is what lets it be loaded into a Node context or a bare page and driven from outside production. Keep
+it that way.
 
-**The binding** — [`moneyFlowTile.test.js`](../src/tests/moneyFlowTile.test.js) mounts the component
-against a real `StreamAnalysis`, so the accessors it reads off that object are the ones the analysis
-actually has — a typo there costs a blank tile in production and nothing at build time. jsdom has no
-layout, so the engine measures its host at zero width and declines to paint, which is the other thing
-under test: a page that is not on screen yet must not throw.
-
-**The layout** — [`moneyFlowEngine.test.js`](../src/tests/moneyFlowEngine.test.js) asserts the pure
-half directly, because `groupTail`, `layout`, `frame` and `compose` need no screen. It holds the
-invariants that decide whether the picture is *readable* as opposed to *correct*: the subject fills
-the frame at every focus, two subjects at the same level land at the same x, a separation measures the
-same number of screen pixels wherever you stand, a name sits on the bar it names, and no number in any
-scene is ever NaN. That last one exists because a unit conversion missed one branch and turned the
-whole income side into NaN while every other invariant kept passing — NaN compares false with
-everything.
-
-**The picture** — the engine has no imports, which is what makes it drivable from outside production,
-in two ways that catch different things:
-
-- *In a VM, with no browser at all.* The engine's source loads into a Node context with its `export`
-  keywords stripped, and the pure functions can then be run over a realistic tree — every focus in a
-  portfolio-shaped fixture, checked in about a second. This is the first thing to reach for: it found
-  a framing fault at four focuses that had survived a browser sweep, and then showed the fault was in
-  the fixture rather than the engine.
-- *In a headless browser, over CDP.* A bench page loads the same stripped source, and probes drive it
-  through real navigation and read what was actually drawn — label positions frame by frame, opacity,
-  the type each name was set in. Anything about motion or text metrics can only be measured here:
-  jsdom has no layout and no text measurement, so the engine declines to paint and every label rule
-  (7.10–7.17, 7.23–7.29) is invisible to jest. **The bench is where the label rules are tested.**
-- *As a picture.* The same browser will screenshot the card, and some faults have no number to read:
-  the plume breaking into stripes, an edge going sheared, a word cut through. Render the state, look
-  at it, then render it again with the change reverted — a before/after pair of the SAME state is what
-  distinguishes "I fixed it" from "I changed something". It is also how to read a bug report that
-  arrives as a photograph: measuring the screenshot itself (the left edge of each label, the spacing
-  between columns) turns "the labels don't line up" into a number, and twice that number said the
-  fault was not where the words suggested.
-
-Six habits, each bought with a wasted hour or more.
-
-A bench runner must **rebuild from the engine on disk every run**, or a before/after comparison
-silently runs the same build twice and reports a real fix as inert.
-
-A probe must have a **deadline per step**, or one unanswerable question — asking to open a node with no
-children, which is not a view — hangs the whole sweep.
-
-A fixture must have **unique ids**: boxes are keyed by id, so two nodes sharing one union into a box
-spanning both halves of the picture, which propagates through every ancestor and reads exactly like a
-broken fit.
-
-**Headless does not run `requestAnimationFrame`.** Not on a timer, and not when a frame is forced by a
-screenshot. A probe that changes the tree and then reads `eng.G` is reading the geometry from *before*
-the change, and a screenshot taken the same way shows the previous tree — which is how a reproduction
-was measured, believed, and acted on before it turned out to be of a state nobody was looking at. Take
-the clock: replace `requestAnimationFrame` with a queue, pump it by hand, and the tween becomes
-steppable frame by frame, which is better than what the browser would have given anyway.
-
-**The bench must enter the engine the way the app does.** `setTree(raw, replace)` takes an early return
-when `replace` is true — it snaps, with no tween — and a bench whose loader always passed `true` had
-never once exercised the value tween. Three fixes in a row were aimed at transition behaviour the
-instrument could not see. Whenever a bug is about a transition, check first that the bench *makes* that
-transition rather than jumping to its result.
-
-**A `const` used above its declaration throws on every paint and passes every test.** jsdom has no
-layout, so the engine declines to paint at zero width and never reaches the line; the bench catches it
-on the first frame. When adding a helper near the top of `layout`, put it after the things it reads.
-
-One more, about fixtures rather than instruments: the engine's options are read individually and not
-defaulted, so a test `opt` missing a key does not fail loudly — it fails *open*. `gather` reads its
-floor from `opt.otherMin`, and where that is undefined `tail.length < undefined` is false, the guard
-that should have returned is skipped, and the crash lands ten lines later on an unrelated
-line. Give a gathering fixture the full `TUNE`, or expect to debug the wrong function.
-
-The bench and its probes are scratch, rebuilt per session rather than committed. What is durable is
-the property that allows them: **the engine imports nothing**. Keep it that way.
-
-Historically, this same diffing rig is what the port was signed off on — the shipped engine and the
-prototype it came from were driven side by side from one mock provider and compared node by node,
-identical across twelve states.
-
----
+The bench and its probes are scratch, rebuilt per session rather than committed. Historically the same
+diffing rig is what the port was signed off on — the shipped engine and the prototype it came from were
+driven side by side from one mock provider and compared node by node, identical across twelve states.
 
 ## Still open
 
@@ -1338,19 +1291,30 @@ Known and not yet done, as of the last session. Nothing here is started.
 
 **Bugs**
 
-- **The line goes discontinuous when switching mode.** Seen on the year/month toggle. The two causes
-  found before are both verified intact — `onto` still carries the streams the destination does not
-  hold (8.5), and money from outside still trails off rather than stopping (6.5) — and every window
-  toggle measures clean on the bench: nothing vanishes, `check()` is empty mid-tween and at rest. So
-  this is a third cause, not a regression of either. The strongest candidate found while looking: the
-  gathering re-decides which streams fall into an Other when the window changes, and a stream moving
-  into or out of an Other is not animated (8.5) — one to three bands blink in or out on the first
-  frame of every window change. That was deliberate when the alternative was refusing to animate at
-  all, and 7.2a/7.2b have since made it far louder, because a band crossing that line now changes its
-  position, its alignment and whether it carries a number, all in one frame.
+- ~~**The line goes discontinuous when switching mode.**~~ Fixed by 8.7, and it was the stacking
+  order, not the gathering. The candidate recorded here — a stream crossing into or out of an Other —
+  was measured and is real but small: holding the tail size across a change of values moved the
+  re-parented count from 30 to 29 of about 150, which is not a fix, and that attempt was reverted. The
+  order of siblings was three times the size of it and had never been looked at. Two instrument
+  lessons came out of it, both now in
+  [`debugging-the-picture.md`](debugging-the-picture.md): the probe that reported "every window
+  toggle measures clean" read VALUES and the 1.3 sums and never once read a position, and the fault is
+  invisible at the root view — it only shows at a focus, so a sweep that never opened a stream could
+  not have found it.
 - ~~**A long name disappears once it is two levels down.**~~ Fixed by 7.31, and it was the width: the
   fold split near the middle, the long half still overran the rail, and the window clause of 7.20 then
   dropped the name outright. It folds into as many lines as the room needs now, up to four.
+
+- **An Other that is new in the destination arrives at full height.** What is left of the mode-switch
+  discontinuity once 8.7 has taken the stacking out of it, and a different thing: not a band moving,
+  but a band that did not exist. Where a change of window gathers a tail that was not gathered before,
+  the Other has no counterpart in the state it is coming from, so it appears in one frame — measured at
+  up to 72 world units of 440 — while the streams it swallowed disappear into it. 8.5 names this and
+  accepts it, on the grounds that it happens on the first frame when nothing has moved yet. That was
+  right when it was one of several faults; now that it is the only one left it is worth revisiting.
+  One attempt is already recorded as failed: holding the tail SIZE across a change of values moved the
+  re-parented count 30 to 29 and was reverted. The size is not what churns — the nesting is, and an
+  Other one level deeper is a different id, which is why the tween pairs nothing.
 
 - **Income cannot represent a negative**, such as tax withheld. The picture has no shape for money that
   arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same

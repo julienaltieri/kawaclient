@@ -4,7 +4,7 @@
  * The engine has no imports, so its pure half (layout/frame) can be asserted directly. These are the
  * invariants that decide whether the picture is readable, as opposed to whether it is correct.
  */
-import MoneyFlowEngine, {layout, frame, compose, groupTail, siblingIds} from '../components/MoneyFlowEngine'
+import MoneyFlowEngine, {layout, frame, compose, groupTail, siblingIds, stackOrder} from '../components/MoneyFlowEngine'
 
 const opt = {l1Px:7, l2Px:2, gapShare:0.35, railFrac:0.28, padPx:4, neighbourPx:22,
 	softFrac:0.4, leftShare:0.7, cssW:360, worldH:444, tail:"push",
@@ -648,5 +648,75 @@ describe("the tail is gathered into Other", () => {
 		const t = groupTail(wrap([N("a",10),N("b",10),N("c",10),N("d",10),N("e",10),N("f",10),N("g",10),N("h",10),N("i",10),N("j",10)]),gopt)
 		const g = compose(t,["p","other:p"],opt).g
 		expect(g.boxes["other:p"]).toBeDefined()
+	})
+})
+
+describe("the stack re-sorts as the values move", () => {
+	// §8.7  Siblings are stacked biggest first (§3.2) and the union is built in the DESTINATION's
+	// order, so on the first frame of a window change every pair that had traded rank swapped slots
+	// while still holding the sizes it had before. Nothing was wrong with the numbers - only with
+	// where they were drawn - which is why every probe that read values or checked §1.3 said clean.
+	const mk = (a,b) => ({hubName:"Income", inTotal:a+b,
+		in:[{id:"inc",name:"inc",tone:"income",value:a+b,children:null}],
+		out:[{id:"p",name:"P",tone:"expenses",value:a+b,children:[
+			{id:"big",name:"Big",tone:"expenses",value:a,children:null},
+			{id:"small",name:"Small",tone:"expenses",value:b,children:null}]}]})
+	const order = eng => eng.shown.out[0].children.map(n => n.id)
+	const engine = () => {const host = document.createElement("div"); document.body.appendChild(host)
+		return new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
+			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => "$"+Math.round(v)})}
+
+	test("the first frame is the order that is on screen, not the one it is going to", () => {
+		const eng = engine()
+		eng.setTree(mk(900,100))
+		expect(order(eng)).toEqual(["big","small"])
+		// the two swap rank: "small" is now the larger of the pair
+		eng.setTree(mk(100,900))
+		// the tween has been seeded but not stepped, so the values are still the ones on screen -
+		// and so the order must still be the one on screen
+		expect(order(eng)).toEqual(["big","small"])
+	})
+
+	test("and the destination's order once it lands", () => {
+		const eng = engine()
+		eng.setTree(mk(900,100))
+		eng.setTree(mk(100,900))
+		// a replacing setTree is the landed state: no tween, the destination outright
+		eng.setTree(mk(100,900), true)
+		expect(order(eng)).toEqual(["small","big"])
+	})
+
+	test("a stream that is only leaving keeps its slot instead of sinking through the stack", () => {
+		// It shrinks to nothing, and sorting it on a value sweeping through the whole range would walk
+		// it down past every sibling on the way out - which is the travel §8.5 stopped it doing.
+		const three = (a,b,c) => ({hubName:"Income", inTotal:a+b+c,
+			in:[{id:"inc",name:"inc",tone:"income",value:a+b+c,children:null}],
+			out:[{id:"p",name:"P",tone:"expenses",value:a+b+c,children:[
+				{id:"x",name:"X",tone:"expenses",value:a,children:null},
+				{id:"going",name:"Going",tone:"expenses",value:b,children:null},
+				{id:"z",name:"Z",tone:"expenses",value:c,children:null}]}]})
+		const two = () => ({hubName:"Income", inTotal:1000,
+			in:[{id:"inc",name:"inc",tone:"income",value:1000,children:null}],
+			out:[{id:"p",name:"P",tone:"expenses",value:1000,children:[
+				{id:"x",name:"X",tone:"expenses",value:600,children:null},
+				{id:"z",name:"Z",tone:"expenses",value:400,children:null}]}]})
+		const eng = engine()
+		eng.setTree(three(600,500,400))
+		expect(order(eng)).toEqual(["x","going","z"])
+		eng.setTree(two())                              // "going" is not in the destination at all
+		expect(order(eng)).toEqual(["x","going","z"])   // still in its slot, about to shrink in place
+	})
+
+	test("stackOrder puts the leftover first and the gathered tail last", () => {
+		const l = [{id:"other:p",name:"Other",tone:"savings",value:900},
+		           {id:"__unallocated",name:"Unallocated",tone:"savings",value:10},
+		           {id:"a",name:"A",tone:"savings",value:500}]
+		expect(stackOrder(l,"p").map(n => n.id)).toEqual(["__unallocated","a","other:p"])
+		// savings stand above expenses at the top of the out side, whatever the two are worth
+		const top = [{id:"e",name:"E",tone:"expenses",value:900},
+		             {id:"s",name:"S",tone:"savings",value:10}]
+		expect(stackOrder(top,"__out").map(n => n.id)).toEqual(["s","e"])
+		// and the caller can sort on something other than the value on the node
+		expect(stackOrder(top,"p",n => n.id==="s"?999:1).map(n => n.id)).toEqual(["s","e"])
 	})
 })
