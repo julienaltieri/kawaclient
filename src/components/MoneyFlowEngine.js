@@ -53,17 +53,27 @@ export const TUNE = {
 };
 const WORLD_W = 1000, BAR = 6, GUTTER = 6, COLPAD = 10;
 
-/* Fold a name in two at the space that leaves the halves most even. A name with no space cannot be
-   folded and is left to the overlap rule. */
-function splitTwo(name){
-	const parts = name.split(" ");
-	if(parts.length<2)return null;
-	let best = 1, bestGap = Infinity;
-	for(let i=1;i<parts.length;i++){
-		const a = parts.slice(0,i).join(" ").length, b = parts.slice(i).join(" ").length;
-		if(Math.abs(a-b)<bestGap){bestGap=Math.abs(a-b);best=i}
-	}
-	return [parts.slice(0,best).join(" "), parts.slice(best).join(" ")];
+/* §7.31  Fold a name into k lines at the spaces that leave the longest line shortest. A name with
+   fewer words than lines cannot be folded that far and says so. Exact rather than greedy: the words
+   are few, and a greedy pass gets "Loki Groceries & Hygiene" wrong in exactly the way that cost the
+   name its place. For k=2 minimising the longest line and minimising the difference between the two
+   are the same thing, so this is what splitTwo did, said once for any k. */
+function splitInto(name,k){
+	const w = name.split(" ");
+	if(w.length<k)return null;
+	let best = null, bestMax = Infinity;
+	const walk = (start,left,acc) => {
+		if(left===1){
+			const lines = acc.concat([w.slice(start).join(" ")]);
+			const m = lines.reduce((x,s) => Math.max(x,s.length),0);
+			if(m<bestMax){bestMax=m;best=lines}
+			return;
+		}
+		for(let i=start+1;i<=w.length-(left-1);i++)
+			walk(i,left-1,acc.concat([w.slice(start,i).join(" ")]));
+	};
+	walk(0,k,[]);
+	return best;
 }
 
 const lerp = (a,b,e) => a+(b-a)*e;
@@ -1050,11 +1060,11 @@ export default class MoneyFlowEngine {
 	}
 	sweepText(){
 		this.pool.text.forEach((r,k) => {if(r.__seen!==this.frameSeq){
-			[r.a,r.a2,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
+			[r.a,r.a2,r.a3,r.a4,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
 			this.pool.text.delete(k)}});
 	}
 	dropText(key){const r=this.pool.text.get(key);if(!r)return;
-		[r.a,r.a2,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
+		[r.a,r.a2,r.a3,r.a4,r.b].forEach(e => {if(e.parentNode)e.parentNode.removeChild(e)});
 		r.__seen = this.frameSeq;
 	}
 	tone(t){return this.palette[t]||this.palette.bodyTextSecondary}
@@ -1465,7 +1475,23 @@ export default class MoneyFlowEngine {
 			this.set(this.meas,{"font-size":ty.size*k,"font-family":ty.family,
 				"font-weight":ty.bold?600:500});
 			this.meas.textContent = n.name;
-			n._fold = this.meas.getComputedTextLength()>roomFor(n) ? splitTwo(n.name) : null;
+			const room = roomFor(n);
+			if(this.meas.getComputedTextLength()<=room){n._fold = null; return}
+			/* §7.31  AS MANY LINES AS THE ROOM NEEDS, up to four. Folded in two and no further, a name
+			   whose longer half still overran the rail was dropped outright by the window test in §7.20 -
+			   so the widest band of a set could be the one that went unnamed, because its name happened
+			   to be the longest. Fewest lines that fit, and four is the cap: past that a label is a
+			   paragraph, and the band it names has not grown to hold it. */
+			let pick = null;
+			for(let lines=2;lines<=4;lines++){
+				const cut = splitInto(n.name,lines);
+				if(!cut)break;
+				pick = cut;
+				const widest = cut.reduce((m,part) => {this.meas.textContent = part;
+					return Math.max(m,this.meas.getComputedTextLength())},0);
+				if(widest<=room)break;
+			}
+			n._fold = pick;
 		});
 		/* §7.24  membership by where the move is GOING, not by how lit a name is right now. */
 		const kin = id => !!(G.inFocus&&G.inFocus(id));
@@ -1492,8 +1518,12 @@ export default class MoneyFlowEngine {
 		   row reserved less than their amounts take and the numbers closed on each other. */
 		const amK = n => (n.vx!==undefined?Math.max(1,this.tune.amountK):1);
 		const ink = n => this.typeOf(n).size*amK(n)*inkR*k, unit = n => ink(n)/18;
-		const upOf = n => 8*unit(n) + (n._fold?ink(n):0);
-		const downOf = n => 10*unit(n);
+		/* §7.31  a third and fourth line are reserved either side of the baseline. The two-line case
+		   keeps the measured asymmetry it was calibrated with (§7.13); only what is beyond it is
+		   split evenly, because the block of lines is centred on the row. */
+		const over = n => Math.max(0,((n._fold||[]).length)-2);
+		const upOf = n => 8*unit(n) + (n._fold?ink(n):0) + over(n)*ink(n)/2;
+		const downOf = n => 10*unit(n) + over(n)*ink(n)/2;
 		const LEAD = 2*k;
 		const spanOf = n => upOf(n)+downOf(n)+LEAD;
 		const room = bot-top;
@@ -1803,11 +1833,12 @@ export default class MoneyFlowEngine {
 	/* A label is one or two lines of name, plus the amount under a rail entry. */
 	text(key,n,cy,two,k,size,outboard){
 		const rec = this.reuse("text",key,() => ({a:this.mk("text",{}),a2:this.mk("text",{}),
-			b:this.mk("text",{})}));
+			a3:this.mk("text",{}),a4:this.mk("text",{}),b:this.mk("text",{})}));
 		/* the stream each element names, on the element. Several streams are called "Other", so
 		   matching a drawn label back to its band by TEXT is guesswork - which cost several
 		   measurements that looked like faults and were not. */
-		[rec.a,rec.a2,rec.b].forEach(e => {if(e.getAttribute("data-k")!==key)e.setAttribute("data-k",key)});
+		[rec.a,rec.a2,rec.a3,rec.a4,rec.b].forEach(e => {
+			if(e.getAttribute("data-k")!==key)e.setAttribute("data-k",key)});
 		const ty = this.typeOf(n);
 		const px = size===undefined ? ty.size : size;
 		const one = (e,dy,txt,amount) => {
@@ -1827,14 +1858,15 @@ export default class MoneyFlowEngine {
 		/* The baselines were measured at bodyPx too, so they travel with the size rather than leaving a
 		   small name sitting where a body-sized one would have been. */
 		const sc = px/this.tune.bodyPx;
-		const out = [one(rec.a,4.5*sc*k,n.name,false)];
-		/* Whether it folds was settled before the rail was swept, so the room reserved for it and the
-		   room it takes are the same decision. */
-		const folded = n._fold;
-		if(folded){
-			one(rec.a,-3*sc*k,folded[0],false);
-			out.push(one(rec.a2,12*sc*k,folded[1],false));
-		}else if(rec.a2.parentNode)rec.a2.parentNode.removeChild(rec.a2);
+		/* Whether it folds, and into how many lines, was settled before the rail was swept - so the
+		   room reserved for it and the room it takes are the same decision. The lines are centred on
+		   the row: at two, that is the -3 and +12 this was calibrated with. */
+		const folded = n._fold, rows = folded ? folded.length : 1;
+		const slot = [rec.a,rec.a2,rec.a3,rec.a4];
+		const dyOf = i => (4.5 + (i-(rows-1)/2)*15)*sc*k;
+		const out = (folded||[n.name]).map((part,i) => one(slot[i],dyOf(i),part,false));
+		for(let i=rows;i<slot.length;i++)
+			if(slot[i].parentNode)slot[i].parentNode.removeChild(slot[i]);
 		/* §7.2  the amount shares the name's baseline, on the other side of the bar - it is beside it,
 		   not beneath it, so a folded name does not push it anywhere either. */
 		if(two)out.push(one(rec.b,4.5*sc*k,n.val,true));

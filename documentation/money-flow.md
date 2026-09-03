@@ -610,6 +610,29 @@ And the question has to be asked of the FOCUSED branch: a stream in another bran
 not standing between this focus and its tier, and letting one veto the fan-out answers a question about
 the whole tree instead of about the view.
 
+**7.31 A name folds into as many lines as the room needs, up to four.** Folded in two and no
+further, a name whose longer half still overran the rail was dropped outright by the window clause of
+7.20 — so the widest band of a set could be the one that went unnamed, purely because its name
+happened to be the longest. Measured at three levels into a real tree, where the rail has 160 world
+units to give:
+
+```
+Loki Groceries & Hygiene   in two: "Loki Groceries" / "& Hygiene"   needs 179   dropped
+                           in three: "Loki" / "Groceries" / "& Hygiene"   needs 121   drawn
+Loki Medical               one line   needs 156   drawn
+Loki Repairs               one line   needs 152   drawn
+```
+
+Fewest lines that fit, and four is the cap: past that a label is a paragraph, and the band it names has
+not grown to hold it. The split is exact rather than greedy — the words are few, and a greedy pass gets
+this very name wrong. Minimising the longest line and minimising the difference between two are the
+same thing, so the two-line case is unchanged, and the reservation (7.13) keeps its measured asymmetry
+there; only the third and fourth lines are reserved either side of the baseline, because the block of
+lines is centred on the row.
+
+It cost nothing in names: measured across six trees at two card widths, the undrawn count did not move
+(6 of 78 on the phone, 14 of 87 on the desktop).
+
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
 the room it has is one column pitch. A tier entry is the exception and 7.2 has it: written inside its
 bar it gets half that run, because the other half belongs to the name at the previous column; written
@@ -1232,10 +1255,10 @@ Known and not yet done, as of the last session. Nothing here is started.
   frame of every window change. That was deliberate when the alternative was refusing to animate at
   all, and 7.2a/7.2b have since made it far louder, because a band crossing that line now changes its
   position, its alignment and whether it carries a number, all in one frame.
-- ~~**A long name disappears once it is two levels down.**~~ Fixed by 7.30, and it was not about the
-  name's length: the name that vanished was a PARENT standing on the same band as its only child, and
-  a caption is dropped for thinness where a rail entry is not. If a long name still goes missing at two
-  levels down, that is the wrap gap below and this entry comes back.
+- ~~**A long name disappears once it is two levels down.**~~ Fixed by 7.31, and it was the width: the
+  fold split near the middle, the long half still overran the rail, and the window clause of 7.20 then
+  dropped the name outright. It folds into as many lines as the room needs now, up to four.
+
 - **Income cannot represent a negative**, such as tax withheld. The picture has no shape for money that
   arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same
   statement. Part bug, part unanswered design question.
