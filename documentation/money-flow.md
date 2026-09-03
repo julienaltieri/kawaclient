@@ -539,23 +539,27 @@ regardless — they are the spine, not entries in a list.
 Cheaper than it looks: the phone drew MORE of its names, not fewer — 6 undrawn of 78 offered against 8
 of 77, because a caption inside a band competes for the same room the bands need.
 
-**7.2b The amount goes on the bands the picture already calls dead ends.** A band with nothing inside
-it draws no plume (6.5) and answers a tap with a nudge rather than a move (3.10). The picture has
-already said, twice, that this is as far as the branch goes — so the amount is the last thing left to
-say about it, and there is no later view in which to say it.
+**7.2b The amount goes on a dead end at the level you opened, and levels are counted after the
+grouping.** A name fans out — against the inside of its bar, its amount beyond — when it is a stream
+one level below the focus with nothing inside it. That is the level you asked to see, and the end of
+it. Anything deeper is on the page for context, and numbering it has the picture answering a question
+you have not put yet: go one level in and it will.
 
-Two proxies for that were tried first and each broke somewhere. Deciding it once for the whole view
-(7.2) took the amount off a terminal band because a SIBLING still had children. Deciding it by level —
-number what is one below the focus, nothing deeper — took it off a terminal band because it sat one
-level further down than the one you opened, which is how a leaf swept into an Other came to read
-differently from the identical leaf that stayed out of it. Neither is a fact about the band.
+Deciding it once for the whole view (7.2) was the first attempt and took the amount off a terminal band
+because a SIBLING still had children. Deciding it from the band alone — every dead end numbered,
+wherever it sits — was the second, and put numbers two levels down on branches the reader had not
+opened.
+
+**An "Other" is not a level.** It is a grouping the display invented (1.10), and which streams fell
+inside it was decided by the room rather than by the household — so a stream swept into the tail stands
+where its ungathered siblings stand, and the level is counted after the grouping. Otherwise the same
+stream reads one level deeper for having been small, which is the sort of difference the reader has no
+way to account for.
 
 Money from outside (6.5) is excluded: it trails off rather than stopping, so it is not an end.
 
-The mixed spelling 7.2 was protecting against — a name against its bar wearing its amount beside a
-sibling out past the bar with none — is now deliberate, and is the point: the two ARE different, one
-ends here and one does not, and the spelling is what says so. Measured across six trees at two card
-widths, none of this moved the undrawn count (6 of 78 on the phone, 14 of 87 on the desktop).
+Measured across six trees at two card widths, none of this moved the undrawn count (6 of 78 on the
+phone, 14 of 87 on the desktop).
 
 **7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption

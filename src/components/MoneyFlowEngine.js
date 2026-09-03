@@ -257,6 +257,13 @@ export function layout(tree,focus,opt){
 	   members are left unnamed until it is opened. Naming them instead is what put five names in the
 	   tier where the gathering had just been arranged to put two. */
 	const isOther = id => typeof id==="string" && id.indexOf("other:")===0;
+	/* §7.2b  THE LEVEL A STREAM IS ON, WHICH IS NOT ITS DEPTH. An "Other" is a grouping the DISPLAY
+	   invented (§1.10), not a level of the portfolio: which streams fell inside it was decided by the
+	   room, not by the household. So it does not count as a level, and a stream swept into the tail
+	   stands where its ungathered siblings stand. Levels are counted after the grouping, or the same
+	   stream reads one level deeper for having been small. */
+	const lvl = id => dep(id) - (pathOf[id]||[]).filter(isOther).length;
+	const fLvl = fDep - focus.filter(isOther).length;
 	const opened = id => focus.indexOf(id)>=0;
 	const shows = id => {const q=pathOf[id]; if(!q)return false;
 		for(let i=focus.length;i<q.length-1;i++)if(isOther(q[i]))return false;
@@ -468,7 +475,7 @@ export function layout(tree,focus,opt){
 			      place as a rule rather than by accident. Written outside it has the rail, which is
 			      its own and competes with nothing. */
 			   maxW:(PITCH-BAR)/2-14, outer:!fan,
-			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}))(!kidsOf[id] && n.outside!==true)
+			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}))(!kidsOf[id] && n.outside!==true && (lvl(id)-fLvl)===1)
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
 			      comes from the DATA and not from the column: the income streams sit one column from

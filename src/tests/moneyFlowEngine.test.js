@@ -417,18 +417,16 @@ describe("the layout says whether a band opens", () => {
 		// the one you can open keeps its caption inside the band, and carries no amount
 		expect(of("Private Equity").val).toBeUndefined()
 		expect(of("Private Equity").anchor).toBe("start")
-		// a band with nothing inside it ends at its bar with its amount beyond. The picture has
-		// already said it is a dead end - no plume, and a tap that only nudges - so the amount is
-		// the last thing left to say, and there is no later view in which to say it.
+		// a dead end at the level you opened ends at its bar with its amount beyond
 		expect(of("Unallocated").anchor).toBe("end")
 		expect(of("Unallocated").val).toBeDefined()
 		expect(of("Investments").anchor).toBe("end")
 		expect(of("Investments").val).toBeDefined()
-		// including one further down: how deep it sits is not a fact about the band, and a leaf in
-		// the tail read one level deeper than the identical leaf that stayed out of it
-		expect(of("Fund I").val).toBeDefined()
-		expect(of("Fund I").anchor).toBe(of("Unallocated").anchor)
-		expect(of("Fund II").val).toBeDefined()
+		// one level further down is on the page for context, not because it was asked for: its name
+		// on the rail, and no number until you go in
+		expect(of("Fund I").outer).toBe(true)
+		expect(of("Fund I").val).toBeUndefined()
+		expect(of("Fund II").val).toBeUndefined()
 	})
 })
 
