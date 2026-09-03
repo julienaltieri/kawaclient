@@ -417,14 +417,17 @@ describe("the layout says whether a band opens", () => {
 		// the one you can open keeps its caption inside the band, and carries no amount
 		expect(of("Private Equity").val).toBeUndefined()
 		expect(of("Private Equity").anchor).toBe("start")
-		// the ones you cannot end at their bar with the amount beyond it - the branch has ended,
-		// whatever the sibling with children is still doing
+		// a leaf ONE level below the focus - the level you opened, and the end of it - ends at its
+		// bar with its amount beyond, whatever the sibling with children is still doing
 		expect(of("Unallocated").anchor).toBe("end")
 		expect(of("Unallocated").val).toBeDefined()
 		expect(of("Investments").anchor).toBe("end")
-		// and identically to a terminal stream a level deeper, which is the whole point
-		expect(of("Unallocated").x).toBe(of("Fund I").x)
-		expect(of("Unallocated").outer).toBe(of("Fund I").outer)
+		expect(of("Investments").val).toBeDefined()
+		// a leaf TWO levels below is there for context: its name on the rail, and no number. It
+		// answers a question you have not asked yet - go one level in and it will.
+		expect(of("Fund I").outer).toBe(true)
+		expect(of("Fund I").val).toBeUndefined()
+		expect(of("Fund II").val).toBeUndefined()
 	})
 })
 
