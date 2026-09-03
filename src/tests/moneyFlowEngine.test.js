@@ -332,6 +332,34 @@ describe("a change of basis that reshapes the tree", () => {
 		check(eng.shown.out); check(eng.shown.in)
 		host.remove()
 	})
+
+	test("a stream the new window does not hold shrinks away, in the place it held", () => {
+		// Rebuilt on the destination's shape, a stream the destination does not have was simply dropped:
+		// it never reached the union, so it could not travel to zero and blinked out on the first frame
+		// instead. From reserves is the one that shows it - an extra band on the in side is itself what
+		// makes the gathering differ, so this is the very transition that takes the rebuilt path.
+		const mkR = (vals,res) => {const tot = vals.reduce((a,b)=>a+b,0)
+			return {hubName:"Income", inTotal:tot,
+				in:[{id:"inc",name:"inc",tone:"income",value:tot-res,children:null}].concat(res
+					? [{id:"__reserves",name:"From reserves",tone:"alert",value:res,children:null,outside:true}]
+					: []),
+				out:[{id:"p",name:"P",tone:"expenses",value:tot,
+					children:vals.map((v,i) => ({id:"s"+i,name:"s"+i,tone:"expenses",value:v,children:null}))}]}}
+		const host = document.createElement("div"); document.body.appendChild(host)
+		const eng = new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
+			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => "$"+Math.round(v)})
+		eng.setTree(mkR([1000,10,10,10,10,10,10,10,10,10],300))    // heavy tail, and money from reserves
+		const was = eng.shown.in.map(n => n.id)
+		expect(was).toContain("__reserves")
+		eng.setTree(mkR([500,500,500,500,500,500,500,500,500,500],0))   // gathers otherwise, and balances
+
+		const now = eng.shown.in.map(n => n.id)
+		expect(now).toContain("__reserves")                        // still here on the first frame
+		expect(eng.shown.in.filter(n => n.id==="__reserves")[0].value).toBeCloseTo(300,0)  // at its old size
+		expect(now).toEqual(was)                                   // and in its old slot, not appended below
+		expect(eng.tree.in.some(n => n.id==="__reserves")).toBe(false)  // gone by the end, as it should be
+		host.remove()
+	})
 })
 
 describe("the tail is gathered into Other", () => {

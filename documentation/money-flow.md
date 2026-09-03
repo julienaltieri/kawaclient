@@ -813,6 +813,26 @@ rebuilt on the DESTINATION's shape, carrying the values that are on screen now: 
 one parent, every parent is the sum of its children (1.3), and the tween is a pure change of size from
 there.
 
+**Rebuilding on the destination's shape must not lose what is LEAVING.** Built from the destination's
+nodes alone, a stream the destination does not hold was dropped outright: it never entered the union,
+so it could not travel to zero, and it blinked out on the first frame instead. Money from reserves
+(6.5) is what made it visible — an extra band on the in side is itself enough to change how the tail
+gathers (1.10), so gaining or losing one is precisely the transition that takes the rebuilt path — but
+it was never about reserves: on any change of basis that regroups, a fifth of the in side could
+disappear in a single frame. A stream the destination does not place has no conflict to resolve, so it
+is carried into the from-state under the parent it had, and leaves by shrinking like anything else.
+
+It is carried only where the destination still holds that parent AND that parent is compound there — a
+stream cannot hang off a leaf without breaking 1.3 on the way in — and only when nothing in its own
+subtree lives on in the destination, since that id would then sit in the union twice and be counted
+twice, which is the fault this section exists to prevent.
+
+**And it keeps its PLACE on the way out.** Appended to the end of its sibling list, a stream that is
+leaving jumps a slot on the first frame: From reserves, sitting between two income streams, dropped
+below both the instant the window changed, and the eye reads that as the band moving when all it is
+doing is going away. It goes back after the neighbour it followed on screen, and since it ends at
+nothing, where it sits by then costs nothing.
+
 What is not animated is a stream moving into or out of an Other. That happens on the first frame —
 and that is the right frame for it: nothing has moved yet, and it is not a journey the eye could
 follow in any case. Where the two shapes already agree, which is most changes, nothing is rebuilt and

@@ -754,12 +754,47 @@ export default class MoneyFlowEngine {
 			const val = {};
 			const scan = l => (l||[]).forEach(n => {val[n.id]=n.value; scan(n.children)});
 			scan(src.in); scan(src.out);
-			const build = l => (l||[]).map(n => {
-				const kids = n.children ? build(n.children) : null;
-				return Object.assign({},n,{children:kids,
-					value: kids&&kids.length ? kids.reduce((a,b) => a+b.value,0)
-					                         : (val[n.id]===undefined?0:val[n.id])})});
-			const [i,o] = [build(dst.in),build(dst.out)];
+			/* §8.5  A STREAM THE DESTINATION DOES NOT HOLD STILL HAS TO SHRINK INTO NOTHING. Built from
+			   dst's nodes alone, this dropped it outright: it never entered the union, so it could not
+			   travel to zero and blinked out on the first frame instead. On a change of window that
+			   regroups - which is exactly what an extra band on the in side causes, From reserves being
+			   the usual cause of one - that took a fifth of the picture with it in a single frame.
+
+			   Such a stream has no conflict to resolve: dst does not place it at all, so carrying it
+			   under the parent it had cannot give an id two parents. It is carried only where dst still
+			   has that parent AND that parent is compound there - a stream cannot hang off a leaf without
+			   breaking §1.3 on the way in - and only if nothing in its subtree lives on in dst, since
+			   that id would then be in the union twice and counted twice. */
+			const has = {}; const mark = l => (l||[]).forEach(n => {has[n.id]=n; mark(n.children)});
+			mark(dst.in); mark(dst.out);
+			const clean = n => !has[n.id] && (n.children||[]).every(clean);
+			const stray = {};
+			const sweep = (l,p) => {
+				let anchor = null;                 // the last sibling that will still be in the built list
+				(l||[]).forEach(n => {
+					if(has[n.id]){anchor=n.id; return sweep(n.children,n.id)}
+					if(!clean(n))return;
+					const host = has[p];
+					if(!(p==="__in"||p==="__out"||(host&&host.children)))return;
+					(stray[p] = stray[p]||[]).push({after:anchor, n:JSON.parse(JSON.stringify(n))});
+					anchor = n.id;
+				});
+			};
+			sweep(src.in,"__in"); sweep(src.out,"__out");
+			const build = (l,p) => {
+				const kids = (l||[]).map(n => {
+					const k = n.children ? build(n.children,n.id) : null;
+					return Object.assign({},n,{children:k,
+						value: k&&k.length ? k.reduce((a,b) => a+b.value,0)
+						                   : (val[n.id]===undefined?0:val[n.id])})});
+				/* back in the slot it held on screen, not at the end of the list: each anchor is either a
+				   stream the destination kept or a stray already put back, so the order survives. */
+				(stray[p]||[]).forEach(sy => {
+					const at = sy.after ? kids.findIndex(x => x.id===sy.after)+1 : 0;
+					kids.splice(at,0,sy.n)});
+				return kids;
+			};
+			const [i,o] = [build(dst.in,"__in"),build(dst.out,"__out")];
 			const sum = a => a.reduce((x,y) => x+y.value,0);
 			return {hubName:dst.hubName, in:i, out:o, inTotal:Math.max(sum(i),sum(o))};
 		};
@@ -788,8 +823,16 @@ export default class MoneyFlowEngine {
 			(ts||[]).forEach(t => {seen[t.id]=1; const f=byId[t.id];
 				out.push(Object.assign({},t,{children:(t.children||(f&&f.children))
 					? union(f&&f.children,t.children) : null}))});
-			(fs||[]).forEach(f => {if(seen[f.id])return;
-				out.push(Object.assign({},f,{children:f.children?union(f.children,null):null}))});
+			/* §8.5  AND IT KEEPS ITS PLACE ON THE WAY OUT. Appended to the end, a stream that is leaving
+			   jumped a slot on the first frame - From reserves, sitting between two income streams,
+			   dropped below both the instant the window changed, and the eye reads that as the band
+			   moving when all it is doing is going away. It goes back after the neighbour it followed on
+			   screen, and since it ends at nothing, where it sits by then costs nothing. */
+			(fs||[]).forEach((f,i) => {if(seen[f.id])return;
+				const prev = (fs||[]).slice(0,i).reverse().filter(p => out.some(n => n.id===p.id))[0];
+				const at = prev ? out.findIndex(n => n.id===prev.id)+1 : 0;
+				seen[f.id]=1;
+				out.splice(at,0,Object.assign({},f,{children:f.children?union(f.children,null):null}))});
 			return out;
 		};
 		const values = (ns,m) => {(ns||[]).forEach(n => {m[n.id]=n.value; values(n.children,m)}); return m};
