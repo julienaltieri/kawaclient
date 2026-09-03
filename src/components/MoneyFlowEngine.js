@@ -272,6 +272,9 @@ export function layout(tree,focus,opt){
 	   members are left unnamed until it is opened. Naming them instead is what put five names in the
 	   tier where the gathering had just been arranged to put two. */
 	const isOther = id => typeof id==="string" && id.indexOf("other:")===0;
+	/* §7.33  the node the view is OF: its path is the focus, exactly. */
+	const isSubjectId = id => {const q=pathOf[id];
+		return !!focus.length && !!q && q.length===focus.length && focus.every((v,i) => q[i]===v)};
 	/* §7.2b  ONE LEVEL BELOW THE FOCUS means below THIS focus, not merely at the same distance from
 	   the hub. Read as a difference of depths it counted any stream in any branch that happened to sit
 	   at that depth - so opening a category put amounts on the leaves of the category beside it, which
@@ -374,8 +377,13 @@ export function layout(tree,focus,opt){
 				off += q.h})})}
 
 	/* the hub's own name, which doubles as the way into the in side (§3.9) */
+	/* §7.33  the income side is a place you can stand (§3.9), so standing on it it is the subject and
+	   says what it is worth like any other. Not from the root, where it is one half of a picture rather
+	   than the thing opened - the same exception the root itself takes. */
+	const inSum = (tree.in||[]).reduce((x,y) => x+y.value,0);
 	names[INC] = {x:xs[at(0)]+5,y:pos[at(0)][HUB].y,h:pos[at(0)][HUB].h,
-		name:tree.hubName,anchor:"start",top:true,id:INC,tap:INC,vis:1};
+		name:tree.hubName,anchor:"start",top:true,id:INC,tap:INC,vis:1,
+		val:(focus.length===1&&focus[0]===INC) ? opt.format(inSum) : undefined, below:true};
 
 	const slides = opt.tail!=="grow";
 	/* §7.2  HOW THE TIER IS WRITTEN, decided once for the whole view. It fans out - a name against the
@@ -526,6 +534,18 @@ export function layout(tree,focus,opt){
 			      the rail beyond - which is how two names came to be printed in the same place. It
 			      folds onto a second line rather than being given up. */
 			   maxW:PITCH-20,
+			   /* §7.33  THE SUBJECT SAYS WHAT IT IS WORTH, under its own name. Every other amount in the
+			      picture belongs to a band you can compare against its neighbours; this one answers "how
+			      much is this" for the thing you opened, which is the question opening it asked. Not at
+			      the root: there the subject is the whole portfolio and its total is the hub's own, said
+			      once already. Under the name rather than beside it - the caption is inside the band with
+			      the run to the next column, and an amount put beside it would compete for that run with
+			      the tier (§7.32), which is the one place there is no room to spare. */
+			   /* THE subject, not merely something at its depth: `dep(id)-fDep` is a difference of
+			      absolute depths, so every category at the focus's own level was handed the subject's
+			      treatment and wore an amount it had not been asked for. The path has to BE the focus. */
+			   val:(isSubjectId(id)&&!isOther(id)) ? opt.format(n.value) : undefined,
+			   below:true,
 			   id:id,tap:id,vis:show};
 	});
 
@@ -707,6 +727,11 @@ export function blend(A,B,e){
 			if(a&&b){const o={};for(const q in b)
 					o[q] = (!DISCRETE[q]&&typeof b[q]==="number"&&typeof a[q]==="number")
 						? lerp(a[q],b[q],e) : b[q];
+				/* §7.33  A VALUE THAT IS LEAVING KEEPS ITS TEXT WHILE IT FADES. The merge takes the
+				   destination's keys, so the subject you are moving AWAY from lost its amount on the very
+				   first frame - it blinked out instead of going over the lead, and only the arrival was
+				   ever animated. The text is kept; what makes it leave is the fade, not the deletion. */
+				if(a.val!==undefined&&o.val===undefined){o.val=a.val;o.below=a.below;o.valOut=true}
 				out[kind][k]=o}
 			else out[kind][k]=Object.assign({},a||b);
 		});
@@ -1543,7 +1568,8 @@ export default class MoneyFlowEngine {
 		/* §7.14  The amount is beside its name, not beneath it, so it costs no height at all and is
 		   never the thing given up when the tier runs short. What it costs is width in the rail, which
 		   is what the rail is now for. */
-		const showVal = n => !!n.rail&&n.val!==undefined;
+		/* §7.33  a tier entry wears its amount beside it; the subject wears it underneath. */
+		const showVal = n => (!!n.rail||!!n.below)&&n.val!==undefined;
 		/* §7.13  WHAT A NAME RESERVES IS WHAT IT MEASURES, plus a lead. The constants here were
 		   calibrated when the amount was stacked under the name, and they reserved half again what a
 		   line of type actually occupies: at ten pixels a tier name inks twelve and was given
@@ -1847,7 +1873,22 @@ export default class MoneyFlowEngine {
 			if(a<=0.02){this.dropText(key);this.offX[key]=tgt;delete this.sSeed[key];
 				if(isPin)this.sY[key]=(pinned[key]-cam.y)/k; else this.sOff[key]=raw/k;
 				return}
-			g.forEach(e => this.set(e,{opacity:(n.pin?1:lit(n.id))*a}));    // §7.22
+			/* §7.33  THE SUBJECT'S AMOUNT ARRIVES WITH THE LANDING, and leaves before the move. It is an
+			   answer about the thing you opened, and during a move nothing is opened yet - carried across,
+			   it reads as a number belonging to whatever the camera is passing over, and it changes value
+			   mid-flight as the tween runs. So it goes out over the lead as the move begins and comes back
+			   over the lead once the camera has settled, which is the same shape either way round.
+			   The name itself does NOT do this: a name that vanishes when you move is a name you cannot
+			   follow (§7.25), and it is the amount alone that has nothing true to say in transit. */
+			const lead = Math.max(1,opt.leadMs);
+			/* the one being left behind goes out on the move's own clock; the one arriving is simply not
+			   there until the camera has landed. Ramping BOTH by the move made the destination's amount
+			   flash at full for a frame and then fade out before fading back in. */
+			const settle = n.valOut ? clamp01(1-(now-this.moveStart)/lead)
+				: (this.animating ? 0 : clamp01((now-this.moveEnds)/lead));
+			if(n.below&&two&&settle>0.001&&settle<0.999)more = true;   // §8.6 keep the clock running
+			g.forEach((e,i) => this.set(e,{opacity:(n.pin?1:lit(n.id))*a
+				*((n.below&&two&&i===g.length-1) ? settle : 1)}));    // §7.22
 			if(blocked)return;
 			placed.push({x0:x0,y0:y0,x1:x1,y1:y1,rail:!!n.rail});
 			/* §3.1 §3.2  a name goes one level down, except the subject's own, which goes back up. */
@@ -1861,7 +1902,14 @@ export default class MoneyFlowEngine {
 				   the tap rather than ignoring it. Anything across the hub is not an end but somewhere the
 				   picture declines to go (§3.7), and stays silent. */
 				const ends = !dest && !isFocus && !opens && !!full && !crosses(n.tap);
-				g.forEach(e => dest?arm(e,dest):(ends?armEnd(e):disarm(e)));
+				/* §3.11  A DEAD END DEEPER THAN THE LEVEL YOU OPENED TAKES YOU TO ITS PARENT. It cannot be
+				   opened - there is nothing inside it - so §3.10 answered with a nudge, which is right for a
+				   band at the level you are on and wrong for one further down: the reader is not asking to go
+				   INTO it, they are asking to see it properly, and one level up is exactly where it is named
+				   with its amount beside it (§7.2b). Tapping any of a set of leaves on the rail brings the
+				   whole set forward, which is what was wanted and what the nudge refused. */
+				const lift = ends && q.length>focus.length+1 ? q.slice(0,-1) : null;
+				g.forEach(e => (dest||lift)?arm(e,dest||lift):(ends?armEnd(e):disarm(e)));
 			}
 		});
 		this.sweepText();
@@ -1911,7 +1959,9 @@ export default class MoneyFlowEngine {
 			if(slot[i].parentNode)slot[i].parentNode.removeChild(slot[i]);
 		/* §7.2  the amount shares the name's baseline, on the other side of the bar - it is beside it,
 		   not beneath it, so a folded name does not push it anywhere either. */
-		if(two)out.push(one(rec.b,4.5*sc*k,n.val,true));
+		/* §7.33  under the last line of the name for the subject, on its own baseline for a tier
+		   entry - which is the same row, the amount being on the far side of the bar there. */
+		if(two)out.push(one(rec.b, n.below ? dyOf(rows) : 4.5*sc*k, n.val, true));
 		else if(rec.b.parentNode)rec.b.parentNode.removeChild(rec.b);
 		return out;
 	}

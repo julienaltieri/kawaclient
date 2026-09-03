@@ -253,6 +253,16 @@ Savings to Income, only back through the middle and out the other way. The rule 
 the same view mirrored. Its frame is not the income subtree alone — that leaves the hub, the thing
 you are standing on, outside the window.
 
+**3.11 A dead end DEEPER than the level you opened takes you to its parent.** It cannot be opened —
+there is nothing inside it — so 3.10 answered with a nudge. That is right for a band at the level you
+are standing on and wrong for one further down: the reader is not asking to go INTO it, they are asking
+to see it properly, and one level up is exactly where it is named with its amount beside it (7.2b).
+
+So tapping any of a set of leaves out on the rail brings the whole set forward. Standing in `Savings`
+with `Savings` and `Option Exercise` on the rail beneath `Private Equity`, tapping either lands on
+`Private Equity` with both named and numbered. Once there they are at the level you opened, nothing is
+deeper, and they nudge again — which is 3.10 doing its job rather than refusing the same question twice.
+
 **3.10 A tap that cannot go deeper still answers.** A stream with nothing inside it carried no handler
 at all, so the last level of every branch was a place where tapping did nothing — and a control that does
 nothing reads as broken rather than as the end of the road. The name is now a tap target like any other,
@@ -678,6 +688,43 @@ the half stands, which is what it was for.
 This only reaches the FANNED case, and that is the point: 7.2 fans out only when nothing stands between
 the focus and the tier, so the caption being measured against is the only one in that run. A tier name
 written outside its bar keeps the rail, which is its own and competes with nothing.
+
+**7.33 The subject says what it is WORTH, under its own name.** Every other amount in the picture
+belongs to a band being compared against its neighbours; this one answers "how much is this" for the
+thing you opened, which is the question opening it asked.
+
+Not at the root: there the subject is the whole portfolio, and the hub has already said its total.
+
+Under the name rather than beside it. The caption sits inside its band with the run to the next column,
+and an amount put beside it would compete for that run with the tier (7.32) — the one place in the
+picture with no room to spare.
+
+**It arrives with the landing and leaves before the move.** During a move nothing is opened yet: carried
+across, the number reads as belonging to whatever the camera is passing over, and it changes value
+mid-flight as the tween runs it from one total to the other. So it goes out over the lead as the move
+begins, and comes back over the lead once the camera has settled. The NAME does not do this — a name
+that vanishes when you move is a name you cannot follow (7.25) — it is the amount alone that has
+nothing true to say in transit.
+
+Two things this needed. The one being left behind keeps its TEXT while it fades: the blend takes the
+destination's keys, so the outgoing subject lost its amount on the first frame and blinked out instead
+of leaving. And the two ramps are not the same ramp — the one arriving is simply absent until the
+landing, because fading it on the move's clock made it flash at full for a frame before fading out and
+then back in.
+
+```
+at rest       $57,680 @ 1.00
+leaving       $57,680 @ 0.99 → 0.62 → 0.23 → 0.00     the new one held at 0.00 throughout
+settled                                                $48,082 @ 1.00
+```
+
+Both sides, and the income side is one of them: `__inc` is a place you can stand (3.9), so standing on
+it makes it the subject and it says its own total. Not from the root, where it is one half of a picture
+rather than the thing opened — the same exception the root itself takes.
+
+And it is THE subject, not whatever shares its depth: `dep(id) - fDep` is a difference of absolute
+depths, so every category at the focus's own level was handed an amount it had not been asked for. The
+path has to BE the focus — the same correction 7.2b needed for the level below.
 
 **7.3 A name sits on the side its own sub-structure is on** — the side the view extends towards — and
 the room it has is one column pitch. A tier entry is the exception and 7.2 has it: written inside its
@@ -1311,7 +1358,7 @@ Known and not yet done, as of the last session. Nothing here is started.
 
 **Features**
 
-- **Value labels on the nodes in focus**, except at the root.
+- ~~**Value labels on the nodes in focus**, except at the root.~~ Done: 7.33.
 - **A wider rail for names written OUTSIDE the bar.** 7.32 fixed the fanned case by measuring; the
   rail case is untouched, and at three levels in it has 160 world units, which folds a four-word name
   into three lines. Widening `railFrac` globally is not free — it trades interior captions for tier

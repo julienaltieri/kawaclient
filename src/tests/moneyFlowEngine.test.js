@@ -458,6 +458,33 @@ describe("a parent and its only child are one band", () => {
 	})
 })
 
+describe("the subject says what it is worth", () => {
+	// Opening a stream asks "how much is this", and every other amount in the picture belongs to a
+	// band being compared with its neighbours. Not at the root: there the subject is the whole
+	// portfolio and the hub has already said its total.
+	const subjectOf = f => {const g = compose(TREE,f,opt).g
+		return Object.keys(g.names).map(k => g.names[k]).filter(n => n.rel===0&&!n.rail)[0]}
+	test("under its own name once something is opened", () => {
+		const s = subjectOf(["spd"])
+		expect(s.name).toBe("Spending")
+		expect(s.val).toBeDefined()
+		expect(s.below).toBe(true)          // under the name, not beside it (7.32 owns that run)
+	})
+	test("on the income side too, which is a place you can stand", () => {
+		const s = subjectOf(["__inc"])
+		expect(s).toBeUndefined()           // __inc's own record carries no rel
+		const g = compose(TREE,["__inc"],opt).g
+		const inc = Object.keys(g.names).map(k => g.names[k]).filter(n => n.id==="__inc")[0]
+		expect(inc.val).toBeDefined()
+		expect(inc.below).toBe(true)
+	})
+	test("but never at the root", () => {
+		const g = compose(TREE,[],opt).g
+		const withVal = Object.keys(g.names).map(k => g.names[k]).filter(n => n.val!==undefined&&!n.rail)
+		expect(withVal).toEqual([])
+	})
+})
+
 describe("a tap that cannot go deeper", () => {
 	// A stream with nothing inside it used to carry no handler at all, so the last level of every
 	// branch was a place where tapping did nothing - which reads as a broken control. The spring is
