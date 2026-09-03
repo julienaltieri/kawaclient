@@ -1373,8 +1373,15 @@ export default class MoneyFlowEngine {
 		Object.keys(G.flows).forEach(key => {const f=G.flows[key];
 			if(f.th<=0.05)return;
 			if(f.s>0 ? f.x0>=frontOut+soft : f.x1<=frontIn-softL)return;
-			/* §6.5  a true leaf stops dead at the front; only a stream with more behind it plumes. */
-			if(f.pass&&(f.s>0 ? f.x0>=frontOut-BAR-0.5 : f.x1<=frontIn+0.5))return;
+			/* §6.5  a true leaf stops dead at the front; only a stream with more behind it plumes - and
+			   whether it does is the BAND's answer, not a question about where the stub starts. Tested by
+			   position alone this also threw away the stub of a band that plumes, and that stub is the only
+			   mass a terminal band has past the front: the plume is a fade of the picture's own ink, so
+			   §7.30's stand-in opened its window onto bare background and drew nothing at all. Everything
+			   about it looked right - the flag, the rect, the gradient - because the fault was that there
+			   was nothing underneath to reveal. */
+			const plumes = id => {const b = G.bars["slide:"+id]; return !!(b&&(b.more||0)>0.005&&vis(b)>0.02)};
+			if(f.pass&&!plumes(f.aId)&&(f.s>0 ? f.x0>=frontOut-BAR-0.5 : f.x1<=frontIn+0.5))return;
 			/* §6.11  each end takes the strength of the stream AT it — the in side runs child to
 			   parent, the opposite way round, and reading it off "source" and "destination" instead
 			   put a hard step in colour exactly at the hub. */
