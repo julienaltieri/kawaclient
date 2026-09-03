@@ -1291,6 +1291,28 @@ Known and not yet done, as of the last session. Nothing here is started.
   arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same
   statement. Part bug, part unanswered design question.
 
+- **A stand-in band shows no plume at rest** (7.30). Reproduced in the bench, which boots on the tree
+  it happens in: focus `Savings > Other`, at rest, "Investments & Interests". Measured, and the facts
+  do not yet add up — recorded so the next attempt starts from them rather than from a theory:
+
+  ```
+  more = 1 and the mask rect exists      x 1292 w 954 y 166 h 8, matching the bar exactly
+  its gradient is correct                opaque at the front (1292), ramping to 0 by 1394
+  muting the plume                       changes nothing
+  sweeping more from 1 down to 0.25      changes nothing
+  forcing the gradient fully opaque      changes nothing
+  the plume rect alone in the mask       reveals nothing
+  removing the hull's mask entirely      DOES reveal ink (lift 56) on those same rows
+  ```
+
+  The last line cannot sit with the rest: if the mask is what hides that ink, a rect covering those
+  rows with an opaque fill must show it. One of these measurements is wrong, and pixel sampling has
+  already misled twice here — `ally` spans world y 166..174 and `rent` begins at 173, so any sample
+  wide by one row reads a neighbour. The next step is an instrument, not another theory: paint the
+  mask's own rects into the picture as visible fills so their coverage can be SEEN, one band at a
+  time. Note also that during a move the plume does appear, which is what makes it look like a
+  landing bug rather than a coverage one.
+
 **Features**
 
 - **Value labels on the nodes in focus**, except at the root.
