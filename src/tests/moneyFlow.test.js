@@ -45,7 +45,10 @@ const MASTER_JSON = group("master", "Master", [
 		group("retire", "Retirement", [
 			leaf("k401", "401k", -600, {isSavings: true}),
 			leaf("ira", "IRA", -300, {isSavings: true})]),
-		leaf("buffer", "Buffer", -400, {isSavings: true})], {isSavings: true}),
+		leaf("buffer", "Buffer", -400, {isSavings: true}),
+		// closed in the middle of the window's year: it earned before that date and nothing after
+		leaf("ally", "Ally Interest", -50, {isSavings: true, endDate: "2024-01-20"})],
+		{isSavings: true}),
 	group("rec", "Recurring", [
 		group("home", "Home", [
 			leaf("rent", "Rent", -1700),
@@ -138,6 +141,28 @@ describe("the target basis", () => {
 		expect(t.out.map(n => n.id)).not.toContain("__unallocated")
 		// and the parent grew by exactly what it took in (§1.3 is asserted whole elsewhere)
 		expect(sav.value).toBeCloseTo(sav.children.reduce((a,b) => a+b.value,0), 6)
+	})
+})
+
+describe("a stream that has been closed", () => {
+	// It kept its history, so it is still in the portfolio and still has transactions against it.
+	// What it must not do is go on being BUDGETED after the date it closed: a target is a statement
+	// about the future, and a closed stream has none.
+	const win = (from,to,basis) => buildFlowTree(master, [txn("ally", -40, "2024-01-10")],
+		{from:new Date(from), to:new Date(to), periodName:"monthly", basis:basis})
+	test("still counts what it did before it closed", () => {
+		// the window contains the transaction, so the actuals hold it - being closed since does not
+		// unspend the money
+		const t = win("2024-01-01","2024-02-01","actual")
+		expect(find(t.out, "ally")).not.toBeNull()
+	})
+	test("is not budgeted for a window after its closing date", () => {
+		const t = win("2024-03-01","2024-04-01","target")
+		expect(find(t.out, "ally")).toBeNull()
+	})
+	test("and does not appear in the actuals of a window it saw none of", () => {
+		const t = win("2024-03-01","2024-04-01","actual")
+		expect(find(t.out, "ally")).toBeNull()
 	})
 })
 
