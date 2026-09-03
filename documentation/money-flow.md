@@ -236,6 +236,20 @@ Savings to Income, only back through the middle and out the other way. The rule 
 the same view mirrored. Its frame is not the income subtree alone — that leaves the hub, the thing
 you are standing on, outside the window.
 
+**3.10 A tap that cannot go deeper still answers.** A stream with nothing inside it carried no handler
+at all, so the last level of every branch was a place where tapping did nothing — and a control that does
+nothing reads as broken rather than as the end of the road. The name is now a tap target like any other,
+and the view springs a little toward the reader and settles: 3% in, back out through neutral, and to
+rest, in 260ms. Enough to say the tap was heard; too little to be taken for a move.
+
+It is a spring, not a shake. A shake is what a refusal looks like, and this is not a refusal — the reader
+asked a reasonable question ("is there more inside this?") and the picture is answering it.
+
+Names only, which is not a shortcut: within the focus the name IS the tap target (3.1), and it is only a
+neighbour whose whole band navigates (3.4). Anything across the hub stays silent, because that is not an
+end but somewhere the picture declines to go (3.7). The nudge is refused mid-move, where it would fight
+the camera for the same frames, and under reduced motion, where the whole point is that nothing springs.
+
 **3.9 `__inc` is a place you can stand, not a path prefix.** It is a focus value in its own right, and
 the first element of the focus is what says which side you are on. Treating it as a prefix on the
 income paths would make "standing on income" unrepresentable — there would be a focus for every income

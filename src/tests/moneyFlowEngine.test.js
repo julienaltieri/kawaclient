@@ -362,6 +362,29 @@ describe("a change of basis that reshapes the tree", () => {
 	})
 })
 
+describe("a tap that cannot go deeper", () => {
+	// A stream with nothing inside it used to carry no handler at all, so the last level of every
+	// branch was a place where tapping did nothing - which reads as a broken control. The spring is
+	// the answer; what it must never do is look like a move, so it holds the frame still in every
+	// respect but scale. (The behaviour end to end is measured on the bench: jsdom has no layout.)
+	test("the nudge holds the frame's centre and proportion, and rests as itself", () => {
+		const host = document.createElement("div"); document.body.appendChild(host)
+		const eng = new MoneyFlowEngine(host,{palette:{income:"#0f0",savings:"#00f",expenses:"#f00",
+			alert:"#f00",bodyText:"#fff",bodyTextSecondary:"#999"}, format:v => "$"+Math.round(v)})
+		const cam = {x:10,y:20,w:400,h:200}
+		expect(eng.nudged(cam)).toBe(cam)               // nothing in flight: the very same camera
+		eng.nudgeT0 = performance.now()-60              // part way into the spring
+		const n = eng.nudged(cam)
+		expect(n.w).toBeLessThan(cam.w)                 // in, on the way in - a dead end never zooms out
+		expect(n.x+n.w/2).toBeCloseTo(cam.x+cam.w/2,6)  // about the centre, so nothing appears to pan
+		expect(n.y+n.h/2).toBeCloseTo(cam.y+cam.h/2,6)
+		expect(n.w/n.h).toBeCloseTo(cam.w/cam.h,6)      // and the card's proportion is a constant (9.3)
+		eng.nudgeT0 = 0
+		expect(eng.nudged(cam)).toBe(cam)               // and it gives the camera back untouched
+		host.remove()
+	})
+})
+
 describe("the tail is gathered into Other", () => {
 	// The tail is decided by the DISPLAY: how many of a set of siblings can carry a name at once when
 	// that set is exploded. §5.3 makes the room a constant — whichever stream you open, its children

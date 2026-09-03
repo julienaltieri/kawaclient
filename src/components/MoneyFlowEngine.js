@@ -38,6 +38,7 @@ export const TUNE = {
 	l1Px:3.5, l2Px:0.5, gapShare:0.35,
 	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
 	bodyWidePx:0, smallWidePx:0, narrowW:360, wideW:640,   // §9.8  the app's own sizes, and where
+	nudgeAmp:0.03, nudgeMs:260,                  // §3.10  the answer a dead end gives
 	railFrac:0.22, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
@@ -695,6 +696,7 @@ export default class MoneyFlowEngine {
 		this.moveStart = 0; this.moveEnds = 0; this.maskFrom = []; this.maskBack = false;
 		this.moveTo = null;
 		this.clock = 0; this.dataClock = 0; this.fadePump = 0;
+		this.nudgeT0 = 0; this.nudgePump = 0;
 		this.reduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
 		this.onResize = () => this.rebuild();
@@ -710,6 +712,34 @@ export default class MoneyFlowEngine {
 		if(!same && this.G)this.paint();
 	}
 	getFocus(){return this.focus.slice()}
+	/* §3.10  A TAP THAT CANNOT GO DEEPER STILL ANSWERS. A stream with nothing inside it carried no
+	   handler at all, so the last level of every branch was a place where tapping did nothing - and a
+	   control that does nothing reads as broken rather than as the end of the road. The view springs a
+	   little toward the reader and settles: enough to say the tap was heard, too little to be taken
+	   for a move. Refused mid-move, where it would fight the camera for the same frames, and under
+	   reduced motion, where the whole point is that nothing springs. */
+	nudge(){
+		if(this.reduced||this.animating||!this.G)return;
+		this.nudgeT0 = performance.now();
+		const step = () => {
+			const done = performance.now()-this.nudgeT0 >= this.tune.nudgeMs;
+			if(done)this.nudgeT0 = 0;
+			this.paint();
+			if(!done)this.nudgePump = requestAnimationFrame(step);
+		};
+		cancelAnimationFrame(this.nudgePump);
+		this.nudgePump = requestAnimationFrame(step);
+	}
+	/* the camera THIS frame is drawn through: the resting one, unless a nudge is in flight. In and
+	   back out through neutral once, decaying - a spring, rather than the shake that means refusal. */
+	nudged(cam){
+		if(!this.nudgeT0)return cam;
+		const t = Math.min(1,(performance.now()-this.nudgeT0)/this.tune.nudgeMs);
+		const a = this.tune.nudgeAmp*Math.sin(2*Math.PI*t)*(1-t);
+		if(!a)return cam;
+		const w = cam.w*(1-a), h = cam.h*(1-a);
+		return {x:cam.x+(cam.w-w)/2, y:cam.y+(cam.h-h)/2, w:w, h:h};
+	}
 	reset(){this.go([])}
 	destroy(){
 		cancelAnimationFrame(this.clock); cancelAnimationFrame(this.dataClock);
@@ -1024,7 +1054,7 @@ export default class MoneyFlowEngine {
 		if(!this.G||!this.host.clientWidth)return;
 		this.frameSeq++;
 		const opt = this.opts(), cssW = opt.cssW, now = performance.now();
-		const G = this.G, cam = this.cam, focus = this.focus, WH = this.worldH;
+		const G = this.G, cam = this.nudged(this.cam), focus = this.focus, WH = this.worldH;
 		const hex = c => {c=(c||"").trim();
 			if(c.charAt(0)==="#"){
 				if(c.length===4)return [parseInt(c[1]+c[1],16),parseInt(c[2]+c[2],16),parseInt(c[3]+c[3],16)];
@@ -1071,13 +1101,24 @@ export default class MoneyFlowEngine {
 		/* Anything that can be opened says so by carrying one class. The listener is attached once
 		   per element and reads the current destination off the node, because the elements are reused
 		   between frames (see the pool below) and re-binding every frame would leak handlers. */
-		const arm = (node,path) => {
-			node.classList.add("mf-tap");
-			if(node.__go===undefined)node.addEventListener("click",ev => {
-				ev.stopPropagation(); if(node.__go)this.go(node.__go)});
-			node.__go = path;
+		/* Bound once per element, on a flag of its own. Keyed off `__go` the listener went on at the
+		   first ARM, and disarm sets `__go` to null - so a pooled element disarmed before it was ever
+		   armed kept the class and the cursor ever after with nothing listening behind them. */
+		const bind = node => {
+			if(node.__bound)return;
+			node.__bound = true;
+			node.addEventListener("click",ev => {
+				ev.stopPropagation();
+				if(node.__go)this.go(node.__go); else if(node.__end)this.nudge();});
 		};
-		const disarm = node => {node.classList.remove("mf-tap");node.__go=null};
+		const arm = (node,path) => {
+			node.classList.add("mf-tap"); bind(node); node.__go = path; node.__end = false;
+		};
+		/* §3.10  the end of a branch is a tap target too - it answers with a nudge, not a move */
+		const armEnd = node => {
+			node.classList.add("mf-tap"); bind(node); node.__go = null; node.__end = true;
+		};
+		const disarm = node => {node.classList.remove("mf-tap");node.__go=null;node.__end=false};
 
 		/* ---- §6.3 §6.4 §6.5  across: one gradient carrying both ends -------------------------- */
 		const soft = Math.max(1,opt.softFrac*(G.pitch||200));
@@ -1680,9 +1721,13 @@ export default class MoneyFlowEngine {
 				const q = G.pathOf[n.tap];
 				const isFocus = q.length===focus.length&&q.every((v,i) => v===focus[i]);
 				const full = G.nodeAt(q);
-				const dest = isFocus ? (focus.length?q.slice(0,-1):null)
-					: ((!crosses(n.tap)&&full&&full.children&&full.children.length)?q:null);
-				g.forEach(e => dest?arm(e,dest):disarm(e));
+				const opens = !crosses(n.tap)&&full&&full.children&&full.children.length;
+				const dest = isFocus ? (focus.length?q.slice(0,-1):null) : (opens?q:null);
+				/* §3.10  a stream on this side with nothing inside it is the end of its branch, and answers
+				   the tap rather than ignoring it. Anything across the hub is not an end but somewhere the
+				   picture declines to go (§3.7), and stays silent. */
+				const ends = !dest && !isFocus && !opens && !!full && !crosses(n.tap);
+				g.forEach(e => dest?arm(e,dest):(ends?armEnd(e):disarm(e)));
 			}
 		});
 		this.sweepText();
