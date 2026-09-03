@@ -550,11 +550,15 @@ because a SIBLING still had children. Deciding it from the band alone — every 
 wherever it sits — was the second, and put numbers two levels down on branches the reader had not
 opened.
 
-**An "Other" is not a level.** It is a grouping the display invented (1.10), and which streams fell
-inside it was decided by the room rather than by the household — so a stream swept into the tail stands
-where its ungathered siblings stand, and the level is counted after the grouping. Otherwise the same
-stream reads one level deeper for having been small, which is the sort of difference the reader has no
-way to account for.
+**An "Other" counts as a level, like any other parent.** Discounting it was tried and is wrong twice
+over: it is a band the reader opens and stands inside, so its members really are one level in — and when
+the Other IS the focus it cancels from both sides of the subtraction anyway, so the idea cannot even
+reach the case it was invented for.
+
+**And "one level below the focus" means below THIS focus**, not merely at the same distance from the
+hub. Read as a difference of depths, it counted any stream in any branch that happened to sit at that
+depth: opening a category put amounts on the leaves of the category BESIDE it, and opening an Other put
+one on a leaf in an unrelated branch of the same parent. The path has to start with the focus's own.
 
 Money from outside (6.5) is excluded: it trails off rather than stopping, so it is not an end.
 
