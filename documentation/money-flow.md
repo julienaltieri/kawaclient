@@ -1149,12 +1149,40 @@ in two ways that catch different things:
   between columns) turns "the labels don't line up" into a number, and twice that number said the
   fault was not where the words suggested.
 
-Three habits, each bought with a wasted hour. A bench runner must **rebuild from the engine on disk
-every run**, or a before/after comparison silently runs the same build twice and reports a real fix as
-inert. A probe must have a **deadline per step**, or one unanswerable question — asking to open a node
-with no children, which is not a view — hangs the whole sweep. And a fixture must have **unique ids**:
-boxes are keyed by id, so two nodes sharing one union into a box spanning both halves of the picture,
-which propagates through every ancestor and reads exactly like a broken fit.
+Six habits, each bought with a wasted hour or more.
+
+A bench runner must **rebuild from the engine on disk every run**, or a before/after comparison
+silently runs the same build twice and reports a real fix as inert.
+
+A probe must have a **deadline per step**, or one unanswerable question — asking to open a node with no
+children, which is not a view — hangs the whole sweep.
+
+A fixture must have **unique ids**: boxes are keyed by id, so two nodes sharing one union into a box
+spanning both halves of the picture, which propagates through every ancestor and reads exactly like a
+broken fit.
+
+**Headless does not run `requestAnimationFrame`.** Not on a timer, and not when a frame is forced by a
+screenshot. A probe that changes the tree and then reads `eng.G` is reading the geometry from *before*
+the change, and a screenshot taken the same way shows the previous tree — which is how a reproduction
+was measured, believed, and acted on before it turned out to be of a state nobody was looking at. Take
+the clock: replace `requestAnimationFrame` with a queue, pump it by hand, and the tween becomes
+steppable frame by frame, which is better than what the browser would have given anyway.
+
+**The bench must enter the engine the way the app does.** `setTree(raw, replace)` takes an early return
+when `replace` is true — it snaps, with no tween — and a bench whose loader always passed `true` had
+never once exercised the value tween. Three fixes in a row were aimed at transition behaviour the
+instrument could not see. Whenever a bug is about a transition, check first that the bench *makes* that
+transition rather than jumping to its result.
+
+**A `const` used above its declaration throws on every paint and passes every test.** jsdom has no
+layout, so the engine declines to paint at zero width and never reaches the line; the bench catches it
+on the first frame. When adding a helper near the top of `layout`, put it after the things it reads.
+
+One more, about fixtures rather than instruments: the engine's options are read individually and not
+defaulted, so a test `opt` missing a key does not fail loudly — it fails *open*. `gather` reads its
+floor from `opt.otherMin`, and where that is undefined `tail.length < undefined` is false, the guard
+that should have returned is skipped, and the crash lands ten lines later on an unrelated
+line. Give a gathering fixture the full `TUNE`, or expect to debug the wrong function.
 
 The bench and its probes are scratch, rebuilt per session rather than committed. What is durable is
 the property that allows them: **the engine imports nothing**. Keep it that way.
@@ -1162,6 +1190,45 @@ the property that allows them: **the engine imports nothing**. Keep it that way.
 Historically, this same diffing rig is what the port was signed off on — the shipped engine and the
 prototype it came from were driven side by side from one mock provider and compared node by node,
 identical across twelve states.
+
+---
+
+## Still open
+
+Known and not yet done, as of the last session. Nothing here is started.
+
+**Bugs**
+
+- **The line goes discontinuous when switching mode.** Seen on the year/month toggle. The two causes
+  found before are both verified intact — `onto` still carries the streams the destination does not
+  hold (8.5), and money from outside still trails off rather than stopping (6.5) — and every window
+  toggle measures clean on the bench: nothing vanishes, `check()` is empty mid-tween and at rest. So
+  this is a third cause, not a regression of either. The strongest candidate found while looking: the
+  gathering re-decides which streams fall into an Other when the window changes, and a stream moving
+  into or out of an Other is not animated (8.5) — one to three bands blink in or out on the first
+  frame of every window change. That was deliberate when the alternative was refusing to animate at
+  all, and 7.2a/7.2b have since made it far louder, because a band crossing that line now changes its
+  position, its alignment and whether it carries a number, all in one frame.
+- **A long name disappears once it is two levels down.** "Loki Grocery & hygiene" and names like it.
+  Likely the wrap gap below rather than a separate fault, but it has not been confirmed.
+- **Income cannot represent a negative**, such as tax withheld. The picture has no shape for money that
+  arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same
+  statement. Part bug, part unanswered design question.
+
+**Features**
+
+- **Value labels on the nodes in focus**, except at the root.
+
+**Found in passing, not asked for**
+
+- The wrap gap on a wide card: a name that wraps takes two lines and the gathering predicts one, so a
+  wide card offers more names than it can draw and the sweep drops the difference — 14 undrawn of 85
+  offered against 9 of 88 at the smaller size. 9.8 has the cause; the lever is the rail's width.
+- `gather` reads its floor from `opt.otherMin` and fails open when it is missing — see the last
+  paragraph of "The instrument".
+- `1.6` and `7.8` are cited in code and defined nowhere in this document.
+- `src/App.test.js` does not run at all: a Jest transform error reached through `core.js`. Pre-existing
+  and unrelated to this work, but it means `npx react-scripts test` is never green.
 
 ---
 
