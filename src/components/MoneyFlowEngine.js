@@ -418,7 +418,15 @@ export function layout(tree,focus,opt){
 		   exploded last level, where there is no column in between - that level IS the tier, and its
 		   names are written there with their amounts (§7.2). A macro category is never a tier entry
 		   at all: it always has a column of its own. */
-		const atTier = (dep(id)-fDep)>=2 || fanOut;
+		/* §7.2  A STREAM WITH NOTHING INSIDE IT IS A TERMINAL BAND WHEREVER IT SITS. The tier was defined
+		   by depth alone - two levels below the focus - which reads the layout as a statement about
+		   distance when what it actually says is "this one opens, that one does not": a caption in the
+		   band for a stream you can go into, an entry on the rail for one you cannot. A childless stream
+		   sitting one level below the focus got the caption, so it looked like a way in and was not, and
+		   "Unallocated" - which can never have anything inside it - was the case where that showed every
+		   time. Depth is the usual way to be terminal, not the only one. Macro categories keep the
+		   caption regardless, by the !n.top below: they are the spine, not entries in a list. */
+		const atTier = (dep(id)-fDep)>=2 || fanOut || !kidsOf[id];
 		const leafHere = own(id) && !n.top && atTier
 			&& (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
 		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within && shows(id))?1:0)

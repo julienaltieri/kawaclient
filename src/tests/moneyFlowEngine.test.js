@@ -397,6 +397,32 @@ describe("what is left over sits at the top of the savings", () => {
 	})
 })
 
+describe("the layout says whether a band opens", () => {
+	// A caption inside the band means you can go in; an entry on the rail means you cannot. Keyed on
+	// depth alone, a childless stream one level below the focus took the caption and so looked like a
+	// way in - "Unallocated" every time, since it can never hold anything, but any terminal stream
+	// beside a compound one had it too.
+	test("a childless child goes to the rail; a compound one keeps its caption", () => {
+		const kid = (id,name,v,kids) => ({id:id,name:name,tone:"savings",value:v,children:kids||null})
+		const t = {hubName:"Income", inTotal:1400,
+			in:[{id:"inc",name:"Income",tone:"income",value:1400,children:null}],
+			out:[kid("sav","Savings",1400,[
+				kid("__unallocated","Unallocated",300),
+				kid("pe","Private Equity",800,[kid("pe1","Fund I",500),kid("pe2","Fund II",300)]),
+				kid("ally","Investments",300)])]}
+		// the shared `opt` omits otherMin, which the gathering reads its floor from
+		const topt = Object.assign({},opt,{otherMin:2, ratio:2.25, smallPx:10, bodyPx:12})
+		const g = compose(groupTail(t,topt),["sav"],topt).g
+		const of = nm => Object.keys(g.names).map(k => g.names[k]).filter(n => n.name===nm)[0]
+		// the one you can open keeps its caption in the band
+		expect(of("Private Equity").outer).toBeFalsy()
+		// the ones you cannot are out on the rail, at the same x as the tier below them
+		expect(of("Unallocated").outer).toBe(true)
+		expect(of("Investments").outer).toBe(true)
+		expect(of("Unallocated").x).toBe(of("Fund I").x)
+	})
+})
+
 describe("a tap that cannot go deeper", () => {
 	// A stream with nothing inside it used to carry no handler at all, so the last level of every
 	// branch was a place where tapping did nothing - which reads as a broken control. The spring is

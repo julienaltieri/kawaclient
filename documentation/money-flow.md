@@ -524,6 +524,22 @@ the name stays put, and it is still on its own band, because that band runs the 
 Where the view ends at the level below the focus — an exploded last level, with no column in between —
 that level IS the tier and its names are written there with their amounts (7.2).
 
+**7.2a A stream with nothing inside it is a terminal band wherever it sits.** The tier was defined by
+depth alone — two levels below the focus — which reads the layout as a statement about distance, when
+what it actually says is *this one opens, that one does not*: a caption inside the band for a stream you
+can go into, an entry on the rail for one you cannot. A childless stream one level below the focus took
+the caption, so it looked like a way in and was not.
+
+"Unallocated" is where that showed every time, because it can never have anything inside it — it sat
+between the two treatments and read as neither. But it was never only about that band: any terminal
+stream standing beside a compound one had the same problem, and fixing it for one id would have left the
+rest. Depth is the usual way to be terminal, not the only one. Macro categories keep the caption
+regardless — they are the spine, not entries in a list.
+
+Cheaper than it looks: with terminal streams on the rail the phone drew MORE of its names, not fewer —
+6 undrawn of 78 offered against 8 of 77, because a caption inside a band competes for the same room the
+bands need.
+
 **7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption
 on the thing it names; the amounts then line up in a column of their own out at the edge, which is what
