@@ -430,6 +430,34 @@ describe("the layout says whether a band opens", () => {
 	})
 })
 
+describe("a parent and its only child are one band", () => {
+	// Nothing separates them - the parent's value IS the child's - so they are drawn on the same
+	// pixels and only one name can sit there. It was the child's, which left the parent dropped for
+	// thinness (a caption is subject to that test, a rail entry is not): the end of a road shown,
+	// with the road itself hidden and untappable.
+	const kid = (id,name,v,kids) => ({id:id,name:name,tone:"savings",value:v,children:kids||null})
+	const t = {hubName:"Income", inTotal:1000,
+		in:[kid("inc","Income",1000)],
+		out:[Object.assign(kid("sav","Savings",1000,[
+			kid("wrap","Investments & Interests",300,[kid("leaf","Ally Interest Income",300)]),
+			kid("plain","Buffer",700)]),{top:true})]}
+	// the shared `opt` omits otherMin, ratio and the type sizes the gathering measures in
+	const wopt = Object.assign({},opt,{otherMin:2, ratio:2.25, smallPx:10, bodyPx:12})
+	const namesAt = f => {const g = compose(groupTail(t,wopt),f,wopt).g
+		return Object.keys(g.names).map(k => g.names[k])
+			.filter(n => (n.vis===undefined?1:n.vis)>0.5).map(n => n.name)}
+	test("the parent stands in for the child, and is the way in", () => {
+		const at = namesAt(["sav"])
+		expect(at).toContain("Investments & Interests")
+		expect(at).not.toContain("Ally Interest Income")
+	})
+	test("and the child names itself once the parent is what you opened", () => {
+		const at = namesAt(["sav","wrap"])
+		expect(at).toContain("Ally Interest Income")
+		expect(at).toContain("Investments & Interests")   // still there, as the subject
+	})
+})
+
 describe("a tap that cannot go deeper", () => {
 	// A stream with nothing inside it used to carry no handler at all, so the last level of every
 	// branch was a place where tapping did nothing - which reads as a broken control. The spring is

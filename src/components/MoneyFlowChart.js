@@ -7,6 +7,7 @@ import utils from '../utils'
 import Core from '../core.js'
 import MoneyFlowEngine from './MoneyFlowEngine'
 import {buildFlowTree} from '../processors/MoneyFlow'
+import AppConfig from '../AppConfig'
 
 /* ==================================================================================================
    MONEY FLOW — the tile.
@@ -54,6 +55,18 @@ const TitleButton = styled.button`
 	border-bottom:1px dashed ${props => DS.getStyle().borderColor};
 	&:hover{border-bottom-color:${props => DS.getStyle().bodyText};}
 	&:focus-visible{outline:2px solid ${props => DS.getStyle().savings}; outline-offset:2px;}
+`
+/* STAGING ONLY. A bug in this picture usually arrives as a photograph, and the three or four facts
+   that would settle it - which tree the adapter built, what the gathering did to it, whether a name
+   gave up its amount - cannot be read off a photograph at all. This copies them. It is gated on
+   AppConfig.staging, which is false in the built app, so it cannot reach a reader. */
+const ToolButton = styled.button`
+	appearance:none; border:0; cursor:pointer; font:inherit;
+	font-size:${DS.fontSize.little}rem;
+	background:none; color:${props => DS.getStyle().bodyTextSecondary};
+	border:1px dashed ${props => DS.getStyle().borderColor};
+	padding:0.15rem 0.5rem; border-radius:${DS.borderRadiusSmall}; margin-right:${DS.spacing.xxs}rem;
+	&:hover{color:${props => DS.getStyle().bodyText};}
 `
 const ResetButton = styled.button`
 	appearance:none; border:0; cursor:pointer;
@@ -221,6 +234,31 @@ export default class MoneyFlowChart extends BaseComponent{
 	}
 	componentWillUnmount(){if(this.engine)this.engine.destroy()}
 
+	/* Everything a report needs, as text on the clipboard: the window and basis it was taken in, the
+	   focused path, the three trees from that node down, and every name with the facts that decided
+	   how it was written. The clipboard API needs a secure context and a user gesture - it has both
+	   here - and falls back to a hidden textarea where it is missing. */
+	copyDiagnostics(){
+		const w = this.windows()[this.state.period]
+		const payload = Object.assign({
+			takenAt:new Date().toISOString(),
+			basis:this.state.basis, period:this.state.period,
+			window:{from:w.from&&w.from.toISOString(), to:w.to&&w.to.toISOString(),
+				periodName:w.periodName, label:w.label, when:w.when}
+		}, this.engine ? this.engine.diagnose() : {error:"no engine"})
+		const text = JSON.stringify(payload,null,2)
+		const done = ok => this.updateState({copied:ok?"Copied":"Copy failed"},
+			() => setTimeout(() => this.updateState({copied:null}),1600))
+		try{
+			if(navigator.clipboard&&navigator.clipboard.writeText)
+				return navigator.clipboard.writeText(text).then(() => done(true),() => done(false))
+			const ta = document.createElement("textarea")
+			ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"
+			document.body.appendChild(ta); ta.select()
+			const ok = document.execCommand("copy")
+			document.body.removeChild(ta); done(ok)
+		}catch(e){done(false)}
+	}
 	render(){
 		const w = this.windows()
 		const basisWord = this.state.basis==="target"?"Target":"Actuals"
@@ -238,6 +276,10 @@ export default class MoneyFlowChart extends BaseComponent{
 						this.updateState({period:this.state.period==="observation"?"subPeriod":"observation"})}
 					>{periodWord}</TitleButton>
 				</Title>
+				{AppConfig.staging?<ToolButton type="button" data-no-drag
+					onClick={() => this.copyDiagnostics()}
+					title="Copy this view's trees and label facts to the clipboard">
+					{this.state.copied||"Copy tree"}</ToolButton>:null}
 				{this.state.focused?<ResetButton type="button" onClick={() => this.engine.reset()}>
 					Back to all</ResetButton>:null}
 			</Head>

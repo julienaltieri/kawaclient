@@ -524,6 +524,25 @@ the name stays put, and it is still on its own band, because that band runs the 
 Where the view ends at the level below the focus — an exploded last level, with no column in between —
 that level IS the tier and its names are written there with their amounts (7.2).
 
+**7.30 A parent and its only child are ONE band.** Nothing separates them — the parent's value IS the
+child's — so they are drawn on the same pixels, and two names cannot sit there. The one that belongs is
+the PARENT's: it is the way in, and the child is what the way leads to.
+
+It also takes the tier slot the child would have had, which is what gets it past the thickness test
+(7.16). That test exempts a rail entry and not a caption, and a pass-through band is often thin — so
+drawn as a caption the parent was dropped for thinness while the child kept its name on the very same
+band. The reader was shown the end of a road, with the road itself hidden and untappable, and no way to
+see why the thing in front of them carried no amount: it was two levels down behind a level that was
+never drawn.
+
+Not when the parent IS the focus: the subject is a caption, and its only child is what you opened it to
+see. Standing in for the child is something a parent does from a distance.
+
+The alternative was to unwrap single-child groups outright, as 2.7 does for the income group at the top
+of the tree. That was rejected: the structure is the household's own, they navigate by it, and a
+category name earned by organising the portfolio should not vanish in the periods where it happens to
+hold one stream.
+
 **7.2a A stream with nothing inside it is a terminal band wherever it sits.** The tier was defined by
 depth alone — two levels below the focus — which reads the layout as a statement about distance, when
 what it actually says is *this one opens, that one does not*: a caption inside the band for a stream you
@@ -1213,8 +1232,10 @@ Known and not yet done, as of the last session. Nothing here is started.
   frame of every window change. That was deliberate when the alternative was refusing to animate at
   all, and 7.2a/7.2b have since made it far louder, because a band crossing that line now changes its
   position, its alignment and whether it carries a number, all in one frame.
-- **A long name disappears once it is two levels down.** "Loki Grocery & hygiene" and names like it.
-  Likely the wrap gap below rather than a separate fault, but it has not been confirmed.
+- ~~**A long name disappears once it is two levels down.**~~ Fixed by 7.30, and it was not about the
+  name's length: the name that vanished was a PARENT standing on the same band as its only child, and
+  a caption is dropped for thinness where a rail entry is not. If a long name still goes missing at two
+  levels down, that is the wrap gap below and this entry comes back.
 - **Income cannot represent a negative**, such as tax withheld. The picture has no shape for money that
   arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same
   statement. Part bug, part unanswered design question.
@@ -1228,8 +1249,9 @@ Known and not yet done, as of the last session. Nothing here is started.
 - The wrap gap on a wide card: a name that wraps takes two lines and the gathering predicts one, so a
   wide card offers more names than it can draw and the sweep drops the difference — 14 undrawn of 85
   offered against 9 of 88 at the smaller size. 9.8 has the cause; the lever is the rail's width.
-- `gather` reads its floor from `opt.otherMin` and fails open when it is missing — see the last
-  paragraph of "The instrument".
+- ~~`gather` reads its floor from `opt.otherMin` and fails open when it is missing.~~ Floored at two,
+  which is what the rule says anyway. The instrument's last paragraph keeps the lesson: the options are
+  read one key at a time and never defaulted, so a missing one fails open rather than loudly.
 - `1.6` and `7.8` are cited in code and defined nowhere in this document.
 - `src/App.test.js` does not run at all: a Jest transform error reached through `core.js`. Pre-existing
   and unrelated to this work, but it means `npx react-scripts test` is never green.

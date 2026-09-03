@@ -91,7 +91,12 @@ const clamp01 = v => Math.max(0,Math.min(1,v));
    are grouped, but its own list is left as it is, because "Other inside Other" says nothing.
    ------------------------------------------------------------------------------------------------ */
 export function groupTail(tree,opt){
-	const least = opt.otherMin;
+	/* Floored, not merely read. The options are taken one key at a time and never defaulted, so a
+	   caller that omits this does not fail loudly: `tail.length < undefined` is false, the guard
+	   below is skipped, and the crash lands ten lines further on in a function that is not at fault.
+	   Two is the floor the rule states anyway - a group that replaces one name with another has
+	   bought nothing - so the floor cannot change what any caller passing TUNE already gets. */
+	const least = Math.max(2, opt.otherMin||2);
 	/* §1.10  HOW MUCH TAIL IS DECIDED BY THE DISPLAY, not by a share of the money. The question is
 	   "how many of these can be named at once", and it is answerable from the values because §5.3
 	   makes the room a constant: whichever stream you open, its children fill the frame less one strip
@@ -391,7 +396,12 @@ export function layout(tree,focus,opt){
 		const n=nodeById[id], s=sideOf[id], e=endFor(s), ie=at(e), c=firstC[id];
 		/* A stream may decline a name (§1: `label:false`). Its band is still drawn and still
 		   navigable; it simply does not take a slot in the rail. */
-		const named = n.label!==false;
+		/* §7.30  and the only child does not take a name of its own while its parent is standing in
+		   for it. Once the parent is the focus, the child is what you opened, and names itself. */
+		const par = (pathOf[id]||[]).length>1 ? pathOf[id][pathOf[id].length-2] : null;
+		const standsIn = !!par && !!kidsOf[par] && kidsOf[par].length===1
+			&& own(par) && (dep(par)-fDep)>=1;
+		const named = n.label!==false && !standsIn;
 		const ends = !!(pos[ie]&&pos[ie][id]);
 		const qb = pos[ends?ie:at(c)][id];
 		/* §6.5  does THIS stream continue past the front? Only a stream whose own column IS the front
@@ -432,9 +442,19 @@ export function layout(tree,focus,opt){
 		   "Unallocated" - which can never have anything inside it - was the case where that showed every
 		   time. Depth is the usual way to be terminal, not the only one. Macro categories keep the
 		   caption regardless, by the !n.top below: they are the spine, not entries in a list. */
-		const atTier = (dep(id)-fDep)>=2 || fanOut || !kidsOf[id];
+		/* §7.30  ...but not when it IS the focus: the subject is a caption, and its only child is what
+		   you opened it to see. Standing in for the child is a thing a parent does from a distance. */
+		const sole = !!kidsOf[id] && kidsOf[id].length===1 && (dep(id)-fDep)>=1;
+		const atTier = (dep(id)-fDep)>=2 || fanOut || !kidsOf[id] || sole;
+		/* §7.30  A PARENT AND ITS ONLY CHILD ARE ONE BAND. Nothing separates them: the parent's value
+		   IS the child's, so they are drawn on the same pixels, and two names cannot sit there. The one
+		   that belongs is the PARENT's - it is the way in, and the child is what the way leads to. It
+		   takes the tier slot the child would have had, which is also what gets it past the thickness
+		   test (§7.16): a rail entry is exempt, a caption is not, and a pass-through band is often thin.
+		   Drawn as a caption it was dropped for thinness while the child kept its name on the same
+		   band - the end of a road shown, with the road itself hidden and untappable. */
 		const leafHere = own(id) && !n.top && atTier
-			&& (!kidsOf[id] || gathered(id) || (s>0?c>=e:c<=e));
+			&& (!kidsOf[id] || sole || gathered(id) || (s>0?c>=e:c<=e));
 		const show = own(id) ? (((dep(id)-fDep)>=0 && (dep(id)-fDep)<=2 && within && shows(id))?1:0)
 		                     : ((!focus.length&&within)?1:0);
 		const railX = xs[ie]+(s>0?BAR+6:-6);                                 // §7.2
@@ -1090,6 +1110,7 @@ export default class MoneyFlowEngine {
 	paint(){
 		if(!this.G||!this.host.clientWidth)return;
 		this.frameSeq++;
+		this.gaveUpVal = {};        // §7.2's fallback, kept for diagnose()
 		const opt = this.opts(), cssW = opt.cssW, now = performance.now();
 		const G = this.G, cam = this.nudged(this.cam), focus = this.focus, WH = this.worldH;
 		const hex = c => {c=(c||"").trim();
@@ -1724,7 +1745,7 @@ export default class MoneyFlowEngine {
 			   the root lost every name in its tier to the three category names. */
 			if(n.rail&&n.vx!==undefined&&two
 				&&placed.some(p => !p.rail&&x0<p.x1&&p.x0<x1&&y0<p.y1&&p.y0<y1)){
-				two = false;
+				two = false; this.gaveUpVal[n.id] = 1;
 				g = this.text(key,n,cy,false,k,szNow,true);
 				extent();
 			}
@@ -1821,6 +1842,54 @@ export default class MoneyFlowEngine {
 		return out;
 	}
 
+	/* A DUMP OF WHAT THIS VIEW IS MADE OF, for a bug report that arrives as a photograph. Three
+	   trees - as the adapter built it, as the gathering left it, and what is on screen - plus, per
+	   name, the handful of facts that decide how it is written: whether it is a tier entry, which
+	   side of its bar it sits on, whether it carries an amount, and whether it HAD one and gave it
+	   up to the fallback in §7.2. That last cannot be read back from the geometry, which is why the
+	   paint records it. Reachable only from the staging build. */
+	diagnose(){
+		const G = this.G, focus = this.focus.slice();
+		const at = (tree,path,loose) => {
+			if(!tree)return null;
+			let here = {children:(tree.in||[]).concat(tree.out||[])};
+			const missed = [];
+			path.forEach(id => {
+				const kid = ((here&&here.children)||[]).filter(n => n.id===id)[0];
+				if(kid)here = kid; else if(loose)missed.push(id); else here = null;
+			});
+			return here ? {node:here, notFound:missed} : null;
+		};
+		const prune = n => n && {id:n.id, name:n.name, tone:n.tone, value:n.value,
+			top:n.top, outside:n.outside, label:n.label,
+			children:n.children ? n.children.map(prune) : null};
+		const treeAt = (t,loose) => {const r = at(t,focus,loose); if(!r)return null;
+			return {notFound:r.notFound, tree:r.node.id ? prune(r.node)
+				: {id:"(root)", children:(r.node.children||[]).map(prune)}}};
+		const names = [];
+		Object.keys((G&&G.names)||{}).forEach(k => {const n = G.names[k];
+			if((n.vis===undefined?1:n.vis)<=0.02&&!n.pin)return;   // only what is on screen
+			names.push({id:n.id, name:n.name, path:((G.pathOf||{})[n.id]||null),
+				rel:n.rel, leaf:n.leaf, top:n.top, rail:!!n.rail, outer:!!n.outer,
+				anchor:n.anchor, amount:(n.val===undefined?null:n.val),
+				gaveUpAmount:!!this.gaveUpVal[n.id], folded:!!n._fold,
+				vis:Math.round((n.vis===undefined?1:n.vis)*100)/100,
+				x:Math.round(n.x), y:Math.round(n.y), h:Math.round(n.h)})});
+		const bands = [];
+		Object.keys((G&&G.bars)||{}).forEach(k => {const b = G.bars[k];
+			if(k.indexOf("slide:")!==0||b.vis<=0.02)return;
+			bands.push({id:b.id, side:(b.sd||1)>0?"out":"in", plume:b.more||0,
+				y:Math.round(b.y), h:Math.round(b.h), vis:Math.round(b.vis*100)/100})});
+		const drawn = [].map.call(this.gText.querySelectorAll("text"),
+			e => ({k:e.getAttribute("data-k"), text:e.textContent}));
+		return {focus:focus, hubName:(this.shown||{}).hubName,
+			card:{cssW:this.host.clientWidth, worldH:this.worldH, dpr:window.devicePixelRatio||1},
+			type:{bodyPx:this.tune.bodyPx, smallPx:this.tune.smallPx,
+				amountK:this.tune.amountK, inkR:this.inkR},
+			check:this.check(),
+			raw:treeAt(this.raw,true), grouped:treeAt(this.tree,false), shown:treeAt(this.shown,false),
+			names:names, bands:bands, drawn:drawn};
+	}
 	/* ---- §10  the invariants, checked where they are produced ------------------------------- */
 	check(){
 		const G = this.G; if(!G)return ["no geometry"];
