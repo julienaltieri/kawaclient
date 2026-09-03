@@ -144,6 +144,25 @@ describe("the target basis", () => {
 	})
 })
 
+describe("a stream whose amount is not a number", () => {
+	// 1.4 drops a stream worth nothing, and the guard is `v < MIN_VISIBLE`. NaN fails every
+	// comparison, so a stream whose amount came out NaN is not "worth nothing" by that test - it
+	// passes straight through into the picture, where its band has no height and its amount reads
+	// "$NaN". One bad transaction amount is enough.
+	test("is kept out of the picture, like one worth nothing", () => {
+		const t = build([txn("base", 5000), txn("rent", NaN)])
+		expect(find(t.out, "rent")).toBeNull()
+	})
+	test("and does not take its parent down with it", () => {
+		// a NaN child would make the parent NaN too, by 1.3, and then the whole side of the picture
+		const t = build([txn("base", 5000), txn("rent", NaN), txn("utils", -300)])
+		const home = find(t.out, "home")
+		expect(home).not.toBeNull()
+		expect(Number.isFinite(home.value)).toBe(true)
+		expect(home.value).toBeCloseTo(300, 6)
+	})
+})
+
 describe("a stream that has been closed", () => {
 	// It kept its history, so it is still in the portfolio and still has transactions against it.
 	// What it must not do is go on being BUDGETED after the date it closed: a target is a statement
