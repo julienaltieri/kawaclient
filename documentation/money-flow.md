@@ -67,6 +67,9 @@ say about one.
 larger, the shortfall is not negative saving: it is money that came from somewhere these streams do
 not describe, and it appears on the in side as `From reserves`, in the alert colour.
 
+`From reserves` also carries `outside:true`, which says there is more behind it than the picture
+models — see 6.5 for what that does to its edge.
+
 `Unallocated` carries **no label** (`label:false`, which any stream may set). It is not a stream
 anyone named or budgeted - it is the width between what came in and what was accounted for - and a
 caption on it competes for the rail with the streams that were. `From reserves` keeps its name: it is
@@ -384,7 +387,11 @@ pitch, so it scales with the grid rather than with the zoom; `leftShare` is how 
 left end gets, which is shorter because the left is where a stream's own name sits (6.3).
 
 **6.5 Whether a stream trails off or stops dead is a fact about the DATA, and it is asked PER BAND**:
-does this stream's own column end at the front, and does it have children. Two bands can sit side by
+does this stream's own column end at the front, and does it have children — **or does it say of itself
+that there is more behind it**. `From reserves` (1.2) has no children and never will: it is money drawn
+from savings the flow does not model. Cut hard among neighbours that trail off, it left a notch in the
+edge of the picture exactly where it sat. What is behind it is real, just not drawn, which is precisely
+what the plume says, so the adapter marks it `outside` and it trails off like the rest. Two bands can sit side by
 side at the same front and answer differently — one continues inside, its neighbour is terminal — so a
 single gradient across the whole picture, giving them one edge, made a terminal stream trail off
 because a sibling had something behind it. Everything is cut hard at the front and the softened edge is

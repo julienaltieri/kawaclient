@@ -124,7 +124,11 @@ export function buildFlowTree(master,transactions,o){
 	   the exceptional case, and an unexplained red band would be worse than none. */
 	if(res>=MIN_VISIBLE)outs.push({id:"__unallocated",name:"Unallocated",tone:"savings",
 		value:res,children:null,label:false});
+	/* §6.5  `outside` says there is more behind this stream than the picture models. From reserves is
+	   money drawn from savings the flow does not show, so it TRAILS OFF like a stream with children
+	   rather than stopping dead - it has no children, and cut hard among neighbours that do have them
+	   it left a notch in the edge of the picture exactly where it sat. */
 	else if(res<=-MIN_VISIBLE)ins.push({id:"__reserves",name:"From reserves",tone:"alert",
-		value:-res,children:null});
+		value:-res,children:null,outside:true});
 	return {hubName:hubName,in:ins,out:outs,inTotal:Math.max(inTot,outTot)};
 }

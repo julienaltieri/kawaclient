@@ -377,7 +377,11 @@ export function layout(tree,focus,opt){
 		   column and that has children does; one that bottomed out earlier and slid out to the end has
 		   nothing behind it however long the view is. Carried per band, because the answer differs
 		   between two bands sitting side by side at the same front. */
-		const more = (c===e&&!!kidsOf[id]) ? 1 : 0;
+		/* §6.5  ...or that says so about itself. A stream marked `outside` (§1.2) draws on something
+		   the picture does not model, which is what the plume means; without it, the one stream in the
+		   view that comes from beyond the portfolio was the one cut hard among neighbours that trail
+		   off, and the edge of the picture had a notch in it. */
+		const more = (c===e&&(!!kidsOf[id]||n.outside===true)) ? 1 : 0;
 		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0,more:more,sd:s};
 		for(let k=c; s>0 ? k<=term(1) : k>=term(-1); k+=s){const q=pos[at(k)]&&pos[at(k)][id];if(!q)continue;
 			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0,

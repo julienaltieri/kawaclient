@@ -267,6 +267,29 @@ describe("the type is decided from the level, not the column", () => {
 	})
 })
 
+describe("a stream from outside the portfolio", () => {
+	test("trails off rather than stopping dead", () => {
+		// From reserves has no children, so among neighbours that do it was the one band cut hard at
+		// the front - a notch in the edge of the picture. What is behind it is real, just not modelled.
+		const t = {hubName:"Income", inTotal:120,
+			in:[{id:"inc",name:"inc",tone:"income",value:100,children:[
+					{id:"w",name:"w",tone:"income",value:100,children:null}]},
+				{id:"__reserves",name:"From reserves",tone:"alert",value:20,children:null,outside:true}],
+			out:[{id:"p",name:"P",tone:"expenses",value:120,children:[
+				{id:"a",name:"a",tone:"expenses",value:120,children:null}]}]}
+		const bars = compose(t,[],opt).g.bars
+		const of = id => Object.keys(bars).map(q => bars[q])
+			.filter(b => b.id===id&&b.vis>0.5)[0]
+		expect(of("__reserves")).toBeDefined()
+		expect(of("__reserves").more).toBe(1)
+		// and without the mark it would be cut hard, which is what left the notch
+		const plain = JSON.parse(JSON.stringify(t)); delete plain.in[1].outside
+		const bars2 = compose(plain,[],opt).g.bars
+		expect(Object.keys(bars2).map(q => bars2[q])
+			.filter(b => b.id==="__reserves"&&b.vis>0.5)[0].more).toBe(0)
+	})
+})
+
 describe("a change of basis that reshapes the tree", () => {
 	// The value tween animates the UNION of the two trees, paired by id, and that is only a tree while
 	// every stream sits under the same parent on both sides. The gathering is decided from the values,
