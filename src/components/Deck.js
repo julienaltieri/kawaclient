@@ -189,9 +189,6 @@ export default class Deck extends BaseComponent{
 		//a stream field. The deck only claims what nothing else wanted.
 		if(e.target.closest && e.target.closest('[data-no-drag]'))return
 		cancelAnimationFrame(this.raf);
-		//capture so the drag keeps receiving pointermove/up wherever the cursor goes - without it, moving
-		//the pointer past the modal's edge stops delivering events to the track and the throw freezes there.
-		try{e.currentTarget.setPointerCapture(e.pointerId)}catch(err){}
 		this.drag = {x0:e.clientX,y0:e.clientY,x:this.x,moved:false,samples:[[performance.now(),this.x]],pointerId:e.pointerId};
 	}
 	onPointerMove(e){
@@ -201,6 +198,12 @@ export default class Deck extends BaseComponent{
 			if(Math.abs(dx)<dragLockPx)return
 			if(Math.abs(dx)<Math.abs(e.clientY-this.drag.y0)){this.drag = undefined;return}//it is a scroll
 			this.drag.moved = true;
+			//CAPTURED ONLY ONCE THE DRAG IS REAL. Capture keeps pointermove/up coming wherever the cursor
+			//goes - without it, moving the pointer past the container's edge stops delivering events and the
+			//throw freezes there - but taken on pointerdown it also retargets the CLICK to this element, so a
+			//press and release on a button inside never reached that button. Mouse only: a touch tap
+			//synthesises its click after the capture is released, which is why it only showed on desktop.
+			try{e.currentTarget.setPointerCapture(this.drag.pointerId)}catch(err){}
 		}
 		var lo = this.pageX(this.count()-1), want = this.drag.x+dx;
 		if(want>0)want = want*deckPhysics.rubber;

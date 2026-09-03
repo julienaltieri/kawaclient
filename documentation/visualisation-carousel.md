@@ -98,6 +98,18 @@ The first attempt left the chart draggable, reasoning that its hover is a mouse-
 so can never become a drag. True of the hover, and beside the point: the chart has pointer interactions of
 its own and a swipe starting on it was taking them.
 
+**Pointer capture is taken when the drag becomes real, not when the pointer goes down.** Capture is what
+keeps `pointermove` and `pointerup` arriving once the cursor leaves the component — without it a throw
+freezes the moment the pointer passes the edge — but taking it on `pointerdown` also retargets the eventual
+`click` to the captured element, and a button inside the page then never hears its own click. It showed only
+on desktop: a touch tap synthesises its click after capture is released, so taps kept working while clicks
+did nothing, on the tile's title toggles and its "Back to all" alike. Capture now happens at the same moment
+`moved` is set, which is the first point at which it can matter. `HeaderRowDrawer` had the same fault and the
+same fix.
+
+`data-no-drag` is not the remedy for this. It says a gesture belongs to something else; a button wants the
+carousel to keep the drag and only wants its click back.
+
 The gesture sits on the **whole component** rather than on the track, so the band between the page and the
 pager drags too — it is where a thumb lands and it used to be dead. The pager opts out with the same marker,
 since its dots are tap targets.
