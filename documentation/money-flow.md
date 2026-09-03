@@ -536,9 +536,21 @@ stream standing beside a compound one had the same problem, and fixing it for on
 rest. Depth is the usual way to be terminal, not the only one. Macro categories keep the caption
 regardless — they are the spine, not entries in a list.
 
-Cheaper than it looks: with terminal streams on the rail the phone drew MORE of its names, not fewer —
-6 undrawn of 78 offered against 8 of 77, because a caption inside a band competes for the same room the
-bands need.
+Cheaper than it looks: the phone drew MORE of its names, not fewer — 6 undrawn of 78 offered against 8
+of 77, because a caption inside a band competes for the same room the bands need.
+
+**7.2b And a branch that ends here fans out whatever the rest of the view is doing.** 7.2 decides the
+spelling once for the whole view, to stop a mixed one: a name against its bar wearing its amount, beside
+a sibling out past the bar with none. But the question it answers — does this name have the run inside
+its bar to itself? — is about a BRANCH, not a view. A stream with nothing inside it has no name of its
+own coming to meet it there, whoever else still has children. Decided view-wide, one openable sibling
+took the amounts off every terminal band beside it, and two identical leaves one level apart were
+spelled differently for a reason belonging to neither.
+
+The collision 7.2 guards against is real but did not materialise: measured across six trees at two card
+widths, the undrawn count did not move (6 of 78 on the phone, 14 of 87 on the desktop). A parent's
+caption sits in its own band near the focus; the fanned name sits against the front bar, and the two
+rarely want the same place in practice.
 
 **7.2 At the last level of a branch the tier fans out**: the name against the inside of its bar, the
 amount beyond it. A name belongs to its band, so it goes on the side the band is and reads as a caption

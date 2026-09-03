@@ -448,9 +448,14 @@ export function layout(tree,focus,opt){
 			   eye wants. It also puts the two on ONE line: the amount used to be a second line beneath
 			   the name, which cost the tier more than twice the height per entry and was the first
 			   thing given up when it ran short. */
-			? {x:fanOut ? (s>0?xs[ie]-6:xs[ie]+BAR+6) : railX, y:qb.y, h:qb.h, name:n.name,
-			   val:fanOut ? opt.format(n.value) : undefined,
-			   anchor:fanOut ? (s>0?"end":"start") : (s>0?"start":"end"),
+			/* §7.2a  A BRANCH THAT ENDS HERE FANS OUT WHATEVER THE REST OF THE VIEW DOES. The rule above
+			   is about a name having the run inside its bar to itself, and it is answered per BRANCH: a
+			   stream with nothing inside it has no name of its own coming to meet it there, whoever else
+			   in the view still has children. Decided for the whole view, a single openable sibling took
+			   the amounts off every terminal band beside it. */
+			? (fan => ({x:fan ? (s>0?xs[ie]-6:xs[ie]+BAR+6) : railX, y:qb.y, h:qb.h, name:n.name,
+			   val:fan ? opt.format(n.value) : undefined,
+			   anchor:fan ? (s>0?"end":"start") : (s>0?"start":"end"),
 			   vx:railX, vAnchor:s>0?"start":"end",
 			   /* §7.3  Written inside the bar it has HALF the run back to the previous column, because
 			      the other half belongs to the name at that column, which runs the other way - and the
@@ -458,8 +463,8 @@ export function layout(tree,focus,opt){
 			      contains the entry's band, so they arrive on nearly the same row and want the same
 			      place as a rule rather than by accident. Written outside it has the rail, which is
 			      its own and competes with nothing. */
-			   maxW:(PITCH-BAR)/2-14, outer:!fanOut,
-			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}
+			   maxW:(PITCH-BAR)/2-14, outer:!fan,
+			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}))(fanOut||!kidsOf[id])
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
 			      comes from the DATA and not from the column: the income streams sit one column from

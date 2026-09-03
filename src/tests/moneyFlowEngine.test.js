@@ -414,12 +414,17 @@ describe("the layout says whether a band opens", () => {
 		const topt = Object.assign({},opt,{otherMin:2, ratio:2.25, smallPx:10, bodyPx:12})
 		const g = compose(groupTail(t,topt),["sav"],topt).g
 		const of = nm => Object.keys(g.names).map(k => g.names[k]).filter(n => n.name===nm)[0]
-		// the one you can open keeps its caption in the band
-		expect(of("Private Equity").outer).toBeFalsy()
-		// the ones you cannot are out on the rail, at the same x as the tier below them
-		expect(of("Unallocated").outer).toBe(true)
-		expect(of("Investments").outer).toBe(true)
+		// the one you can open keeps its caption inside the band, and carries no amount
+		expect(of("Private Equity").val).toBeUndefined()
+		expect(of("Private Equity").anchor).toBe("start")
+		// the ones you cannot end at their bar with the amount beyond it - the branch has ended,
+		// whatever the sibling with children is still doing
+		expect(of("Unallocated").anchor).toBe("end")
+		expect(of("Unallocated").val).toBeDefined()
+		expect(of("Investments").anchor).toBe("end")
+		// and identically to a terminal stream a level deeper, which is the whole point
 		expect(of("Unallocated").x).toBe(of("Fund I").x)
+		expect(of("Unallocated").outer).toBe(of("Fund I").outer)
 	})
 })
 
