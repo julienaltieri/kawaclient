@@ -959,6 +959,27 @@ from the DATA rather than the column (the adapter marks the master's children), 
 to know where its own level is — the income streams stand one column from the hub exactly as the
 categories do, but they are a level below them (2.7).
 
+**9.8 The type sizes come from the DESIGN SYSTEM, where the card is wide enough to carry them.** They
+never did: the engine held its own 12 and 10 and the tile passed nothing, so the app's type scale had no
+bearing on the one picture whose geometry grows with the card. That is what made a desktop card read as
+under-set — the same 12px is 3.7% of a phone card's width and 1.6% of a desktop one's, so the labels were
+less than half the size, relative to the picture, that a phone shows them at.
+
+Simply adopting the design system's sizes everywhere is not the answer, because 1.10 measures the gathering
+in type: at phone width 16px/12.8px costs two names and leaves a third undrawn. So the authored sizes are
+the NARROW end and the design system's are the WIDE one, reached across the widths between. Measured, one
+tree, three cards:
+
+```
+phone    326px card    12 / 10      12 of 12 names shown
+tablet   756px card    16 / 12.8    13 of 14
+desktop  768px card    16 / 12.8    13 of 14
+```
+
+The engine has no design system of its own and does not acquire one here: with no wide size passed it keeps
+the sizes it was given, which is what the tests and the bench rely on. The root font size is read rather
+than assumed, so a reader who has set a larger one gets a larger chart with it.
+
 **9.4 The hover affordance is gated on `(hover:hover) and (pointer:fine)`.** On a touch screen a hover
 state has no way to end — the browser leaves it applied after the tap, sitting on the label of the
 stream you just opened, at the moment it should be brightest. A renderer that rebuilt its nodes every

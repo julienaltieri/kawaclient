@@ -38,6 +38,9 @@ import {buildFlowTree} from '../processors/MoneyFlow'
    actual space between them, so the heading's text - what a screen reader says, and what a test
    reads - came out as "Actualsthisyear". Ordinary inline text with real spaces also gets the baseline
    alignment for free, which is what the flex row was there to do. */
+/* rem is what the design system speaks and px is what the engine measures in, so the root size is
+   read rather than assumed - a reader who has set a larger one gets a larger chart with it. */
+const rootPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize)||16
 const Title = styled.h2`
 	margin:0; line-height:1.15;
 	font-size:${DS.fontSize.title}rem; font-weight:400;
@@ -196,6 +199,12 @@ export default class MoneyFlowChart extends BaseComponent{
 			   numeric one (AnalysisView sets its value labels the same way) */
 			fontFamily:"Inter",
 			numberFamily:"Barlow, Inter",
+			/* §9.8  THE TYPE SIZES COME FROM THE DESIGN SYSTEM. They never did: the engine carried its
+			   own 12 and 10 and the chart passed nothing, so the app's type scale had no bearing on the
+			   one picture whose geometry grows with the card - and on a desktop card the labels ended up
+			   half the size, relative to the picture, that they are on a phone. These are the WIDE end;
+			   the engine keeps its own smaller sizes where the card is too narrow to carry these. */
+			tune:{bodyWidePx:DS.fontSize.body*rootPx(), smallWidePx:DS.fontSize.little*rootPx()},
 			format:v => utils.formatCurrencyAmount(v,0,false,true,Core.getPreferredCurrency()),
 			onFocusChange:path => this.updateState({focused:path.length>0})
 		})

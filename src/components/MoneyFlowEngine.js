@@ -37,6 +37,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
 export const TUNE = {
 	l1Px:3.5, l2Px:0.5, gapShare:0.35,
 	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
+	bodyWidePx:0, smallWidePx:0, narrowW:360, wideW:640,   // §9.8  the app's own sizes, and where
 	railFrac:0.22, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
@@ -652,6 +653,9 @@ export default class MoneyFlowEngine {
 		this.format = options.format || (v => Math.round(v).toLocaleString());
 		this.onFocusChange = options.onFocusChange || (() => {});
 		this.tune = Object.assign({},TUNE,options.tune||{});
+		/* the authored sizes are the NARROW end; retype() reaches for the app's own where the card is
+		   wide enough to carry them. */
+		this.type0 = {body:this.tune.bodyPx, small:this.tune.smallPx};
 		this.worldH = Math.round(WORLD_W/this.tune.ratio);
 
 		this.svg = document.createElementNS(SVGNS,"svg");
@@ -865,9 +869,24 @@ export default class MoneyFlowEngine {
 			inkR:this.inkR});
 	}
 	place(focus,opt){return compose(this.shown,focus,opt)}
+	/* §9.8  TYPE TAKES THE APP'S OWN SIZE WHERE THERE IS ROOM FOR IT. The bands scale with the card and
+	   a line of type does not (§1.10), so no single size serves both ends: the 12px that fills a phone
+	   card is 3.7% of its width and 1.6% of a desktop one, which is why the wide picture read as
+	   under-set beside its own title. The authored sizes are kept at phone width - they are what lets a
+	   phone carry twelve names - and the design system's are reached by the width where they cost none.
+	   Nothing changes unless a wide size is passed in: the engine has no design system of its own. */
+	retype(){
+		const t = this.tune, w = this.host.clientWidth||t.narrowW;
+		const f = Math.max(0,Math.min(1,(w-t.narrowW)/Math.max(1,t.wideW-t.narrowW)));
+		const to = (a,b) => b ? a+(b-a)*f : a;
+		const small = to(this.type0.small,t.smallWidePx);
+		if(Math.abs(small-t.smallPx)>0.01)this.groupedAt = -1;   // the gathering is measured in type
+		t.bodyPx = to(this.type0.body,t.bodyWidePx); t.smallPx = small;
+	}
 	rebuild(){
 		if(!this.shown)return;
 		if(!this.host.clientWidth)return;              // nothing to measure against yet
+		this.retype();
 		this.regroup();
 		const r = this.place(this.focus,this.opts()); this.G=r.g; this.cam=r.cam; this.paint();
 	}
