@@ -422,7 +422,12 @@ export function layout(tree,focus,opt){
 		   the picture does not model, which is what the plume means; without it, the one stream in the
 		   view that comes from beyond the portfolio was the one cut hard among neighbours that trail
 		   off, and the edge of the picture had a notch in it. */
-		const more = (c===e&&(!!kidsOf[id]||n.outside===true)) ? 1 : 0;
+		/* §7.30  A BAND STANDING UNDER ITS PARENT'S NAME TRAILS OFF LIKE THE PARENT WOULD. Where a
+		   parent stands in for its only child, the name on the band is not the band's own - and that
+		   name has something inside it. Read from the band alone the plume was absent, so a label the
+		   reader can open sat against a bar cut hard: it looked like the end of the branch and answered
+		   a tap by opening anyway. The plume says "you can go further here", and here you can. */
+		const more = (c===e&&(!!kidsOf[id]||n.outside===true||standsIn)) ? 1 : 0;
 		bars["slide:"+id] = {x:xs[ie],y:qb.y,h:qb.h,t:n.tone,id:id,vis:(ends&&slides)?1:0,more:more,sd:s};
 		for(let k=c; s>0 ? k<=term(1) : k>=term(-1); k+=s){const q=pos[at(k)]&&pos[at(k)][id];if(!q)continue;
 			bars["at:"+id+"@"+k] = {x:xs[at(k)],y:q.y,h:q.h,t:n.tone,id:id,vis:(!slides&&k===e)?1:0,

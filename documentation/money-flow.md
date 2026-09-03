@@ -538,6 +538,12 @@ never drawn.
 Not when the parent IS the focus: the subject is a caption, and its only child is what you opened it to
 see. Standing in for the child is something a parent does from a distance.
 
+**And the band trails off like the parent would.** The plume (6.5) is read from the band, and the band's
+own stream has nothing inside it — so a label the reader can open sat against a bar cut hard, looking
+like the end of the branch and then opening anyway when tapped. Where a parent stands in, the name on
+the band is not the band's own, and that name has something inside it. The plume says "you can go
+further here", and here you can.
+
 The alternative was to unwrap single-child groups outright, as 2.7 does for the income group at the top
 of the tree. That was rejected: the structure is the household's own, they navigate by it, and a
 category name earned by organising the portfolio should not vanish in the periods where it happens to
@@ -1266,6 +1272,22 @@ Known and not yet done, as of the last session. Nothing here is started.
 **Features**
 
 - **Value labels on the nodes in focus**, except at the root.
+- **A wider rail where nothing contests the interior.** At three levels in, the rail has 160 world
+  units and a four-word name folds to three lines. Measured against `railFrac`:
+
+  ```
+  railFrac   Loki Groceries & Hygiene   phone names undrawn
+  0.22       3 lines                    6 of 78     (today)
+  0.26       2 lines                    8 of 78
+  0.30       2 lines                    8 of 78
+  ```
+
+  So widening it globally trades interior captions for tier line-count, and nothing past 0.26 buys
+  anything. The answer is to make it conditional, as the fan-out already is: where no column of
+  captions stands between the focus and the tier, the interior room is uncontested and belongs to the
+  rail. That needs `fanOut` computed before `PITCH` in `layout`, which is a reordering — `interiorNamed`
+  reads only depths and columns, not positions, so it can move, but it should be done deliberately
+  rather than at the end of a session.
 
 **Found in passing, not asked for**
 
