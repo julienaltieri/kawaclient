@@ -448,14 +448,15 @@ export function layout(tree,focus,opt){
 			   eye wants. It also puts the two on ONE line: the amount used to be a second line beneath
 			   the name, which cost the tier more than twice the height per entry and was the first
 			   thing given up when it ran short. */
-			/* §7.2a  THE AMOUNT BELONGS TO THE LEVEL YOU ARE STANDING ON. A name fans out - against the
-			   inside of its bar, its amount beyond - when it is a stream ONE level below the focus with
-			   nothing inside it: the level you opened, and the end of it. Anything deeper is there for
-			   context, not because you asked for it, and numbering it says the picture is answering a
-			   question you have not put yet - go one level in and it will.
-			   Decided for the whole view instead, this was wrong from both ends: an openable sibling took
-			   the amount off a terminal band beside it, and a branch two levels down wore a number while
-			   the level above it had none. */
+			/* §7.2a  THE AMOUNT GOES ON THE BANDS THE PICTURE ALREADY CALLS DEAD ENDS. A band that has
+			   nothing inside it draws no plume (§6.5) and answers a tap with a nudge rather than a move
+			   (§3.10): the picture has already said, twice, that this is as far as the branch goes. The
+			   amount is the last thing left to say about it, and there is no later view in which to say it.
+			   Everything else - the whole view fanning out, the level you happen to be standing on - was a
+			   proxy for that, and each proxy broke somewhere: a view-wide test took the amount off a
+			   terminal band because a sibling still had children, and a level test took it off a terminal
+			   band because it sat one level further down than the one you opened. Neither is a fact about
+			   the band. Money from outside (§6.5) is excluded: it trails off, so it is not an end. */
 			? (fan => ({x:fan ? (s>0?xs[ie]-6:xs[ie]+BAR+6) : railX, y:qb.y, h:qb.h, name:n.name,
 			   val:fan ? opt.format(n.value) : undefined,
 			   anchor:fan ? (s>0?"end":"start") : (s>0?"start":"end"),
@@ -467,7 +468,7 @@ export function layout(tree,focus,opt){
 			      place as a rule rather than by accident. Written outside it has the rail, which is
 			      its own and competes with nothing. */
 			   maxW:(PITCH-BAR)/2-14, outer:!fan,
-			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}))(!kidsOf[id] && (dep(id)-fDep)===1)
+			   id:id,tap:id,vis:show,rail:true,rel:dep(id)-fDep,leaf:!kidsOf[id]}))(!kidsOf[id] && n.outside!==true)
 			: {x:nx,y:q0.y,h:q0.h,name:n.name,anchor:((s>0)===outward)?"start":"end",
 			   /* §9.6  whether this is one of the macro categories, which is what the root bolds. It
 			      comes from the DATA and not from the column: the income streams sit one column from
