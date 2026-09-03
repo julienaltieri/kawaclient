@@ -204,7 +204,11 @@ export default class MoneyFlowChart extends BaseComponent{
 			   one picture whose geometry grows with the card - and on a desktop card the labels ended up
 			   half the size, relative to the picture, that they are on a phone. These are the WIDE end;
 			   the engine keeps its own smaller sizes where the card is too narrow to carry these. */
-			tune:{bodyWidePx:DS.fontSize.body*rootPx(), smallWidePx:DS.fontSize.little*rootPx()},
+			/* On a wide card the small size is retired: there is room for every name to be set at the body
+			   size, and the amounts take the title size beside them. §9.6's channel - size says which level
+			   you are standing on - is a phone's economy, and the wide card spends the room instead. */
+			tune:{bodyWidePx:DS.fontSize.body*rootPx(), smallWidePx:DS.fontSize.body*rootPx(),
+				amountWideK:DS.fontSize.title/DS.fontSize.body},
 			format:v => utils.formatCurrencyAmount(v,0,false,true,Core.getPreferredCurrency()),
 			onFocusChange:path => this.updateState({focused:path.length>0})
 		})

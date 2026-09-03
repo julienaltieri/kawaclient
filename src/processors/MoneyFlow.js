@@ -118,12 +118,14 @@ export function buildFlowTree(master,transactions,o){
 	   the outflow is the larger, the shortfall is not negative saving: it is money that came from
 	   somewhere these streams do not describe. */
 	const inTot = sum(ins), outTot = sum(outs), res = inTot-outTot;
-	/* The leftover carries no label. It is not a stream anyone named or budgeted - it is the width
-	   between what came in and what was accounted for - and a caption on it competes for the rail
-	   with the streams that were. Money from reserves DOES keep its name: it is the alert colour and
-	   the exceptional case, and an unexplained red band would be worse than none. */
+	/* §1.2  BOTH LEFTOVERS ARE NAMED. The unallocated band went unlabelled at first, on the reasoning
+	   that it is not a stream anyone named or budgeted and a caption on it competes for the rail with
+	   the streams that were. But an unexplained band is a worse trade than a crowded rail: money that
+	   came in and went nowhere is one of the more useful things the picture can say, and saying it
+	   with a blank was leaving the reader to work out what the gap meant. Money from reserves was
+	   named from the start, for the same reason read the other way round. */
 	if(res>=MIN_VISIBLE)outs.push({id:"__unallocated",name:"Unallocated",tone:"savings",
-		value:res,children:null,label:false});
+		value:res,children:null});
 	/* §6.5  `outside` says there is more behind this stream than the picture models. From reserves is
 	   money drawn from savings the flow does not show, so it TRAILS OFF like a stream with children
 	   rather than stopping dead - it has no children, and cut hard among neighbours that do have them

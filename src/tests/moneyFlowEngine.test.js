@@ -362,6 +362,30 @@ describe("a change of basis that reshapes the tree", () => {
 	})
 })
 
+describe("what is left over sits at the top of the savings", () => {
+	// The mirror of the Other rule: a remainder goes last, but what the month did not spend is the
+	// first thing true about the savings side, not an appendix to it. Sorted by size it wandered up
+	// and down the stack between windows, and a band that moves for no visible reason has to be
+	// re-found every time.
+	test("whatever it comes to, and above savings streams larger than itself", () => {
+		const t = {hubName:"Income", inTotal:100,
+			in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}],
+			out:[{id:"spend",name:"Spending",tone:"expenses",value:60,children:null},
+				{id:"sav",name:"Savings",tone:"savings",value:35,children:null},
+				{id:"__unallocated",name:"Unallocated",tone:"savings",value:5,children:null}]}
+		const grouped = groupTail(t,opt)
+		const order = grouped.out.map(n => n.id)
+		expect(order[0]).toBe("__unallocated")      // smallest of the three, and still first
+		expect(order).toEqual(["__unallocated","sav","spend"])   // savings above expenses either way
+		// and it is NAMED: it carried label:false at first, so the band was there with nothing on it
+		const named = Object.keys(grouped.out[0]).indexOf("label")<0
+		expect(named).toBe(true)
+		const g = compose(t,[],opt).g
+		const drawn = Object.keys(g.names).map(k => g.names[k].name)
+		expect(drawn).toContain("Unallocated")
+	})
+})
+
 describe("a tap that cannot go deeper", () => {
 	// A stream with nothing inside it used to carry no handler at all, so the last level of every
 	// branch was a place where tapping did nothing - which reads as a broken control. The spring is

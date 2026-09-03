@@ -39,6 +39,7 @@ export const TUNE = {
 	bodyPx:12, smallPx:10,                       // §4.1 §4.4  the separations, and their cap
 	bodyWidePx:0, smallWidePx:0, narrowW:360, wideW:640,   // §9.8  the app's own sizes, and where
 	nudgeAmp:0.03, nudgeMs:260,                  // §3.10  the answer a dead end gives
+	amountK:1, amountWideK:0,                    // §9.8  the amount's size, relative to its name
 	railFrac:0.22, padPx:4, neighbourPx:22,              // §5.4 §5.5 §5.3  the frame
 	dim:0.20, softFrac:0.40, leftShare:0.70,             // §6.1 §6.3 §6.4  what steps back, and the plume
 	fadePx:24, lagMs:200,                                // §6.6 §6.8  the neighbour fade and its clock
@@ -108,7 +109,12 @@ export function groupTail(tree,opt){
 	/* §7.13  the same line of type the tier reserves: what it inks, plus the lead. Measured by the
 	   engine and handed in; the fallback is the ratio Inter happens to have, for a caller that groups
 	   before anything has been drawn. */
-	const SPAN = opt.smallPx*(opt.inkR||1.25) + 2;
+	/* §9.8  measured on the TALLER of the name and its amount. The gathering asks how many of a set
+	   can carry a line of type at once, and once the amount is set larger than the name it is the
+	   amount that decides. Sized on the name alone a wide card offered more names than it could then
+	   draw, and the sweep dropped the difference - bands with nothing on them, which is the one thing
+	   the gathering exists to prevent. */
+	const SPAN = opt.smallPx*Math.max(1,opt.amountK||1)*(opt.inkR||1.25) + 2;
 	const fits = list => {
 		const V = list.reduce((a,b) => a+b.value,0)||1;
 		const avail = Math.max(1,H-(list.length-1)*GAP);
@@ -162,8 +168,15 @@ export function groupTail(tree,opt){
 		   of a list, and a gathered band that sorted above real ones claimed a standing it does not
 		   have. Its own members are still ordered by size inside it. */
 		const isO = n => String(n.id).indexOf("other:")===0;
+		/* §1.2  AND "UNALLOCATED" ALWAYS SITS AT THE TOP OF THE SAVINGS IT BELONGS TO - the mirror of
+		   the rule above, and for the same reason read the other way. It is not a stream competing on
+		   size either: it is what the month did not spend, which is the FIRST thing true about the
+		   savings side rather than a remainder appended to it. Sorted by size it wandered up and down
+		   the stack from one window to the next, and a band that moves for no reason the reader can
+		   see is a band they have to re-find every time. */
+		const isU = n => n.id==="__unallocated";
 		const down = a => a.slice().sort((x,y) =>
-			(rank(x)-rank(y))||((isO(x)?1:0)-(isO(y)?1:0))||(y.value-x.value));
+			(rank(x)-rank(y))||((isU(y)?1:0)-(isU(x)?1:0))||((isO(x)?1:0)-(isO(y)?1:0))||(y.value-x.value));
 		/* §1.10  THE MACRO CATEGORIES ARE NEVER GATHERED. They are the spine the whole app is
 		   organised around, the type reads its levels off them (§9.6), and "Other" standing where
 		   Savings used to be says something false about the portfolio rather than something true about
@@ -656,7 +669,7 @@ export default class MoneyFlowEngine {
 		this.tune = Object.assign({},TUNE,options.tune||{});
 		/* the authored sizes are the NARROW end; retype() reaches for the app's own where the card is
 		   wide enough to carry them. */
-		this.type0 = {body:this.tune.bodyPx, small:this.tune.smallPx};
+		this.type0 = {body:this.tune.bodyPx, small:this.tune.smallPx, amount:this.tune.amountK};
 		this.worldH = Math.round(WORLD_W/this.tune.ratio);
 
 		this.svg = document.createElementNS(SVGNS,"svg");
@@ -912,6 +925,7 @@ export default class MoneyFlowEngine {
 		const small = to(this.type0.small,t.smallWidePx);
 		if(Math.abs(small-t.smallPx)>0.01)this.groupedAt = -1;   // the gathering is measured in type
 		t.bodyPx = to(this.type0.body,t.bodyWidePx); t.smallPx = small;
+		t.amountK = to(this.type0.amount,t.amountWideK);
 	}
 	rebuild(){
 		if(!this.shown)return;
@@ -1429,7 +1443,11 @@ export default class MoneyFlowEngine {
 		this.meas.textContent = "Agy";
 		const inkR = Math.max(0.8,Math.min(2,this.meas.getBBox().height/(100*k)));
 		this.inkR = inkR;
-		const ink = n => this.typeOf(n).size*inkR*k, unit = n => ink(n)/18;
+		/* §9.8  the row must clear the TALLER of the name and its amount. Reserving on the name alone
+		   was right while they were the same size; once the amount is set larger, two rail entries in a
+		   row reserved less than their amounts take and the numbers closed on each other. */
+		const amK = n => (n.vx!==undefined?Math.max(1,this.tune.amountK):1);
+		const ink = n => this.typeOf(n).size*amK(n)*inkR*k, unit = n => ink(n)/18;
 		const upOf = n => 8*unit(n) + (n._fold?ink(n):0);
 		const downOf = n => 10*unit(n);
 		const LEAD = 2*k;
@@ -1758,7 +1776,8 @@ export default class MoneyFlowEngine {
 				   face, whatever the name above it is set in. */
 				fill:(amount||n.pin)?this.palette.bodyTextSecondary:this.palette.bodyText,
 				"font-family":amount?(this.opt.numberFamily||"inherit"):ty.family,
-				"font-size":px*k,"font-weight":amount?500:(ty.bold?600:500)});
+				"font-size":(amount?px*this.tune.amountK:px)*k,
+				"font-weight":amount?500:(ty.bold?600:500)});
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
 		/* The baselines were measured at bodyPx too, so they travel with the size rather than leaving a

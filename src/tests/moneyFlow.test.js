@@ -165,10 +165,14 @@ describe("the actual basis", () => {
 		expect(find(t.out, "rec")).toBeNull()
 	})
 
-	test("the leftover carries no label; money from reserves keeps its name", () => {
+	test("§1.2 both leftovers are named", () => {
+		// The unallocated band went unlabelled at first, to keep it off a crowded rail. An unexplained
+		// band is the worse trade: money that came in and went nowhere is worth saying out loud.
 		const over = build([txn("base", 5000)])
-		expect(find(over.out, "__unallocated").label).toBe(false)
+		expect(find(over.out, "__unallocated").name).toBe("Unallocated")
+		expect(find(over.out, "__unallocated").label).toBeUndefined()
 		const under = build([txn("base", 1000), txn("rent", -1600)])
+		expect(find(under.in, "__reserves").name).toBe("From reserves")
 		expect(find(under.in, "__reserves").label).toBeUndefined()
 	})
 

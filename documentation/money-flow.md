@@ -86,6 +86,18 @@ counted, not a target. Below that it cannot be seen and its name cannot be read,
 a slot in the rail that a stream worth reading needs. Dropping it unbalances nothing: a parent is the
 sum of what SURVIVED (1.3), and the difference lands in the residual 1.2 already carries.
 
+**1.2b Both leftovers are NAMED, and "Unallocated" sits at the top of the savings.** The unallocated
+band went unlabelled at first, on the reasoning that it is not a stream anyone named or budgeted and a
+caption on it competes for the rail with the streams that were. That is the worse trade: money that came
+in and went nowhere is one of the more useful things the picture can say, and saying it with a blank band
+left the reader to work out what the gap meant. Money from reserves was named from the start, for the
+same reason read the other way round.
+
+Its place is an exception to size, and the mirror of the "Other" rule (3.2): a remainder goes last, but
+what the month did not spend is the FIRST thing true about the savings side rather than an appendix to
+it. Sorted by size it wandered up and down the stack from one window to the next, and a band that moves
+for no reason the reader can see is a band they have to find again every time.
+
 **1.5 Ids are stable across period and basis.** Every animation pairs entities by id, and the value
 tween pairs by position within a stable shape. A shape that changed cannot be tweened, and the engine
 falls back to a rebuild rather than interpolating mismatched trees.
@@ -985,10 +997,28 @@ the NARROW end and the design system's are the WIDE one, reached across the widt
 tree, three cards:
 
 ```
-phone    326px card    12 / 10      12 of 12 names shown
-tablet   756px card    16 / 12.8    13 of 14
-desktop  768px card    16 / 12.8    13 of 14
+phone    326px card    12 / 10 / 12       names / small / amount
+tablet   756px card    16 / 16 / 19.2
+desktop  768px card    16 / 16 / 19.2
 ```
+
+**On a wide card the small size is retired and the amounts take the title size.** There is room for
+every name to be set at the body size, so 9.6's channel — size says which level you are standing on —
+is spent: it is a phone's economy, and a card with room does not need it. The amounts are then set one
+step up, at the design system's title size, which is what makes a column of numbers scannable rather
+than something to squint at.
+
+Two things had to follow it. A rail entry reserves the height of the TALLER of its name and its amount,
+not the name alone; and the gathering (1.10) measures the same way, or a wide card offers more names
+than it can then draw and the sweep drops the difference — bands with nothing on them, which is the one
+thing the gathering exists to prevent.
+
+What this does not fix: a name that WRAPS takes two lines, and the gathering predicts one. Larger type
+wraps more names, so on a wide card the sweep still drops a few the gathering thought would fit —
+measured across six trees, 14 of 85 offered names against 9 of 88 at the smaller size. The drop rule
+(7.16) catches them, which is what it is for, but the honest reading is that the prediction is
+optimistic and grows more so as the type does. Widening the rail on a wide card would attack the cause
+rather than the symptom.
 
 The engine has no design system of its own and does not acquire one here: with no wide size passed it keeps
 the sizes it was given, which is what the tests and the bench rely on. The root font size is read rather
