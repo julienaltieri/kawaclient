@@ -93,6 +93,11 @@ in and went nowhere is one of the more useful things the picture can say, and sa
 left the reader to work out what the gap meant. Money from reserves was named from the start, for the
 same reason read the other way round.
 
+It reads as what it is, too: a band with nothing inside it, which means the tier treatment — out on the
+rail with its amount beside it, like every other end of a branch (7.2). It sits at depth one, where the
+tier is defined as depth two, so being terminal has to be enough on its own. It was drawn as a CATEGORY
+before that — named inside its own band, with no amount — which is the one thing it is not.
+
 Its place is an exception to size, and the mirror of the "Other" rule (3.2): a remainder goes last, but
 what the month did not spend is the FIRST thing true about the savings side rather than an appendix to
 it. Sorted by size it wandered up and down the stack from one window to the next, and a band that moves

@@ -101,8 +101,9 @@ describe("the target basis", () => {
 		// read Income -> Income -> Salary
 		expect(t.hubName).toBe("Income")
 		expect(t.in.map(n => n.id).sort()).toEqual(["consulting", "salary"])
-		// __unallocated is on the out side too: the target says more comes in than goes out
-		expect(t.out.map(n => n.id).sort()).toEqual(["__unallocated", "annual", "rec", "sav"])
+		// the target says more comes in than goes out, and what is left lands INSIDE savings
+		// rather than beside it, so the top level is the categories and nothing else
+		expect(t.out.map(n => n.id).sort()).toEqual(["annual", "rec", "sav"])
 	})
 
 	test("§1.3 a parent is exactly the sum of its children", () => {
@@ -123,13 +124,20 @@ describe("the target basis", () => {
 		expect(t.inTotal).toBeCloseTo(total(t.in), 6)
 	})
 
-	test("§1.2 the residual becomes Unallocated, on the savings side of the picture", () => {
+	test("§1.2 the residual becomes Unallocated, INSIDE savings", () => {
 		const t = build([], "target")
 		// 6800 in, 1300 saved + 4070 spent = 5370 out, so 1430 has nowhere to go yet
 		const u = find(t.out, "__unallocated")
 		expect(u).not.toBeNull()
 		expect(u.value).toBeCloseTo(6800 - 5370, 6)
 		expect(u.tone).toBe("savings")
+		// It is savings without a stream yet, so it is a CHILD of savings - which is also what
+		// makes it an ordinary terminal stream rather than a leaf standing among categories.
+		const sav = find(t.out, "sav")
+		expect(sav.children.map(n => n.id)).toContain("__unallocated")
+		expect(t.out.map(n => n.id)).not.toContain("__unallocated")
+		// and the parent grew by exactly what it took in (§1.3 is asserted whole elsewhere)
+		expect(sav.value).toBeCloseTo(sav.children.reduce((a,b) => a+b.value,0), 6)
 	})
 })
 

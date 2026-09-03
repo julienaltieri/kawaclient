@@ -124,8 +124,20 @@ export function buildFlowTree(master,transactions,o){
 	   came in and went nowhere is one of the more useful things the picture can say, and saying it
 	   with a blank was leaving the reader to work out what the gap meant. Money from reserves was
 	   named from the start, for the same reason read the other way round. */
-	if(res>=MIN_VISIBLE)outs.push({id:"__unallocated",name:"Unallocated",tone:"savings",
-		value:res,children:null});
+	if(res>=MIN_VISIBLE){
+		const u = {id:"__unallocated",name:"Unallocated",tone:"savings",value:res,children:null};
+		/* §1.2  AND IT GOES INSIDE SAVINGS. At the top level it was a leaf standing where every one of
+		   its neighbours is a category, so the picture read it as one: named inside its own band, and
+		   without the amount that every end of a branch carries. Teaching the layout to make an
+		   exception of it meant a rule in the geometry for a single band. As a child of the thing it
+		   already belongs to - it IS savings, just without a stream yet - it is an ordinary terminal
+		   stream, and takes its place in the tier, its amount and its tap from simply being one.
+		   Only where that category HAS children: nested under a leaf, the parent would stop being the
+		   sum of its children (§1.3), so there it stays at the top level as before. */
+		const sav = outs.filter(n => n.tone==="savings"&&n.children&&n.children.length)[0];
+		if(sav){sav.children = sav.children.concat([u]); sav.value += res}
+		else outs.push(u);
+	}
 	/* §6.5  `outside` says there is more behind this stream than the picture models. From reserves is
 	   money drawn from savings the flow does not show, so it TRAILS OFF like a stream with children
 	   rather than stopping dead - it has no children, and cut hard among neighbours that do have them

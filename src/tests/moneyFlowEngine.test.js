@@ -363,26 +363,37 @@ describe("a change of basis that reshapes the tree", () => {
 })
 
 describe("what is left over sits at the top of the savings", () => {
-	// The mirror of the Other rule: a remainder goes last, but what the month did not spend is the
-	// first thing true about the savings side, not an appendix to it. Sorted by size it wandered up
-	// and down the stack between windows, and a band that moves for no visible reason has to be
-	// re-found every time.
-	test("whatever it comes to, and above savings streams larger than itself", () => {
+	// It IS savings, just without a stream yet, so it is a child of savings rather than a leaf
+	// standing among categories - which is also what makes it an ordinary terminal stream, with the
+	// tier place and the amount that come with being one. Its order is the mirror of the Other rule:
+	// a remainder goes last, but what the month did not spend is the first thing true about the
+	// savings, not an appendix to it. Sorted by size it wandered between windows, and a band that
+	// moves for no visible reason has to be found again every time.
+	test("first among its siblings, named, and read as the end of a branch", () => {
 		const t = {hubName:"Income", inTotal:100,
 			in:[{id:"inc",name:"inc",tone:"income",value:100,children:null}],
-			out:[{id:"spend",name:"Spending",tone:"expenses",value:60,children:null},
-				{id:"sav",name:"Savings",tone:"savings",value:35,children:null},
-				{id:"__unallocated",name:"Unallocated",tone:"savings",value:5,children:null}]}
-		const grouped = groupTail(t,opt)
-		const order = grouped.out.map(n => n.id)
-		expect(order[0]).toBe("__unallocated")      // smallest of the three, and still first
-		expect(order).toEqual(["__unallocated","sav","spend"])   // savings above expenses either way
+			out:[{id:"spend",name:"Spending",tone:"expenses",value:60,children:[
+				{id:"rent",name:"Rent",tone:"expenses",value:60,children:null}]},
+				{id:"sav",name:"Savings",tone:"savings",value:40,children:[
+					{id:"buf",name:"Buffer",tone:"savings",value:35,children:null},
+					{id:"__unallocated",name:"Unallocated",tone:"savings",value:5,children:null}]}]}
+		// the shared `opt` above omits otherMin, and the gathering reads its floor from it
+		const uopt = Object.assign({},opt,{otherMin:2, ratio:2.25, smallPx:10, bodyPx:12})
+		const grouped = groupTail(t,uopt)
+		const sav = grouped.out.filter(n => n.id==="sav")[0]
+		expect(sav.children.map(n => n.id)).toEqual(["__unallocated","buf"])  // smallest, and first
+		expect(grouped.out.map(n => n.id)).toEqual(["sav","spend"])           // savings above expenses
 		// and it is NAMED: it carried label:false at first, so the band was there with nothing on it
-		const named = Object.keys(grouped.out[0]).indexOf("label")<0
-		expect(named).toBe(true)
-		const g = compose(t,[],opt).g
-		const drawn = Object.keys(g.names).map(k => g.names[k].name)
-		expect(drawn).toContain("Unallocated")
+		expect(Object.keys(sav.children[0]).indexOf("label")).toBeLessThan(0)
+		const g = compose(grouped,[],uopt).g
+		const named = Object.keys(g.names).map(k => g.names[k])
+		expect(named.map(n => n.name)).toContain("Unallocated")
+		// and it reads like every other end of a branch: in the tier, with its amount beside it
+		const ua = named.filter(n => n.name==="Unallocated")[0]
+		const peer = named.filter(n => n.name==="Buffer")[0]
+		expect(ua.rail).toBe(peer.rail)
+		expect(ua.vx).toBe(peer.vx)
+		expect(ua.leaf).toBe(true)
 	})
 })
 
