@@ -53,18 +53,23 @@ const Biometrics = {
 		})
 	},
 
+	/*Single-flight. The authenticator allows one outstanding request at a time: a second get() while
+	  one is pending rejects, and would take the first down with it. A remount of the login page is
+	  enough to cause that, so callers share the pending attempt rather than starting a new one.*/
 	unlock(){
+		if(this.pending){return this.pending}
 		const id = this.getCredentialId()
 		if(!id){return Promise.reject(new Error("no biometric credential"))}
-		return navigator.credentials.get({publicKey:{
+		this.pending = navigator.credentials.get({publicKey:{
 			challenge: challenge(),
 			allowCredentials: [{type:"public-key",id:fromB64url(id)}],
 			userVerification: "required",
 			timeout: 60000
 		}}).then(assertion => {
-			if(!assertion){throw new Error("biometric unlock failed")}
+			if(!assertion){throw new Error("biometric unlock returned no assertion")}
 			return true
-		})
+		}).finally(() => {this.pending = undefined})
+		return this.pending
 	},
 
 	forget(){

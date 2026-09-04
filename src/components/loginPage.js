@@ -17,19 +17,22 @@ export default class LoginPage extends BaseComponent{
 	/*The fingerprint affordance appears only when all three of its preconditions hold: the device can
 	  verify its owner, a credential is enrolled, and there is a session for it to release. Anything
 	  less and there is no glyph, rather than a glyph that fails when tapped.
-	  The unlock is also attempted immediately, so the common case is one biometric prompt and no tap.
-	  Where a browser refuses that without a user gesture, the glyph is already on screen to retry.*/
+	  No unlock is attempted here. Startup already tries one in Core.checkAuthentication, and reaching
+	  this page means that attempt did not carry: a second get() from here would either duplicate a
+	  prompt the user just dismissed or collide with one still pending. This page is the retry.*/
 	componentDidMount(){
 		if(!(Biometrics.isEnrolled() && ApiCaller.hasStoredSession())){return}
-		Biometrics.isAvailable().then(available => {
-			if(!available){return}
-			this.updateState({canUnlock:true})
-			this.unlock()
-		})
+		Biometrics.isAvailable().then(available => {if(available){this.updateState({canUnlock:true})}})
 	}
 
+	/*A failed unlock says why, on screen. The password is always still there as the way in, and an
+	  unlock that fails silently is indistinguishable from one that did nothing.*/
 	unlock(){
-		Core.unlockWithBiometrics().catch(err => console.log("biometric unlock not completed: "+err))
+		this.updateState({unlockError:undefined})
+		Core.unlockWithBiometrics().catch(err => {
+			console.log("biometric unlock not completed: "+err)
+			this.updateState({unlockError:(err && err.message)?err.message:String(err)})
+		})
 	}
 
 	/*Enrolment has no Kawa-authored UI. The platform's own prompt is what asks, and it explains itself
@@ -55,6 +58,7 @@ export default class LoginPage extends BaseComponent{
 				  		rightIcon={this.state.canUnlock?"fingerprint":undefined} onTapRightIcon={this.unlock}/>
 			  	</div>
 			  	<DS.component.Button.Action type="submit" primary onClick={this.submitCredentials}>Log In</DS.component.Button.Action>
+			  	{this.state.unlockError?<DS.component.Label size={"xs"} style={{display:"block",marginTop:"1rem"}}>{this.state.unlockError}</DS.component.Label>:""}
 		  	</div>
 		  </LoginForm>
 		  </TitlePage>

@@ -224,18 +224,26 @@ class Core{
 	checkAuthentication(successCallback,failureCallback){
 	  this.routeOrder = Navigation.getCurrentRoute();
 	  /*With a biometric credential enrolled, a stored session is not spent until the device has
-	    verified its owner. Rejecting here lands on the login page, which renders the fingerprint
-	    affordance because the same two conditions hold there. Without a credential the session
-	    restores untouched, so enrolling is what turns the gate on.*/
-	  if(Biometrics.isEnrolled() && ApiCaller.hasStoredSession()){return Promise.reject(new Error("locked"))}
+	    verified its owner. The unlock happens here rather than after a redirect, so success continues
+	    down the same path a normal startup takes — init() already knows how to turn that into a logged
+	    in app. A refusal falls through to the same catch as any other failed authentication and lands
+	    on the login page, which renders the fingerprint affordance to try again.
+	    Without a credential the session restores untouched, so enrolling is what turns the gate on.*/
+	  if(Biometrics.isEnrolled() && ApiCaller.hasStoredSession()){
+	  	return Biometrics.unlock().then(() => ApiCaller.ensureValidSession())
+	  }
 	  return ApiCaller.ensureValidSession()
 	}
-	/*The unlock itself. Order matters: the assertion has to succeed before the refresh token is spent,
-	  otherwise the gate would be decorative.*/
+	/*The unlock itself, used by the login page's retry. Order matters: the assertion has to succeed
+	  before the refresh token is spent, otherwise the gate would be decorative.
+	  Each stage names itself on failure. Three separate things can go wrong here — the authenticator,
+	  the refresh round trip, and the transition into the app — and they are indistinguishable from the
+	  outside, which is exactly the position that made the first version of this hard to diagnose.*/
 	unlockWithBiometrics(){
-		return Biometrics.unlock()
-			.then(() => ApiCaller.ensureValidSession())
-			.then(() => this.setLoggedIn(true))
+		const label = (stage) => (e) => {throw new Error(stage+": "+((e && e.message)?e.message:e))}
+		return Biometrics.unlock().catch(label("fingerprint"))
+			.then(() => ApiCaller.ensureValidSession().catch(label("session refresh")))
+			.then(() => Promise.resolve(this.setLoggedIn(true)).catch(label("opening the app")))
 	}
 	setLoggedIn(b){
 		this.globalState.loggedIn = b;
