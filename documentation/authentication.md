@@ -88,6 +88,27 @@ The app client has token revocation enabled, which is what makes a leaked refres
 from — without it a year-long credential could not be withdrawn short of disabling the user. Nothing
 in Kawa calls `RevokeToken` yet; enabling it only preserves the option.
 
+### Device tracking has to stay off, and the reason is not obvious
+
+**The pool must not remember devices.** When device tracking is on, Cognito binds each refresh token
+to a device key and refuses any refresh that does not present the matching `DEVICE_KEY`.
+
+`amazon-cognito-identity-js` supplies that key from `this.storage` — see `CognitoUser.refreshSession`.
+In a browser that is `localStorage` and it persists. On Lambda it is per-process memory, so the key is
+only present if the very same warm container also handled the login that created it. A refresh landing
+on a cold container sends no `DEVICE_KEY` and Cognito rejects the token.
+
+The failure is therefore **intermittent in a way that looks like a client bug**: it works right after
+a login, keeps working while the container stays warm, then starts failing with
+`NotAuthorizedException` for no visible reason. It cost a full debugging round to find, because every
+symptom pointed at the browser.
+
+The underlying mismatch is that a stateful client SDK is running behind a stateless server. Turning
+device tracking off removes the dependency; it costs nothing here because device tracking exists to
+let remembered devices skip MFA, and `MfaConfiguration` is `OFF`. If MFA is ever turned on, this
+becomes a real decision rather than a free one, and the refresh path would need to carry the device
+key end to end.
+
 ### Where the tokens live, and why it is not an httpOnly cookie
 
 Both tokens sit in `localStorage`, in `ApiCaller`'s session store. An `httpOnly` cookie is the
@@ -235,6 +256,14 @@ a successful biometric assertion. Deferred on `prf` support being uneven across 
 forces a fallback path and roughly doubles the surface. Requesting `prf` at enrolment now means
 adopting this later needs no re-enrolment.
 
+**Refresh through `InitiateAuth` directly.** `AuthService.refreshSession` uses
+`amazon-cognito-identity-js`, whose `refreshSession` reads device state out of an in-process store that
+means nothing on Lambda — the trap described above. Calling `InitiateAuth` with `REFRESH_TOKEN_AUTH`
+through `aws-sdk`, already a dependency, removes that hidden state entirely and is the shape this
+should have had from the start. Deferred because disabling device tracking already removes the
+failure; this hardens against it returning, and would be a prerequisite if MFA ever forces device
+tracking back on.
+
 **Server-verified WebAuthn.** Verify assertions server-side with `@simplewebauthn/server`, hold
 credential public keys in DynamoDB, and issue sessions from Kawa. Real cryptographic
 authentication. The cost is not the WebAuthn code — it is that Kawa would own session issuance,
@@ -260,6 +289,7 @@ committing — this surface has moved since launch.
 | 2026-09-03 | Request `prf` at enrolment despite nothing reading it | Costs nothing now; without it, encrypting the token at rest later would require re-enrolling the credential. |
 | 2026-09-03 | Refresh token window of 1 year, not Cognito's 10-year maximum | The ask was "longer is better". Without rotation the window is absolute, so a year is already roughly one password entry per year — the extra nine years buy no meaningful convenience and lengthen the life of a bearer credential to live bank data. |
 | 2026-09-03 | Startup refreshes rather than validating the stored access token first | An access token older than a day is dead, so validating first would often spend a round trip to learn nothing. |
+| 2026-09-03 | Device tracking turned off on the user pool | It bound refresh tokens to a device key that only exists in the Lambda process that handled the login, making refreshes fail intermittently once containers recycled. With MFA off, device tracking bought nothing, so removing it cost nothing. |
 | 2026-09-03 | Token revocation enabled on the app client alongside the 1-year window | The client was created in 2020, before the feature existed. A year-long refresh token that cannot be withdrawn is a materially worse trade than a 30-day one; enabling it costs nothing and keeps the option open. |
 | 2026-09-03 | Corrected: the access token ceiling is 1 day, not 1 hour | Read from the live app client rather than assumed from Cognito's default. The `tokenExpiration: 3600000` in `server.js` reads as ~41 days, not 1 hour, because `jsonwebtoken` takes `maxAge` in seconds — it never binds. The session cookie, not the token TTL, was the dominant reason the password was needed so often. |
 | 2026-09-03 | The 401 retry lives in `ApiCaller.sendRequest` | Every API method already funnels through it, so recovery is written once instead of at 20-odd call sites. Retrofitting the existing seam rather than adding a new one — DECISION-PRINCIPLES.md #1. |
