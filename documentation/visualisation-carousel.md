@@ -114,16 +114,32 @@ The gesture sits on the **whole component** rather than on the track, so the ban
 pager drags too — it is where a thumb lands and it used to be dead. The pager opts out with the same marker,
 since its dots are tap targets.
 
-**Every page carries a grip in its bottom-right corner.** The gesture is otherwise invisible — nothing
-on a tile says it can be dragged, and on desktop, where there is no swipe habit to fall back on, the pager
-dots were the only hint that there was anything either side at all. Three diagonals in a corner are the one
-mark a reader already reads as "take hold of this".
+**Every page carries a grip at the foot of it, on touch only.** The gesture is otherwise invisible —
+nothing on a tile says it can be dragged, and the pager dots are the only hint there is anything either
+side at all.
+
+**Not on a desktop.** A grip answers "where do I put my thumb", which is not a question a pointer asks,
+and there the dots are already the primary control rather than a hint. In the corner it also read as a
+resize handle — which is what a corner mark means on a desktop, and is a thing this deck cannot do. It is
+gated on `Core.isMobile()`, the same call the rest of the app sizes itself from, rather than on a width: a
+narrow desktop window is still a pointer.
+
+**At the bottom centre, not the corner.** The corner is where a thumb has least reach and most occlusion,
+so the mark inviting a drag sat in the worst place on the tile to start one from. The mark itself changed
+with the position because it had to: the corner version was three diagonals sized by `x+y=c`, which read
+as a grip only BECAUSE they filled a corner, and the same shape centred is a stray triangle. Three short
+parallel strokes say the same thing symmetrically, and being vertical they point across the axis the drag
+travels on.
+
+It sits directly above the pager dots, which are centred too. That is a deliberate stack rather than an
+accident — the grip says the tile can be taken hold of, the dots say how many there are and which one this
+is — but it is the thing to look at first if the foot of a tile ever starts to feel crowded.
 
 It is decorative and deliberately so: `pointer-events:none`, `aria-hidden`, and no handler of its own, so
-the corner it sits in stays a plain drag surface. A control there would have to do something a drag does
-not, and there is nothing else it should do. It is opt-in per deck (`grip`) rather than automatic, since a
-page that is not a tile has no corner to put it in, and it is never drawn for a single page — there is
-nowhere to go, and an affordance for that is a lie.
+what it sits on stays a plain drag surface. A control there would have to do something a drag does not, and
+there is nothing else it should do. It is opt-in per deck (`grip`) rather than automatic, since a page that
+is not a tile has no foot to put it at, and it is never drawn for a single page — there is nowhere to go,
+and an affordance for that is a lie.
 
 ## Where the page index lives
 

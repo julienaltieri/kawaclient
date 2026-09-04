@@ -47,18 +47,29 @@ const Track = styled.div`
 //cursor + tap highlight for the padded target around each pager dot, matching tappableStyle in
 //CategorizeAction.js so the mobile blue flash is gone here too
 const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightColor:"transparent"};
-//A GRIP IN THE CORNER OF EVERY PAGE. The deck's gesture is invisible: nothing on a tile says it can be
-//dragged, and on a desktop, where there is no swipe habit to fall back on, the pager dots are the only
-//hint that there is anything either side. Three diagonals in the corner are the one mark a reader already
-//reads as "take hold of this".
-//Decorative, and deliberately so: pointer-events none, aria-hidden, and no handler of its own, so the
-//corner it sits in stays a plain drag surface. A control there would have to do something a drag does not,
-//and there is nothing else it should do.
-const gripLines = [24,20,16];   //x+y=c inside a 14-box: the nearer the corner, the shorter the line
-const Grip = () => <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"
-	style={{position:"absolute",right:DS.spacing.xxs+"rem",bottom:DS.spacing.xxs+"rem",
+//A GRIP AT THE FOOT OF EVERY PAGE, ON TOUCH ONLY. The deck's gesture is invisible: nothing on a tile
+//says it can be dragged, and the pager dots are the only hint there is anything either side.
+//
+//NOT ON A DESKTOP. A grip is a touch affordance - it answers "where do I put my thumb", which is not a
+//question a pointer asks, and there the dots are already the primary control rather than a hint. It was
+//in the corner and read as a resize handle, which is what a corner mark means on a desktop and is a
+//thing this deck cannot do. So it is gated on the same isMobile() the rest of the app sizes itself
+//from, rather than on a width: a narrow desktop window is still a pointer.
+//
+//AT THE BOTTOM CENTRE, not the corner. In the corner it sat where a thumb has least reach and most
+//occlusion - the one part of a tile that is awkward to touch - so the mark inviting a drag was in the
+//worst place to start one.
+//The mark changed with the position, because it had to. The corner version was three diagonals sized by
+//x+y=c, which read as a grip only BECAUSE they filled a corner; the same shape centred is just a stray
+//triangle. Three short parallel strokes are the same idea said symmetrically, and being vertical they
+//point across the axis the drag travels on.
+//Decorative, and deliberately so: pointer-events none, aria-hidden, no handler of its own, so what it
+//sits on stays a plain drag surface. A control there would have to do something a drag does not.
+const gripLines = [3,9,15];   //x of each stroke in an 18-wide box
+const Grip = () => <svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true"
+	style={{position:"absolute",left:"50%",transform:"translateX(-50%)",bottom:DS.spacing.xxs+"rem",
 		pointerEvents:"none",opacity:0.3}}>
-	{gripLines.map(c => <line key={c} x1={c-14} y1={14} x2={14} y2={c-14}
+	{gripLines.map(x => <line key={x} x1={x} y1={2} x2={x} y2={8}
 		stroke={DS.getStyle().bodyTextSecondary} strokeWidth="1.5" strokeLinecap="round"/>)}
 </svg>
 
@@ -320,11 +331,12 @@ export default class Deck extends BaseComponent{
 					style={{display:"flex",alignItems:this.props.stretchPages?"stretch":"flex-start",gap:gap+"rem",
 						touchAction:"pan-y",willChange:"transform"}}>
 					{/*The grip is per PAGE rather than one for the deck, because it belongs to the thing being
-					   dragged - and it is opt-in, since a page that is not a tile has no corner to put it in.
-					   Never with a single page: there is nowhere to go, and an affordance for that is a lie.*/}
+					   dragged - and it is opt-in, since a page that is not a tile has no foot to put it at.
+					   Never with a single page: there is nowhere to go, and an affordance for that is a lie.
+					   And never with a pointer, which does not ask the question a grip answers.*/}
 					{pages.map((p,i) => <div key={i} style={{position:"relative",flex:"0 0 100%",minWidth:0,
 							opacity:i===this.props.index?1:0.45,transition:"opacity 0.25s ease"}}>{p}
-						{this.props.grip&&pages.length>1?<Grip/>:null}</div>)}
+						{this.props.grip&&pages.length>1&&Core.isMobile()?<Grip/>:null}</div>)}
 				</Track>
 			</div>
 			{this.renderPager()}
