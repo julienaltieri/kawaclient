@@ -6,7 +6,7 @@ import DS from '../DesignSystem.js'
 import utils from '../utils'
 import Core from '../core.js'
 import MoneyFlowEngine from './MoneyFlowEngine'
-import {buildFlowTree} from '../processors/MoneyFlow'
+import {buildFlowTree, flowAudit, masterSnapshot, measuredAmounts} from '../processors/MoneyFlow'
 import AppConfig from '../AppConfig'
 
 /* ==================================================================================================
@@ -234,10 +234,27 @@ export default class MoneyFlowChart extends BaseComponent{
 	}
 	componentWillUnmount(){if(this.engine)this.engine.destroy()}
 
-	/* Everything a report needs, as text on the clipboard: the window and basis it was taken in, the
-	   focused path, the three trees from that node down, and every name with the facts that decided
-	   how it was written. The clipboard API needs a secure context and a user gesture - it has both
-	   here - and falls back to a hidden textarea where it is missing. */
+	/* THE SOURCE, not a picture of it (DECISION-PRINCIPLES.md #27). This used to copy the engine's three trees plus every name's
+	   placement facts, which is a conclusion: the adapter had already dropped whatever it dropped, so
+	   a stream missing from the copy was indistinguishable from a stream the layout was hiding, and
+	   twice that ambiguity was read the wrong way round. What goes out now is what everything is
+	   BUILT from - the master stream, and what each terminal actually saw - from which the bench can
+	   rebuild the picture and then be asked any question, instead of one having been answered for it
+	   in advance. The window and basis go too, because they are the conditions it was taken under and
+	   the same portfolio says different things in different ones.
+
+	   The clipboard API needs a secure context and a user gesture - it has both here - and falls back
+	   to a hidden textarea where it is missing. */
+	/* the master, what each terminal saw, and - as a convenience, since it is derived from exactly
+	   those two - the list of streams that did not make it into the picture and why */
+	source(){
+		try{const w = this.windows()[this.state.period]
+			return {master:masterSnapshot(this.props.stream),
+				measured:measuredAmounts(this.props.stream,this.props.transactions,w.from,w.to),
+				dropped:flowAudit(this.props.stream,this.props.transactions,
+					{from:w.from, to:w.to, periodName:w.periodName, basis:this.state.basis})}
+		}catch(e){return {error:String(e&&e.message||e)}}
+	}
 	copyDiagnostics(){
 		const w = this.windows()[this.state.period]
 		const payload = Object.assign({
@@ -245,7 +262,7 @@ export default class MoneyFlowChart extends BaseComponent{
 			basis:this.state.basis, period:this.state.period,
 			window:{from:w.from&&w.from.toISOString(), to:w.to&&w.to.toISOString(),
 				periodName:w.periodName, label:w.label, when:w.when}
-		}, this.engine ? this.engine.diagnose() : {error:"no engine"})
+		}, this.source(), {focus:this.engine ? this.engine.diagnose().focus : null})
 		const text = JSON.stringify(payload,null,2)
 		const done = ok => this.updateState({copied:ok?"Copied":"Copy failed"},
 			() => setTimeout(() => this.updateState({copied:null}),1600))

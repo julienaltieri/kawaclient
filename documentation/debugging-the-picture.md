@@ -15,12 +15,21 @@ it. The procedure below exists to make a measurement earn its trust before a cha
 
 ## The order to reach for things
 
-**1. Reproduce it with the real tree, not a tree like it.** The staging build has a `Copy tree` button
-on the tile (behind `AppConfig.staging`, so it cannot reach a reader). It copies the focused node's
-three trees — as the adapter built it, as the gathering left it, and what is on screen — plus every
-visible name's placement facts and every text actually in the DOM. One paste of it settled a question
-that four rounds of inferring the shape from photographs had got wrong three times: wrong parent,
-wrong depth, wrong focus. Ask for it early. It is cheaper than being clever.
+**1. Reproduce it with the real thing, and copy the SOURCE rather than a picture of it.** The staging
+build has a `Copy tree` button on the tile (behind `AppConfig.staging`, so it cannot reach a reader).
+It copies the master stream and what each terminal actually saw in the window — the two things
+everything else is built from — plus the window and basis it was taken under. The master round-trips:
+`new CompoundStream(snapshot)` is the portfolio again, so the bench can rebuild the picture and then
+be asked any question.
+
+It used to copy the engine's three trees and every name's placement facts, and that was a mistake
+worth understanding, because it looked strictly more informative. A snapshot of the output answers
+the one question it was taken for. The source answers any of them. Worse, the first of those trees
+was called `raw`, and it is raw only relative to the ENGINE: the adapter had already dropped whatever
+it dropped, so a stream missing from the copy was indistinguishable from a stream the layout was
+hiding — and that ambiguity was read the wrong way round twice in one session, once to conclude a
+portfolio did not contain a stream its owner knew was there. Ask for it early. It is cheaper than
+being clever.
 
 **2. Match the conditions, not just the data.** The card's WIDTH is part of the bug report: at 296 css
 the gathering produced a nested Other that the fault lived in, and at 326 it did not, so the picture
@@ -146,6 +155,18 @@ broken fit. Generators that restart an id counter per subtree will do this to yo
 
 **A probe needs a deadline per step**, or one unanswerable question — asking to open a node with no
 children, which is not a view — hangs the whole sweep.
+
+**An export names the stage it was taken at, and that name is usually a lie by the time you read it.**
+`raw` meant "before the ENGINE", not "before anything". Whenever a diagnostic says raw, original, or
+source, find out which pipeline stage it was actually taken at, because everything upstream of that
+point has already been decided and is invisible. The absence of a thing in a downstream copy is not
+evidence that it was absent upstream.
+
+**A paste has a size limit, and it truncates at the interesting part.** Two exports that looked
+complete were cut at exactly 20,000 characters, mid-JSON, and the half that survived was the half
+nearest the focused node. Check the end of a paste before reading it: if it stops mid-token, what you
+have is a prefix, not a portfolio. This is a reason to export the source rather than the output — the
+source of a real portfolio is a few kilobytes, its rendered trees are tens.
 
 **A clean result is only as wide as what the probe read.** The sweep that declared every window change
 clean read the tree's VALUES and the sum invariant, and never once read a position. Both were correct

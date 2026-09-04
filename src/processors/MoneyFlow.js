@@ -62,7 +62,7 @@ function measure(master,transactions,from,to){
 /* Build one side's forest. `sign` is +1 for the in side and -1 for the out side: a stream's signed
    amount is multiplied by it, so what remains is a magnitude, and a stream pointing the wrong way
    (an income stream that net-refunded, say) lands on zero rather than as a blob on the wrong side. */
-function buildNode(s,sign,tone,ctx,top){
+function buildNode(s,sign,tone,ctx,top,sink){
 	if(excluded(s))return null;
 	if(s.isTerminal()){
 		const m = ctx.measured&&ctx.measured[s.id];
@@ -71,11 +71,28 @@ function buildNode(s,sign,tone,ctx,top){
 		const raw = ctx.basis==="target"
 			? (s.getExpectedAmountAtDate(ctx.to,ctx.periodName)||0)
 			: (m ? (tone==="savings" ? -m.saved : m.in) : 0);
-		const v = Math.max(0,raw*sign);
+		const v = raw*sign;
+		/* §1.12  A NEGATIVE INFLOW IS AN OUTFLOW. It used to be clamped to zero here and then dropped
+		   for being under a unit, which is not a small loss: money that left the account stopped being
+		   anywhere in the picture, and since the leftover is computed as in minus out (§1.2), an
+		   understated out side made the leftover too big by exactly that much - so the money was not
+		   merely missing, it was sitting inside "Unallocated" under someone else's name. On a real
+		   portfolio that was four streams and about a fifth of the leftover.
+
+		   A Sankey has no negative flows; it has flows the other way (DECISION-PRINCIPLES.md #26 — the
+		   case was already sayable, so nothing new had to be invented to say it). So the stream crosses to the out
+		   side keeping its own name and its own amount, and the picture states what it always meant.
+		   Only from the IN side: `sink` is passed there and nowhere else, so a negative on the out side
+		   still lands on zero as before - money coming back out of savings already has a shape (§1.2's
+		   "From reserves") and giving it a second one would say the same thing twice. */
+		if(sink&&v<=-MIN_VISIBLE){
+			sink.push({id:s.id,name:s.name,tone:"expenses",value:-v,children:null});
+			return null;
+		}
 		if(v<MIN_VISIBLE)return null;                            // §1.4
 		return {id:s.id,name:s.name,tone:tone,value:v,children:null,top:top};
 	}
-	const kids = (s.children||[]).map(c => buildNode(c,sign,tone,ctx,false)).filter(Boolean);
+	const kids = (s.children||[]).map(c => buildNode(c,sign,tone,ctx,false,sink)).filter(Boolean);
 	if(!kids.length)return null;
 	/* §1.3  the parent IS the sum of its children. Reading a compound stream's own expected amount
 	   here would be a second author for the same quantity, and the two disagree the moment a child is
@@ -83,6 +100,113 @@ function buildNode(s,sign,tone,ctx,top){
 	const v = kids.reduce((a,b) => a+b.value,0);
 	if(v<MIN_VISIBLE)return null;
 	return {id:s.id,name:s.name,tone:tone,value:v,children:kids,top:top};
+}
+
+/* ------------------------------------------------------------------------------------------------
+   THE SOURCE, COPIED WHOLE.
+
+   Everything the picture is made of comes from two things: the master stream, which says what the
+   portfolio IS, and what each terminal saw in the window, which says what happened. Copying the
+   engine's trees instead was copying a conclusion - by then this file has already dropped whatever
+   it dropped, and the copy cannot answer the one question worth asking when a stream is missing.
+
+   So the export carries the source and nothing derived. The master goes out as the JSON its own
+   constructor reads, so it round-trips: `new CompoundStream(snapshot)` is the portfolio again. And
+   the measurements go with it, because they are the half the master cannot tell you - unclamped and
+   unsigned, exactly as the transactions added up, so a stream that came out NEGATIVE is visible here
+   and nowhere else. Two numbers per terminal, and terminals that saw nothing are left out, which
+   keeps the whole thing small enough to paste.
+
+   What this replaces is worth naming: a snapshot of names and bands answers the one question it was
+   taken for, and the source answers any question, because the bench can rebuild the picture from it
+   and then be asked directly. That is the whole trade.
+   ------------------------------------------------------------------------------------------------ */
+export function masterSnapshot(s){
+	if(!s)return null;
+	const o = {id:s.id, name:s.name};
+	/* a compound derives its period from its children where it was not given one, and `setPeriod`
+	   is the one it was actually given - emitting the derived value would invent a fact */
+	const p = (s.setPeriod!==undefined&&!s.isTerminal()) ? s.setPeriod : s.period;
+	if(p)o.period = p;
+	if(s.endDate)o.endDate = new Date(s.endDate).toISOString();
+	["isSavings","isInterestIncome","isZeroSumStream","isRoot"].forEach(k => {if(s[k])o[k]=s[k]});
+	if(s.isTerminal&&s.isTerminal()){
+		o.expAmountHistory = (s.expAmountHistory||[]).map(h =>
+			({startDate:new Date(h.startDate).toISOString(), amount:h.amount}));
+	}else o.children = (s.children||[]).map(masterSnapshot);
+	return o;
+}
+
+/* What each terminal actually saw, as the two quantities measure() distinguishes: [moneyIn, saved].
+   Rounded to cents, and anything that saw neither is omitted. NOT clamped and NOT signed - which is
+   the point, since the sign is what the picture cannot currently draw. */
+export function measuredAmounts(master,transactions,from,to){
+	const m = measure(master,transactions,from,to), out = {};
+	const r2 = v => Math.round(v*100)/100;
+	Object.keys(m).forEach(id => {const e = m[id];
+		if(r2(e.in)===0&&r2(e.saved)===0)return;
+		out[id] = [r2(e.in), r2(e.saved)]});
+	return out;
+}
+
+/* ------------------------------------------------------------------------------------------------
+   WHAT NEVER REACHED THE PICTURE.
+
+   The diagnostics export carries three trees and calls the first of them `raw`, but raw is relative
+   to the ENGINE, not to the portfolio: it is what this file HANDED the engine, by which point four
+   separate rules have already removed streams. So the one question the export could not answer is
+   the one worth asking when a stream is missing - where did it go? - and reading the absence as "the
+   picture is hiding it" sends you looking in the layout for something the adapter dropped.
+
+   This walks the same streams the same way and reports only what did NOT survive, with the reason.
+   Only the losers, because the export has to fit in a paste: a full audit of a real portfolio runs
+   to tens of thousands of characters and gets truncated exactly where the interesting part is.
+
+   Four ways a stream disappears, all of them here:
+     - it is a compound interest-income stream and the flag is off (`excluded`);
+     - its signed amount is NEGATIVE and it is on the OUT side, where the clamp still applies (§1.12
+       moved the in side's negatives to Income Expenses instead, and those are reported under `moved`
+       rather than here, because they are drawn);
+     - it is worth less than one unit of currency (§1.4);
+     - it is compound and nothing under it survived, so it has nothing to be the sum of.
+   ------------------------------------------------------------------------------------------------ */
+export function flowAudit(master,transactions,o){
+	const ctx = {to:o.to,periodName:o.periodName,basis:o.basis,
+		measured:o.basis==="target" ? null : measure(master,transactions,o.from,o.to)};
+	const r2 = v => Math.round(v*100)/100;
+	const dropped = [], moved = [];
+	let kept = 0;
+	/* returns whether anything under `s` survived, so a compound can report the same verdict the
+	   builder reaches without the two going out of step */
+	const walk = (s,sign,tone,parent) => {
+		const note = (why,signed) => {dropped.push({id:s.id, name:s.name, parent:parent,
+			side:sign>0?"in":"out", tone:tone, terminal:s.isTerminal(),
+			amount:signed===undefined?null:r2(signed), why:why})};
+		if(excluded(s)){note("compound interest income, and the flag is off"); return false}
+		if(s.isTerminal()){
+			const m = ctx.measured&&ctx.measured[s.id];
+			const raw = ctx.basis==="target"
+				? (s.getExpectedAmountAtDate(ctx.to,ctx.periodName)||0)
+				: (m ? (tone==="savings" ? -m.saved : m.in) : 0);
+			const signed = raw*sign;
+			/* §1.12  an in-side negative is not lost any more, it crosses to Income Expenses - but it
+			   does not keep its parent alive on the in side, so this returns false exactly as the
+			   builder drops it from that branch. Reported apart from the losers, because it IS drawn. */
+			if(signed<0&&sign>0){moved.push({id:s.id, name:s.name, parent:parent,
+				amount:r2(-signed), to:"Income Expenses"}); return false}
+			if(signed<0){note("negative on the out side — clamped to zero (§1.12 covers the in side only)",signed); return false}
+			if(signed<MIN_VISIBLE){note("under one unit of currency",signed); return false}
+			kept++; return true;
+		}
+		/* every child is walked before the parent is judged, so the list reads top-down and a whole
+		   dead branch reports each of its members rather than only its root */
+		const alive = (s.children||[]).map(c => walk(c,sign,tone,s.name)).filter(Boolean).length;
+		if(!alive){note("nothing under it survived"); return false}
+		kept++; return true;
+	};
+	(master.children||[]).forEach(s => {const c = sideOf(s,o.to);
+		walk(s, c.side==="in"?1:-1, c.tone, "(portfolio)")});
+	return {kept:kept, dropped:dropped, moved:moved};
 }
 
 const sum = a => a.reduce((x,y) => x+y.value,0);
@@ -97,12 +221,14 @@ export function buildFlowTree(master,transactions,o){
 	const ctx = {to:o.to,periodName:o.periodName,basis:o.basis,
 		measured:o.basis==="target" ? null : measure(master,transactions,o.from,o.to)};
 	let ins = [], outs = [];
+	/* §1.12  where the in side's negatives are gathered as they are found */
+	const costs = [];
 	(master.children||[]).forEach(s => {
 		const c = sideOf(s,o.to);
 		/* §9.6  the master's children are the macro categories, and the type says so. Nothing below
 		   them is one - including the income streams that step up a level when the single income group
 		   is unwrapped just below. */
-		const n = buildNode(s,c.side==="in"?1:-1,c.tone,ctx,true);
+		const n = buildNode(s,c.side==="in"?1:-1,c.tone,ctx,true,c.side==="in"?costs:null);
 		if(n)(c.side==="in"?ins:outs).push(n);
 	});
 	/* The hub IS the total money in, so a single top-level income group standing in front of it is a
@@ -112,6 +238,15 @@ export function buildFlowTree(master,transactions,o){
 	let hubName = o.hubName||"Income";
 	if(ins.length===1&&ins[0].children){hubName=ins[0].name;
 		ins=ins[0].children.map(n => Object.assign({},n,{top:false}))}
+
+	/* §1.12  AND THEY ARRIVE AS ONE CATEGORY OF THEIR OWN. Sent back to the parents they came from,
+	   an income group would appear on both sides at once - "Activity Income" as a thing earned and as
+	   a thing spent - which reads as a contradiction rather than as a cost. Gathered instead into one
+	   macro category beside the others, the statement is the plain one: this is what earning the money
+	   cost. They keep their own names inside it, so the tax that belongs to a gig and the outlay that
+	   belongs to a venture are still told apart. Biggest first, like every other set (§3.2). */
+	if(costs.length)outs.push({id:"__incomeCosts", name:"Income Expenses", tone:"expenses", top:true,
+		value:sum(costs), children:costs.slice().sort((a,b) => b.value-a.value)});
 
 	/* §1.1 §1.2  money in equals money out, and these two are what keep it true. What is left after
 	   spending and deliberate saving is unallocated — still savings, just without a stream yet. When

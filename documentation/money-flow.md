@@ -107,6 +107,42 @@ for no reason the reader can see is a band they have to find again every time.
 tween pairs by position within a stable shape. A shape that changed cannot be tweened, and the engine
 falls back to a rebuild rather than interpolating mismatched trees.
 
+**1.6 The tree is RAGGED, and that is not a defect to be normalised.** Siblings need not sit at the
+same depth: a flat annual expense stands beside a recurring group two levels deep, and one category
+can be three deep while its neighbour is a leaf. Nothing pads a shallow branch out to the depth of its
+deepest sibling, because a stream with one child is not the same statement as a stream with none —
+7.30 folds that pair into a single band rather than inventing a level for it. Everything downstream is
+written to survive it: the columns are a signed axis of ABSOLUTE depth (2.2), so a column holds
+whatever happens to reach it and no more, and the type is decided from a level relative to the focus
+(9.6) rather than from the column a band lands in. The fixtures are ragged on purpose for this reason
+— a portfolio where every branch is the same depth is the one shape that would let a depth bug
+through.
+
+**1.12 A negative inflow is an OUTFLOW, and they arrive as one category of their own.** An income
+stream can come out negative — tax paid on a gig, a venture that cost more than it returned, a stream
+that net-refunded. It used to be clamped to zero and then dropped for being under a unit (1.4), and
+that is not a small loss. The money left the account, so leaving it out understates the out side; and
+because the leftover is computed as in minus out (1.2), an understated out side makes the leftover too
+big by exactly that much. The money was therefore not merely missing from the picture — it was sitting
+inside **Unallocated** under someone else's name. On a real portfolio that was four streams and about
+a fifth of the leftover, and one of them took its whole category with it: its only sibling was worth
+1, so nothing under the parent survived and the parent went too.
+
+A Sankey has no negative flows; it has flows the other way. So such a stream crosses to the out side
+keeping its own name and its own amount. It is not sent back to the parent it came from — an income
+group would then appear on both sides at once, "Activity Income" as a thing earned and as a thing
+spent, which reads as a contradiction rather than as a cost. They are gathered instead into a single
+macro category, **Income Expenses**, beside the others, where the statement is the plain one: this is
+what earning the money cost. Their own names survive inside it, so the tax belonging to a gig and the
+outlay belonging to a venture are still told apart.
+
+1.1 and 1.3 both survive it untouched: the amount is added to the out side exactly once and removed
+from the in side exactly once, and every parent is still the sum of what it holds.
+
+**The IN side only.** A negative on the out side still lands on zero. Money coming back out of savings
+already has a shape — 1.2's "From reserves" — and giving it a second one would say the same thing
+twice. Whether that is right is still open; it has not been looked at properly.
+
 **1.10 The tail is gathered into an "Other", and HOW MUCH tail is decided by the display.** The
 question is not what share of the money the small streams are — it is how many of a set of siblings
 can carry a name at once. A stream with a dozen children otherwise spends most of its height on the
@@ -768,6 +804,16 @@ the same clock, in every direction** — holding a name visible across a move lo
 kindness, but its place in the rail comes from a relaxation over a set that is itself changing as the
 geometry blends, so it spends the move stuttering after the camera.
 
+**7.8 A name already being read is never pulled down.** Every gate in 7.5 can turn against a name
+mid-move — its band thins, it crosses the edge of the frame, its tier stops being the tier — and a
+name that dims while the reader is in the middle of it reads as a fault in the picture rather than as
+the picture changing. So the opacity a name HAD when the move began is a floor under it for the whole
+move: the gates may raise a name, and may not lower one. Only names that were not on screen when the
+move started are gated down, which is what makes 7.6's "arrives with the camera" apply to arrivals
+alone. The floor is released when the move settles, and the name then eases to whatever it should be
+at rest — so a name that genuinely should go does go, a beat later, when nothing else is moving and
+the change is legible as its own event.
+
 **7.9 The tier follows that clock exactly; everything else eases.** Across a move the tier's opacity is
 the clock's value outright, because the whole point of 7.6 and 7.7 is that it lands with the camera.
 Every other name eases from whatever opacity it currently has — never from zero — so a name that was
@@ -1316,9 +1362,12 @@ Known and not yet done, as of the last session. Nothing here is started.
   re-parented count 30 to 29 and was reverted. The size is not what churns — the nesting is, and an
   Other one level deeper is a different id, which is why the tween pairs nothing.
 
-- **Income cannot represent a negative**, such as tax withheld. The picture has no shape for money that
-  arrives negative on the in side; 1.2 turns a shortfall into "From reserves", which is not the same
-  statement. Part bug, part unanswered design question.
+- ~~**Income cannot represent a negative**, such as tax withheld.~~ Fixed by 1.12, and it was worse
+  than "cannot represent": the money was silently added to Unallocated. Found by copying the master
+  stream rather than the engine's trees — four negative streams, one of which (a venture cost) had
+  been taking its entire category out of the picture, and none of them visible in any export taken
+  from the engine. What remains open is the mirror case: a negative on the OUT side still lands on
+  zero, and whether "From reserves" is the right and only shape for it has not been examined.
 
 **Features**
 

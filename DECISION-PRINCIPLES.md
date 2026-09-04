@@ -75,6 +75,37 @@ already knows where to find.
 
 ---
 
+### 26. Say the new case in the vocabulary you already have
+
+When the model cannot express something, the tempting move is to add a way to express it. Usually the
+better move is to notice that the thing already IS something the model can say, and say it that way —
+because an existing shape arrives with every invariant and every test that already guard it, and a new
+one has to earn all of that again.
+
+The test of whether you have found the real answer: the existing checks should pass **untouched**. If
+they need loosening to admit the new case, you have not found a way to say it, you have invented an
+exception and named it a fix.
+
+> *In practice:* a flow diagram could not represent income arriving negative — tax paid on a gig, a
+> venture that cost more than it returned. Three answers were on the table. Draw it on the income side
+> as a contra-band, which needs a new kind of band that is drawn but does not flow. Restate income as
+> gross and net the deduction out, which changes what every number on that side means. Or notice that a
+> flow diagram has no negative flows because it already has flows in the other direction — so a negative
+> inflow is simply an **outflow**, and there is nothing new at all.
+>
+> The third needed no new primitive, no new drawing rule, no new semantics: the amount is added to one
+> side once and removed from the other once, so the two structural invariants — total in equals total
+> out, a parent is the sum of its children — hold by construction rather than by care. Measured, the
+> contra-band broke the balance by 64,000 and visibly tore the seam at the hub; the outflow version came
+> back clean the first time it ran, on real data, and every pre-existing test kept passing.
+>
+> One did have to change, and it is worth separating from the rest: a test asserting the old outcome —
+> "a stream that net-refunded lands on zero" — now asserted something the code deliberately no longer
+> did. That is not the same as loosening a check to admit an exception. It was rewritten to state the
+> new behaviour, with a note on why the old outcome had never been good.
+
+---
+
 ## Correctness and inference
 
 ### 6. A property of a thing must not depend on where you look at it from
@@ -281,6 +312,32 @@ Not to check work that is already done — to surface cases nobody thought to as
 > row's layout was converged in a bench that reproduced its box model exactly, in one round. The
 > carousel above it was reasoned about instead and took five, every wrong guess costing a deploy and
 > a screenshot — which is to say the user was made the instrument.
+
+### 27. Copy the source, not a conclusion
+
+A diagnostic that exports what the system produced can answer only the question it was built for, and
+it silently discards everything that was decided upstream of where it was taken. Export what the thing
+is BUILT from instead: it is smaller, it does not go stale as the pipeline changes, and whoever holds
+it can reconstruct any of the conclusions — including ones nobody thought to capture.
+
+Watch what a diagnostic calls itself. "Raw", "original", "source" are relative to the stage that named
+them, and everything before that stage is invisible in a way that reads as absence.
+
+> *In practice:* a chart's diagnostic export copied three trees — the data as its adapter built it, as
+> the layout grouped it, and as it was drawn — plus every label's placement facts. It looked like the
+> more informative choice. But the first of those was raw only relative to the RENDERER: the adapter had
+> already dropped whatever it dropped, so a stream missing from the export was indistinguishable from a
+> stream the layout was hiding. That ambiguity was read the wrong way round twice in one sitting, once
+> to tell the owner of the data that his portfolio did not contain a stream he knew was in it. It
+> contained four, all discarded by one clamp.
+>
+> Replaced by the master record plus what each leaf actually measured — a few kilobytes against tens —
+> the whole class of question became answerable, because the bench could rebuild the picture and then be
+> asked, instead of having had one question answered for it in advance. The claim that makes this safe
+> is worth a test of its own: the snapshot must round-trip, and rebuild a structure that produces an
+> identical result. A lossy copy that still reads as complete is worse than an obviously partial one.
+
+---
 
 ### 23. A test that cannot fail the way production fails proves nothing
 

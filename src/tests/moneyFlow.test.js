@@ -20,7 +20,7 @@ jest.mock('dateformat', () => ({__esModule: true, default: () => ''}))
 
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
-import {buildFlowTree} from '../processors/MoneyFlow'
+import {buildFlowTree, flowAudit, masterSnapshot, measuredAmounts} from '../processors/MoneyFlow'
 
 // ---------------------------------------------------------------------------------------------
 // A portfolio shaped like a real one: an income group two deep, a savings group two deep, a
@@ -256,10 +256,15 @@ describe("the actual basis", () => {
 		expect(find(t.in, "base").value).toBeCloseTo(5000, 6)
 	})
 
-	test("an income stream that net-refunded lands on zero, not on the wrong side", () => {
+	// This used to assert the opposite - that it landed on zero and appeared nowhere - which is what
+	// §1.12 changed. It was never a good outcome: the money had left the account, so leaving it out
+	// understated the out side and inflated the leftover by the same amount.
+	test("an income stream that net-refunded crosses to the out side, not to zero", () => {
 		const t = build([txn("consulting", 900), txn("consulting", -1200), txn("base", 5000)])
-		expect(find(t.in, "consulting")).toBeNull()
-		expect(find(t.out, "consulting")).toBeNull()
+		expect(find(t.in, "consulting")).toBeNull()          // not on the side it was defined on
+		const costs = t.out.filter(n => n.id === "__incomeCosts")[0]
+		expect(costs.children.filter(c => c.id === "consulting")[0].value).toBeCloseTo(300, 6)
+		expect(total(t.in)).toBeCloseTo(total(t.out), 6)     // §1.1 survives it
 	})
 
 	test("§1.3 holds for the measured tree too", () => {
@@ -281,5 +286,112 @@ describe("the actual basis", () => {
 			return walk(t.in).join("|") + "//" + walk(t.out).join("|")
 		}
 		expect(shape(build(txns, "actual"))).toBe(shape(build([], "target")))
+	})
+})
+
+describe("what never reached the picture", () => {
+	// The export's three trees all come from the engine, and the first is "raw" only relative to it:
+	// the adapter drops streams before the engine sees anything, so a stream missing from the export
+	// was indistinguishable from a stream the layout was hiding. A negative income stream is the case
+	// with no honest answer yet - the clamp turns it into zero and it leaves no trace at all.
+	const audit = txns => flowAudit(master, txns, {
+		from: WINDOW.from, to: WINDOW.to, periodName: "monthly", basis: "actual"})
+
+	test("a negative income stream crosses to Income Expenses, keeping its name and amount", () => {
+		// consulting billed 900 and refunded 1200: net money in is negative
+		const txns = [txn("base", 5000), txn("consulting", 900), txn("consulting", -1200)]
+		const t = buildFlowTree(master, txns,
+			{from: WINDOW.from, to: WINDOW.to, periodName: "monthly", basis: "actual"})
+		const costs = t.out.filter(n => n.id === "__incomeCosts")[0]
+		expect(costs).toBeDefined()
+		expect(costs.top).toBe(true)
+		expect(costs.children.map(c => c.name)).toContain("Consulting")
+		expect(costs.value).toBeCloseTo(300, 2)      // 1200 out less 900 in
+		// and it is NOT also on the in side - that would be the same money in two places
+		const inNames = []
+		const walk = l => (l || []).forEach(n => {inNames.push(n.name); walk(n.children)})
+		walk(t.in)
+		expect(inNames).not.toContain("Consulting")
+		// §1.1 still holds, which is the whole reason this is safe to do
+		const sum = l => l.reduce((a, b) => a + b.value, 0)
+		expect(sum(t.in)).toBeCloseTo(sum(t.out), 2)
+		// the audit calls it moved, not dropped
+		const a = audit(txns)
+		expect(a.moved.filter(r => r.id === "consulting")[0].amount).toBeCloseTo(300, 2)
+		expect(a.dropped.filter(r => r.id === "consulting").length).toBe(0)
+	})
+
+	test("the leftover shrinks by what used to be hidden", () => {
+		// the bug that made this worth fixing: an understated out side inflates the leftover, so the
+		// money was not merely missing from the picture, it was inside Unallocated with another name
+		const opts = {from: WINDOW.from, to: WINDOW.to, periodName: "monthly", basis: "actual"}
+		const clean = buildFlowTree(master, [txn("base", 5000), txn("rent", -1700)], opts)
+		const withNeg = buildFlowTree(master,
+			[txn("base", 5000), txn("rent", -1700), txn("consulting", -300)], opts)
+		const leftover = t => {let v = 0
+			const walk = l => (l || []).forEach(n => {if (n.id === "__unallocated") v = n.value
+				walk(n.children)})
+			walk(t.out); return v}
+		expect(leftover(clean) - leftover(withNeg)).toBeCloseTo(300, 2)
+	})
+
+	test("a stream under one unit, and a group with nothing left under it, say so", () => {
+		// nothing against Salary's leaves at all, so the whole group has to go with them
+		const a = audit([txn("consulting", 0.4)])
+		const cents = a.dropped.filter(r => r.id === "consulting")[0]
+		expect(cents.why).toMatch(/under one unit/)
+		// Salary saw nothing at all, so both its leaves go and the group goes with them
+		const group = a.dropped.filter(r => r.id === "salary")[0]
+		expect(group.why).toMatch(/nothing under it survived/)
+		expect(group.terminal).toBe(false)
+	})
+
+	test("what survives is counted, and a stream that is drawn is not in the list", () => {
+		const a = audit([txn("base", 5000), txn("rent", -1700)])
+		expect(a.kept).toBeGreaterThan(0)
+		expect(a.dropped.filter(r => r.id === "base").length).toBe(0)
+		expect(a.dropped.filter(r => r.id === "rent").length).toBe(0)
+	})
+})
+
+describe("the export carries the source, not a picture of it", () => {
+	// The whole claim is that the master round-trips: if `new CompoundStream(snapshot)` is the same
+	// portfolio, then anything the app can compute the bench can compute, and no snapshot of the
+	// engine's output is needed. If it does not, the export is a lossy copy that reads as complete.
+	const opts = {from: WINDOW.from, to: WINDOW.to, periodName: "monthly", basis: "actual"}
+
+	test("the snapshot rebuilds a portfolio that produces the identical tree", () => {
+		const txns = [txn("base", 5000), txn("bonus", 800), txn("consulting", 900),
+			txn("rent", -1700), txn("utils", -320), txn("k401", -600, "2024-01-15", "savings")]
+		const before = buildFlowTree(master, txns, opts)
+		const rebuilt = new CompoundStream(masterSnapshot(master))
+		const after = buildFlowTree(rebuilt, txns, opts)
+		expect(JSON.stringify(after)).toEqual(JSON.stringify(before))
+	})
+
+	test("it keeps the flags the sides and the exclusions are decided from", () => {
+		const snap = masterSnapshot(master)
+		const sav = snap.children.filter(c => c.id === "sav")[0]
+		expect(sav.isSavings).toBe(true)
+		expect(snap.isRoot).toBe(true)
+		// a terminal carries its own history, which is what the target basis is read from
+		const base = snap.children.filter(c => c.id === "inc")[0]
+			.children.filter(c => c.id === "salary")[0]
+			.children.filter(c => c.id === "base")[0]
+		expect(base.expAmountHistory.length).toBeGreaterThan(0)
+		expect(base.expAmountHistory[0].amount).toBe(5100)
+		// and the target basis, which reads nothing but the master, survives the round trip
+		const t0 = buildFlowTree(master, [], {...opts, basis: "target"})
+		const t1 = buildFlowTree(new CompoundStream(snap), [], {...opts, basis: "target"})
+		expect(JSON.stringify(t1)).toEqual(JSON.stringify(t0))
+	})
+
+	test("the measurements go out unclamped, so a negative is visible", () => {
+		// this is the half the master cannot tell you, and the only place the sign survives
+		const m = measuredAmounts(master, [txn("consulting", 900), txn("consulting", -1200)],
+			WINDOW.from, WINDOW.to)
+		expect(m["consulting"][0]).toBeLessThan(0)
+		// a stream that saw nothing is left out, which is what keeps the paste small
+		expect(m["rent"]).toBeUndefined()
 	})
 })
