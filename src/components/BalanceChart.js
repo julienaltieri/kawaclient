@@ -200,6 +200,16 @@ const Empty = styled.div`
 `
 
 const LT = String.fromCharCode(60);
+const HALF = 15;                       //days either side of the window's centre
+
+/* one calendar month earlier, clamped: "the 31st" of a thirty-day month is its last day, not the 1st
+   of the month after - a shift that silently lands in the wrong month is worse than one that rounds */
+const monthBefore = d => {
+	const y = d.getUTCFullYear(), m = d.getUTCMonth()
+	const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate()
+	return new Date(Date.UTC(y, m - 1, Math.min(d.getUTCDate(), lastDay)))
+};
+
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
 //a stream name is user-typed and goes into innerHTML
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
@@ -381,16 +391,25 @@ export default class BalanceChart extends BaseComponent{
 		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))
 	}
 
-	/* THIS month is fifteen days either side of today. LAST month is the previous CALENDAR month,
-	   first to last - not "thirty days ago", because the question it answers is about a month that
-	   has a name, and a rolling window would cut a rent payment in half at one end. */
+	/* LAST MONTH IS THIS WINDOW, MOVED BACK EXACTLY ONE MONTH.
+
+	   It was the previous CALENDAR month first, on the reasoning that the question is about a month
+	   with a name. That reasoning ignored the gesture: the reader is looking at a window centred on
+	   today, and asking for last month is asking to see the same window a month ago. A calendar month
+	   is a different width AND a different offset, so the picture jumped to a stretch of time with no
+	   fixed relationship to the one being left - it landed, as reported, somewhere in the middle.
+
+	   Moved by exactly a month, the two windows are the same width and the motion is a pure
+	   translation: every mark travels the same distance in the same direction, which is what makes a
+	   pan readable as "the same thing, earlier" rather than as a new picture. */
 	window(now, when){
+		const from = t => new Date(t.getTime() - HALF*DAY);
 		if(when === "last"){
-			return {from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-1, 1)),
-				to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)), fwd: 0}
+			const c = monthBefore(now)
+			//the whole window is behind us, so nothing in it is projected
+			return {from: from(c), to: new Date(c.getTime() + HALF*DAY), fwd: 0}
 		}
-		const back = 15
-		return {from: new Date(now.getTime() - back*DAY), to: null, fwd: 15}
+		return {from: from(now), to: null, fwd: HALF}
 	}
 
 	/* BOTH MONTHS ARE BUILT AT ONCE, and the toggle only chooses between them.
@@ -563,6 +582,37 @@ export default class BalanceChart extends BaseComponent{
 				+ '" stroke-width="' + STROKE.projected + '" stroke-dasharray="' + STROKE.dash
 				+ '" opacity="' + PLANE.projected + '"/>'
 
+		/* PERMANENT DATE MARKS on the 1st and the 15th. A step chart with no axis is a shape with no
+		   scale: the reader can see that something happened and not when, and the cursor's own date
+		   only helps once they are already pointing at something. The 1st and the 15th are the days
+		   the money itself uses - rent, and the mid-month paycheck - so they are anchors rather than
+		   an arbitrary grid.
+
+		   Each carries its MONTH, because a thirty-day window straddles two of them and a bare "15"
+		   would be ambiguous exactly where the window is most useful. */
+		const ticks = []
+		const firstMonth = new Date(Date.UTC(new Date(x0).getUTCFullYear(),
+			new Date(x0).getUTCMonth(), 1))
+		for(let m = firstMonth; m.getTime() <= x1; m = new Date(Date.UTC(m.getUTCFullYear(),
+				m.getUTCMonth() + 1, 1))){
+			[1, 15].forEach(dayNum => {
+				const t = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), dayNum)
+				if(t < x0 || t > x1)return
+				ticks.push({t: t, label: onDate(new Date(t))})
+			})
+		}
+		//a tick label under the cursor's own date would print on top of it
+		const cursorX = this.state.at ? X(new Date(this.state.at).getTime()) : null
+		const axis = ticks.map(tk => {
+			const tx = X(tk.t)
+			if(cursorX !== null && Math.abs(tx - cursorX) < 34)return ""
+			return '<line x1="' + tx.toFixed(1) + '" y1="' + (H - PAD.b) + '" x2="' + tx.toFixed(1)
+				+ '" y2="' + (H - PAD.b + 3) + '" stroke="' + dim + '" stroke-width="0.7"'
+				+ ' opacity="0.6"/>'
+				+ '<text x="' + tx.toFixed(1) + '" y="' + (H - 4).toFixed(1) + '" text-anchor="middle"'
+				+ ' font-family="Inter" font-size="9" fill="' + dim + '">' + tk.label + '</text>'
+		}).join("")
+
 		//a settled month does not contain today, and a line marking it at the frame edge would be a
 		//mark that means nothing
 		const nowLine = (now.getTime() >= x0 && now.getTime() <= x1)
@@ -644,7 +694,7 @@ export default class BalanceChart extends BaseComponent{
 
 		return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
 			+ defs + area
-			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine
+			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine + axis
 			+ lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
 	}
 
@@ -751,7 +801,12 @@ export default class BalanceChart extends BaseComponent{
 		return Object.keys(byDay).sort().map(k => byDay[k])
 	}
 	lerpFrame(a, b, k){
-		const l = (p, q) => p + (q - p)*k
+		/* p*(1-k) + q*k, NOT p + (q-p)*k. The two are equal in arithmetic and not in floating point:
+		   the second leaves a residue at k=1, so the last frame of a motion is very slightly not the
+		   frame that replaces it. Invisible here at 1e-14 of a pixel, and still worth not having -
+		   "the animation lands exactly on its destination" is a property worth being able to assert
+		   rather than approximately believe. */
+		const l = (p, q) => p*(1 - k) + q*k
 		return {x0:l(a.x0,b.x0), x1:l(a.x1,b.x1), y0:l(a.y0,b.y0), y1:l(a.y1,b.y1),
 			lo:l(a.lo,b.lo), hi:l(a.hi,b.hi)}
 	}
@@ -774,7 +829,7 @@ export default class BalanceChart extends BaseComponent{
 				const blend = []
 				for(let i = 0; i < n; i++){
 					blend.push({date: b[i].date, actual: b[i].actual, top: b[i].top,
-						value: a[i].value + (b[i].value - a[i].value)*k})
+						value: a[i].value*(1 - k) + b[i].value*k})
 				}
 				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k))
 			})

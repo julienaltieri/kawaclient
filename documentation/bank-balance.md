@@ -583,9 +583,20 @@ draws as one solid line with no dashes anywhere, no today marker, and a low that
 a forecast. Going back slides the frame to the right, because what changed is which stretch of time is
 under the glass.
 
-Last month is the previous **calendar** month, first to last — not "thirty days ago". The question is
-about a month that has a name, and a rolling window would cut a rent payment in half at one end. The
-reconstruction still runs back from today whatever is on screen, so a past window is a slice of that
+**Last month is THIS window, moved back exactly one month.** It was the previous *calendar* month
+first, on the reasoning that the question is about a month with a name. That reasoning ignored the
+gesture: the reader is looking at a window centred on today, and asking for last month is asking to see
+*the same window* a month ago. A calendar month is a different width **and** a different offset, so the
+picture jumped to a stretch of time with no fixed relationship to the one being left — it landed, as
+reported from the phone, somewhere in the middle.
+
+Moved by exactly a month the two windows are the same width, so the motion is a **pure translation**:
+every mark travels the same distance in the same direction, which is what makes a pan read as "the same
+thing, earlier" rather than as a new picture. The day-of-month is clamped when it has to be — the 31st
+of a thirty-day month is that month's last day, not the 1st of the month after, because a shift that
+silently lands in the wrong month is worse than one that rounds.
+
+The reconstruction still runs back from today whatever is on screen, so a past window is a slice of that
 one anchored walk rather than a separate calculation from a guessed opening figure.
 
 **Both months are built at once, and the toggle only chooses between them.** Every switch used to
@@ -602,6 +613,19 @@ exactly when it is wrong and never merely because the component re-rendered.
 It also removes a double computation that had been there from the start: the caption and the picture
 each asked for the series independently on every render, including on every day the cursor passed
 over.
+
+### §10d-b A PERMANENT DATE AXIS, on the 1st and the 15th
+
+A step chart with no axis is a shape with no scale: the reader can see that something happened and not
+when, and the cursor's own date only helps once they are already pointing at something.
+
+The marks are the **1st and the 15th** because those are the days the money itself uses — rent, and the
+mid-month paycheck — so they are anchors rather than an arbitrary grid. Each carries its **month**
+(`Aug 1`, `Aug 15`), because a thirty-day window straddles two of them and a bare "15" would be
+ambiguous exactly where the window is most useful.
+
+A tick label gives way to the cursor's own date when the two would collide, so the one the reader asked
+for is the one that survives.
 
 ### ONE PAINTER, and an animation is that painter with a moving frame
 

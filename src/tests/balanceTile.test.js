@@ -99,18 +99,32 @@ test("the window is a month, and the choice is which one", async () => {
 	expect(screen.getByText("this month")).toBeInTheDocument()
 })
 
-test("last month is a settled CALENDAR month with nothing projected in it", async () => {
+test("last month is THIS window moved back exactly one month", async () => {
+	const ref = await mount()
+	const all = ref.current.allSeries()
+	const span = a => {const s = a.past.concat(a.future)
+		return {from: s[0].date, to: s[s.length-1].date}}
+	const here = span(all.this), back = span(all.last)
+
+	//same width: the motion is a pure translation, not a resize
+	expect(Math.round((here.to - here.from)/86400000))
+		.toBe(Math.round((back.to - back.from)/86400000))
+	//and both ends moved back by one calendar month
+	const monthBefore = d => {
+		const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0)).getUTCDate()
+		return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()-1,
+			Math.min(d.getUTCDate(), lastDay)))
+	}
+	expect(back.from.getTime()).toBe(monthBefore(here.from).getTime())
+	expect(back.to.getTime()).toBe(monthBefore(here.to).getTime())
+})
+
+test("the shifted window is entirely settled, so nothing in it is projected", async () => {
 	const ref = await mount()
 	await act(async () => {ref.current.setState({when: "last"})})
 	const a = ref.current.series()
 	expect(a.future.length).toBe(0)
 	expect(a.past.every(p => p.actual)).toBe(true)
-	//first to last of the previous calendar month, not "thirty days ago"
-	const now = ref.current.ledgerToday()
-	const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-1, 1))
-	const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
-	expect(a.past[0].date.getTime()).toBe(first.getTime())
-	expect(a.past[a.past.length-1].date.getTime()).toBe(last.getTime())
 })
 
 test("a settled month draws no today line and no dashed projection", async () => {
@@ -590,4 +604,41 @@ test("a frame mid-travel carries the beads and guides, not just the line", async
 	expect(svg).toContain('stroke-dasharray="2,3"')   //the high/low guides
 	expect(svg).toContain("high $")
 	expect(svg).toContain("low $")
+})
+
+/* ---- the permanent date axis -------------------------------------------------------------------- */
+
+test("the 1st and the 15th are always marked, each carrying its month", async () => {
+	const ref = await mount()
+	const svg = () => (ref.current.host.current || {}).innerHTML || ""
+	const a = ref.current.series()
+	const all = a.past.concat(a.future)
+	const from = all[0].date, to = all[all.length-1].date
+
+	//every 1st and 15th inside the window is labelled, and none outside it is
+	const expected = []
+	for(let m = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+			m <= to; m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth()+1, 1))){
+		[1, 15].forEach(d => {
+			const t = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), d))
+			if(t >= from && t <= to)expected.push(
+				t.toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"}))
+		})
+	}
+	expect(expected.length).toBeGreaterThan(0)
+	expected.forEach(label => expect(svg()).toContain(">" + label + "<"))
+})
+
+test("a tick label under the cursor's own date gives way to it", async () => {
+	const ref = await mount()
+	const a = ref.current.series()
+	const all = a.past.concat(a.future)
+	//park the cursor exactly on a 1st or a 15th
+	const anchor = all.filter(p => p.date.getUTCDate() === 1 || p.date.getUTCDate() === 15)[0]
+	expect(anchor).toBeTruthy()
+	const label = anchor.date.toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"})
+	await act(async () => {ref.current.setState({at: anchor.date})})
+	const svg = (ref.current.host.current || {}).innerHTML || ""
+	//printed once - by the cursor - rather than twice on top of itself
+	expect(svg.split(">" + label + "<").length - 1).toBe(1)
 })
