@@ -78,9 +78,14 @@ If the refresh itself is refused, the session is genuinely over: the store is cl
 `onSessionExpired` fires. `ApiCaller` cannot import `Core` — `Core` imports it — so `Core` assigns
 that callback in its constructor instead of being reached into.
 
-**Refresh token lifetime is a Cognito app client setting, not a value in this repo.** The pool default
-is 30 days. Whatever it is set to, the expiry is absolute from issuance and refreshing does not extend
-it; see the sliding-expiry roadmap item for what would change that.
+**Refresh token lifetime is a Cognito app client setting, not a value in this repo**, currently 1 year
+— read it from the app client rather than trusting this sentence. The expiry is absolute from
+issuance: refreshing does not extend it, so a year after a password login the password is needed
+again. See the sliding-expiry roadmap item for what would change that.
+
+The app client has token revocation enabled, which is what makes a leaked refresh token recoverable
+from — without it a year-long credential could not be withdrawn short of disabling the user. Nothing
+in Kawa calls `RevokeToken` yet; enabling it only preserves the option.
 
 ### Where the tokens live, and why it is not an httpOnly cookie
 
@@ -140,18 +145,6 @@ why `submitCredentials` also carries a branch for an empty response.
 > tracked here as they are made. The exception is scoped to this section of this file: everything
 > above it describes the system as it actually is, and stays Rule 5 clean. As each phase lands, its
 > mechanism moves up into the body and its entry here shrinks to a line in the decision log.
-
-### Phase 1a — Lengthen the refresh token window (Cognito console)
-
-Refresh token validity is an app client setting in Cognito, not a value in this repo, so the code
-landing does not change it. The pool is on the 30-day default. The agreed target is **1 year**:
-Cognito allows up to 10 years, but with no rotation the window is absolute, so a year already means
-roughly one password entry per year while keeping a bounded lifetime on a bearer credential to live
-bank data. Ten years buys almost no extra convenience for a much longer-lived secret.
-
-Set `RefreshTokenValidity` to 365 with `TokenValidityUnits.RefreshToken` as `days` on app client
-`7g3c7samnlgch4pvv2rkmh2vtt`. It applies only to tokens issued after the change, so the current
-session has to be re-established once for it to take effect.
 
 ### Phase 1b — Sliding expiry (refresh token rotation)
 
@@ -254,6 +247,7 @@ committing — this surface has moved since launch.
 | 2026-09-03 | Request `prf` at enrolment despite nothing reading it | Costs nothing now; without it, encrypting the token at rest later would require re-enrolling the credential. |
 | 2026-09-03 | Refresh token window of 1 year, not Cognito's 10-year maximum | The ask was "longer is better". Without rotation the window is absolute, so a year is already roughly one password entry per year — the extra nine years buy no meaningful convenience and lengthen the life of a bearer credential to live bank data. |
 | 2026-09-03 | Startup refreshes rather than validating the stored access token first | An access token older than a day is dead, so validating first would often spend a round trip to learn nothing. |
+| 2026-09-03 | Token revocation enabled on the app client alongside the 1-year window | The client was created in 2020, before the feature existed. A year-long refresh token that cannot be withdrawn is a materially worse trade than a 30-day one; enabling it costs nothing and keeps the option open. |
 | 2026-09-03 | Corrected: the access token ceiling is 1 day, not 1 hour | Read from the live app client rather than assumed from Cognito's default. The `tokenExpiration: 3600000` in `server.js` reads as ~41 days, not 1 hour, because `jsonwebtoken` takes `maxAge` in seconds — it never binds. The session cookie, not the token TTL, was the dominant reason the password was needed so often. |
 | 2026-09-03 | The 401 retry lives in `ApiCaller.sendRequest` | Every API method already funnels through it, so recovery is written once instead of at 20-odd call sites. Retrofitting the existing seam rather than adding a new one — DECISION-PRINCIPLES.md #1. |
 | 2026-09-03 | Admin bypass token and AWS keys deferred behind the login work | Kawa is not public, so the exposure is not reachable. The condition is explicit: going public promotes both to urgent, and neither is fixed by editing the file since the values are in git history. |
