@@ -519,15 +519,20 @@ export default class BalanceChart extends BaseComponent{
 				   legible over the line and the area beneath them. */
 				const onBadge = evs.filter(e => dayKey(e.date) === k)[0]
 				if(onBadge && onBadge.stream){
-					const bx = X(onBadge.date.getTime()), by = Y(onBadge.value), br = DOT_R + 3
-					//flip to the other side rather than run off the frame
-					const right = (W - PAD.r - bx) > 74
-					badgeLabel = LT + 'text x="' + (right ? bx + br + 4 : bx - br - 4).toFixed(1)
-						+ '" y="' + (by + 3.2).toFixed(1) + '" text-anchor="'
+					/* TOP-ALIGNED WITH THE CURSOR LINE, not floated beside the bead. Beside the bead
+					   it moved vertically with whatever it named, so reading two badges in a row meant
+					   hunting for the caption each time; and low on the frame it collided with the
+					   curve it was explaining. Pinned to the top of the cursor line it is always in
+					   the same place relative to the gesture - the line is the thing the finger
+					   controls - and it is above everything it could overlap. */
+					const cx = X(onBadge.date.getTime())
+					const right = (W - PAD.r - cx) > 74
+					badgeLabel = '<text x="' + (right ? cx + 5 : cx - 5).toFixed(1)
+						+ '" y="' + (PAD.t + 7).toFixed(1) + '" text-anchor="'
 						+ (right ? "start" : "end") + '" font-family="Inter" font-size="9" fill="'
 						+ ink + '" paint-order="stroke" stroke="' + tile
 						+ '" stroke-width="2.5" stroke-linejoin="round">'
-						+ esc(onBadge.stream) + LT + '/text>'
+						+ esc(onBadge.stream) + '</text>'
 				}
 				/* WHICH DAY, under the axis. The cursor line says "here" and the caption says how
 				   much, and neither says WHEN - which on a step chart with no x labels leaves the

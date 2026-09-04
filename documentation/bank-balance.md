@@ -374,6 +374,59 @@ and are now 27% of a distribution whose peak says "rent", so the bead on the lin
 and be labelled *Home*, and the reader loses the one thing they came for: *which* of those moved, and
 when. Per terminal, three distinguishable events survive; at the compound, one.
 
+### WHICH CYCLE IS THE STREAM ON — detected, not assumed
+
+Everything here began by assuming a **month**. That assumption is invisible when it holds and destroys
+the picture when it does not: a weekly payment lands on roughly thirty different days-of-month over a
+year, so binned by day-of-month it looks **perfectly diffuse**. The forecast then spreads a large
+recurring expense into a flat drizzle, it has no step, it earns no badge, and it vanishes from a chart
+that is read for its steps. That is how a day-care bill the size of rent can be invisible while every
+total that mentions it is correct.
+
+**Not a Fourier transform**, and the reason is the domain rather than the maths. Money is calendar
+driven, not sinusoidal: "the first of the month" and "every other Friday" are not frequencies, and
+months are not equal in length, so a fixed-frequency basis smears exactly the events that are most
+regular. The candidate set is small, known, and made of real calendars — so the honest method is a
+cascade: try each, measure which fits. A periodogram over the periods money actually uses.
+
+Three candidates: **weekly** (7 bins), **biweekly** (14, phased from a fixed epoch), **monthly** (31).
+Monthly also covers semimonthly, which appears as two spikes in a month of bins — a true description
+needing no candidate of its own.
+
+**The statistic must be comparable across bin counts**, which is the easy thing to get wrong. Raw
+concentration rises with the number of bins for free: two transactions over 31 bins look more
+concentrated than two over 7, purely because there is more room to be apart in. So each candidate is
+scored against what randomness would produce for the *same* number of observations
+(`H − E) / (1 − E)`, where `H` is the sum of squared shares and `E = 1/k + (1−1/k)/n`), and a
+candidate wins only by beating its own null.
+
+**The longest cycle goes first, and a shorter one must earn the swap.** A shorter cycle is trivially
+satisfied by a longer one: money moving every *other* Friday lands on a Friday every time, so "weekly"
+fits it perfectly and scores exactly as well as "biweekly". Scored on a tie the shorter one wins by
+accident, and the forecast draws four half-sized payments where two full ones belong — the same
+disappearing-step fault, arrived at from the other direction. The reverse is not symmetric, which is
+what makes the ordering sound: a genuinely weekly stream binned into a fortnight spreads across both
+Fridays and scores about half. Measured:
+
+| fixture | detected | biggest daily step |
+|---|---|---|
+| day care, $400 every Monday | weekly | −$391 |
+| day care, $1,733 on the 3rd | monthly | −$1,733 |
+| pay, $800 every other Friday | biweekly | −$783 *(was −$391 before the tie-break)* |
+| groceries, $25 daily | monthly | −$25 |
+
+**The weights then describe one turn of the stream's own cycle**, and the monthly figure is divided
+into the turns that fit in the month before being placed inside one:
+`part = (monthly / cyclesPerMonth) × weight[phase]`. For a monthly stream `cyclesPerMonth` is 1 and
+this is exactly what it was. A consequence worth knowing: a month with four Mondays forecasts four
+payments, not 4.33 — so a weekly stream's month total varies with the calendar, which is truthful for
+that month and averages out exactly over a year.
+
+**What this does NOT fix.** A stream with too little history — fewer than six transactions, or spanning
+fewer than three turns of a candidate — falls back to monthly, which is the safest thing to be wrong
+about. A recently started stream is therefore still described by whatever few days it has been seen
+on, and the consolidation below is what rescues it.
+
 ### A DRIFTING EVENT IS STILL ONE EVENT
 
 A paycheck lands on the 15th — except when the 15th is a Sunday, and except in February, where "the

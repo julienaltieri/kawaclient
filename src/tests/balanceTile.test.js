@@ -17,7 +17,8 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf} from '../processors/BankBalance'
-import {accumulate, asShape, asWeights, consolidate} from '../processors/AmountHistogram'
+import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
+	from '../processors/AmountHistogram'
 
 const HIST = (amount) => [{startDate: new Date("2000-01-01"), amount: amount}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -337,4 +338,78 @@ test("two separate paydays stay two separate paydays", () => {
 	expect(out[14]).toBe(1000)
 	expect(out[29]).toBe(1000)
 	expect(out.filter(b => b > 0).length).toBe(2)
+})
+
+/* ---- which cycle is a stream on --------------------------------------------------------------- */
+
+const everyN = (startY, startM, startD, n, count, amount) => {
+	const out = []
+	for(let i = 0; i < count; i++){
+		const d = new Date(Date.UTC(startY, startM, startD))
+		d.setUTCDate(d.getUTCDate() + n*i)
+		out.push({date: d, amount: amount})
+	}
+	return out
+}
+const dOf = t => t.date, aOf = t => t.amount
+
+test("a weekly bill is recognised as weekly, not smeared across the month", () => {
+	const weekly = everyN(2025, 0, 6, 7, 52, -400)      //every Monday for a year
+	expect(detectCycle(weekly, dOf, aOf).name).toBe("weekly")
+	//binned by day-of-month it would look almost perfectly diffuse, which is the fault
+	const asMonth = accumulate(weekly, t => t.date.getUTCDate()-1, aOf, 31)
+	expect(asMonth.filter(b => b > 0).length).toBeGreaterThan(20)
+})
+
+test("a fortnightly stream is NOT collapsed into a weekly one", () => {
+	//every other Friday lands on a Friday every time, so "weekly" fits it perfectly too - the
+	//longer cycle has to win that tie or the forecast draws four half payments instead of two
+	const biweekly = everyN(2025, 0, 3, 14, 26, -800)
+	expect(detectCycle(biweekly, dOf, aOf).name).toBe("biweekly")
+})
+
+test("a monthly stream stays monthly, and a diffuse one falls back to monthly", () => {
+	const monthly = []
+	for(let m = 0; m < 12; m++)monthly.push({date: new Date(Date.UTC(2025, m, 3)), amount: -1733})
+	expect(detectCycle(monthly, dOf, aOf).name).toBe("monthly")
+
+	const daily = []
+	for(let m = 0; m < 12; m++)for(let k = 1; k <= 28; k++){
+		daily.push({date: new Date(Date.UTC(2025, m, k)), amount: -25})}
+	expect(detectCycle(daily, dOf, aOf).name).toBe("monthly")
+})
+
+test("too little history never claims a cycle", () => {
+	expect(detectCycle(everyN(2025, 0, 6, 7, 3, -400), dOf, aOf).name).toBe("monthly")
+	expect(detectCycle([], dOf, aOf).name).toBe("monthly")
+})
+
+test("concentration is comparable across bin counts", () => {
+	//two observations scattered over many bins must not out-score two over few: the correction for
+	//how much concentration randomness hands out for free is the whole point
+	const wide = new Array(31).fill(0); wide[2] = 1; wide[20] = 1
+	const narrow = new Array(7).fill(0); narrow[1] = 1; narrow[5] = 1
+	expect(concentration(wide, 2)).toBeCloseTo(0, 1)
+	expect(concentration(narrow, 2)).toBeCloseTo(0, 1)
+	//all on one bin is a perfect fit whatever the bin count
+	const one = new Array(7).fill(0); one[3] = 10
+	expect(concentration(one, 20)).toBeCloseTo(1, 5)
+})
+
+test("a weekly stream is forecast as weekly steps carrying the right monthly total", () => {
+	const weekly = everyN(2025, 0, 6, 7, 52, -400)
+	const h = histogramOf(weekly)
+	expect(h.cycle.name).toBe("weekly")
+	const s = {id: "dc", name: "Day care", getExpectedAmountAtDateByPeriod: () => -400*52/12}
+	const out = forecast({terminals: [s], shapes: {dc: h}, routing: {},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly"})
+	const steps = []
+	for(let i = 1; i < out.length; i++){
+		const st = out[i].value - out[i-1].value
+		if(Math.abs(st) > 1)steps.push(Math.round(st))
+	}
+	//four or five Mondays in the window, each carrying a whole week of the bill - not 30 crumbs
+	expect(steps.length).toBeGreaterThanOrEqual(4)
+	expect(steps.length).toBeLessThanOrEqual(5)
+	steps.forEach(st => expect(Math.abs(st)).toBeGreaterThan(350))
 })

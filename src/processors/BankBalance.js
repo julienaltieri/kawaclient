@@ -50,8 +50,17 @@ export function monthlyExpectationAt(stream, when, periodName){
    large one belongs, and the balance chart is read for its steps. consolidate() collapses only runs
    narrow enough to be one event that moved, so a genuinely diffuse stream is untouched. */
 export function histogramOf(txnsForStream){
-	return histogram.asWeights(histogram.consolidate(histogram.accumulate(txnsForStream,
-		t => new Date(t.date).getUTCDate() - 1, t => t.amount, 31)));
+	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
+	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf);
+	const bins = histogram.accumulate(txnsForStream, t => cycle.phaseOf(dateOf(t)), amountOf,
+		cycle.bins);
+	/* the collapse radius scales with the cycle. Five days either side is right in a month and absurd
+	   in a week, where it would merge the whole cycle into a single day and invent a payday. */
+	const maxSpan = Math.max(2, Math.round(cycle.bins/6));
+	const out = histogram.asWeights(histogram.consolidate(bins, maxSpan,
+		cycle.bins > 20 ? 2 : 1));
+	out.cycle = cycle;
+	return out;
 }
 
 /* ---- WHICH ACCOUNT a stream lands on, MEASURED -----------------------------------------------------
@@ -125,7 +134,7 @@ export function forecast(opts){
 	const end = new Date(now.getTime() + opts.days*DAY);
 	for(let d = new Date(now.getTime() + DAY); d <= end; d = new Date(d.getTime() + DAY)){
 		let day = 0, who = null, big = 0;
-		const nDays = daysInMonth(d), i = d.getUTCDate()-1;
+		const nDays = daysInMonth(d);
 		terminals.forEach(s => {
 			const amt = monthlyExpectationAt(s, d, periodName);
 			if(!amt)return;
@@ -134,11 +143,25 @@ export function forecast(opts){
 			   never touches this one - the card's settlement does, and it is added below as a lump. */
 			if(!covers(routing[s.id]))return;
 			const h = shapes[s.id];
-			/* NO factor here. The bins are day-OF-MONTH and aggregate every month into the same 31
-			   slots, so weights[i] is already the fraction of ONE month's money landing on that day
-			   and they sum to 1 over a month. Scaling by the number of months aggregated forecasts
-			   every stream that many times over. */
-			const w = (h && h.any) ? h.weights[i]/h.massIn(nDays) : (1/nDays);
+			/* THE WEIGHTS DESCRIBE ONE TURN OF THE STREAM'S OWN CYCLE, which is not always a month.
+			   `amt` is a MONTHLY figure, so it is first divided into the cycles that fit in this month
+			   and then placed inside one of them:
+
+			       part = (monthly / cyclesPerMonth) * weight[phase]
+
+			   For a monthly stream cyclesPerMonth is 1 and this is exactly what it was before. For a
+			   weekly one there are ~4.3 turns in a month, each carrying ~a quarter of the money, and
+			   the whole of a turn lands on the weekday it actually lands on.
+
+			   And no factor for the number of periods AGGREGATED: the weights already sum to 1 over
+			   one turn, so scaling by how many turns were measured forecasts the stream that many
+			   times over - the fault that once put a nine-month ending balance at $324k. */
+			let w;
+			if(h && h.any && h.cycle){
+				const cycleDays = h.cycle.daysPerCycle(d);
+				const mass = h.cycle.bins > 20 ? h.massIn(nDays) : 1;
+				w = (cycleDays/nDays) * (h.weights[h.cycle.phaseOf(d)]/mass);
+			}else w = 1/nDays;
 			const part = amt * w;
 			/* WHO MOVED IT. A forecast day is a sum, and without carrying the biggest contributor out
 			   with it a mark in the future has a size and no name - every label downstream could then

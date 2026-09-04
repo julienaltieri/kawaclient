@@ -137,3 +137,92 @@ export function consolidate(bins, maxSpan, gap){
 	}
 	return out;
 }
+
+/* ==================================================================================================
+   WHICH CYCLE IS THIS STREAM ON?
+
+   Everything above assumed a MONTH. That assumption is invisible when it holds and destroys the
+   picture when it does not: a weekly payment lands on roughly thirty different days-of-month over a
+   year, so binned by day-of-month it looks perfectly diffuse, and the forecast dutifully spreads a
+   large recurring expense into a flat drizzle. It then has no step, earns no badge, and disappears
+   from a chart that is read for its steps - which is how a day-care bill the size of rent can be
+   invisible while every total that mentions it is correct.
+
+   NOT A FOURIER TRANSFORM, and the reason is the domain rather than the maths. Money is calendar
+   driven, not sinusoidal: "the first of the month" and "every other Friday" are not frequencies, and
+   months are not equal in length, so a fixed-frequency basis smears exactly the events that are most
+   regular. The candidate set here is small, known, and made of real calendars, so the honest method is
+   to try each one and measure which fits - a periodogram over the periods money actually uses.
+
+   THE STATISTIC HAS TO BE COMPARABLE ACROSS BIN COUNTS, which is the part that is easy to get wrong.
+   Raw concentration rises with the number of bins for free: two transactions scattered over 31 bins
+   look more "concentrated" than two over 7, purely because there is more room to be apart in. So each
+   candidate is scored against what randomness would have produced for the SAME number of
+   observations, and a candidate only wins by beating its own null.
+   ================================================================================================== */
+
+const DAYMS = 86400000;
+const utcDay = d => Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())/DAYMS);
+const lastOfMonth = d => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1, 0)).getUTCDate();
+
+export const CYCLES = {
+	/* biweekly needs a fixed origin or its phase means nothing between one call and the next; the
+	   epoch is as good as any, because only the RELATIVE phase of the transactions matters. */
+	weekly:   {name:"weekly",   bins:7,  span:7,
+		phaseOf: d => ((utcDay(d) % 7) + 7) % 7,   daysPerCycle: () => 7},
+	biweekly: {name:"biweekly", bins:14, span:14,
+		phaseOf: d => ((utcDay(d) % 14) + 14) % 14, daysPerCycle: () => 14},
+	//monthly also covers semimonthly: a twice-a-month stream is two spikes in a month of bins, which
+	//is a true description of it and needs no candidate of its own
+	monthly:  {name:"monthly",  bins:31, span:30.44,
+		phaseOf: d => d.getUTCDate()-1,             daysPerCycle: d => lastOfMonth(d)}
+};
+
+/* How concentrated a set of bins is, corrected for the free concentration that more bins and fewer
+   observations both hand out. 0 means "no better than scatter", 1 means "all on one bin". */
+export function concentration(bins, observations){
+	const n = bins.length, k = observations;
+	const total = bins.reduce((a, b) => a + b, 0);
+	if(!total || !k)return 0;
+	const H = bins.reduce((a, b) => a + (b/total)*(b/total), 0);   //Herfindahl: sum of squared shares
+	const expected = 1/k + (1 - 1/k)/n;                            //what scatter alone would give
+	if(expected >= 1)return 0;
+	return Math.max(0, (H - expected)/(1 - expected));
+}
+
+/* Pick the cycle that best explains WHEN this stream's money moves.
+
+   MONTHLY IS THE DEFAULT AND HAS TO BE BEATEN, not merely tied. It is the app's own reporting cadence
+   and the safest thing to be wrong about, so an alternative must clear it by a real margin before the
+   forecast changes shape underneath the reader.
+
+   A candidate is only considered if the data actually spans a few of its turns: three observations of
+   a fortnight is a coincidence, not a cycle. */
+export function detectCycle(items, dateOf, amountOf, minObservations){
+	const min = minObservations === undefined ? 6 : minObservations;
+	if(!items || items.length < min)return CYCLES.monthly;
+	const days = items.map(it => utcDay(dateOf(it)));
+	const span = Math.max.apply(null, days) - Math.min.apply(null, days);
+	/* LONGEST FIRST, AND A SHORTER CYCLE MUST EARN THE SWAP.
+
+	   A shorter cycle is trivially satisfied by a longer one: money that moves every OTHER Friday
+	   lands on a Friday every time, so "weekly" fits it perfectly and scores exactly as well as
+	   "biweekly" does. Scored on a tie the shorter one wins by accident, and the forecast then draws
+	   four half-sized payments where two full ones belong - the same disappearing-step fault this
+	   whole detector exists to remove, arrived at from the other direction.
+
+	   The reverse is not symmetric, which is what makes the ordering sound: a genuinely weekly stream
+	   binned into a fortnight spreads across BOTH Fridays and scores about half. So a shorter cycle
+	   only wins when it beats the longer one by a real margin, and the answer stays the most
+	   conservative description the data actually supports. */
+	const order = [CYCLES.monthly, CYCLES.biweekly, CYCLES.weekly];
+	let best = {cycle: CYCLES.monthly, score: 0}, seen = false;
+	order.forEach(c => {
+		if(span/c.span < 3)return;                 //fewer than three turns: not enough to claim one
+		const bins = accumulate(items, it => c.phaseOf(dateOf(it)), amountOf, c.bins);
+		const score = concentration(bins, items.length);
+		if(!seen){best = {cycle: c, score: score}; seen = true; return}
+		if(score > best.score + 0.15 && score > 0.3)best = {cycle: c, score: score};
+	});
+	return best.cycle;
+}
