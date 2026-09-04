@@ -535,3 +535,59 @@ test("the two prerendered months really are different windows", async () => {
 	expect(all.last.future.length).toBe(0)
 	expect(all.this.future.length).toBeGreaterThan(0)
 })
+
+/* ---- the travel between the two months ---------------------------------------------------------- */
+
+test("the animation content spans BOTH windows, so nothing sweeps across empty space", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const day = x => new Date(x).toISOString().slice(0, 10)
+	const firstOf = a => day(a.past.concat(a.future)[0].date)
+	const lastOf = a => {const s = a.past.concat(a.future); return day(s[s.length-1].date)}
+
+	//last month starts before this month's window, and this month ends after last month's
+	expect(day(merged[0].date)).toBe(firstOf(all.last))
+	expect(day(merged[merged.length-1].date)).toBe(lastOf(all.this))
+	//and it is contiguous - one point per day, no hole where the two windows meet
+	for(let i = 1; i < merged.length; i++){
+		const gap = (merged[i].date - merged[i-1].date)/86400000
+		expect(Math.round(gap)).toBe(1)
+	}
+})
+
+test("where the two windows overlap, the record wins over the projection", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const now = c.ledgerToday()
+	//every day at or before today is a record, whichever window contributed it
+	merged.filter(p => p.date <= now).forEach(p => expect(p.actual).toBe(true))
+})
+
+test("the animation lands exactly on the destination frame", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const all = c.allSeries()
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
+	//at k=1 there must be nothing left to snap: a frame that is merely close still pops
+	expect(c.lerpFrame(f0, f1, 1)).toEqual(f1)
+	expect(c.lerpFrame(f0, f1, 0)).toEqual(f0)
+})
+
+test("a frame mid-travel carries the beads and guides, not just the line", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f = c.lerpFrame(c.frameOf(all.this), c.frameOf(all.last), 0.5)
+	c.paintFrame(merged, all.this.now, f)
+	const svg = (c.host.current || {}).innerHTML || ""
+	//the old animation painter drew the area and the lines only, so everything else APPEARED when the
+	//motion stopped - which is what "the graph appears abruptly after the travel" was
+	expect(svg).toContain('stroke-dasharray="2,3"')   //the high/low guides
+	expect(svg).toContain("high $")
+	expect(svg).toContain("low $")
+})

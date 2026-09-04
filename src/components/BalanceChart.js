@@ -489,15 +489,34 @@ export default class BalanceChart extends BaseComponent{
 			+ '<stop offset="100%" stop-color="' + hue("alert") + '"/></linearGradient></defs>'
 	}
 
-	draw(past, future, now){
+	/* THE FRAME a series is drawn in, so it can be interpolated rather than recomputed. */
+	frameOf(a){
+		const all = a.past.concat(a.future)
+		const xs = all.map(p => p.date.getTime()), ys = all.map(p => p.value)
+		let y0 = Math.min(0, Math.min.apply(null, ys)), y1 = Math.max.apply(null, ys)
+		const pad = (y1 - y0)*0.14 || 1
+		const lo = trough(all), hi = peak(all)
+		return {x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs),
+			y0: y0 - pad*0.4, y1: y1 + pad, lo: lo ? lo.value : 0, hi: hi ? hi.value : 0}
+	}
+
+	/* ONE DRAWING ROUTINE, and an animation is that routine with a moving frame.
+
+	   The animations used to have a painter of their own that drew a subset - the area and the two
+	   lines, and none of the beads, guides or labels. Everything it left out therefore APPEARED at the
+	   moment the motion stopped, which is what "the graph appears abruptly after the travel" is: the
+	   travel was real, and then the picture arrived.
+
+	   Passing the frame in instead means the last frame of an animation is, by construction, identical
+	   to the resting frame that replaces it. There is nothing left to pop, and no second painter to
+	   keep in step with this one. */
+	draw(past, future, now, frame){
 		const W = this.W, H = this.H
 		const all = past.concat(future)
 		if(all.length < 2)return ""
-		const xs = all.map(p => p.date.getTime()), ys = all.map(p => p.value)
-		const x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs)
-		const lo = trough(all), hi = peak(all)
-		let y0 = Math.min(0, Math.min.apply(null, ys)), y1 = Math.max.apply(null, ys)
-		const pad = (y1 - y0)*0.14 || 1; y0 -= pad*0.4; y1 += pad
+		const f = frame || this.frameOf({past: past, future: future})
+		const x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1
+		const lo = {value: f.lo}, hi = {value: f.hi}
 		const X = t => PAD.l + (t - x0)/(x1 - x0 || 1)*(W - PAD.l - PAD.r)
 		const Y = v => H - PAD.b - (v - y0)/(y1 - y0 || 1)*(H - PAD.t - PAD.b)
 		const S = DS.getStyle()
@@ -702,21 +721,39 @@ export default class BalanceChart extends BaseComponent{
 	   actually happened is that the frame got wider, so the DOMAIN is what interpolates. */
 	zoomTo(){
 		//both are already built, so the frame the animation starts on is ready before the tap lands
-		const all = this.allSeries()
-		const before = all[this.state.when]
+		const cached = this.allSeries()
+		const before = cached[this.state.when]
 		this.animating = true
 		this.setState({when:this.next(WHENS,"when"), at:null}, () => {
 			const after = this.allSeries()[this.state.when]
-			const frameOf = a => {const s = a.past.concat(a.future)
-				return {x0:s[0].date.getTime(), x1:s[s.length-1].date.getTime()}}
-			const f0 = frameOf(before), f1 = frameOf(after)
-			//the WIDER window supplies the content: it is the only one that covers the whole journey,
-			//and the svg clips to its own viewBox so what is outside the frame is simply not drawn
-			const wide = (f0.x1 - f0.x0) >= (f1.x1 - f1.x0) ? before : after
-			const content = wide.past.concat(wide.future)
-			this.run(ZOOM_MS, k => this.paintFrame(content,
-				f0.x0 + (f1.x0 - f0.x0)*k, f0.x1 + (f1.x1 - f0.x1)*k, after.now))
+			const f0 = this.frameOf(before), f1 = this.frameOf(after)
+			/* THE CONTENT IS THE UNION OF BOTH WINDOWS, not the wider of the two.
+			   Two months that merely OVERLAP are not a zoom, they are a pan, and the wider window does
+			   not cover the journey: travelling from this month to last, this month's data stops
+			   fifteen days ago, so the left of the frame swept across empty space and the curve only
+			   arrived when the real picture replaced it at the end.
+			   Where the two agree - the days both months contain - a record wins over a projection. */
+			const merged = this.union(before, after)
+			this.run(ZOOM_MS, k => {
+				const f = this.lerpFrame(f0, f1, k)
+				this.paintFrame(merged, after.now, f)
+			})
 		})
+	}
+
+	//every day either window covers, once, in order
+	union(a, b){
+		const byDay = {}
+		const put = p => {const k = dayKey(p.date)
+			if(!byDay[k] || (p.actual && !byDay[k].actual))byDay[k] = p}
+		a.past.forEach(put); a.future.forEach(put)
+		b.past.forEach(put); b.future.forEach(put)
+		return Object.keys(byDay).sort().map(k => byDay[k])
+	}
+	lerpFrame(a, b, k){
+		const l = (p, q) => p + (q - p)*k
+		return {x0:l(a.x0,b.x0), x1:l(a.x1,b.x1), y0:l(a.y0,b.y0), y1:l(a.y1,b.y1),
+			lo:l(a.lo,b.lo), hi:l(a.hi,b.hi)}
 	}
 
 	/* A CHANGE OF AMOUNTS IS A MORPH, and it must not go through the zoom path: two sources cover
@@ -732,52 +769,24 @@ export default class BalanceChart extends BaseComponent{
 			const a = before.past.concat(before.future), b = after.past.concat(after.future)
 			const n = Math.min(a.length, b.length)
 			if(!n){this.animating = false; this.paint(); return}
+			const f0 = this.frameOf(before), f1 = this.frameOf(after)
 			this.run(MORPH_MS, k => {
 				const blend = []
 				for(let i = 0; i < n; i++){
-					blend.push({date: b[i].date, value: a[i].value + (b[i].value - a[i].value)*k})
+					blend.push({date: b[i].date, actual: b[i].actual, top: b[i].top,
+						value: a[i].value + (b[i].value - a[i].value)*k})
 				}
-				const f = {x0: b[0].date.getTime(), x1: b[n-1].date.getTime()}
-				this.paintFrame(blend, f.x0, f.x1, after.now)
+				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k))
 			})
 		})
 	}
 
-	paintFrame(content, x0, x1, now){
+	//one flat list plus a frame, split back into record and projection for the drawing routine
+	paintFrame(content, now, frame){
 		if(!this.host.current)return
-		const W = this.W, H = this.H
-		const ys = content.map(p => p.value)
-		let y0 = Math.min(0, Math.min.apply(null, ys)), y1 = Math.max.apply(null, ys)
-		const pad = (y1 - y0)*0.14 || 1; y0 -= pad*0.4; y1 += pad
-		const X = t => PAD.l + (t - x0)/(x1 - x0 || 1)*(W - PAD.l - PAD.r)
-		const Y = v => H - PAD.b - (v - y0)/(y1 - y0 || 1)*(H - PAD.t - PAD.b)
-		const S = DS.getStyle(), dim = S.bodyTextSecondary, zeroY = Y(0)
-		const gid = "bal-ramp", paint = 'url(#' + gid + ')'
-		const stepPath = a => {let d = ""
-			a.forEach((p,i) => {const x = X(p.date.getTime()).toFixed(1), y = Y(p.value).toFixed(1)
-				d += i ? (" H" + x + " V" + y) : ("M" + x + " " + y)})
-			return d}
-		const past = content.filter(p => p.date <= now), fut = content.filter(p => p.date >= now)
-		this.host.current.innerHTML =
-			'<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
-			+ this.rampDefs(Y, gid)
-			+ (content.length < 2 ? "" : '<path d="' + stepPath(content)
-				+ ' L' + X(content[content.length-1].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1)
-				+ ' L' + X(content[0].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1)
-				+ ' Z" fill="' + paint + '" opacity="' + PLANE.planned + '"/>')
-			+ '<line x1="' + PAD.l + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - PAD.r) + '" y2="'
-			+ zeroY.toFixed(1) + '" stroke="' + dim + '" stroke-width="0.7" opacity="0.6"/>'
-			//today stays put through the whole move, which is what makes it read as a zoom about a
-			//fixed point rather than a pan
-			+ '<line x1="' + X(now.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
-			+ X(now.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + dim
-			+ '" stroke-width="0.7" opacity="0.55"/>'
-			+ (past.length < 2 ? "" : '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
-				+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>')
-			+ (fut.length < 2 ? "" : '<path d="' + stepPath(fut) + '" fill="none" stroke="' + paint
-				+ '" stroke-width="' + STROKE.projected + '" stroke-dasharray="' + STROKE.dash
-				+ '" opacity="' + PLANE.projected + '"/>')
-			+ '</svg>'
+		this.host.current.innerHTML = this.draw(
+			content.filter(p => p.actual !== false), content.filter(p => p.actual === false),
+			now, frame)
 	}
 
 	subtitle(){

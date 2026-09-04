@@ -603,6 +603,29 @@ It also removes a double computation that had been there from the start: the cap
 each asked for the series independently on every render, including on every day the cursor passed
 over.
 
+### ONE PAINTER, and an animation is that painter with a moving frame
+
+The animations had a painter of their own that drew a *subset* — the area and the two lines, and none
+of the beads, guides, labels or cursor. Everything it left out therefore **appeared** at the instant
+the motion stopped. Reported from the phone as "the graph appears abruptly after the travel", and that
+is exactly right: the travel was real, and then the picture arrived.
+
+`draw()` now takes an optional **frame** — the x and y domains plus the high and low the guides are
+drawn at — and an animation is that same routine called with an interpolated one. The last frame of a
+motion is therefore identical to the resting frame that replaces it *by construction*, so there is
+nothing left to pop and no second painter to keep in step.
+
+**And the content is the UNION of both windows, not the wider of the two.** That distinction did not
+matter while the windows were concentric: a month inside a quarter is a *zoom*, and the wider one
+covers the whole journey. Two months that merely **overlap** are a **pan**, and neither covers it —
+travelling from this month to last, this month's data stops fifteen days ago, so the left of the frame
+swept across empty space for the whole animation and the curve only existed once the real picture
+replaced it at the end.
+
+The union is every day either window holds, once, in date order. Where the two disagree about a day
+they both contain, a **record wins over a projection** — the same day is settled history in last
+month's series and, near the boundary, could be a forecast in this month's.
+
 Centring is the whole of the rule, and it follows from what the view is for. Goal 1 is a decision
 being taken *now*: the relevant past is the few days that explain where the balance currently is, and
 the relevant future is the few days the decision has to survive. A year of history compresses that
