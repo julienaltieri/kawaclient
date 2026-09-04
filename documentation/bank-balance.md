@@ -506,6 +506,27 @@ money actually leaves the current account. That is precisely why it exists only 
 and is absent from the true one — and why the §7 conservation check means anything, since the two
 readings can only sum alike if the settlement moves money rather than creating it.
 
+### A TRANSFER IS ROUTED BY THE LEG THAT LEAVES
+
+A monthly transfer to savings is recorded as a **pair** — money out of the current account and the same
+money into the savings one — and both legs carry the same stream allocation, because they are one act.
+Routed by weight of money alone the two legs tie **exactly**, so the winner was whichever the ledger
+happened to list first. When that was the savings side, the stream was routed to an account the
+spending reading does not cover and **disappeared from the forecast entirely**.
+
+It still appeared in the reconstructed past, because that is read straight off the account. A recurring
+event visible to the left of the today line and absent to the right reads as a drawing fault, which is
+what made this expensive to find:
+
+| routing | checking leg listed first | savings leg listed first |
+|---|---|---|
+| by magnitude alone | checking | **savings — dropped** |
+| by the stream's direction | checking | checking |
+
+The stream's own expected amount says which leg matters: a savings transfer is money **out**, so it
+belongs to the account the money left. Where no leg matches the expected direction, every leg counts,
+so a stream with a surprising sign is still placed somewhere rather than nowhere.
+
 **Which streams are on the card is MEASURED, not declared.** `accountRoutingOf()` looks at where each
 stream's own transactions actually landed and routes it where the majority of its money went. A
 hand-kept list would be a second author for a fact the ledger already states, and it goes stale the
@@ -537,22 +558,35 @@ The window is a period chosen from a list — a month by default — and today s
 it, not at the join between a long past and a long future. A month means the fifteen days behind and
 the fifteen ahead.
 
-**Two windows: *this month* (30d) and *this quarter* (91d).**
+**One scale — a month — and the choice is WHICH month:** *this month*, centred on today and half
+forecast, or *last month*, the previous calendar month, entirely settled.
 
-The list has been wrong in both directions and both errors are worth keeping.
+The list has been wrong in both directions and every wrong answer is worth keeping.
 
-*Too long.* A year was offered first. At 365 days every recurring stream repeats until the line is a
-texture and the trough is a pixel, and "can I cover what is coming" is not a question anyone asks
+*Too long.* A **year** was offered first. At 365 days every recurring stream repeats until the line is
+a texture and the trough is a pixel, and "can I cover what is coming" is not a question anyone asks
 twelve months out — the picture stops answering the thing it exists for.
 
-*Too short.* A week and a fortnight replaced it, on the reasoning that every window should be one turn
-of a period the streams actually run on. That reasoning was tidy and the result was useless: at 7 and
-15 days almost nothing recurring falls inside the window, so the line is nearly flat and the "low
-point" is whatever today happens to be. A window has to be long enough to contain the events that make
-the shape, and the shortest thing that does is a month.
+*Too short.* A **week** and a **fortnight** replaced it, on the reasoning that every window should be
+one turn of a period the streams actually run on. That reasoning was tidy and the result was useless:
+at 7 and 15 days almost nothing recurring falls inside the window, so the line is nearly flat and the
+"low point" is whatever today happens to be. A window has to be long enough to contain the events that
+make the shape, and the shortest thing that does is a month.
 
-A quarter is the other end of the useful range — far enough to show the annual bills arriving, not so
-far that they become texture.
+*Beside the point.* A **quarter** survived a while and earned nothing. The decisions this tile exists
+for all sit inside a month, so a wider frame only made the part that mattered smaller.
+
+So the scale stopped moving and the axis of choice moved instead. **Last month is not a smaller version
+of the same question, it is a different one.** This month asks *can I cover what is coming*; last month
+asks *what actually happened* — every point in it is a record rather than a projection, which is why it
+draws as one solid line with no dashes anywhere, no today marker, and a low that is a fact rather than
+a forecast. Going back slides the frame to the right, because what changed is which stretch of time is
+under the glass.
+
+Last month is the previous **calendar** month, first to last — not "thirty days ago". The question is
+about a month that has a name, and a rolling window would cut a rent payment in half at one end. The
+reconstruction still runs back from today whatever is on screen, so a past window is a slice of that
+one anchored walk rather than a separate calculation from a guessed opening figure.
 
 Centring is the whole of the rule, and it follows from what the view is for. Goal 1 is a decision
 being taken *now*: the relevant past is the few days that explain where the balance currently is, and
