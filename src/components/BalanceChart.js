@@ -433,15 +433,33 @@ export default class BalanceChart extends BaseComponent{
 	   shown as two different motions - resampling both windows to a common span and morphing between
 	   them makes a week and a month the same width and then deforms one into the other, so the reader
 	   watches the picture change shape when nothing about the money moved. */
-	cycle(list, key, ms){
+	next(list, key){
 		const i = list.findIndex(o => o[0] === this.state[key])
-		const next = list[(i + 1) % list.length][0]
+		return list[(i + 1) % list.length][0]
+	}
+
+	//one clock, and the picture is re-derived from it every frame
+	run(ms, frame){
+		const t0 = performance.now()
+		const ease = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2
+		const step = now => {
+			const e = Math.min(1, (now - t0)/ms)
+			frame(ease(e))
+			if(e < 1){requestAnimationFrame(step)}
+			else{this.animating = false; this.paint()}
+		}
+		requestAnimationFrame(step)
+	}
+
+	/* A CHANGE OF EXTENT IS A ZOOM. Resampling both windows to a common span and morphing one into the
+	   other would make a week and a month the same width and then deform one curve into the other, so
+	   the reader watches the picture change shape when nothing about the money moved at all. What
+	   actually happened is that the frame got wider, so the DOMAIN is what interpolates. */
+	zoomTo(){
 		const before = this.series()
 		this.animating = true
-		this.setState({[key]:next, at:null}, () => {
+		this.setState({days:this.next(PERIODS,"days"), at:null}, () => {
 			const after = this.series()
-			const t0 = performance.now()
-			const ease = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2
 			const frameOf = a => {const s = a.past.concat(a.future)
 				return {x0:s[0].date.getTime(), x1:s[s.length-1].date.getTime()}}
 			const f0 = frameOf(before), f1 = frameOf(after)
@@ -449,15 +467,32 @@ export default class BalanceChart extends BaseComponent{
 			//and the svg clips to its own viewBox so what is outside the frame is simply not drawn
 			const wide = (f0.x1 - f0.x0) >= (f1.x1 - f1.x0) ? before : after
 			const content = wide.past.concat(wide.future)
-			const step = now => {
-				const e = Math.min(1, (now - t0)/ms)
-				const k = ease(e)
-				const zx0 = f0.x0 + (f1.x0 - f0.x0)*k, zx1 = f0.x1 + (f1.x1 - f0.x1)*k
-				this.paintFrame(content, zx0, zx1, after.now)
-				if(e < 1){requestAnimationFrame(step)}
-				else{this.animating = false; this.paint()}
-			}
-			requestAnimationFrame(step)
+			this.run(ZOOM_MS, k => this.paintFrame(content,
+				f0.x0 + (f1.x0 - f0.x0)*k, f0.x1 + (f1.x1 - f0.x1)*k, after.now))
+		})
+	}
+
+	/* A CHANGE OF AMOUNTS IS A MORPH, and it must not go through the zoom path: the two readings cover
+	   exactly the same dates, so interpolating the domain interpolates nothing, and the frame would sit
+	   on the OLD curve for the whole duration and then snap to the new one. A stall and a jump, which
+	   is the one thing an animation here exists to prevent.
+	   The dates are identical, so the VALUES pair by index and lerp directly. */
+	morphTo(){
+		const before = this.series()
+		this.animating = true
+		this.setState({mode:this.next(READINGS,"mode"), at:null}, () => {
+			const after = this.series()
+			const a = before.past.concat(before.future), b = after.past.concat(after.future)
+			const n = Math.min(a.length, b.length)
+			if(!n){this.animating = false; this.paint(); return}
+			this.run(MORPH_MS, k => {
+				const blend = []
+				for(let i = 0; i < n; i++){
+					blend.push({date: b[i].date, value: a[i].value + (b[i].value - a[i].value)*k})
+				}
+				const f = {x0: b[0].date.getTime(), x1: b[n-1].date.getTime()}
+				this.paintFrame(blend, f.x0, f.x1, after.now)
+			})
 		})
 	}
 
@@ -525,9 +560,9 @@ export default class BalanceChart extends BaseComponent{
 			<Head>
 				<Title $big={!Core.isMobile()}>
 					{"Balance "}
-					<TitleButton type="button" onClick={() => this.cycle(READINGS,"mode",MORPH_MS)}
+					<TitleButton type="button" onClick={() => this.morphTo()}
 					>{wordOf(READINGS, this.state.mode)}</TitleButton>{", "}
-					<TitleButton type="button" onClick={() => this.cycle(PERIODS,"days",ZOOM_MS)}
+					<TitleButton type="button" onClick={() => this.zoomTo()}
 					>{wordOf(PERIODS, this.state.days)}</TitleButton>
 				</Title>
 			</Head>
