@@ -379,9 +379,38 @@ test("a monthly stream stays monthly, and a diffuse one falls back to monthly", 
 	expect(detectCycle(daily, dOf, aOf).name).toBe("monthly")
 })
 
-test("too little history never claims a cycle", () => {
-	expect(detectCycle(everyN(2025, 0, 6, 7, 3, -400), dOf, aOf).name).toBe("monthly")
+test("two observations are enough when they AGREE with a known cycle", () => {
+	//a day-care bill enrolled in September has two payments by November and is not mysterious:
+	//the same day-of-month twice is a one-in-thirty-one coincidence, which is real evidence
+	const twice = [{date: new Date(Date.UTC(2026, 6, 5)), amount: -1700},
+		{date: new Date(Date.UTC(2026, 7, 5)), amount: -1700}]
+	expect(detectCycle(twice, dOf, aOf).name).toBe("monthly")
+	const h = histogramOf(twice)
+	//and the whole month lands on that day rather than being spread over the month
+	expect(Math.max.apply(null, h.weights)).toBeCloseTo(1, 5)
+})
+
+test("confidence scales with the count: 2 same weekdays is not a week, 3 is", () => {
+	//two payments agreeing on a weekday is 1-in-7 and means little; three is 1-in-49
+	expect(detectCycle(everyN(2026, 6, 6, 7, 2, -400), dOf, aOf).name).toBe("monthly")
+	expect(detectCycle(everyN(2026, 6, 6, 7, 3, -400), dOf, aOf).name).toBe("weekly")
+})
+
+test("a short history falls back rather than committing", () => {
+	//a single week of data has only ever watched a full turn of ONE candidate, and taking that
+	//candidate for that reason put brand-new streams straight onto "weekly"
+	expect(detectCycle(everyN(2026, 6, 6, 1, 2, -50), dOf, aOf).name).toBe("monthly")
 	expect(detectCycle([], dOf, aOf).name).toBe("monthly")
+	expect(detectCycle([{date: new Date(Date.UTC(2026, 6, 5)), amount: -10}], dOf, aOf).name)
+		.toBe("monthly")
+})
+
+test("a single payment still places the whole month on its day", () => {
+	//nothing else is known, and spreading it flat would make a brand-new bill invisible
+	const once = [{date: new Date(Date.UTC(2026, 7, 5)), amount: -1700}]
+	const h = histogramOf(once)
+	expect(h.any).toBe(true)
+	expect(h.weights[4]).toBeCloseTo(1, 5)
 })
 
 test("concentration is comparable across bin counts", () => {

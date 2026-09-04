@@ -422,10 +422,33 @@ this is exactly what it was. A consequence worth knowing: a month with four Mond
 payments, not 4.33 — so a weekly stream's month total varies with the calendar, which is truthful for
 that month and averages out exactly over a year.
 
-**What this does NOT fix.** A stream with too little history — fewer than six transactions, or spanning
-fewer than three turns of a candidate — falls back to monthly, which is the safest thing to be wrong
-about. A recently started stream is therefore still described by whatever few days it has been seen
-on, and the consolidation below is what rescues it.
+**Two observations are enough, if they agree.** A minimum sample size was the wrong instrument, and
+demanding six rejected a clean monthly signal from a stream that had only just started — a day-care
+bill enrolled in September has two payments by November and is not therefore mysterious. The evidence
+is not *how much data is there* but *do the phases match a cycle we already know about*: the same
+day-of-month twice is a one-in-thirty-one coincidence, which is stronger than six scattered payments.
+
+**Confidence then scales with the count**, which is what the sample size was clumsily standing in for.
+Perfect agreement of `k` observations across `n` bins happens by chance with probability `n^(1−k)`, and
+that figure is the bar — applied per candidate, so it automatically asks for more evidence exactly
+where a cycle is easier to match by accident:
+
+| history | detected | biggest step |
+|---|---|---|
+| one payment only | monthly | full month on that day |
+| two, same day-of-month | monthly | full month on that day |
+| two, drifted 5th and 7th | monthly | full month (consolidated) |
+| two, unrelated days | monthly | split in two — an honest read of two disagreeing observations |
+| two, same weekday | monthly | 1-in-7 is not evidence |
+| three, same weekday | **weekly** | 1-in-49 is |
+
+**Monthly is the default and needs no evidence; everything else must earn the swap.** Treating all
+three as equal candidates and taking the first that had been observed for a full turn put a stream with
+a single week of history straight onto *weekly* — the only cycle a week can possibly have watched a
+turn of — without it ever facing the confidence test. A short history must fall back, not commit.
+
+**A single payment still places the whole month on its day.** Nothing else is known, and spreading it
+flat would make a brand-new bill invisible, which is the fault this whole section exists to remove.
 
 ### A DRIFTING EVENT IS STILL ONE EVENT
 

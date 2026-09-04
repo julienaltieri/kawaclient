@@ -196,13 +196,29 @@ export function concentration(bins, observations){
    and the safest thing to be wrong about, so an alternative must clear it by a real margin before the
    forecast changes shape underneath the reader.
 
-   A candidate is only considered if the data actually spans a few of its turns: three observations of
-   a fortnight is a coincidence, not a cycle. */
+   TWO OBSERVATIONS ARE ENOUGH IF THEY AGREE, and a minimum sample size was the wrong instrument. The
+   evidence here is not "how much data is there" but "do the phases MATCH a cycle we already know
+   about": two payments a month apart landing on the same day-of-month is a one-in-thirty-one
+   coincidence, which is stronger evidence than six scattered ones. Demanding six transactions rejected
+   a clean monthly signal from a stream that had only just started - a day-care bill enrolled in
+   September has two payments by November and is not therefore mysterious.
+
+   CONFIDENCE THEN SCALES WITH THE COUNT, which is what the sample size was clumsily standing in for.
+   Perfect agreement of k observations across n bins happens by chance with probability n^(1-k):
+   two payments agreeing on a weekday is 1-in-7 and means little, three is 1-in-49 and means something,
+   and the same three agreeing on a day-of-month is 1-in-961. So the bar is that chance figure, applied
+   per candidate - which automatically asks for more evidence exactly where a cycle is easier to match
+   by accident.
+
+   A candidate must also have been OBSERVED for at least one full turn. Two payments three days apart
+   say nothing about a fortnight - not because the sample is small, but because the question was never
+   put to them. */
 export function detectCycle(items, dateOf, amountOf, minObservations){
-	const min = minObservations === undefined ? 6 : minObservations;
+	const min = minObservations === undefined ? 2 : minObservations;
 	if(!items || items.length < min)return CYCLES.monthly;
 	const days = items.map(it => utcDay(dateOf(it)));
 	const span = Math.max.apply(null, days) - Math.min.apply(null, days);
+	const k = items.length;
 	/* LONGEST FIRST, AND A SHORTER CYCLE MUST EARN THE SWAP.
 
 	   A shorter cycle is trivially satisfied by a longer one: money that moves every OTHER Friday
@@ -215,13 +231,23 @@ export function detectCycle(items, dateOf, amountOf, minObservations){
 	   binned into a fortnight spreads across BOTH Fridays and scores about half. So a shorter cycle
 	   only wins when it beats the longer one by a real margin, and the answer stays the most
 	   conservative description the data actually supports. */
-	const order = [CYCLES.monthly, CYCLES.biweekly, CYCLES.weekly];
-	let best = {cycle: CYCLES.monthly, score: 0}, seen = false;
-	order.forEach(c => {
-		if(span/c.span < 3)return;                 //fewer than three turns: not enough to claim one
-		const bins = accumulate(items, it => c.phaseOf(dateOf(it)), amountOf, c.bins);
-		const score = concentration(bins, items.length);
-		if(!seen){best = {cycle: c, score: score}; seen = true; return}
+	//one full turn has to have been watched, or a candidate is untested rather than rejected
+	const fits = c => span >= c.span*0.9;
+	const scoreOf = c => concentration(
+		accumulate(items, it => c.phaseOf(dateOf(it)), amountOf, c.bins), k);
+
+	/* MONTHLY IS THE DEFAULT AND NEEDS NO EVIDENCE; everything else must earn the swap from it.
+	   Treating them all as equal candidates and taking the first that had been observed for a turn
+	   put a stream with a single week of history straight onto "weekly" - the only candidate a week
+	   can possibly have watched a full turn of - without it ever facing the confidence test. A short
+	   history must fall back, not commit. */
+	let best = {cycle: CYCLES.monthly, score: fits(CYCLES.monthly) ? scoreOf(CYCLES.monthly) : 0};
+	[CYCLES.biweekly, CYCLES.weekly].forEach(c => {
+		if(!fits(c))return;
+		//how often scatter alone would agree this well, on THIS many bins with THIS many observations
+		const byChance = Math.pow(c.bins, 1 - k);
+		if(byChance > 0.05)return;
+		const score = scoreOf(c);
 		if(score > best.score + 0.15 && score > 0.3)best = {cycle: c, score: score};
 	});
 	return best.cycle;
