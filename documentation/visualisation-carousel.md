@@ -127,9 +127,11 @@ narrow desktop window is still a pointer.
 **At the bottom centre, not the corner.** The corner is where a thumb has least reach and most occlusion,
 so the mark inviting a drag sat in the worst place on the tile to start one from. The mark itself changed
 with the position because it had to: the corner version was three diagonals sized by `x+y=c`, which read
-as a grip only BECAUSE they filled a corner, and the same shape centred is a stray triangle. Three short
-parallel strokes say the same thing symmetrically, and being vertical they point across the axis the drag
-travels on.
+as a grip only BECAUSE they filled a corner, and the same shape centred is a stray triangle. It is three
+little squares — the same idea said symmetrically and as quietly as it can be said. Standing where the
+tile meets the pager dots, anything with height reads as a control rather than as a texture, and the
+vertical strokes tried first were tall enough to look like one. A square claims no direction and no size,
+which makes it the smallest mark that still says "there is something to take hold of here".
 
 It sits directly above the pager dots, which are centred too. That is a deliberate stack rather than an
 accident — the grip says the tile can be taken hold of, the dots say how many there are and which one this

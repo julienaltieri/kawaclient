@@ -61,16 +61,18 @@ const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightCol
 //worst place to start one.
 //The mark changed with the position, because it had to. The corner version was three diagonals sized by
 //x+y=c, which read as a grip only BECAUSE they filled a corner; the same shape centred is just a stray
-//triangle. Three short parallel strokes are the same idea said symmetrically, and being vertical they
-//point across the axis the drag travels on.
+//triangle. Three little squares are the same idea said symmetrically and as quietly as it can be said:
+//standing where the tile meets the pager dots, anything with height reads as a control rather than as a
+//texture, and the strokes this replaces were tall enough to look like one. A square claims no direction
+//and no size - it is the smallest mark that still says "there is something to take hold of here".
 //Decorative, and deliberately so: pointer-events none, aria-hidden, no handler of its own, so what it
 //sits on stays a plain drag surface. A control there would have to do something a drag does not.
-const gripLines = [3,9,15];   //x of each stroke in an 18-wide box
-const Grip = () => <svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true"
+const gripSquares = [0,6,12];   //x of each square in a 15-wide box; 3 across, 3 apart
+const Grip = () => <svg width="15" height="3" viewBox="0 0 15 3" aria-hidden="true"
 	style={{position:"absolute",left:"50%",transform:"translateX(-50%)",bottom:DS.spacing.xxs+"rem",
 		pointerEvents:"none",opacity:0.3}}>
-	{gripLines.map(x => <line key={x} x1={x} y1={2} x2={x} y2={8}
-		stroke={DS.getStyle().bodyTextSecondary} strokeWidth="1.5" strokeLinecap="round"/>)}
+	{gripSquares.map(x => <rect key={x} x={x} y={0} width={3} height={3} rx={0.75}
+		fill={DS.getStyle().bodyTextSecondary}/>)}
 </svg>
 
 //The modal's own side padding, which the deck reaches back into so a page slides all the way to the edge
