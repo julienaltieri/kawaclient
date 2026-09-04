@@ -374,6 +374,39 @@ and are now 27% of a distribution whose peak says "rent", so the bead on the lin
 and be labelled *Home*, and the reader loses the one thing they came for: *which* of those moved, and
 when. Per terminal, three distinguishable events survive; at the compound, one.
 
+### A DRIFTING EVENT IS STILL ONE EVENT
+
+A paycheck lands on the 15th — except when the 15th is a Sunday, and except in February, where "the
+30th" is the 2nd of March. Binned by day, one event becomes four small ones, and the forecast then
+draws four small steps where the reader is looking for one big one. This was reported from the phone as
+"the expected bump is less than half the actual value", and it is exactly that.
+
+Measured on a fixture with **only** weekend drift:
+
+| payday | days the histogram spreads over | biggest forecast bump | month total |
+|---|---|---|---|
+| fixed 15th & 30th | 3 | $3,650 (100%) | $7,300 |
+| drifting | 6 | $2,433 (**67%**) | $7,300 |
+| drifting, consolidated | 2 | $3,650 (100%) | $7,300 |
+
+**The month total was right the whole time.** No money was ever lost — it was *spread*, and the step is
+what a balance chart is read for. That is why the fault is invisible in every total and glaring on the
+picture.
+
+`consolidate()` collapses near-adjacent bins onto the heaviest day of their run. Two things make it
+safe to do at all:
+
+- **The guard is a measurement, not a judgement.** A run collapses only if it *spans* a few days.
+  Groceries fill the whole month, so their run spans 31 and is left untouched — that spreading is a
+  true fact about groceries. The question asked is never "is this stream programmed" but "is this run
+  narrow enough to be one event that moved".
+- **The month is a cycle.** Day 31 is adjacent to day 1. A payday sliding off the end of a short month
+  lands at the start of the next one, and bins treated as a line would leave those two halves as
+  distant strangers. The runs wrap.
+
+Mass is preserved exactly, so the weights still sum to 1 and the forecast's totals do not move. Only
+*where* the money sits changes.
+
 **The histogram itself is shared with the macro graph.** Both charts needed amount-weighted bins over
 a period and each had written it out. They agree on everything except what to divide by, and that
 disagreement is the whole reason they looked like different functions — so
@@ -794,6 +827,18 @@ never exactly. What moved is a different question, it belongs to a specific mark
 day, and §10e-a puts it there.
 
 Its height stays reserved, so going from one to the other moves nothing below it.
+
+**And the heading is left-aligned, which it was not.** `DS.component.ContentTile` is a `FlexColumn`,
+and `FlexColumn` sets `align-items:center` — so any child that does not stretch is centred. Page two's
+header opts out with `width:100%; align-self:stretch; text-align:left`; this one had not, and inherited
+the centring silently. Worth recording as a shape of bug rather than a typo: nothing here *asked* to be
+centred, and the tile looked deliberate enough that it took a photograph from a phone to notice.
+
+**The cursor names its day, under the axis.** The cursor line says *here* and the caption says *how
+much*; neither says *when*, and on a step chart with no x-axis labels that leaves the reader counting
+squares out from the today line. The date sits in the bottom padding below the plot, so it never
+overlaps the picture, and it is clamped inside the frame so the first and last days do not print half
+off the edge.
 
 Page one's arrangement: the year at title size, the date range under it at body size, both at FIXED
 offsets inside the plot — so a hovering finger rewrites the words and nothing moves.

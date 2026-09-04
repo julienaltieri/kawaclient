@@ -43,10 +43,15 @@ export function monthlyExpectationAt(stream, when, periodName){
    days centred on today rather than an analysis period. Sharing the calendar as well would mean
    building a StreamAnalysis per terminal to throw it away.
 
-   asWeights, NOT asShape - see AmountHistogram for why that distinction is the whole point. */
+   asWeights, NOT asShape - see AmountHistogram for why that distinction is the whole point.
+
+   CONSOLIDATED FIRST. A paycheck that moves off a weekend, or off a 30th that February does not have,
+   is one event recorded on several days; left spread, the forecast draws several small steps where one
+   large one belongs, and the balance chart is read for its steps. consolidate() collapses only runs
+   narrow enough to be one event that moved, so a genuinely diffuse stream is untouched. */
 export function histogramOf(txnsForStream){
-	return histogram.asWeights(histogram.accumulate(txnsForStream,
-		t => new Date(t.date).getUTCDate() - 1, t => t.amount, 31));
+	return histogram.asWeights(histogram.consolidate(histogram.accumulate(txnsForStream,
+		t => new Date(t.date).getUTCDate() - 1, t => t.amount, 31)));
 }
 
 /* ---- WHICH ACCOUNT a stream lands on, MEASURED -----------------------------------------------------

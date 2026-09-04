@@ -17,7 +17,7 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf} from '../processors/BankBalance'
-import {accumulate, asShape, asWeights} from '../processors/AmountHistogram'
+import {accumulate, asShape, asWeights, consolidate} from '../processors/AmountHistogram'
 
 const HIST = (amount) => [{startDate: new Date("2000-01-01"), amount: amount}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -280,4 +280,61 @@ test("the two normalisations are different, and that difference is the whole poi
 test("a bin index outside the array is dropped, not folded into an edge", () => {
 	expect(accumulate([{d: -1, a: 5}, {d: 9, a: 5}, {d: 1, a: 7}], o => o.d, o => o.a, 3))
 		.toEqual([0, 7, 0])
+})
+
+/* ---- a drifting event is still one event -------------------------------------------------------- */
+
+test("a payday that drifts is forecast as ONE step, not several small ones", () => {
+	//twelve months of a semimonthly paycheck, moved off weekends and off a 30th February does not have
+	const PAY = 3650
+	const txns = []
+	for(let m = 0; m < 12; m++){
+		[15, 30].forEach(nominal => {
+			const dt = new Date(Date.UTC(2025, m, nominal))
+			const dow = dt.getUTCDay()
+			const day = dow === 0 ? nominal - 2 : (dow === 6 ? nominal - 1 : nominal)
+			txns.push({date: new Date(Date.UTC(2025, m, day)), amount: PAY})
+		})
+	}
+	const stream = {id: "w", name: "Wages", getExpectedAmountAtDateByPeriod: () => PAY * 2}
+	const out = forecast({terminals: [stream], shapes: {w: histogramOf(txns)}, routing: {},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly"})
+	let biggest = 0
+	for(let i = 1; i < out.length; i++){biggest = Math.max(biggest, out[i].value - out[i-1].value)}
+	//the whole paycheck arrives on one day, not two thirds of it spread over four
+	expect(Math.round(biggest)).toBe(PAY)
+	//and no money was invented or lost doing it
+	expect(Math.round(out[out.length-1].value)).toBe(PAY * 2)
+})
+
+test("consolidation moves weight but never creates or destroys it", () => {
+	const bins = [0, 0, 300, 900, 200, 0, 0, 0, 0, 0]
+	const out = consolidate(bins)
+	expect(out.reduce((a, b) => a + b, 0)).toBe(1400)
+	expect(out[3]).toBe(1400)          //onto the heaviest day of the run
+})
+
+test("the month is a CYCLE, so a payday sliding off the end joins the start", () => {
+	//day 31 and day 1 are neighbours: "the 30th" in February lands in March
+	const bins = new Array(31).fill(0)
+	bins[30] = 800; bins[0] = 400
+	const out = consolidate(bins)
+	expect(out[30]).toBe(1200)
+	expect(out[0]).toBe(0)
+})
+
+test("a genuinely diffuse stream is left exactly alone", () => {
+	//groceries: every day of the month. Its run spans 31, so nothing collapses.
+	const bins = new Array(31).fill(10)
+	expect(consolidate(bins)).toEqual(bins)
+})
+
+test("two separate paydays stay two separate paydays", () => {
+	const bins = new Array(31).fill(0)
+	bins[13] = 100; bins[14] = 900      //one drifting event mid-month
+	bins[28] = 200; bins[29] = 800      //another at month end
+	const out = consolidate(bins)
+	expect(out[14]).toBe(1000)
+	expect(out[29]).toBe(1000)
+	expect(out.filter(b => b > 0).length).toBe(2)
 })

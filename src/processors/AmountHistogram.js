@@ -66,3 +66,74 @@ export function asWeights(bins){
 		return t || 1};
 	return {weights: weights, massIn: massIn, any: raw > 0};
 }
+
+/* ---- A DRIFTING EVENT IS STILL ONE EVENT ----------------------------------------------------------
+   A paycheck lands on the 15th, except when the 15th is a Sunday, and except in February when "the
+   30th" is the 2nd of March. Binned by day, one event becomes four small ones - and the forecast then
+   draws four small steps where the reader is looking for one big one. Measured on a fixture with only
+   weekend drift, the biggest forecast bump came to 67% of the real paycheck; with month-end drift as
+   well it goes lower. No money is lost - the month's total stays exactly right - but the STEP is what
+   a balance chart is read for, and the step is what got smeared away.
+
+   So near-adjacent bins are collapsed onto the heaviest day of their run. Two things make this safe:
+
+   THE GUARD. A run is only collapsed if it SPANS a few days. Groceries fill the whole month, so their
+   run spans 31 and is left exactly as it is - the spreading there is a true measurement, not drift.
+   The rule is therefore not "is this stream programmed" (a judgement) but "is this run narrow enough
+   to be one event that moved" (a measurement).
+
+   THE MONTH IS A CYCLE. Day 31 is adjacent to day 1: a payday sliding off the end of a short month
+   lands at the start of the next one, and treating the bins as a line would leave those two halves as
+   distant strangers. The runs therefore wrap.
+
+   Mass is preserved exactly - weights still sum to 1 afterwards, which is what the forecast depends
+   on. Only WHERE it sits changes. */
+export function consolidate(bins, maxSpan, gap){
+	const n = bins.length;
+	maxSpan = maxSpan === undefined ? 5 : maxSpan;
+	gap = gap === undefined ? 2 : gap;
+	const total = bins.reduce((a, b) => a + b, 0);
+	if(!total)return bins.slice();
+	//a day carrying almost nothing must not bridge two real runs into one wide one
+	const floor = total * 0.01;
+	const live = bins.map(b => b > floor);
+	if(live.every(Boolean) || live.every(x => !x))return bins.slice();
+
+	//start from a bin that begins a run, so the wrap is walked once and only once
+	let start = -1;
+	for(let i = 0; i < n; i++){
+		if(live[i] && !live[(i - 1 + n) % n]){start = i; break}
+	}
+	if(start < 0)return bins.slice();
+
+	const out = new Array(n).fill(0);
+	let i = 0;
+	while(i < n){
+		const at = (start + i) % n;
+		if(!live[at]){out[at] += bins[at]; i++; continue}
+		//walk the run, allowing gaps of `gap` quiet days inside it
+		const members = [];
+		let j = i, quiet = 0;
+		while(j < n){
+			const k = (start + j) % n;
+			if(live[k]){members.push(k); quiet = 0}
+			else{
+				quiet++;
+				if(quiet > gap)break;
+			}
+			j++;
+		}
+		const span = members.length ? (members[members.length - 1] - members[0] + n) % n + 1 : 0;
+		if(members.length > 1 && span <= maxSpan){
+			let peak = members[0];
+			members.forEach(k => {if(bins[k] > bins[peak])peak = k});
+			let mass = 0;
+			for(let q = i; q < j; q++){mass += bins[(start + q) % n]}
+			out[peak] += mass;
+		}else{
+			for(let q = i; q < j; q++){const k = (start + q) % n; out[k] += bins[k]}
+		}
+		i = j;
+	}
+	return out;
+}

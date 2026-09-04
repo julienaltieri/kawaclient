@@ -140,7 +140,15 @@ const iconFor = name => {
    Its height is RESERVED, so going from empty to full moves nothing under it. The readout was in the
    title to begin with, which is HTML: a longer sentence rewrapped the heading, the chart moved down,
    and pointing at a day made the picture flinch under the finger. */
-const Head = styled.div`display:flex; align-items:flex-start; justify-content:space-between; gap:${DS.spacing.xxs}rem;`
+/* ContentTile is a FlexColumn and FlexColumn sets `align-items:center`, so any child that does not
+   stretch is centred. Page two's header opts out with these same three properties; this one had not,
+   and inherited the centring silently - which is why the title and its caption sat in the middle
+   while every other heading in the app starts at the left margin. */
+const Head = styled.div`
+	display:flex; align-items:flex-start; justify-content:space-between;
+	width:100%; align-self:stretch; text-align:left;
+	gap:${DS.spacing.xxs}rem;
+`
 const Title = styled.h2`
 	margin:0; line-height:1.15;
 	font-size:${props => (props.$big ? DS.fontSize.display : DS.fontSize.title)}rem; font-weight:400;
@@ -161,6 +169,7 @@ const TitleButton = styled.button`
 
    The height stays RESERVED so going from one to the other moves nothing below it. */
 const Subtitle = styled.div`
+	width:100%; align-self:stretch; text-align:left;
 	font-family:Inter; font-size:${DS.fontSize.little}rem;
 	line-height:1.1rem; height:1.1rem; overflow:hidden;
 	margin:0.05rem 0 0.4rem; white-space:nowrap; text-overflow:ellipsis;
@@ -520,12 +529,24 @@ export default class BalanceChart extends BaseComponent{
 						+ '" stroke-width="2.5" stroke-linejoin="round">'
 						+ esc(onBadge.stream) + LT + '/text>'
 				}
-				cursor = '<line x1="' + X(day.date.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
-					+ X(day.date.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
+				/* WHICH DAY, under the axis. The cursor line says "here" and the caption says how
+				   much, and neither says WHEN - which on a step chart with no x labels leaves the
+				   reader counting squares from the today line. It sits in the bottom padding, below
+				   the plot, so it never overlaps the picture, and it is clamped inside the frame so
+				   the first and last days do not print half off the edge. */
+				const cx = X(day.date.getTime())
+				const dayLabel = onDate(day.date)
+				const half = dayLabel.length * 2.6
+				const lx = Math.max(PAD.l + half, Math.min(W - PAD.r - half, cx))
+				cursor = '<line x1="' + cx.toFixed(1) + '" y1="' + PAD.t + '" x2="'
+					+ cx.toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
 					+ '" stroke-width="1" opacity="0.7"/>'
-					+ '<circle cx="' + X(day.date.getTime()).toFixed(1) + '" cy="'
+					+ '<circle cx="' + cx.toFixed(1) + '" cy="'
 					+ Y(day.value).toFixed(1) + '" r="' + DOT_FOCAL + '" fill="' + paint
 					+ '" stroke="' + tile + '" stroke-width="1.5"/>'
+					+ '<text x="' + lx.toFixed(1) + '" y="' + (H - 4).toFixed(1)
+					+ '" text-anchor="middle" font-family="Inter" font-size="9" fill="' + ink
+					+ '">' + dayLabel + '</text>'
 			}
 		}
 
