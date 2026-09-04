@@ -6,8 +6,12 @@
 
 The top of the stream view is a carousel: several ways of reading the same year, one at a time, swiped
 between with a pager underneath. The [macro graph](macro-graph.md) is page one and the
-[money flow](money-flow.md) is page two; a balance-to-date forecast is meant to follow, and the container
-exists because of them rather than because one chart needed a frame.
+[money flow](money-flow.md) is page two and the [bank balance](bank-balance.md) is page three. The
+container exists because of them rather than because one chart needed a frame.
+
+Page three is the one that does not take an analysis: its window is 7/15/30 days centred on today,
+which is not an observation period, and it anchors on the live account balance rather than on anything
+the analysis computed. Every page is still the same height, and the macro graph is what sets it.
 
 `ChartCarousel` ([`ChartCarousel.js`](../src/components/ChartCarousel.js)) is the caller.
 `Deck` ([`Deck.js`](../src/components/Deck.js)) is the mechanism, shared with the Amazon charge deck —

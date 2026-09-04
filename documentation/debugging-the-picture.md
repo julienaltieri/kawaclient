@@ -153,6 +153,16 @@ about to be replaced.
 spanning both halves of the picture — which propagates through every ancestor and reads exactly like a
 broken fit. Generators that restart an id counter per subtree will do this to you.
 
+**A measurement of a stand-in is not a measurement.** Asked whether a set of icon glyphs resolved, a
+probe built its own scratch SVG, measured that, and reported every single one broken — while the real
+tile beside it was drawing them correctly. Measure the element that is actually on screen; a copy of it
+made by the instrument shares none of its context.
+
+**An escape can arrive as the character it names.** A regex written with `` reached the file as a
+literal BACKSPACE, so the pattern matched nothing — and printed back as ``, because JSON escapes
+backspace identically. The diagnostic was indistinguishable from the fault. When a pattern silently
+matches nothing, check the bytes rather than the rendering.
+
 **A probe needs a deadline per step**, or one unanswerable question — asking to open a node with no
 children, which is not a view — hangs the whole sweep.
 

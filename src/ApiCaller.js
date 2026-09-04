@@ -21,6 +21,7 @@ const API = {
 	bankInitiateUpdate: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
 	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
 	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
+	getBalanceHistory: 							AppConfig.serverURL + "/api" + "/getBalanceHistory",
 	bankRemoveItem: 							AppConfig.serverURL + "/api" + "/bankRemoveItem",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
 	getSupportedInstitutions:  					AppConfig.serverURL + "/api" + "/getSupportedInstitutions",
@@ -321,6 +322,17 @@ class ApiCaller{
 		return this.sendRequest(request)
 	}
 
+
+	//The REMEMBERED balance series. Today's live figure arrives with the accounts instead - this only
+	//has whatever has accumulated since balance capture went in, so a caller must treat an empty
+	//answer as "no history yet" rather than as "no money".
+	getBalanceHistory(startDate, endDate){
+		const request = new Request(API.getBalanceHistory,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({startDate: startDate, endDate: endDate})
+		})
+		return this.sendRequest(request)
+	}
 
 	bankGetAccountsForUser(){
 		const request = new Request(API.bankGetAccountsForUser,{

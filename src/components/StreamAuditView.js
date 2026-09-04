@@ -17,6 +17,7 @@ import {ModalTemplates} from '../ModalManager.js'
 import HeaderRowDrawer from './HeaderRowDrawer'
 import ChartCarousel from './ChartCarousel'
 import MoneyFlowChart from './MoneyFlowChart'
+import BalanceChart from './BalanceChart'
 
 const transitionStyle = "cubic-bezier(0.33, 0.02, 0.05, 0.98)"
 
@@ -99,6 +100,14 @@ class MasterStreamAuditView extends StreamAuditView{
 				stream={this.props.stream}
 				transactions={this.props.auditedTransactions}
 				analysis={this.getStreamAnalysis()}
+			/>,
+			//Page three: the bank balance, reconstructed backwards from today and forecast forward
+			//from the same master stream. It takes NO analysis - its window is 7/15/30 days centred
+			//on today, which is not an observation period, and it anchors on the live account balance
+			//rather than on anything the analysis computed.
+			<BalanceChart key="balance"
+				stream={this.props.stream}
+				transactions={this.props.auditedTransactions}
 			/>
 		]}/>
 	</div>)

@@ -4,9 +4,8 @@ import DS from '../DesignSystem.js';
 import Deck from './Deck';
 
 //The stream view's visualisation carousel: several ways of looking at the same year, one at a time, swiped
-//between. The macro graph is the first page; more (a flow breakdown, a balance-to-date and its forecast)
-//are meant to follow, which is the whole reason this container exists rather than the graph sitting
-//directly in the row.
+//between. The macro graph is page one, the money flow is page two, and the bank balance is page three -
+//which is the whole reason this container exists rather than the graph sitting directly in the row.
 //
 //It reuses Deck rather than carrying its own gesture. Deck knows nothing about what a page holds - `pages`
 //is an array of nodes - so a second implementation here would be a second set of spring constants and a

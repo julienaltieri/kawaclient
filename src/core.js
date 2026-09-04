@@ -683,6 +683,30 @@ class Core{
 		else return this.getStreamByName(identifier)
 	}
 
+	/* Every connected account with the balance the bank reported for it just now, plus its type.
+	   The balance view needs three things the display-name map throws away: the CURRENT figure, which
+	   is the anchor the reconstruction hangs from; the TYPE, which is what separates the current
+	   account from the card; and the hash, to match transactions to accounts.
+
+	   This is the LIVE reading. There is also a stored series (ApiCaller.getBalanceHistory) which only
+	   accumulates going forward, so for "now" this is the one to trust. */
+	getAccountsWithBalances(){
+		return ApiCaller.bankGetAccountsForUser().catch(e => {
+			console.warn("Couldn't fetch bank accounts",e);return []
+		}).then(items => {
+			let out = []
+			;(items||[]).forEach(item => (item.accounts||[]).forEach(a => out.push({
+				hash: a.hash, name: a.name, mask: a.mask, type: a.type, subtype: a.subtype,
+				currency: a.currency,
+				//undefined, NOT zero, when the aggregator gave no reading - a fabricated zero is a
+				//cliff in the chart that no reader can tell from a real one
+				current: a.balance && !isNaN(a.balance.current) ? a.balance.current : undefined,
+				available: a.balance ? a.balance.available : undefined
+			})))
+			return out
+		})
+	}
+
 	//returns a map of userInstitutionAccountId (account hash) -> friendly account name
 	getAccountDisplayNameMap(){
 		return Promise.all([
