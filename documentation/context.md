@@ -126,6 +126,15 @@ Recorded so far:
 5. **Update a system's file in the same session as the change it describes** — not "later". It takes
    two minutes then and thirty afterwards, and a file that describes a version of the system that no
    longer exists is worse than an absent one.
+6. **A system being actively built may carry a roadmap, against Rule 5.** For work decided in
+   conversation and built in phases, the decisions go in that system's own file as they are made,
+   so the reasoning sits next to the mechanism it will become instead of in a chat log. This is a
+   scoped exception, not a repeal: it lives in one clearly-marked section at the bottom of the file,
+   the rest of the file stays Rule 5 clean and describes only what is actually true, and each phase's
+   entry is deleted as it lands — its mechanism moves up into the body and it leaves one line behind
+   in a decision log. A roadmap section that outlives the work it described is exactly the stale
+   documentation Rule 5 exists to prevent. First applied in
+   [`authentication.md`](authentication.md).
 
 **A useful standing review prompt:**
 
@@ -146,6 +155,7 @@ Recorded so far:
 | [`money-flow.md`](money-flow.md) | Page two of that carousel: where the money came from and where it went, as one navigable picture — the data contract behind it, and the layout, camera and label rules. |
 | [`debugging-the-picture.md`](debugging-the-picture.md) | How to find out what a drawn thing is actually doing: the four levels of instrument, the order to reach for them in, and the catalogue of ways a measurement lied. Read before debugging anything visual. |
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
+| [`authentication.md`](authentication.md) | How you get into Kawa and stay in: the Cognito proxy login, why a session dies after an hour, what the credentials are worth if they leak, and the roadmap for refresh tokens and biometric unlock. |
 
 ---
 

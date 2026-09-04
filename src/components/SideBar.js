@@ -2,7 +2,7 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem';
 import Core from '../core.js'
-import Cookies from 'js-cookie'
+import ApiCaller from '../ApiCaller'
 
 
 
@@ -17,7 +17,7 @@ export default class SideBar extends BaseComponent{
 	}
   logout(e){
     Core.dismissModal();
-    Cookies.set("token","");
+    ApiCaller.clearSession(); //must drop the refresh token too, or "log out" would leave a year-long credential behind
     Core.setLoggedIn(false);
   }
 	getActiveItem(){return this.state.items[this.props.activeIndex]}

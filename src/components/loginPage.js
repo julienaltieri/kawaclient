@@ -1,6 +1,5 @@
 import BaseComponent from './BaseComponent';
 import styled from 'styled-components'
-import Cookies from 'js-cookie'
 import Core from '../core.js'
 import ApiCaller from '../ApiCaller'
 import DS from '../DesignSystem'
@@ -42,9 +41,8 @@ export default class LoginPage extends BaseComponent{
 				console.log("error: "+res.message);
 				Core.setLoggedIn(false);
 			}else{
-				Cookies.set("token",res);
-				ApiCaller.setToken(res);
-				Cookies.set("username",username);
+				//username is stored because Cognito needs it to rebuild the user when spending the refresh token
+				ApiCaller.setSession({username:username,accessToken:res.accessToken,refreshToken:res.refreshToken});
 				Core.setLoggedIn(true);
 			}
 		}).catch(err => {

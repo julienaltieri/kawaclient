@@ -1,5 +1,4 @@
 import utils from './utils'
-import Cookies from 'js-cookie'
 import ApiCaller from './ApiCaller'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream,invalidateStreamMap} from './model'
 import ModalManager, {ModalController, ModalTemplates, ModalWorkflowController} from './ModalManager.js'
@@ -32,6 +31,10 @@ class Core{
 			erroredBankConnections: [],
 			history: HistoryManager
 		}
+		/*ApiCaller cannot import Core (Core imports it), so it calls back here when a refresh token is
+		  refused and the session is genuinely over, rather than only failing the request in flight.*/
+		ApiCaller.onSessionExpired = () => this.setLoggedIn(false)
+
 		//this.queryParamsReceivedListeners = []
 		// expose search helpers attached to this Core instance (bound methods)
 		this.search = {
@@ -218,10 +221,8 @@ class Core{
 	//operations
 	refreshCategorizationBetweenDates(start,end){return ApiCaller.refreshCategorizationBetweenDates(start,end)}
 	checkAuthentication(successCallback,failureCallback){
-	  var authToken = Cookies.get('token');
 	  this.routeOrder = Navigation.getCurrentRoute();
-	  if(!authToken || authToken===""){return Promise.reject(new Error("no token passed"))}
-	  else{return ApiCaller.validateToken(authToken)}
+	  return ApiCaller.ensureValidSession()
 	}
 	setLoggedIn(b){
 		this.globalState.loggedIn = b;

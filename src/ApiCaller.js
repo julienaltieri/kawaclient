@@ -5,6 +5,7 @@ import TransactionTypes from './TransactionTypes'
 const API = {
 	login: 										AppConfig.serverURL + "/login",
 	validateToken: 								AppConfig.serverURL + "/validateToken",
+	refreshSession: 							AppConfig.serverURL + "/refreshSession",
 	getUserData: 								AppConfig.serverURL + "/api" + "/getUserData",
 	saveAmazonOrderHistory: 					AppConfig.serverURL + "/api" + "/saveAmazonOrderHistory",
 	getAmazonOrderHistory: 						AppConfig.serverURL + "/api" + "/getAmazonOrderHistory",
@@ -29,15 +30,92 @@ const API = {
 	saveUserPreferences: 						AppConfig.serverURL + "/api" + "/saveUserPreferences",
 }
 
+const SESSION_KEY = "kawa.session"
+
 class ApiCaller{
-	constructor(){this.token = Cookies.get('token')}
+	constructor(){
+		this.session = this.readSession()
+		this.token = this.session.accessToken || Cookies.get('token') //cookie fallback migrates a session that predates the store below
+		this.refreshPromise = undefined
+		this.onSessionExpired = undefined //set by Core, which cannot be imported here without a cycle
+	}
 	setToken(token){this.token = token}
+
+	/*Session store.
+	  The refresh token is a long-lived bearer credential and lives in localStorage rather than an
+	  httpOnly cookie. That is weaker by default and it is deliberate: the biometric unlock has to be
+	  able to WITHHOLD the token until the device reports a successful user verification, and a cookie
+	  the browser attaches automatically cannot be withheld. localStorage also survives the PWA being
+	  evicted from memory, which the old session cookie did not — that eviction is half of why the
+	  password used to be needed several times a day. See client/documentation/authentication.md.*/
+	readSession(){
+		try{return JSON.parse(window.localStorage.getItem(SESSION_KEY)) || {}}
+		catch(e){return {}}
+	}
+	setSession(s){
+		this.session = {...this.session, ...s}
+		if(this.session.accessToken){this.token = this.session.accessToken}
+		try{window.localStorage.setItem(SESSION_KEY,JSON.stringify(this.session))}catch(e){console.log(e)}
+	}
+	clearSession(){
+		this.session = {}
+		this.token = undefined
+		this.refreshPromise = undefined
+		try{window.localStorage.removeItem(SESSION_KEY)}catch(e){console.log(e)}
+		Cookies.remove("token") //clears the pre-localStorage cookie the constructor still falls back to
+	}
+
+	/*Startup gate. Prefers the refresh token when there is one, because that always yields a fresh
+	  access token in a single round trip — validating the stored one first would cost a second call in
+	  the common case, since an access token older than an hour is dead anyway. Falls back to validating
+	  a bare access token for a session created before this store existed.*/
+	ensureValidSession(){
+		if(this.session.refreshToken){return this.refreshSession()}
+		if(this.token){return this.validateToken(this.token)}
+		return Promise.reject(new Error("no token passed"))
+	}
+
+	/*Spends the refresh token for a new access token. Uses fetch directly rather than sendRequest, so a
+	  failure here cannot re-enter the 401 handling below and recurse.*/
+	refreshSession(){
+		if(this.refreshPromise){return this.refreshPromise} //concurrent 401s share one refresh
+		const username = this.session.username, refreshToken = this.session.refreshToken
+		if(!username || !refreshToken){return Promise.reject(new Error("no refresh token"))}
+		this.refreshPromise = fetch(new Request(API.refreshSession,{
+				method:"post",headers:{"Content-Type":"application/json"},
+				body:JSON.stringify({username:username,refreshToken:refreshToken})
+			}))
+			.then(res => {if(!res.ok){throw new Error("Refresh rejected")};return res.json()})
+			.then(r => {this.setSession({accessToken:r.accessToken,refreshToken:r.refreshToken});return r})
+			.finally(() => {this.refreshPromise = undefined})
+		return this.refreshPromise
+	}
+
 	sendRequest(request){
-		return fetch(request).then(res => {
-			if(res.status==401){throw new Error("Login required")}
-			else if(!res.ok){console.log(res);throw new Error(res.statusText)}
-			else return res.json()
-		})
+		const replayable = request.clone() //clone before fetch consumes the body, so the call can be replayed
+		return fetch(request)
+			.then(res => (res.status==401)?this.retryAfterRefresh(replayable):res)
+			.then(res => {
+				if(res.status==401){throw new Error("Login required")}
+				else if(!res.ok){console.log(res);throw new Error(res.statusText)}
+				else return res.json()
+			})
+	}
+
+	/*A 401 usually means the access token expired, not that the session is over. Every API method
+	  funnels through sendRequest, so this is the only place that has to know how to recover.*/
+	retryAfterRefresh(request){
+		return this.refreshSession()
+			.catch(() => {
+				this.clearSession()
+				if(this.onSessionExpired){this.onSessionExpired()}
+				throw new Error("Login required")
+			})
+			.then(() => {
+				const headers = new Headers(request.headers)
+				headers.set("accesstoken",this.token)
+				return fetch(new Request(request,{headers:headers}))
+			})
 	}
 
 
@@ -61,7 +139,7 @@ class ApiCaller{
 
 	getUserData(){
 		const request = new Request(API.getUserData,{
-			method:"post",headers:{"Content-Type":"application/json",accesstoken:Cookies.get('token')},
+			method:"post",headers:{"Content-Type":"application/json",accesstoken:this.token},
 		})
 		return this.sendRequest(request)
 	}
