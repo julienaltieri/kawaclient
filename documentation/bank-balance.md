@@ -614,6 +614,34 @@ It also removes a double computation that had been there from the start: the cap
 each asked for the series independently on every render, including on every day the cursor passed
 over.
 
+### §2b THE BENCHMARK: the same forecast, run over what already happened
+
+Over the settled part of the window, a **dotted line** shows what the forecast would have predicted
+had it been run on the day the window opened. Where it parts company with the reconstruction is a
+discrepancy worth chasing — a stream mis-timed, an amount out of date, or money moving that the master
+stream does not know about. It is the drift test of §2a made continuous and visible, rather than a
+number someone has to go and compute.
+
+**It must be run OUT OF SAMPLE or it is not a benchmark.** The histograms and the account routing are
+built only from transactions dated *before* the window opens, so the forecast makes the prediction it
+would have made on the day, knowing what it knew on the day. Fitted to the period it is predicting, it
+would reproduce that period rather than test it, and the agreement it showed would be its own
+reflection. This is the whole reason `shapesAsOf(cutoff)` exists rather than reusing the cached shapes.
+
+Two things are deliberately *not* held back:
+
+- **The expected amounts.** These come from the master's own step function evaluated at each date,
+  which is the plan as it stood then — not the outcome. Withholding it would be testing something
+  nobody is claiming.
+- **The opening balance.** The benchmark starts on the reconstruction's first point, which is a known
+  figure rather than a guess. Starting it anywhere else would measure the anchor instead of the model.
+
+**Drawn dotted, not dashed**, so it cannot be read as the forecast, and under the record so that where
+the two touch the truth is on top. It takes the same runway colour, because it is a balance and that
+colour means what it always means. It is included in the frame's *vertical* range but not its
+horizontal one — a divergence that runs off the top is not a divergence anyone can see, and it covers
+no days the record does not.
+
 ### §10d-b A PERMANENT DATE AXIS, on the 1st and the 15th
 
 A step chart with no axis is a shape with no scale: the reader can see that something happened and not

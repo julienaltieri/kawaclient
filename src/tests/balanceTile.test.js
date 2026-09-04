@@ -642,3 +642,75 @@ test("a tick label under the cursor's own date gives way to it", async () => {
 	//printed once - by the cursor - rather than twice on top of itself
 	expect(svg.split(">" + label + "<").length - 1).toBe(1)
 })
+
+/* ---- the benchmark overlay ---------------------------------------------------------------------- */
+
+test("the benchmark starts where the window starts, on the actual balance", async () => {
+	const ref = await mount()
+	const a = ref.current.series()
+	expect(a.backtest.length).toBeGreaterThan(1)
+	//it is anchored on a known figure, not on a guess: the reconstruction's first point
+	expect(a.backtest[0].date.getTime()).toBe(a.past[0].date.getTime())
+	expect(a.backtest[0].value).toBe(a.past[0].value)
+	//and it covers the settled part of the window, no further
+	expect(a.backtest[a.backtest.length-1].date.getTime())
+		.toBe(a.past[a.past.length-1].date.getTime())
+})
+
+test("the benchmark is OUT OF SAMPLE - it cannot see the period it predicts", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const opened = c.series().past[0].date
+	const asOf = c.shapesAsOf(opened)
+	const all = c.streamTxns()
+	//every transaction the shapes were built from predates the window
+	Object.keys(all).forEach(id => {
+		const used = all[id].filter(t => t.date < opened)
+		const total = all[id].reduce((x, t) => x + Math.abs(t.amount), 0)
+		const usedTotal = used.reduce((x, t) => x + Math.abs(t.amount), 0)
+		if(total > usedTotal){
+			//this stream HAS transactions inside the window, and they must not be in the shape
+			const shapeOfAll = histogramOf(all[id])
+			const shapeAsOf = asOf.shapes[id]
+			expect(shapeAsOf.weights).not.toEqual(shapeOfAll.weights)
+		}
+	})
+})
+
+test("the benchmark uses the same algorithm as the forward forecast", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series()
+	//run the forecast by hand with the same out-of-sample inputs and expect the same numbers
+	const opened = a.past[0].date
+	const asOf = c.shapesAsOf(opened)
+	const days = Math.round((a.past[a.past.length-1].date - opened)/86400000)
+	const mine = forecast({terminals: c.terminals(), shapes: asOf.shapes, routing: asOf.routing,
+		now: opened, balanceNow: a.past[0].value, days: days,
+		covers: h => c.covered().indexOf(h || c.spendingHashes()[0]) > -1,
+		settles: h => c.creditHashes().indexOf(h) > -1,
+		periodName: "monthly", settlementDay: c.settlementDay()})
+	expect(a.backtest.length).toBe(mine.length + 1)
+	expect(Math.round(a.backtest[a.backtest.length-1].value)).toBe(Math.round(mine[mine.length-1].value))
+})
+
+test("the benchmark is drawn dotted, and under the record", async () => {
+	const ref = await mount()
+	const svg = (ref.current.host.current || {}).innerHTML || ""
+	expect(svg).toContain('stroke-dasharray="0.5,3"')
+	//before the solid record line in document order, so the truth sits on top where they touch
+	expect(svg.indexOf('stroke-dasharray="0.5,3"'))
+		.toBeLessThan(svg.indexOf('stroke-linejoin="round" stroke-linecap="round"'))
+})
+
+test("a divergence is inside the frame rather than clipped away", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series()
+	const f = c.frameOf(a)
+	//whatever the benchmark does, it is drawable: the vertical range contains it
+	a.backtest.forEach(p => {
+		expect(p.value).toBeGreaterThanOrEqual(f.y0)
+		expect(p.value).toBeLessThanOrEqual(f.y1)
+	})
+})

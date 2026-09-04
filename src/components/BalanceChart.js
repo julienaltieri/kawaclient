@@ -323,20 +323,47 @@ export default class BalanceChart extends BaseComponent{
 			})
 	}
 
-	//one histogram per terminal, from that terminal's own categorised transactions
-	shapes(){
-		if(this._shapes)return this._shapes
+	//each terminal's own categorised transactions, grouped once so a histogram can be rebuilt over
+	//any slice of them without walking the ledger again
+	streamTxns(){
+		if(this._byStream)return this._byStream
 		const terminals = this.terminals()
-		const txns = (this.props.transactions||[]).filter(t => t.categorized)
 		const byStream = {}
 		terminals.forEach(s => {byStream[s.id] = []})
-		txns.forEach(t => {
+		;(this.props.transactions||[]).filter(t => t.categorized).forEach(t => {
 			terminals.forEach(s => {
 				if(!t.isAllocatedToStream(s))return
 				byStream[s.id].push({date:t.date, amount:t.amount,
 					accountHash:t.userInstitutionAccountId})
 			})
 		})
+		this._byStream = byStream
+		return byStream
+	}
+
+	/* THE SHAPES AS THEY WOULD HAVE LOOKED ON A GIVEN DAY - nothing after `cutoff` is allowed in.
+	   This is what makes the backtest worth drawing: a forecast fitted to the period it is predicting
+	   has already seen the answer, and the agreement it then shows is its own reflection. */
+	shapesAsOf(cutoff){
+		const byStream = this.streamTxns(), out = {}, dir = {}
+		const terminals = this.terminals()
+		terminals.forEach(s => {
+			const before = cutoff ? byStream[s.id].filter(t => t.date < cutoff) : byStream[s.id]
+			out[s.id] = histogramOf(before)
+			const a = monthlyExpectationAt(s, cutoff || this.ledgerToday(), "monthly")
+			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
+		})
+		const sliced = {}
+		terminals.forEach(s => {sliced[s.id] = cutoff
+			? byStream[s.id].filter(t => t.date < cutoff) : byStream[s.id]})
+		return {shapes: out, routing: accountRoutingOf(sliced, id => dir[id])}
+	}
+
+	//one histogram per terminal, from that terminal's own categorised transactions
+	shapes(){
+		if(this._shapes)return this._shapes
+		const terminals = this.terminals()
+		const byStream = this.streamTxns()
 		const shapes = {}
 		const now = this.ledgerToday()
 		terminals.forEach(s => {shapes[s.id] = histogramOf(byStream[s.id])})
@@ -463,7 +490,31 @@ export default class BalanceChart extends BaseComponent{
 			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
 			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()}) : []
-		return {past:past, future:future, txns:txns, now:now}
+		/* THE BENCHMARK: the same forecast, run forward from the START of what is on screen, over the
+		   days that have since actually happened. Where it parts company with the reconstruction is a
+		   discrepancy worth chasing - a stream mis-timed, an amount out of date, or money moving that
+		   the master does not know about.
+
+		   It must be run OUT OF SAMPLE or it is not a benchmark. The shapes and the routing are built
+		   only from transactions before the window opens, so the forecast is making the prediction it
+		   would have made on the day, with what it knew on the day. Fitted to the period it predicts,
+		   it would reproduce that period rather than test it.
+
+		   The expected AMOUNTS still come from the master's own step function evaluated at each date,
+		   which is right: that is the plan as it stood then, not the outcome. */
+		let backtest = []
+		if(past.length > 1){
+			const opened = past[0].date
+			const asOf = this.shapesAsOf(opened)
+			backtest = forecast({terminals:this.terminals(), shapes:asOf.shapes,
+				routing:asOf.routing, now:opened, balanceNow:past[0].value,
+				days:Math.round((past[past.length-1].date - opened)/DAY),
+				covers:covers, settles:settles,
+				periodName:"monthly", settlementDay:this.settlementDay()})
+			backtest = [{date:opened, value:past[0].value, bench:true}]
+				.concat(backtest.map(p => ({date:p.date, value:p.value, bench:true})))
+		}
+		return {past:past, future:future, backtest:backtest, txns:txns, now:now}
 	}
 
 	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts
@@ -511,7 +562,10 @@ export default class BalanceChart extends BaseComponent{
 	/* THE FRAME a series is drawn in, so it can be interpolated rather than recomputed. */
 	frameOf(a){
 		const all = a.past.concat(a.future)
-		const xs = all.map(p => p.date.getTime()), ys = all.map(p => p.value)
+		const xs = all.map(p => p.date.getTime())
+		//the benchmark is included in the VERTICAL range but not the horizontal one: a divergence
+		//that runs off the top is not a divergence anyone can see, and it covers no new days
+		const ys = all.map(p => p.value).concat((a.backtest||[]).map(p => p.value))
 		let y0 = Math.min(0, Math.min.apply(null, ys)), y1 = Math.max.apply(null, ys)
 		const pad = (y1 - y0)*0.14 || 1
 		const lo = trough(all), hi = peak(all)
@@ -529,7 +583,7 @@ export default class BalanceChart extends BaseComponent{
 	   Passing the frame in instead means the last frame of an animation is, by construction, identical
 	   to the resting frame that replaces it. There is nothing left to pop, and no second painter to
 	   keep in step with this one. */
-	draw(past, future, now, frame){
+	draw(past, future, now, frame, backtest){
 		const W = this.W, H = this.H
 		const all = past.concat(future)
 		if(all.length < 2)return ""
@@ -574,6 +628,16 @@ export default class BalanceChart extends BaseComponent{
 		//the line takes the same ramp at full opacity - the silver lining affirmed. A stroke carries a
 		//gradient exactly as a fill does, and because the ramp is pinned to the value axis the line
 		//reddens as it descends without anything having to decide where the boundary is.
+		/* THE BENCHMARK, under everything else. Same ramp colour, because it is a balance and that
+		   colour means what it always means - but DOTTED rather than dashed, so it cannot be mistaken
+		   for the forecast, and quiet enough that the actual line reads as the truth and this as the
+		   reference it is measured against. Drawn first, so where they touch, the record is on top. */
+		const benchLine = (backtest && backtest.length > 1)
+			? '<path d="' + stepPath(backtest) + '" fill="none" stroke="' + paint
+				+ '" stroke-width="1.4" stroke-dasharray="0.5,3" stroke-linecap="round"'
+				+ ' opacity="0.75"/>'
+			: ""
+
 		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
 			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
 		const bridge = past.length && future.length ? [past[past.length-1]].concat(future) : future
@@ -695,17 +759,17 @@ export default class BalanceChart extends BaseComponent{
 		return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
 			+ defs + area
 			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine + axis
-			+ lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
+			+ benchLine + lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
 	}
 
 	paint(){
 		if(!this.host.current || !this.state.loaded || !this.hasAnchor())return
 		if(this.animating)return
 		const a = this.series()
-		this.host.current.innerHTML = this.draw(a.past, a.future, a.now)
+		this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null, a.backtest)
 		if(!this.settling && this.measure()){
 			this.settling = true
-			this.host.current.innerHTML = this.draw(a.past, a.future, a.now)
+			this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null, a.backtest)
 			this.settling = false
 		}
 	}
@@ -784,9 +848,10 @@ export default class BalanceChart extends BaseComponent{
 			   arrived when the real picture replaced it at the end.
 			   Where the two agree - the days both months contain - a record wins over a projection. */
 			const merged = this.union(before, after)
+			const mergedBench = this.unionBench(before, after)
 			this.run(ZOOM_MS, k => {
 				const f = this.lerpFrame(f0, f1, k)
-				this.paintFrame(merged, after.now, f)
+				this.paintFrame(merged, after.now, f, mergedBench)
 			})
 		})
 	}
@@ -798,6 +863,13 @@ export default class BalanceChart extends BaseComponent{
 			if(!byDay[k] || (p.actual && !byDay[k].actual))byDay[k] = p}
 		a.past.forEach(put); a.future.forEach(put)
 		b.past.forEach(put); b.future.forEach(put)
+		return Object.keys(byDay).sort().map(k => byDay[k])
+	}
+	/* the benchmark is merged SEPARATELY, because it shares its days with the record - one point per
+	   day per LAYER, not per day. Merged into the same map, each would delete the other. */
+	unionBench(a, b){
+		const byDay = {}
+		;(a.backtest||[]).concat(b.backtest||[]).forEach(p => {byDay[dayKey(p.date)] = p})
 		return Object.keys(byDay).sort().map(k => byDay[k])
 	}
 	lerpFrame(a, b, k){
@@ -831,17 +903,25 @@ export default class BalanceChart extends BaseComponent{
 					blend.push({date: b[i].date, actual: b[i].actual, top: b[i].top,
 						value: a[i].value*(1 - k) + b[i].value*k})
 				}
-				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k))
+				//the benchmark morphs with everything else: it is a balance too, and a reading that
+				//changes changes it
+				const ab = before.backtest||[], bb = after.backtest||[]
+				const bn = Math.min(ab.length, bb.length)
+				const bench = []
+				for(let i = 0; i < bn; i++){
+					bench.push({date: bb[i].date, value: ab[i].value*(1 - k) + bb[i].value*k})
+				}
+				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k), bench)
 			})
 		})
 	}
 
 	//one flat list plus a frame, split back into record and projection for the drawing routine
-	paintFrame(content, now, frame){
+	paintFrame(content, now, frame, backtest){
 		if(!this.host.current)return
 		this.host.current.innerHTML = this.draw(
 			content.filter(p => p.actual !== false), content.filter(p => p.actual === false),
-			now, frame)
+			now, frame, backtest)
 	}
 
 	subtitle(){
@@ -865,7 +945,7 @@ export default class BalanceChart extends BaseComponent{
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
 			this._txns = this.props.transactions; this._shapes = null; this._routing = null
-			this._names = null
+			this._names = null; this._byStream = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
