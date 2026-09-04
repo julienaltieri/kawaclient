@@ -160,6 +160,7 @@ class DesignSystem{
 		edit: 			<Icon className="material-symbols-rounded">edit</Icon>,
 		more: 			<Icon className="material-symbols-rounded">more_horiz</Icon>,
 		bank: 			<Icon className="material-symbols-rounded">account_balance</Icon>,
+		fingerprint: 	<Icon className="material-symbols-rounded">fingerprint</Icon>,
 		logo: {
 			lightMode: <Logo src={logo_light}/>,
 			darkMode: <Logo src={logo_dark} style={{opacity: 0.8}}/>,
@@ -188,7 +189,7 @@ class DesignSystem{
 		StreamTag: (props) => <StyledStreamTag {...props}>{props.children}</StyledStreamTag>,
 		Input: (props) => <DSInput {...props}/>,
 		SearchBar: (props) => <DSSearchBar {...props}/>,
-		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledInput id={props.formId} {...props}>{props.children}</StyledInput></StyledFieldWithLabel>,
+		InputWithLabel: (props) => <StyledFieldWithLabel><instance.component.Label smallcaps style={{textAlign:"left",margin:instance.spacing.xxs+"rem 0"}}>{props.label}</instance.component.Label><StyledFieldRow><StyledInput id={props.formId} {...props} rightSlot={!!props.rightIcon}>{props.children}</StyledInput>{props.rightIcon?<instance.component.Button.Icon onClick={props.onTapRightIcon} iconName={props.rightIcon} style={{right:instance.spacing.xxs*1.5+"rem",position:"absolute"}}/>:""}</StyledFieldRow></StyledFieldWithLabel>,
 		DropDown: (props) => <DSDropDown {...props}/>,
 		Row: (props) => <StyledRowContainer {...props}>{props.children}</StyledRowContainer>,
 		Tooltip: (props) => <StyledToolTipContainer {...props}><StyledTooltipBackdrop/><StyledArrow showAbove={props.showAbove}/>{props.children}</StyledToolTipContainer>,
@@ -322,6 +323,16 @@ const StyledFieldWithLabel = styled.div`
     align-content: flex-start;
     align-items: flex-start;
     margin-bottom: ${instance.spacing.xs}rem;
+`
+
+/*Positioning context for an icon sitting inside a labelled field, mirroring StyledInputContainer.
+  Kept separate because StyledFieldWithLabel is the column that stacks label above input.*/
+const StyledFieldRow = styled.div`
+	display: flex;
+    flex-direction: row;
+    position: relative;
+    align-items: center;
+    width: 100%;
 `
 
 const StyledPlaceholderButton = styled.div`

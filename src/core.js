@@ -1,5 +1,6 @@
 import utils from './utils'
 import ApiCaller from './ApiCaller'
+import Biometrics from './Biometrics'
 import UserData, {GenericTransaction,CompoundStream,TerminalStream,invalidateStreamMap} from './model'
 import ModalManager, {ModalController, ModalTemplates, ModalWorkflowController} from './ModalManager.js'
 import Navigation, {NavRoutes} from './components/Navigation'
@@ -222,7 +223,19 @@ class Core{
 	refreshCategorizationBetweenDates(start,end){return ApiCaller.refreshCategorizationBetweenDates(start,end)}
 	checkAuthentication(successCallback,failureCallback){
 	  this.routeOrder = Navigation.getCurrentRoute();
+	  /*With a biometric credential enrolled, a stored session is not spent until the device has
+	    verified its owner. Rejecting here lands on the login page, which renders the fingerprint
+	    affordance because the same two conditions hold there. Without a credential the session
+	    restores untouched, so enrolling is what turns the gate on.*/
+	  if(Biometrics.isEnrolled() && ApiCaller.hasStoredSession()){return Promise.reject(new Error("locked"))}
 	  return ApiCaller.ensureValidSession()
+	}
+	/*The unlock itself. Order matters: the assertion has to succeed before the refresh token is spent,
+	  otherwise the gate would be decorative.*/
+	unlockWithBiometrics(){
+		return Biometrics.unlock()
+			.then(() => ApiCaller.ensureValidSession())
+			.then(() => this.setLoggedIn(true))
 	}
 	setLoggedIn(b){
 		this.globalState.loggedIn = b;

@@ -37,9 +37,10 @@ server, and the server performs the Cognito exchange.
 7. Route handlers resolve identity through the `getUsername` helper in `routes/index.js`, which
    reads `res.locals.user.username`.
 
-`core.js` gates the app on startup: `checkAuthentication` delegates to `ApiCaller.ensureValidSession`,
-and `setLoggedIn` either loads data or redirects to the login route. There is no client-side route
-guard beyond that — `components/Navigation.js` only declares the route constant.
+`core.js` gates the app on startup: `checkAuthentication` either restores the session through
+`ApiCaller.ensureValidSession` or holds it behind the biometric gate below, and `setLoggedIn` either
+loads data or redirects to the login route. There is no client-side route guard beyond that —
+`components/Navigation.js` only declares the route constant.
 
 ## How a session survives
 
@@ -104,6 +105,60 @@ Because the refresh token is long-lived, **logging out must clear it.** `SideBar
 `ApiCaller.clearSession` rather than blanking a cookie; anything that only cleared the access token
 would leave a working credential behind.
 
+**A session created before this store existed does not survive.** It has a cookie but no refresh
+token, so the first app kill after upgrading still lands on the login screen. One password login mints
+the refresh token and the behaviour starts. This is worth knowing because it looks exactly like the
+feature not working.
+
+## The biometric gate
+
+A stored session is not spent until the device has verified its owner. [`Biometrics.js`](../src/Biometrics.js)
+holds the WebAuthn side; `Core.checkAuthentication` is where the gate fires and
+`Core.unlockWithBiometrics` is the way through it.
+
+**What this is.** WebAuthn with a platform authenticator. The fingerprint never leaves the device and
+never reaches Kawa or Cognito — it unlocks a device-bound private key, which signs a challenge. Kawa
+is not verifying a fingerprint; it is deciding to release the stored refresh token because the device
+reported that it verified its owner. The assertion has to succeed *before* the refresh token is spent,
+or the gate would be decorative.
+
+**The gate fires on enrolment alone.** With a credential enrolled and a session stored,
+`checkAuthentication` rejects rather than restoring, which lands on the login page. With no credential
+the session restores untouched. So enrolling is what switches the behaviour on, and discarding the
+credential is what switches it off — there is no separate setting.
+
+**Enrolment has no Kawa-authored UI.** After a password login, `navigator.credentials.create()` is
+called and the platform's own prompt does the asking. Declining stores nothing, which leaves the gate
+off. Whatever was stored is discarded first, on the reasoning that reaching the password means the
+fingerprint path was either never set up or stopped working; a credential goes stale if the device's
+biometrics are reset, and since the gate fires on enrolment alone, a dead credential would otherwise
+force a password at every launch. Replacing it at that moment makes the failure self-healing.
+
+**The affordance.** A fingerprint glyph inside the password field, rendered only when three things
+hold: the device can verify its owner, a credential is enrolled, and there is a session to release.
+Anything less and there is no glyph, rather than a glyph that fails when tapped. The unlock is also
+attempted on mount, so the ordinary case is one biometric prompt and no tap; where a browser refuses
+that without a user gesture, the glyph is already on screen to retry.
+
+Note the condition is capability, not device class. `Core.isMobile()` is
+`window.innerHeight > window.innerWidth` and belongs to the display system — it answers "is this a
+narrow layout". A user-agent check would be no better: "is this a phone" and "can this device sign a
+WebAuthn challenge after verifying its owner" are different facts, and only the second predicts
+whether the glyph works. `isUserVerifyingPlatformAuthenticatorAvailable()` answers the second, needs
+no device table kept current, and picks up Touch ID on a laptop for free.
+
+**What this is worth, stated plainly.** Nothing server-side verifies the assertion, and the refresh
+token sits in `localStorage` in plaintext. This stops someone holding an unlocked phone from opening
+Kawa. It does not stop script injection, or anyone with devtools and physical access. That is the
+accepted trade for a single-user app, not an oversight — the deferred items below are the two ways
+out of it.
+
+`prf` is requested at enrolment even though nothing reads it yet: it costs nothing now, and without it
+encrypting the refresh token at rest later would mean re-enrolling the credential.
+
+RP ID is the page's own hostname, so `kawabudget.com` in production and `localhost` in development.
+WebAuthn requires HTTPS, and `localhost` is exempt.
+
 ---
 
 ## What the credentials are worth if they leak
@@ -162,51 +217,6 @@ with no code change. What is left is confirming the setting exists on the pool's
 enabling it. Worth doing after Phase 1a has been observed working, so that a rotation misconfiguration
 is not diagnosed through a lengthened window at the same time.
 
-### Phase 2 — Local biometric unlock
-
-**Goal.** Resume a session with a fingerprint instead of a typed password.
-
-**What this actually is.** WebAuthn with a platform authenticator. The fingerprint never leaves the
-phone and never reaches Cognito or Kawa: it unlocks a device-bound private key, which signs a
-challenge. Kawa is not verifying a fingerprint, it is deciding to release the stored refresh token
-after the device reports a successful user-verification.
-
-Enrolment happens after a successful password login: `navigator.credentials.create()` with
-`authenticatorAttachment: "platform"`, `userVerification: "required"`, and the `prf` extension
-requested. The credential id goes to `localStorage`. Unlock calls `navigator.credentials.get()` with
-that id; on success the stored refresh token is spent against `/refreshSession`. RP ID is
-`kawabudget.com`, and WebAuthn requires HTTPS — `localhost` is exempt for development.
-
-**The `prf` extension is requested at enrolment even though nothing reads it yet.** It costs nothing
-now and it is the difference between a later upgrade and a re-enrolment: see the deferred item
-below.
-
-**What this is worth, stated plainly.** Nothing server-side verifies the assertion, and the refresh
-token sits in `localStorage` in plaintext. This stops someone who picks up an unlocked phone from
-opening Kawa. It does not stop script injection, or anyone with devtools and physical access. That
-is the accepted trade for a single-user app, not an oversight — the deferred items below are the two
-ways out of it.
-
-**The affordance.** A fingerprint glyph inside the password field. The design system already has
-this pattern: `StyledInput` takes `leftSlot`/`rightSlot` padding props and the search field
-positions a `Button.Icon` absolutely inside the container. `InputWithLabel`, which the login page
-uses, does not yet accept the slot and needs it threaded through. The icon map is Material Symbols
-Rounded, so `fingerprint` is a name away.
-
-**One correction to the stated condition.** The ask was to show the glyph on mobile, and there is no
-correct device check to reach for. `Core.isMobile()` is `window.innerHeight > window.innerWidth`,
-which belongs to the display system — it answers "is this a narrow layout", so it is true for a
-narrow desktop window and false for a phone held sideways. A real mobile-device check does not fix
-it either: user-agent sniffing is unreliable by construction, and even a correct answer would be the
-wrong question. "Is this a phone" and "can this device sign a WebAuthn challenge with a fingerprint"
-are different facts, and only the second one determines whether the glyph will work when tapped.
-
-The condition is therefore capability plus state:
-`PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` resolving true, a credential id
-present, and a refresh token present. This cannot show a glyph that fails when tapped, needs no
-device table to stay current, and picks up Touch ID on a laptop for free. Where nothing is enrolled
-there is no glyph — the field carries the state, with no sentence explaining it.
-
 ### Deferred, and why
 
 **The admin bypass token and the AWS keys.** Both are live exposures, and in a public app both would
@@ -244,6 +254,9 @@ committing — this surface has moved since launch.
 | 2026-09-03 | Refresh tokens before biometrics | Without one, nothing can mint an access token but the password. Biometrics on their own would put a fingerprint in front of a session that still dies on the access token's schedule. |
 | 2026-09-03 | Refresh token in `localStorage`, not an `httpOnly` cookie | A cookie the browser sends automatically cannot be withheld pending a biometric check, which would make Phase 2 decorative. |
 | 2026-09-03 | Local biometric gate accepted over server-verified WebAuthn | Single-user app; the threat being defended against is an unlocked phone, not a remote attacker. Revisit if Kawa ever gains a second account. |
+| 2026-09-03 | The fingerprint gates every app open, rather than only appearing on a login screen | Phase 1 removed the login screen from daily use, which left the originally-specced glyph with nowhere to appear and nothing to unlock — after a logout the refresh token is already gone. Gating the restore is the only version where the fingerprint does real work. It trades the zero-touch launch Phase 1 had just delivered for closing the unlocked-phone threat, which was accepted deliberately. |
+| 2026-09-03 | Enrolment always replaces whatever credential is stored | The gate fires on enrolment alone, so a credential gone stale — device biometrics reset — would force a password at every launch, worse than no gate. Reaching the password means the biometric path is not working, which makes it the right moment to replace it. |
+| 2026-09-03 | A declined enrolment records nothing | Storing no credential leaves the gate off and the session restoring as before, so refusal needs no separate flag. Password logins are rare enough that re-offering then costs nothing. |
 | 2026-09-03 | Request `prf` at enrolment despite nothing reading it | Costs nothing now; without it, encrypting the token at rest later would require re-enrolling the credential. |
 | 2026-09-03 | Refresh token window of 1 year, not Cognito's 10-year maximum | The ask was "longer is better". Without rotation the window is absolute, so a year is already roughly one password entry per year — the extra nine years buy no meaningful convenience and lengthen the life of a bearer credential to live bank data. |
 | 2026-09-03 | Startup refreshes rather than validating the stored access token first | An access token older than a day is dead, so validating first would often spend a round trip to learn nothing. |

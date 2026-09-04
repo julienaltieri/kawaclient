@@ -69,6 +69,10 @@ class ApiCaller{
 	  access token in a single round trip — validating the stored one first would cost a second call in
 	  the common case, since an access token older than an hour is dead anyway. Falls back to validating
 	  a bare access token for a session created before this store existed.*/
+	/*Whether there is something a biometric unlock could actually release. Both halves are needed:
+	  Cognito requires the username to rebuild the user when spending the refresh token.*/
+	hasStoredSession(){return !!(this.session.username && this.session.refreshToken)}
+
 	ensureValidSession(){
 		if(this.session.refreshToken){return this.refreshSession()}
 		if(this.token){return this.validateToken(this.token)}
