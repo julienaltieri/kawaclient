@@ -485,3 +485,53 @@ test("a stream whose legs all point the wrong way is still placed somewhere", ()
 	const legs = [{date: new Date(Date.UTC(2025, 0, 5)), amount: 500, accountHash: "chk"}]
 	expect(accountRoutingOf({t: legs}, () => -1).t).toBe("chk")
 })
+
+/* ---- both months are built once, and the toggle only chooses ------------------------------------ */
+
+test("both months are prerendered, and switching does not rebuild either", async () => {
+	const ref = await mount()
+	const c = ref.current
+	//force the first build, then count every rebuild from here
+	c.allSeries()
+	let builds = 0
+	const real = c.computeSeries.bind(c)
+	c.computeSeries = w => {builds++; return real(w)}
+
+	//the cache already holds both, so asking for either costs nothing
+	expect(c.series("this")).toBeTruthy()
+	expect(c.series("last")).toBeTruthy()
+	expect(builds).toBe(0)
+
+	//and neither does switching between them
+	await act(async () => {fireEvent.click(screen.getByText("this month"))})
+	expect(screen.getByText("last month")).toBeInTheDocument()
+	expect(builds).toBe(0)
+})
+
+test("the cache is dropped when the reading changes, and not before", async () => {
+	const ref = await mount()
+	const c = ref.current
+	c.allSeries()
+	let builds = 0
+	const real = c.computeSeries.bind(c)
+	c.computeSeries = w => {builds++; return real(w)}
+
+	//a re-render on its own must not invalidate anything
+	await act(async () => {c.forceUpdate()})
+	c.allSeries()
+	expect(builds).toBe(0)
+
+	//a different reading is different money, so both months are rebuilt
+	await act(async () => {c.setState({source: "__netted__"})})
+	c.allSeries()
+	expect(builds).toBe(2)
+})
+
+test("the two prerendered months really are different windows", async () => {
+	const ref = await mount()
+	const all = ref.current.allSeries()
+	const endOf = a => a.past.concat(a.future).slice(-1)[0].date.getTime()
+	expect(endOf(all.last)).toBeLessThan(endOf(all.this))
+	expect(all.last.future.length).toBe(0)
+	expect(all.this.future.length).toBeGreaterThan(0)
+})

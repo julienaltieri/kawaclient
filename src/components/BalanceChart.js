@@ -384,8 +384,8 @@ export default class BalanceChart extends BaseComponent{
 	/* THIS month is fifteen days either side of today. LAST month is the previous CALENDAR month,
 	   first to last - not "thirty days ago", because the question it answers is about a month that
 	   has a name, and a rolling window would cut a rent payment in half at one end. */
-	window(now){
-		if(this.state.when === "last"){
+	window(now, when){
+		if(when === "last"){
 			return {from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-1, 1)),
 				to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)), fwd: 0}
 		}
@@ -393,9 +393,36 @@ export default class BalanceChart extends BaseComponent{
 		return {from: new Date(now.getTime() - back*DAY), to: null, fwd: 15}
 	}
 
-	series(){
+	/* BOTH MONTHS ARE BUILT AT ONCE, and the toggle only chooses between them.
+
+	   Every switch used to rebuild a month from scratch: walk the whole ledger backwards, then run
+	   fifty-odd terminals across thirty days. That work landed on the first frame of the animation,
+	   which is precisely where a stall is most visible - the picture holds still for a moment and then
+	   catches up, so a motion designed to make the change legible instead makes it look broken.
+
+	   The cost of having both is one extra walk of a ledger that is already in memory, and last month
+	   forecasts nothing at all, so it is cheaper than the month it sits beside. The cache is keyed on
+	   the three things a series depends on - the reading, the transactions, the accounts - so it is
+	   dropped exactly when it is wrong and never merely because the component re-rendered.
+
+	   It also removes a double computation that was there from the start: the caption and the picture
+	   each asked for the series independently on every render, including on every day the cursor
+	   passed over. */
+	allSeries(){
+		const src = this.source(), txns = this.props.transactions, acc = this.state.accounts
+		const k = this._seriesKey
+		if(this._series && k && k.src === src && k.txns === txns && k.acc === acc)return this._series
+		const out = {}
+		WHENS.forEach(o => {out[o[0]] = this.computeSeries(o[0])})
+		this._series = out
+		this._seriesKey = {src: src, txns: txns, acc: acc}
+		return out
+	}
+	series(when){return this.allSeries()[when || this.state.when]}
+
+	computeSeries(when){
 		const now = this.ledgerToday()
-		const win = this.window(now)
+		const win = this.window(now, when)
 		const txns = this.ledger()
 		const bal = this.anchor()
 		const keep = this.covered(), cards = this.creditHashes()
@@ -674,10 +701,12 @@ export default class BalanceChart extends BaseComponent{
 	   the reader watches the picture change shape when nothing about the money moved at all. What
 	   actually happened is that the frame got wider, so the DOMAIN is what interpolates. */
 	zoomTo(){
-		const before = this.series()
+		//both are already built, so the frame the animation starts on is ready before the tap lands
+		const all = this.allSeries()
+		const before = all[this.state.when]
 		this.animating = true
 		this.setState({when:this.next(WHENS,"when"), at:null}, () => {
-			const after = this.series()
+			const after = this.allSeries()[this.state.when]
 			const frameOf = a => {const s = a.past.concat(a.future)
 				return {x0:s[0].date.getTime(), x1:s[s.length-1].date.getTime()}}
 			const f0 = frameOf(before), f1 = frameOf(after)

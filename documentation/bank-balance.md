@@ -588,6 +588,21 @@ about a month that has a name, and a rolling window would cut a rent payment in 
 reconstruction still runs back from today whatever is on screen, so a past window is a slice of that
 one anchored walk rather than a separate calculation from a guessed opening figure.
 
+**Both months are built at once, and the toggle only chooses between them.** Every switch used to
+rebuild a month from scratch — walk the whole ledger backwards, then run fifty-odd terminals across
+thirty days — and that work landed on the *first frame of the animation*, which is precisely where a
+stall is most visible: the picture holds still for a moment and then catches up, so a motion designed
+to make the change legible instead makes it look broken.
+
+The cost of holding both is one extra walk of a ledger that is already in memory, and last month
+forecasts nothing at all, so it is cheaper than the month beside it. The cache is keyed on the three
+things a series actually depends on — the reading, the transactions, the accounts — so it is dropped
+exactly when it is wrong and never merely because the component re-rendered.
+
+It also removes a double computation that had been there from the start: the caption and the picture
+each asked for the series independently on every render, including on every day the cursor passed
+over.
+
 Centring is the whole of the rule, and it follows from what the view is for. Goal 1 is a decision
 being taken *now*: the relevant past is the few days that explain where the balance currently is, and
 the relevant future is the few days the decision has to survive. A year of history compresses that
