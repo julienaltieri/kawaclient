@@ -61,18 +61,17 @@ const dotTargetStyle = {cursor:"pointer",userSelect:"none",WebkitTapHighlightCol
 //worst place to start one.
 //The mark changed with the position, because it had to. The corner version was three diagonals sized by
 //x+y=c, which read as a grip only BECAUSE they filled a corner; the same shape centred is just a stray
-//triangle. Three little squares are the same idea said symmetrically and as quietly as it can be said:
-//standing where the tile meets the pager dots, anything with height reads as a control rather than as a
-//texture, and the strokes this replaces were tall enough to look like one. A square claims no direction
-//and no size - it is the smallest mark that still says "there is something to take hold of here".
+//triangle. It is ONE long bar, after two attempts that said too much. Three vertical strokes had height,
+//and standing where the tile meets the pager dots anything with height reads as a control rather than as
+//a texture. Three squares had none, but three of anything in a row is a menu - the reader has been taught
+//that by every other row of three dots they have ever seen. A single bar is neither: it has no count to
+//mistake and no height to press, and it is the mark a sheet already uses to say "take hold of the edge".
 //Decorative, and deliberately so: pointer-events none, aria-hidden, no handler of its own, so what it
 //sits on stays a plain drag surface. A control there would have to do something a drag does not.
-const gripSquares = [0,6,12];   //x of each square in a 15-wide box; 3 across, 3 apart
-const Grip = () => <svg width="15" height="3" viewBox="0 0 15 3" aria-hidden="true"
+const Grip = () => <svg width="28" height="3" viewBox="0 0 28 3" aria-hidden="true"
 	style={{position:"absolute",left:"50%",transform:"translateX(-50%)",bottom:DS.spacing.xxs+"rem",
 		pointerEvents:"none",opacity:0.3}}>
-	{gripSquares.map(x => <rect key={x} x={x} y={0} width={3} height={3} rx={0.75}
-		fill={DS.getStyle().bodyTextSecondary}/>)}
+	<rect x={0} y={0} width={28} height={3} rx={1.5} fill={DS.getStyle().bodyTextSecondary}/>
 </svg>
 
 //The modal's own side padding, which the deck reaches back into so a page slides all the way to the edge

@@ -226,7 +226,12 @@ class DesignSystem{
 		little: 0.8,
 		body: 	1,
 		title: 	1.2,
-		header: 1.4 
+		header: 1.4,
+		//A tile's own heading, where the tile is the page rather than a row in one. The scale above tops
+		//out at 1.4 because everything using it sits inside something else; a chart that fills a card
+		//carries its title at the size a reader takes in from across the desk, and 1.4 there reads as a
+		//caption on the picture instead of a name for it.
+		display: 2
 	}
 }
 

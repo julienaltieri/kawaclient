@@ -820,24 +820,28 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		// Calculate total needed height and optimal positioning
 		const labelHeight = 2*this.style.fontSizeBody + 8*this.style.statLabelSpacing + this.style.secondaryLabelsOffset;
 		const yRange = this.getDomainBounds().My - this.getDomainBounds().my;
-		/* THE TITLE HANGS FROM THE TOP OF THE TILE, not from the top of the plot. Both pages of the
-		   carousel are one flick apart and page two sets its heading at the very top of the card, so a
-		   title that starts lower here reads as a different kind of thing rather than the same thing
-		   about another picture.
+		/* THE TITLE HANGS FROM THE TOP OF THE TILE, not from the top of the plot. Page two of the
+		   carousel sets its heading at the very top of the card, and this one sat about eleven chart
+		   units lower - some twenty screen pixels - so two tiles a flick apart disagreed about where a
+		   title goes.
 
-		   Placed at the domain's top it lands at chartPadding.top, which is the top of the PLOT - and
-		   the padding is where the title is meant to live, not below it. So it is lifted by the padding
-		   less the height of a cap, in domain units, which puts the top of the lettering on the SVG's
-		   own top edge. The 0.8 is where a cap sits above the baseline; the labels stacked under this
-		   one already measure their own dy with it.
+		   The lift is MEASURED, not derived, and the derivation that came first is worth recording
+		   because it was wrong in a way that looked right. It assumed a label placed at the domain's
+		   top lands at chartPadding.top. It does not: VictoryLabel applies an offset of its own, about
+		   0.355 of the font size - 7.1 units at the desktop's 20, 10.65 at the phone's 30 - so the
+		   baseline starts that much lower than the padding, and a lift computed without it moved the
+		   title by four units where eleven were wanted. Rendered to markup and read back, the lift that
+		   puts the top of the lettering on the SVG's own top edge is 0.0793.
 
-		   The mobile value this replaces was 0.3, and the expression returns 0.3000 there - which is
-		   how we know the reading is right rather than merely plausible. Desktop had been left at 0,
-		   the one case where the formula happens to differ from doing nothing. */
-		const plotH = Math.max(1, this.style.chartHeight
-			- this.style.chartPadding.top - this.style.chartPadding.bottom);
-		const lift = (this.style.chartPadding.top - this.style.fontSizeTitle*0.8)/plotH;
-		const y = this.getDomainBounds().My + yRange*lift;
+		   That first attempt also carried a claim that is simply false and should not be repeated: that
+		   the phone's 0.3 was the same formula and the desktop had never been derived. Measured, the
+		   two land within half a unit of each other - cap-top 10.65 on the phone against 11.10 here -
+		   so they already agreed. What they agreed on is a position that page two does not share, which
+		   is the actual fault and the only thing being changed.
+
+		   The PHONE keeps its 0.3 for now, by request, which leaves it as it has always been. */
+		const TITLE_LIFT = Core.isMobile() ? 0.3 : 0.0793;
+		const y = this.getDomainBounds().My + yRange*TITLE_LIFT;
 
 		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]), y:y}}>
         	<FocusReportWrapper 

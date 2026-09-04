@@ -180,26 +180,22 @@ units rather than rem, and none of it can come from the design system's rem toke
 `Core.isMobile()` is `window.innerHeight > window.innerWidth` and is read **in the constructor**, so
 rotating a device does not restyle the chart until it remounts.
 
-**The title hangs from the top of the TILE, not the top of the plot.** Both pages of the carousel are a
-flick apart, and page two sets its heading at the very top of the card, so a title starting lower here
-reads as a different kind of thing rather than the same thing about another picture. The label is placed
-at a domain point, and the domain's top is `chartPadding.top` — the top of the plot, not of the tile. It
-is therefore lifted by the padding less the height of a cap:
+**The title hangs from the top of the TILE, not the top of the plot.** Page two of the carousel sets its
+heading at the very top of the card, and this one sat about eleven chart units lower — some twenty screen
+pixels — so two tiles a flick apart disagreed about where a title goes.
 
-```
-lift = (chartPadding.top − fontSizeTitle × 0.8) / (chartHeight − padTop − padBottom)
+The lift is `0.0793` on desktop, and it is **measured, not derived**. Placing a label at the domain's top
+does not land it at `chartPadding.top`: `VictoryLabel` applies an offset of its own, about **0.355 of the
+font size** — 7.1 units at the desktop's 20, 10.65 at the phone's 30 — so the baseline starts that much
+lower than the padding. Rendered to markup and read back, `0.0793` is what puts the top of the lettering
+on the SVG's own top edge.
 
-mobile    (60 − 30×0.8) / 120  =  0.3000
-desktop   (20 − 20×0.8) / 140  =  0.0286
-```
-
-which puts the top of the lettering on the SVG's own top edge. The 0.8 is where a cap sits above the
-baseline, and the labels stacked beneath the title already measure their `dy` with it.
-
-The value was a literal before: `0.3` on mobile and **`0` on desktop**, where the derivation had never
-been done and the title consequently sat a padding's worth too low. That the expression returns exactly
-`0.3000` for mobile is what says the reading is right rather than merely plausible — it reproduces the
-one value already known to look correct, and changes only the case that was never derived.
+A derivation that ignored that offset was tried first and moved the title four units where eleven were
+wanted, which is why it was invisible on screen. It also carried a claim that was simply false: that the
+phone's `0.3` was the same formula and the desktop had never been derived. Measured, the two land within
+half a unit of each other — cap-top 10.65 on the phone against 11.10 on the desktop — so they already
+agreed with each other. What they agreed on is a position page two does not share, which is the actual
+fault and the only thing changed. The phone keeps `0.3` for now.
 
 ## Key decisions
 

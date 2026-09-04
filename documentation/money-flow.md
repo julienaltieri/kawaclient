@@ -1240,18 +1240,21 @@ from the DATA rather than the column (the adapter marks the master's children), 
 to know where its own level is — the income streams stand one column from the hub exactly as the
 categories do, but they are a level below them (2.7).
 
-**9.1a The heading is the size page one DRAWS its own, not a rem that once matched it.** The two tiles
-sit a thumb-flick apart in one carousel, so the heading has to read as the same kind of thing on both.
-Page one draws its title inside the plot, in chart units — 30 on a phone and 20 on a desktop, over a
-450-unit width — so what it comes to on screen grows with the card. This one was fixed in rem, and the
-wider the card the further apart they got, until beside a heading a third larger the second tile read
-as the lesser thing. It is computed from page one's own constants now, so "set like page one's" stays
-true at any width. An earlier attempt at this looked a step too large because it used the phone's 30 on
-a desktop card.
+**9.1a On a desktop the heading takes the design system's largest size, not one converted from page
+one's canvas.** Page one draws its title in chart units, so the obvious way to match it is to convert —
+20 units over a 450-unit width, times the card. That was tried and came out MAGNIFIED: the conversion
+assumes the chart scales by its width, and what it actually scales by is whatever the tile lets its SVG
+have, so the arithmetic overstated it and the heading arrived a size larger than the picture it names.
 
-The PHONE keeps the rem value: there the two already agree within a couple of pixels, `title` is what
-the rest of the app's headings use at that size, and re-deriving it would move a calibrated thing for
-nothing.
+The general lesson is about borrowing a number across a boundary. Two coordinate systems can be related
+without the relation being a constant you can write down, and a size that has to be right *to the reader*
+is better chosen for the reader than converted from somewhere else. It is 2rem, set by eye, which is the
+`display` token — added to the scale for this, since the tokens stopped at 1.4 and every one of them is
+for type that sits inside something rather than naming a whole card.
+
+The PHONE keeps `title`: there the two already agree, it is what the rest of the app's headings use at
+that size, and re-deriving it would move a calibrated thing for nothing. A pleasant consequence of a rem
+is that nothing has to be measured — the width observer this rule briefly needed is gone.
 
 **9.8 The type sizes come from the DESIGN SYSTEM, where the card is wide enough to carry them.** They
 never did: the engine held its own 12 and 10 and the tile passed nothing, so the app's type scale had no

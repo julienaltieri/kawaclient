@@ -32,23 +32,20 @@ import AppConfig from '../AppConfig'
    thumb-flick apart, so a heavier and quieter heading on the second one reads as a different kind of
    thing rather than the same thing about a different picture.
 
-   Page one's is 30 units on a 450-unit chart, so what it comes to on screen depends on how wide the
-   tile is — about 1.2rem at the width one gets on a phone, which is `title`.
+   ON A DESKTOP IT IS THE DESIGN SYSTEM'S OWN LARGEST SIZE, not a size copied from page one's canvas.
+   Page one draws its title in chart units, so the obvious way to match it is to convert - 20 units over
+   a 450-unit width, times the card. That was tried and it came out MAGNIFIED: the conversion assumes the
+   chart scales by its width, and what it actually scales by is whatever the tile lets its SVG have, so
+   the arithmetic overstated it and the heading arrived a size larger than the picture it names.
 
-   §9.1a  ON A DESKTOP THE TWO DIVERGE, and `title` is the one that is wrong. Page one's title grows with the
-   card because it is drawn in chart units; this one is fixed in rem, so the wider the card the further
-   apart they get, and beside a heading a third larger the second tile read as a lesser thing. Matched
-   by computing it the way page one does - its own constant, over its own 450 - which is what "set like
-   page one's" was always meant to say, and now stays true at any width. An earlier attempt looked a
-   step too large because it used the phone's 30 on a desktop card; the desktop constant is 20.
+   The lesson is the general one about borrowing a number across a boundary: two coordinate systems can
+   be related without the relation being a constant you can write down, and a size that has to be right
+   to the reader is better chosen for the reader than converted from somewhere else. Set empirically at
+   2rem, which is `display` - added to the scale for this, since the tokens stopped at 1.4 and every one
+   of them is for type that sits inside something rather than naming a whole card.
 
-   The PHONE keeps the rem value. There the two already agree to within a couple of pixels, `title` is
-   what the rest of the app's headings use at that size, and re-deriving it would move a calibrated
-   thing for no gain. */
-/* px, or null to keep the design system's rem - which is the phone, and any moment before the card
-   has been measured. Page one's own constants, read from the same place it reads them. */
-export const titlePx = (cardW, mobile = Core.isMobile()) =>
-	(!mobile && cardW > 0) ? (mobile ? 30 : 20)*cardW/450 : null
+   The PHONE keeps `title`. There the two already agree, it is what the rest of the app's headings use at
+   that size, and re-deriving it would move a calibrated thing for nothing. */
 /* Laid out as a SENTENCE, not as a row of boxes. Spacing the three words with a flex gap left no
    actual space between them, so the heading's text - what a screen reader says, and what a test
    reads - came out as "Actualsthisyear". Ordinary inline text with real spaces also gets the baseline
@@ -58,7 +55,7 @@ export const titlePx = (cardW, mobile = Core.isMobile()) =>
 const rootPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize)||16
 const Title = styled.h2`
 	margin:0; line-height:1.15;
-	font-size:${props => props.$px ? props.$px+"px" : DS.fontSize.title+"rem"}; font-weight:400;
+	font-size:${props => (props.$big ? DS.fontSize.display : DS.fontSize.title)}rem; font-weight:400;
 	color:${props => DS.getStyle().bodyText};
 `
 const TitleButton = styled.button`
@@ -175,7 +172,7 @@ const ChartHost = styled.div`
 export default class MoneyFlowChart extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {period:"observation", basis:"actual", focused:false, cardW:0}
+		this.state = {period:"observation", basis:"actual", focused:false}
 		this.host = React.createRef()
 	}
 
@@ -240,20 +237,13 @@ export default class MoneyFlowChart extends BaseComponent{
 			onFocusChange:path => this.updateState({focused:path.length>0})
 		})
 		this.engine.setTree(this.tree())
-		/* the card's width, for the HEADING only - the engine keeps its own observer for the picture */
-		const measure = () => {const w = this.host.current&&this.host.current.clientWidth
-			if(w&&w!==this.state.cardW)this.updateState({cardW:w})}
-		if(typeof ResizeObserver!=="undefined"&&this.host.current){
-			this.titleRO = new ResizeObserver(measure); this.titleRO.observe(this.host.current)
-		}
-		measure()
 	}
 	componentDidUpdate(){
 		if(!this.engine)return
 		this.engine.setPalette(this.palette())
 		this.engine.setTree(this.tree())
 	}
-	componentWillUnmount(){if(this.engine)this.engine.destroy(); if(this.titleRO)this.titleRO.disconnect()}
+	componentWillUnmount(){if(this.engine)this.engine.destroy()}
 
 	/* THE SOURCE, not a picture of it (DECISION-PRINCIPLES.md #27). This used to copy the engine's three trees plus every name's
 	   placement facts, which is a conclusion: the adapter had already dropped whatever it dropped, so
@@ -305,7 +295,7 @@ export default class MoneyFlowChart extends BaseComponent{
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
 			<Head>
-				<Title $px={titlePx(this.state.cardW)}>
+				<Title $big={!Core.isMobile()}>
 					<TitleButton type="button" onClick={() =>
 						this.updateState({basis:this.state.basis==="actual"?"target":"actual"})}
 					>{basisWord}</TitleButton>{" "}

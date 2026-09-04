@@ -17,7 +17,7 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import {Period} from '../Time'
 import {getStreamAnalysis} from '../processors/ReportingCore'
-import MoneyFlowChart, {titlePx} from '../components/MoneyFlowChart'
+import MoneyFlowChart from '../components/MoneyFlowChart'
 
 const HIST = (amount) => [{startDate: new Date("2000-01-01"), amount: amount}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -201,25 +201,4 @@ test("unmounts without throwing", () => {
 	const ref = mount()
 	const engine = ref.current.engine
 	expect(() => engine.destroy()).not.toThrow()
-})
-
-describe("the heading is the size page one draws its own", () => {
-	// Page one's title is 30 chart units on a 450-unit chart on a phone and 20 on a desktop, so what
-	// it comes to on screen grows with the card. This one was fixed in rem, so the wider the card the
-	// further apart they got. jsdom has no layout, so the width is passed in rather than measured -
-	// which is the whole reason this is a pure function of it.
-	test("on a desktop it is page one's constant over page one's width", () => {
-		expect(titlePx(900, false)).toBeCloseTo(20 * 900 / 450, 6)   // 40px on a 900px card
-		expect(titlePx(450, false)).toBeCloseTo(20, 6)               // and 20px at the coordinate width
-	})
-
-	test("it grows with the card, which is the thing that was wrong", () => {
-		expect(titlePx(900, false)).toBeGreaterThan(titlePx(600, false))
-	})
-
-	test("a phone keeps the design system's size, and so does an unmeasured card", () => {
-		expect(titlePx(390, true)).toBeNull()      // the rem value the rest of the app's headings use
-		expect(titlePx(0, false)).toBeNull()       // before the card has been measured
-		expect(titlePx(undefined, false)).toBeNull()
-	})
 })
