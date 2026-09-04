@@ -151,18 +151,23 @@ the trough goal 1 is about.** With $12,000 in savings behind $3,200 in checking,
 near its floor, the rent is drawn against money that is not there to pay it, and the tile answers "can
 I buy the plane tickets" with a confident yes it has no basis for.
 
-So the default is **one account** — the checking one, chosen by `subtype` — and everything else is on
-the toggle. The source list is built from the accounts that actually exist:
+So the reading is the **spending account** — the depository accounts whose `subtype` says they are for
+spending — and there are exactly **two** readings:
 
-| entry | when it appears |
-|---|---|
-| *in ‹account›* | one per depository account that reported a balance |
-| *in all accounts* | only with more than one |
-| *after cards* | only where there is a credit account to net off |
+| entry | what it is | when it appears |
+|---|---|---|
+| *spending* | the spending account alone | always; the default |
+| *spending net of cards* | the same, less what the cards owe | only where there is a credit account |
 
-A single-account user therefore never sees a choice they do not have. And because the account and the
-reading are the same question — *which money am I looking at* — they are **one control**, not two: the
-title stays two tappable words on a phone.
+**Two, not a list of every account.** Enumerating the connected accounts was the first attempt and it
+turned one control into a file browser for a question that has two answers. A savings balance is
+neither of them: folded into the spending account it hides the trough, and on its own it is not a
+runway — nothing is forecast against it and no decision is taken from it. It is simply not what this
+picture is about. Where no `subtype` names a spending account, every depository account counts, so a
+reader with one account never gets an empty chart over a taxonomy detail.
+
+Because the account and the reading are the same question — *which money am I looking at* — they are
+**one control**, and the title stays two tappable words on a phone.
 
 **Per-account forecasting follows from this.** Once the balance on screen can be one account, the
 forecast has to know which account each stream lands on, or the rent gets forecast against savings.
@@ -624,6 +629,25 @@ the trough is the lowest point of the FUTURE, which is what goal 1 actually asks
 — the rules for scale, the trough dot for the decision — and where they coincide the dot sits on the
 rule, which is the truth about that window rather than a collision.
 
+### §10e-a A badge is an AMOUNT, and the name belongs to the badge
+
+**Which days get a badge: movements over $1,000.** The floor was a fraction of the window's range,
+which sounds adaptive and is not: a quiet month promotes its own noise to a badge, and a busy one
+hides a four-figure payment because something larger happened nearby. A badge means "this is worth
+noticing", and that is an absolute claim about an amount, so it is an absolute number. It also means
+the marks do not move when the window changes — the same day carries the same badge in a month and in
+a quarter, which is what lets the two windows be read as the same picture at two scales.
+
+**The stream name appears beside the badge, and only while the cursor is on it.** It had been in the
+subtitle, which is the wrong place twice over: the name changes on every day the cursor passes, and on
+most days it names nothing, so the line flickers with a caption that is usually empty. A badge asks a
+question — *what is that one* — and the answer belongs next to the thing that asked it. So the label
+is drawn at the badge, it flips to the other side rather than run off the frame, and it is haloed in
+the tile colour (`paint-order: stroke`) so it stays legible over the line and the area beneath.
+
+Nothing else in the picture carries a name. That is deliberate: a chart where every mark is labelled
+has no marks, only labels.
+
 ### §10e-b The cursor reads the STEP, not a filtered event list
 
 The readout was looking the cursor's day up in the event list that places the beads — which is
@@ -760,9 +784,14 @@ second heading competing with the title rather than a caption under it, and a se
 be read rather than glanced at. It is now `little` in the secondary colour, and says exactly one thing:
 
 - **at rest**, the low point, which is the entire question the tile exists to answer;
-- **under the cursor**, what moved the line — and *not* the balance as well, because the cursor is
-  already sitting on the line saying where it is, so repeating it spends the one line on something the
-  reader can already see.
+- **under the cursor**, the exact balance on that day — and nothing else.
+
+The cursor line reported *what moved* for a while, which put two different kinds of fact through one
+line: a **position** and a **change**. They are not interchangeable and the reader cannot tell which
+they are looking at without reading the words. The balance is the position, it is what the cursor is
+pointing at, and it is the number you cannot get any other way — the line shows roughly where it is,
+never exactly. What moved is a different question, it belongs to a specific mark rather than to every
+day, and §10e-a puts it there.
 
 Its height stays reserved, so going from one to the other moves nothing below it.
 

@@ -83,9 +83,9 @@ const mount = async () => {
 
 /* ---- the title -------------------------------------------------------------------------------- */
 
-test("mounts, and the title names the account and the window", async () => {
+test("mounts, and the title names the reading and the window", async () => {
 	await mount()
-	expect(screen.getByText("in Checking")).toBeInTheDocument()
+	expect(screen.getByText("spending")).toBeInTheDocument()
 	expect(screen.getByText("this month")).toBeInTheDocument()
 })
 
@@ -103,34 +103,32 @@ test("the windows are a month and a quarter, and nothing shorter", async () => {
 
 /* ---- (a) which money am I looking at ------------------------------------------------------------ */
 
-test("the default is the CHECKING account alone, not everything combined", async () => {
+test("the default is the SPENDING account, and savings is not folded into it", async () => {
 	const ref = await mount()
-	expect(ref.current.source()).toBe(CHECKING)
-	expect(ref.current.anchor()).toBe(3200)   //NOT 3200+12000: savings must not pad the runway
+	expect(ref.current.source()).toBe("__spending__")
+	//NOT 3200+12000: a savings balance behind the checking one would hide the trough entirely
+	expect(ref.current.anchor()).toBe(3200)
 })
 
-test("the source list offers each account, then combined, then netted", async () => {
+test("there are two readings, and the second actualises the cards", async () => {
 	const ref = await mount()
-	expect(ref.current.sources().map(o => o[1]))
-		.toEqual(["in Checking", "in Savings", "in all accounts", "after cards"])
+	expect(ref.current.sources().map(o => o[1])).toEqual(["spending", "spending net of cards"])
+	await act(async () => {ref.current.setState({source: "__netted__"})})
+	expect(ref.current.anchor()).toBe(3200 - 800)
 })
 
-test("each source anchors on its own money", async () => {
-	const ref = await mount()
-	const anchorFor = async src => {
-		await act(async () => {ref.current.setState({source: src})})
-		return ref.current.anchor()
-	}
-	expect(await anchorFor(SAVINGS)).toBe(12000)
-	expect(await anchorFor("__all__")).toBe(3200 + 12000)
-	expect(await anchorFor("__netted__")).toBe(3200 + 12000 - 800)
-})
-
-test("a lone account offers no choice the user does not have", async () => {
+test("with no credit account there is no second reading to offer", async () => {
 	Core.getAccountsWithBalances = () => Promise.resolve(
 		[{hash: CHECKING, name: "Checking", type: "depository", subtype: "checking", current: 3200}])
 	const ref = await mount()
 	expect(ref.current.sources().length).toBe(1)
+})
+
+test("a savings account never anchors the picture, whichever reading is on", async () => {
+	const ref = await mount()
+	expect(ref.current.spendingHashes()).toEqual([CHECKING])
+	await act(async () => {ref.current.setState({source: "__netted__"})})
+	expect(ref.current.covered().indexOf(SAVINGS)).toBe(-1)
 })
 
 test("a bank that reports no balance gives an empty state rather than a plausible wrong line",
@@ -143,13 +141,43 @@ test("a bank that reports no balance gives an empty state rather than a plausibl
 
 /* ---- (b) the cursor names what moved ------------------------------------------------------------ */
 
-test("the cursor names the stream behind the step, on an ordinary day", async () => {
+test("the cursor reports the balance that day, and nothing else", async () => {
 	const ref = await mount()
 	await act(async () => {ref.current.setState({at: rentDay})})
-	const sub = ref.current.subtitle()
-	expect(sub).toContain("Rent")
-	expect(sub).toContain("1,700")
+	const out = ref.current.subtitle()
+	//the balance after the rent went out: 3200 today, +400 and -0 since, +1700 undone
+	expect(out).toMatch(/^<b>\$[\d,]+<\/b>$/)
+	expect(out).not.toContain("Rent")
 })
+
+test("the stream name appears beside a badge only while the cursor is on it", async () => {
+	const ref = await mount()
+	const svg = () => (ref.current.host.current || {}).innerHTML || ""
+	//at rest: no name anywhere
+	expect(svg()).not.toContain("Rent")
+	//on the badge: the name is drawn next to it
+	await act(async () => {ref.current.setState({at: rentDay})})
+	expect(svg()).toContain("Rent")
+	//on a day with no badge: gone again
+	await act(async () => {ref.current.setState({at: quietDay(ref)})})
+	expect(svg()).not.toContain("Rent")
+})
+
+test("a badge is drawn for a movement over the floor and not for one under it", async () => {
+	const ref = await mount()
+	const days = ref.current.badgeDays()
+	//rent at -1700 and pay at +5000 clear $1,000; the -400 transfer does not
+	expect(days.indexOf(dayOf(rentDay))).toBeGreaterThan(-1)
+	expect(days.indexOf(dayOf(d(5)))).toBe(-1)
+})
+
+const dayOf = x => new Date(x).toISOString().slice(0, 10)
+const quietDay = ref => {
+	const a = ref.current.series()
+	const all = a.past.concat(a.future)
+	const busy = ref.current.badgeDays()
+	return (all.filter(p => busy.indexOf(dayOf(p.date)) < 0)[2] || all[0]).date
+}
 
 test("the step at a day equals that day's movement and nothing else", async () => {
 	const ref = await mount()
@@ -167,7 +195,7 @@ test("a day where nothing happened reports no movement rather than a wrong strea
 	const a = ref.current.series()
 	const all = a.past.concat(a.future)
 	//day 7 back has no transaction in the fixture
-	const quiet = d(7).toISOString().slice(0,10)
+	const quiet = d(7).toISOString().slice(0,10)  //no transaction in the fixture
 	let i = -1
 	all.forEach((p, k) => {if(p.date.toISOString().slice(0,10) === quiet)i = k})
 	const m = ref.current.movementAt(all, i, ref.current.ledger())

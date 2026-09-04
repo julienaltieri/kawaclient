@@ -63,8 +63,17 @@ const BLEND = HIGH_AT - LOW_AT;
 const PERIODS = [[30, "this month"], [91, "this quarter"]];
 const wordOf = (list, v) => (list.filter(o => o[0] === v)[0] || list[0])[1];
 
-/* the two synthetic sources, which are not accounts */
-const ALL = "__all__", NETTED = "__netted__";
+/* THE TWO READINGS. Not a list of accounts: enumerating every connected one made the control a file
+   browser for a question that has two answers. The spending account is where the money that pays for
+   things sits; the only other thing worth asking is what is left once the cards are actualised. A
+   savings balance is neither - folded in it hides the trough goal 1 is about, and on its own it is
+   not a runway. */
+const SPENDING = "__spending__", NETTED = "__netted__";
+
+/* A BADGE MARKS A TRANSACTION WORTH NOTICING, and that is an AMOUNT, not a proportion. The floor was
+   a fraction of the window range, so a quiet month promoted its own noise to a badge and a busy one
+   hid a four-figure payment. A fixed floor says the same thing in every window. */
+const BADGE_FLOOR = 1000;
 
 const MORPH_MS = 380;                  //page one's dataMs: a change of amounts
 const ZOOM_MS = 620;                   //page one's moveMs: a change of frame
@@ -170,6 +179,7 @@ const Empty = styled.div`
 	font-size:${DS.fontSize.body}rem; color:${props => DS.getStyle().bodyTextSecondary};
 `
 
+const LT = String.fromCharCode(60);
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
 //a stream name is user-typed and goes into innerHTML
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
@@ -214,52 +224,41 @@ export default class BalanceChart extends BaseComponent{
 	spendable(){return (this.state.accounts||[]).filter(a => a.type === "depository"
 		&& a.current !== undefined)}
 
-	/* WHICH MONEY AM I LOOKING AT - one control, because it is one question. Combining every
-	   depository account was wrong by default: a savings balance sitting behind a checking one hides
-	   exactly the trough goal 1 is about, and the rent is then drawn against money that is not there
-	   to pay it. So the default is ONE account, and the others are on the toggle.
-
-	   The list is built from the accounts that actually exist, so a single-account user never sees a
-	   choice they do not have. "All accounts" appears only with more than one; "after cards" only
-	   where there is a card to net off. */
-	sources(){
+	/* THE SPENDING ACCOUNT: the depository accounts whose subtype says they are for spending. Savings
+	   is excluded on purpose - it is not a runway, and sitting behind a checking balance it hides the
+	   trough. Where no subtype names one, every depository account counts, so a reader with a single
+	   account never gets an empty chart over a taxonomy detail. */
+	spendingHashes(){
 		const dep = this.spendable()
-		const out = dep.map(a => [a.hash, "in " + (a.name || "account")])
-		if(dep.length > 1)out.push([ALL, "in all accounts"])
-		if(this.creditHashes().length)out.push([NETTED, "after cards"])
-		return out.length ? out : [[ALL, "in all accounts"]]
+		const chk = dep.filter(a => (a.subtype || "").toLowerCase().indexOf("check") > -1)
+		return (chk.length ? chk : dep).map(a => a.hash)
 	}
-	//CHECKING FIRST, by subtype, falling back to the first account that reported anything
-	defaultSource(){
-		const dep = this.spendable()
-		const chk = dep.filter(a => (a.subtype || "").toLowerCase().indexOf("check") > -1)[0]
-		return (chk || dep[0] || {}).hash || ALL
+	//one control, one question, two answers. The second appears only where there is a card to
+	//actualise - a reader with no credit account is not offered a reading that cannot differ.
+	sources(){
+		const out = [[SPENDING, "spending"]]
+		if(this.creditHashes().length)out.push([NETTED, "spending net of cards"])
+		return out
 	}
 	source(){
 		const list = this.sources().map(o => o[0])
-		const cur = this.state.source
-		return (cur && list.indexOf(cur) > -1) ? cur : list[0]
+		return (this.state.source && list.indexOf(this.state.source) > -1)
+			? this.state.source : list[0]
 	}
 	//the account hashes this reading is made of
 	covered(){
-		const src = this.source()
-		if(src === NETTED)return this.depositoryHashes().concat(this.creditHashes())
-		if(src === ALL)return this.depositoryHashes()
-		return [src]
+		const spend = this.spendingHashes()
+		return this.source() === NETTED ? spend.concat(this.creditHashes()) : spend
 	}
 
 	//the anchor. Plaid signs a card's current balance POSITIVE for money owed, which is why the
 	//netted reading subtracts rather than adds.
 	anchor(){
-		const src = this.source()
 		const accts = (this.state.accounts||[]).filter(a => a.current !== undefined)
-		if(src !== ALL && src !== NETTED){
-			const one = accts.filter(a => a.hash === src)[0]
-			return one ? one.current : 0
-		}
-		const dep = accts.filter(a => a.type === "depository").reduce((s,a) => s + a.current, 0)
-		if(src === ALL)return dep
-		return dep - accts.filter(a => a.type === "credit").reduce((s,a) => s + a.current, 0)
+		const spend = this.spendingHashes()
+		const base = accts.filter(a => spend.indexOf(a.hash) > -1).reduce((s,a) => s + a.current, 0)
+		if(this.source() !== NETTED)return base
+		return base - accts.filter(a => a.type === "credit").reduce((s,a) => s + a.current, 0)
 	}
 	hasAnchor(){return (this.state.accounts||[]).some(a => a.current !== undefined)}
 
@@ -359,7 +358,7 @@ export default class BalanceChart extends BaseComponent{
 		const txns = this.ledger()
 		const bal = this.anchor()
 		const keep = this.covered(), cards = this.creditHashes()
-		const fallback = this.defaultSource()
+		const fallback = this.spendingHashes()[0]
 		/* a stream with no history has no home account. It is treated as landing on the DEFAULT
 		   account - the safer error, since it then arrives on its own day rather than a fortnight
 		   later inside a settlement lump. */
@@ -374,6 +373,14 @@ export default class BalanceChart extends BaseComponent{
 			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()})
 		return {past:past, future:future, txns:txns, now:now}
+	}
+
+	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts
+	//the rule rather than parsing the markup for it
+	badgeDays(){
+		const a = this.series()
+		return eventsIn(a.past.concat(a.future), this.ledger(), BADGE_FLOOR)
+			.map(e => dayKey(e.date))
 	}
 
 	/* WHAT MOVED THE LINE ON THIS DAY. The curve is a step function, so the step at a day is exactly
@@ -470,8 +477,7 @@ export default class BalanceChart extends BaseComponent{
 
 		//the marks. A bead is filled with the line's own colour and ringed in the tile, which keeps it
 		//legible without introducing a colour that means nothing.
-		const floor = Math.max(50, Math.abs(hi.value - lo.value)/12)
-		const evs = eventsIn(all, this.ledger(), floor).slice(0, 14)
+		const evs = eventsIn(all, this.ledger(), BADGE_FLOOR)
 		this.events = evs
 		const tile = S.pageBackground
 		const beads = evs.map(e => {
@@ -485,7 +491,7 @@ export default class BalanceChart extends BaseComponent{
 				+ (x - 12*s).toFixed(2) + ' ' + (y - 12*s).toFixed(2) + ') scale(' + s.toFixed(3) + ')"/>'
 		}).join("")
 
-		let cursor = ""
+		let cursor = "", badgeLabel = ""
 		this.held = null
 		if(this.state.at){
 			const k = dayKey(this.state.at)
@@ -493,9 +499,27 @@ export default class BalanceChart extends BaseComponent{
 			all.forEach((p,i) => {if(dayKey(p.date) === k)idx = i})
 			const day = idx > -1 ? all[idx] : null
 			if(day){
-				//read off the DRAWN series, not the thresholded event list - that list is capped at
-				//fourteen marks, so most days were not in it and the cursor had nothing to say
+				//read off the DRAWN series, not the thresholded event list - that list has a floor, so
+				//most days are not in it and the cursor would have nothing to say about them
 				this.held = {day:day, move:this.movementAt(all, idx, this.ledger())}
+				/* THE NAME BELONGS TO THE BADGE, NOT TO THE PAGE. A stream name shown whenever the
+				   cursor moves is a caption that changes on every day and mostly says nothing. Shown
+				   beside the mark it explains, it answers the question the mark provokes - "what is
+				   that one" - so it appears only when the cursor is on a badge, and it appears THERE.
+				   Painted with paint-order:stroke so the tile colour haloes the letters and they stay
+				   legible over the line and the area beneath them. */
+				const onBadge = evs.filter(e => dayKey(e.date) === k)[0]
+				if(onBadge && onBadge.stream){
+					const bx = X(onBadge.date.getTime()), by = Y(onBadge.value), br = DOT_R + 3
+					//flip to the other side rather than run off the frame
+					const right = (W - PAD.r - bx) > 74
+					badgeLabel = LT + 'text x="' + (right ? bx + br + 4 : bx - br - 4).toFixed(1)
+						+ '" y="' + (by + 3.2).toFixed(1) + '" text-anchor="'
+						+ (right ? "start" : "end") + '" font-family="Inter" font-size="9" fill="'
+						+ ink + '" paint-order="stroke" stroke="' + tile
+						+ '" stroke-width="2.5" stroke-linejoin="round">'
+						+ esc(onBadge.stream) + LT + '/text>'
+				}
 				cursor = '<line x1="' + X(day.date.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
 					+ X(day.date.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
 					+ '" stroke-width="1" opacity="0.7"/>'
@@ -508,7 +532,7 @@ export default class BalanceChart extends BaseComponent{
 		return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
 			+ defs + area
 			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine
-			+ lineActual + lineFuture + beads + cursor + '</svg>'
+			+ lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
 	}
 
 	paint(){
@@ -663,17 +687,11 @@ export default class BalanceChart extends BaseComponent{
 	subtitle(){
 		if(!this.state.loaded)return "reading balances\u2026"
 		if(!this.hasAnchor())return ""
-		//under the cursor: WHAT MOVED. Not the balance as well - the cursor is already on the line
-		//saying where it is, so repeating it spends the one line on something already visible.
-		if(this.held){
-			const m = this.held.move
-			if(m && m.step && m.stream)
-				return esc(m.stream) + ' <b>' + (m.step < 0 ? '\u2212' : '+')
-					+ money(Math.abs(m.step)).replace("-","") + '</b>'
-			if(m && m.step)return '<b>' + (m.step < 0 ? '\u2212' : '+')
-				+ money(Math.abs(m.step)).replace("-","") + '</b>'
-			return '<b>' + money(this.held.day.value) + '</b>'
-		}
+		/* under the cursor: THE BALANCE THAT DAY, and nothing else. It reported what MOVED instead,
+		   which puts two different kinds of fact through one line - a position and a change - and the
+		   name of a stream belongs beside the mark that provokes the question, which is where the
+		   badge label now puts it. One line, one fact, and the fact the reader is pointing at. */
+		if(this.held)return '<b>' + money(this.held.day.value) + '</b>'
 		//at rest: the low point, which is the whole question
 		const lo = trough(this.series().future)
 		if(!lo)return ""
