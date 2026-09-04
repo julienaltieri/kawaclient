@@ -201,7 +201,6 @@ Measured against the share-of-money rule it replaced, over eighteen exploded vie
 generated portfolios: 96 names shown of 120 offered, against 89 of 281. Much the same number of names,
 against a third as many nameless bands.
 
-
 ## §2 Reading the numbers
 
 `buildFlowTree(master, transactions, {from, to, periodName, basis})`.
@@ -1241,6 +1240,19 @@ from the DATA rather than the column (the adapter marks the master's children), 
 to know where its own level is — the income streams stand one column from the hub exactly as the
 categories do, but they are a level below them (2.7).
 
+**9.1a The heading is the size page one DRAWS its own, not a rem that once matched it.** The two tiles
+sit a thumb-flick apart in one carousel, so the heading has to read as the same kind of thing on both.
+Page one draws its title inside the plot, in chart units — 30 on a phone and 20 on a desktop, over a
+450-unit width — so what it comes to on screen grows with the card. This one was fixed in rem, and the
+wider the card the further apart they got, until beside a heading a third larger the second tile read
+as the lesser thing. It is computed from page one's own constants now, so "set like page one's" stays
+true at any width. An earlier attempt at this looked a step too large because it used the phone's 30 on
+a desktop card.
+
+The PHONE keeps the rem value: there the two already agree within a couple of pixels, `title` is what
+the rest of the app's headings use at that size, and re-deriving it would move a calibrated thing for
+nothing.
+
 **9.8 The type sizes come from the DESIGN SYSTEM, where the card is wide enough to carry them.** They
 never did: the engine held its own 12 and 10 and the tile passed nothing, so the app's type scale had no
 bearing on the one picture whose geometry grows with the card. That is what made a desktop card read as
@@ -1257,6 +1269,18 @@ phone    326px card    12 / 10 / 12       names / small / amount
 tablet   756px card    16 / 16 / 19.2
 desktop  768px card    16 / 16 / 19.2
 ```
+
+**9.8a The baselines are measured against the AUTHORED size, not the current one.** 9.8 raises the
+body size toward the design system's on a wide card, so a rule that scales an offset by
+`px / bodyPx` gives a body-sized name a factor of 1 at every width — the type grows and the leading
+under it does not. The amount beneath the subject's name (7.33) closed on it until the two nearly
+touched on a desktop. The 4.5 and the 15 those offsets are built from were calibrated at the authored
+12, so that is what they are read against; then they grow by exactly the factor the type grew by.
+
+Measured as a multiple of the type it is set in, which is the quantity that should not vary: the gap
+was 1.25 on a phone and 0.94 on a desktop card, and is 1.25 at both now. The rail had assumed this all
+along — it reserves each entry from the size actually in use (7.13), so the room set aside was scaling
+while the block drawn inside it was not.
 
 **On a wide card the small size is retired and the amounts take the title size.** There is room for
 every name to be set at the body size, so 9.6's channel — size says which level you are standing on —

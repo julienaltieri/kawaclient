@@ -2001,8 +2001,20 @@ export default class MoneyFlowEngine {
 			if(e.parentNode!==this.gText)this.gText.appendChild(e);
 			return e};
 		/* The baselines were measured at bodyPx too, so they travel with the size rather than leaving a
-		   small name sitting where a body-sized one would have been. */
-		const sc = px/this.tune.bodyPx;
+		   small name sitting where a body-sized one would have been.
+
+		   §9.8a  AGAINST THE AUTHORED SIZE, NOT THE CURRENT ONE. retype() raises bodyPx toward the design
+		   system's on a wide card, so measuring against it gave a body-sized name sc=1 at every width -
+		   the type grew and the leading under it did not, and the amount beneath the subject's name
+		   closed on it until the two nearly touched. The 4.5 and the 15 were calibrated at the authored
+		   12, so that is what they have to be read against; then they grow by exactly the factor the
+		   type grew by, and a desktop reads like a phone rather than like a phone with bigger words.
+
+		   This is also what the rail already assumed. It reserves each entry `ink(n)`, measured from the
+		   size actually in use (§7.13), so the room set aside was scaling while the drawing inside it
+		   was not - at the design system's size the reservation ran about a third larger than the block
+		   it held. One reference now, at both ends. */
+		const sc = px/this.type0.body;
 		/* Whether it folds, and into how many lines, was settled before the rail was swept - so the
 		   room reserved for it and the room it takes are the same decision. The lines are centred on
 		   the row: at two, that is the -3 and +12 this was calibrated with. */
