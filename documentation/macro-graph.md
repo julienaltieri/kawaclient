@@ -180,6 +180,27 @@ units rather than rem, and none of it can come from the design system's rem toke
 `Core.isMobile()` is `window.innerHeight > window.innerWidth` and is read **in the constructor**, so
 rotating a device does not restyle the chart until it remounts.
 
+**The title hangs from the top of the TILE, not the top of the plot.** Both pages of the carousel are a
+flick apart, and page two sets its heading at the very top of the card, so a title starting lower here
+reads as a different kind of thing rather than the same thing about another picture. The label is placed
+at a domain point, and the domain's top is `chartPadding.top` — the top of the plot, not of the tile. It
+is therefore lifted by the padding less the height of a cap:
+
+```
+lift = (chartPadding.top − fontSizeTitle × 0.8) / (chartHeight − padTop − padBottom)
+
+mobile    (60 − 30×0.8) / 120  =  0.3000
+desktop   (20 − 20×0.8) / 140  =  0.0286
+```
+
+which puts the top of the lettering on the SVG's own top edge. The 0.8 is where a cap sits above the
+baseline, and the labels stacked beneath the title already measure their `dy` with it.
+
+The value was a literal before: `0.3` on mobile and **`0` on desktop**, where the derivation had never
+been done and the title consequently sat a padding's worth too low. That the expression returns exactly
+`0.3000` for mobile is what says the reading is right rather than merely plausible — it reproduces the
+one value already known to look correct, and changes only the case that was never derived.
+
 ## Key decisions
 
 **Imperative eventing instead of state.** Stated in the code and load-bearing everywhere: the wrappers,

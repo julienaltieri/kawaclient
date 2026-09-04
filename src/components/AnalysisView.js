@@ -820,7 +820,24 @@ export class EndOfPeriodProjectionGraph extends GenericChartView{
 		// Calculate total needed height and optimal positioning
 		const labelHeight = 2*this.style.fontSizeBody + 8*this.style.statLabelSpacing + this.style.secondaryLabelsOffset;
 		const yRange = this.getDomainBounds().My - this.getDomainBounds().my;
-		const y = this.getDomainBounds().My + (yRange * (Core.isMobile()?0.3:0.0)); // Position at 18% from bottom
+		/* THE TITLE HANGS FROM THE TOP OF THE TILE, not from the top of the plot. Both pages of the
+		   carousel are one flick apart and page two sets its heading at the very top of the card, so a
+		   title that starts lower here reads as a different kind of thing rather than the same thing
+		   about another picture.
+
+		   Placed at the domain's top it lands at chartPadding.top, which is the top of the PLOT - and
+		   the padding is where the title is meant to live, not below it. So it is lifted by the padding
+		   less the height of a cap, in domain units, which puts the top of the lettering on the SVG's
+		   own top edge. The 0.8 is where a cap sits above the baseline; the labels stacked under this
+		   one already measure their own dy with it.
+
+		   The mobile value this replaces was 0.3, and the expression returns 0.3000 there - which is
+		   how we know the reading is right rather than merely plausible. Desktop had been left at 0,
+		   the one case where the formula happens to differ from doing nothing. */
+		const plotH = Math.max(1, this.style.chartHeight
+			- this.style.chartPadding.top - this.style.chartPadding.bottom);
+		const lift = (this.style.chartPadding.top - this.style.fontSizeTitle*0.8)/plotH;
+		const y = this.getDomainBounds().My + yRange*lift;
 
 		return (<SharedPropsWrapper datum={{x:this.dateToTickDate(this.timeAxis[0]), y:y}}>
         	<FocusReportWrapper 
