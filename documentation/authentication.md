@@ -157,9 +157,18 @@ force a password at every launch. Replacing it at that moment makes the failure 
 
 **The affordance.** A fingerprint glyph inside the password field, rendered only when three things
 hold: the device can verify its owner, a credential is enrolled, and there is a session to release.
-Anything less and there is no glyph, rather than a glyph that fails when tapped. The unlock is also
-attempted on mount, so the ordinary case is one biometric prompt and no tap; where a browser refuses
-that without a user gesture, the glyph is already on screen to retry.
+Anything less and there is no glyph, rather than a glyph that fails when tapped.
+
+**The login page never starts an unlock, it only retries one.** The attempt belongs to
+`checkAuthentication` at startup, so the ordinary case is one biometric prompt and no tap, and success
+continues down the same path a normal startup already takes. Reaching the login page means that
+attempt did not carry, which makes the glyph a retry.
+
+That split matters: an authenticator serves one request at a time, and a second
+`navigator.credentials.get()` while one is pending rejects *and takes the pending one down with it*.
+An unlock started from this page while startup's was still open produced exactly that — a prompt that
+authenticated successfully and then did nothing. `Biometrics.unlock` is single-flight for the same
+reason, so overlapping callers share the pending attempt instead of racing it.
 
 Note the condition is capability, not device class. `Core.isMobile()` is
 `window.innerHeight > window.innerWidth` and belongs to the display system — it answers "is this a
@@ -289,6 +298,7 @@ committing — this surface has moved since launch.
 | 2026-09-03 | Request `prf` at enrolment despite nothing reading it | Costs nothing now; without it, encrypting the token at rest later would require re-enrolling the credential. |
 | 2026-09-03 | Refresh token window of 1 year, not Cognito's 10-year maximum | The ask was "longer is better". Without rotation the window is absolute, so a year is already roughly one password entry per year — the extra nine years buy no meaningful convenience and lengthen the life of a bearer credential to live bank data. |
 | 2026-09-03 | Startup refreshes rather than validating the stored access token first | An access token older than a day is dead, so validating first would often spend a round trip to learn nothing. |
+| 2026-09-03 | Unlock failures name their stage — fingerprint, session refresh, or opening the app | The three are indistinguishable from outside, and a silently swallowed error cost a full round trip of guesswork: a server-side token problem was read as a WebAuthn one purely because it surfaced during the biometric flow. The label is what turned the next report into a one-shot diagnosis. |
 | 2026-09-03 | Device tracking turned off on the user pool | It bound refresh tokens to a device key that only exists in the Lambda process that handled the login, making refreshes fail intermittently once containers recycled. With MFA off, device tracking bought nothing, so removing it cost nothing. |
 | 2026-09-03 | Token revocation enabled on the app client alongside the 1-year window | The client was created in 2020, before the feature existed. A year-long refresh token that cannot be withdrawn is a materially worse trade than a 30-day one; enabling it costs nothing and keeps the option open. |
 | 2026-09-03 | Corrected: the access token ceiling is 1 day, not 1 hour | Read from the live app client rather than assumed from Cognito's default. The `tokenExpiration: 3600000` in `server.js` reads as ~41 days, not 1 hour, because `jsonwebtoken` takes `maxAge` in seconds — it never binds. The session cookie, not the token TTL, was the dominant reason the password was needed so often. |
