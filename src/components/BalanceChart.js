@@ -3,8 +3,8 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
-import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey}
-	from '../processors/BankBalance.js';
+import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
+	monthlyExpectationAt} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -56,11 +56,22 @@ const DOT_FOCAL = DOT_R * 1.25;        //the trough and the cursor, which must w
 const LOW_AT = 1000, HIGH_AT = 4000;
 const BLEND = HIGH_AT - LOW_AT;
 
-/* A MONTH AND A QUARTER. The week and the fortnight are gone: at 7 and 15 days almost nothing
-   recurring falls inside the window, so the line is nearly flat and the trough is whatever today
-   happens to be - the picture stops having anything to say. A quarter is the other end of the useful
-   range, far enough to show the annual bills arriving without becoming the texture a year was. */
-const PERIODS = [[30, "this month"], [91, "this quarter"]];
+/* A MONTH, AND THE CHOICE IS WHICH ONE.
+
+   The list has been wrong in both directions and both errors are worth keeping. A YEAR was offered
+   first: at 365 days every recurring stream repeats until the line is a texture and the trough is a
+   pixel, and "can I cover what is coming" is not a question anyone asks twelve months out. A WEEK and
+   a FORTNIGHT replaced it, on the tidy reasoning that every window should be one turn of a period the
+   streams run on - and almost nothing recurring falls inside seven days, so the line was flat and the
+   low point was whatever today happened to be. A QUARTER survived a while and earned nothing: the
+   decisions this tile is for are all inside a month.
+
+   So the scale is fixed and the axis of choice moved: THIS month, centred on today and half forecast,
+   or LAST month, which is entirely settled. Last month is not a smaller version of the same question -
+   it is a different one. This month asks "can I cover what is coming"; last month asks "what actually
+   happened", and every point in it is a record rather than a projection, which is why it draws as one
+   solid line with no dashes anywhere. */
+const WHENS = [["this", "this month"], ["last", "last month"]];
 const wordOf = (list, v) => (list.filter(o => o[0] === v)[0] || list[0])[1];
 
 /* THE TWO READINGS. Not a list of accounts: enumerating every connected one made the control a file
@@ -198,7 +209,7 @@ const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"num
 export default class BalanceChart extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {days:30, source:null, at:null, accounts:null, loaded:false}
+		this.state = {when:"this", source:null, at:null, accounts:null, loaded:false}
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
@@ -317,8 +328,17 @@ export default class BalanceChart extends BaseComponent{
 			})
 		})
 		const shapes = {}
+		const now = this.ledgerToday()
 		terminals.forEach(s => {shapes[s.id] = histogramOf(byStream[s.id])})
-		this._routing = accountRoutingOf(byStream)
+		/* the DIRECTION each stream moves money, so a transfer is routed by the leg that leaves rather
+		   than the leg that arrives - the two legs of a pair are equal in magnitude and would otherwise
+		   tie (see accountRoutingOf) */
+		const dir = {}
+		terminals.forEach(s => {
+			const a = monthlyExpectationAt(s, now, "monthly")
+			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
+		})
+		this._routing = accountRoutingOf(byStream, id => dir[id])
 		this._shapes = shapes
 		return shapes
 	}
@@ -361,9 +381,21 @@ export default class BalanceChart extends BaseComponent{
 		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))
 	}
 
+	/* THIS month is fifteen days either side of today. LAST month is the previous CALENDAR month,
+	   first to last - not "thirty days ago", because the question it answers is about a month that
+	   has a name, and a rolling window would cut a rent payment in half at one end. */
+	window(now){
+		if(this.state.when === "last"){
+			return {from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-1, 1)),
+				to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)), fwd: 0}
+		}
+		const back = 15
+		return {from: new Date(now.getTime() - back*DAY), to: null, fwd: 15}
+	}
+
 	series(){
-		const back = Math.floor(this.state.days/2), fwd = this.state.days - back
 		const now = this.ledgerToday()
+		const win = this.window(now)
 		const txns = this.ledger()
 		const bal = this.anchor()
 		const keep = this.covered(), cards = this.creditHashes()
@@ -376,11 +408,15 @@ export default class BalanceChart extends BaseComponent{
 		//spending is already counted on its own dates and the payment moves nothing
 		const netted = this.source() === NETTED
 		const settles = netted ? null : (h => cards.indexOf(h) > -1)
-		const past = reconstruct(txns, now, bal, new Date(now.getTime() - back*DAY))
-		const future = forecast({terminals:this.terminals(), shapes:this.shapes(),
-			routing:this.routing(), now:now, balanceNow:bal, days:fwd,
+		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
+		   the one balance that is actually known (see the drift note), so a past window is a slice of
+		   that walk rather than a separate calculation from a guessed opening figure. */
+		let past = reconstruct(txns, now, bal, win.from)
+		if(win.to)past = past.filter(p => p.date <= win.to)
+		const future = win.fwd ? forecast({terminals:this.terminals(), shapes:this.shapes(),
+			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
 			covers:covers, settles:settles,
-			periodName:"monthly", settlementDay:this.settlementDay()})
+			periodName:"monthly", settlementDay:this.settlementDay()}) : []
 		return {past:past, future:future, txns:txns, now:now}
 	}
 
@@ -476,13 +512,18 @@ export default class BalanceChart extends BaseComponent{
 		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
 			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
 		const bridge = past.length && future.length ? [past[past.length-1]].concat(future) : future
-		const lineFuture = '<path d="' + stepPath(bridge) + '" fill="none" stroke="' + paint
-			+ '" stroke-width="' + STROKE.projected + '" stroke-dasharray="' + STROKE.dash
-			+ '" opacity="' + PLANE.projected + '"/>'
+		const lineFuture = bridge.length < 2 ? ""
+			: '<path d="' + stepPath(bridge) + '" fill="none" stroke="' + paint
+				+ '" stroke-width="' + STROKE.projected + '" stroke-dasharray="' + STROKE.dash
+				+ '" opacity="' + PLANE.projected + '"/>'
 
-		const nowLine = '<line x1="' + X(now.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
-			+ X(now.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + dim
-			+ '" stroke-width="0.7" opacity="0.55"/>'
+		//a settled month does not contain today, and a line marking it at the frame edge would be a
+		//mark that means nothing
+		const nowLine = (now.getTime() >= x0 && now.getTime() <= x1)
+			? '<line x1="' + X(now.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
+				+ X(now.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + dim
+				+ '" stroke-width="0.7" opacity="0.55"/>'
+			: ""
 
 		//the marks. A bead is filled with the line's own colour and ringed in the tile, which keeps it
 		//legible without introducing a colour that means nothing.
@@ -635,7 +676,7 @@ export default class BalanceChart extends BaseComponent{
 	zoomTo(){
 		const before = this.series()
 		this.animating = true
-		this.setState({days:this.next(PERIODS,"days"), at:null}, () => {
+		this.setState({when:this.next(WHENS,"when"), at:null}, () => {
 			const after = this.series()
 			const frameOf = a => {const s = a.past.concat(a.future)
 				return {x0:s[0].date.getTime(), x1:s[s.length-1].date.getTime()}}
@@ -718,8 +759,10 @@ export default class BalanceChart extends BaseComponent{
 		   name of a stream belongs beside the mark that provokes the question, which is where the
 		   badge label now puts it. One line, one fact, and the fact the reader is pointing at. */
 		if(this.held)return '<b>' + money(this.held.day.value) + '</b>'
-		//at rest: the low point, which is the whole question
-		const lo = trough(this.series().future)
+		//at rest: the low point, which is the whole question. In a settled month there is no forecast,
+		//so the low is the one that actually happened.
+		const a = this.series()
+		const lo = trough(a.future.length ? a.future : a.past)
 		if(!lo)return ""
 		if(lo.value < 0)return '<b class="bad">short ' + money(lo.value) + '</b> on ' + onDate(lo.date)
 		return 'low <b>' + money(lo.value) + '</b> on ' + onDate(lo.date)
@@ -739,7 +782,7 @@ export default class BalanceChart extends BaseComponent{
 					<TitleButton type="button" onClick={() => this.morphTo()}
 					>{wordOf(this.sources(), this.source())}</TitleButton>{", "}
 					<TitleButton type="button" onClick={() => this.zoomTo()}
-					>{wordOf(PERIODS, this.state.days)}</TitleButton>
+					>{wordOf(WHENS, this.state.when)}</TitleButton>
 				</Title>
 			</Head>
 			<Subtitle dangerouslySetInnerHTML={{__html:this.subtitle()}}/>

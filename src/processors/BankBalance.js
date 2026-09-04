@@ -77,12 +77,29 @@ export function histogramOf(txnsForStream){
    account it lives on, and a stream genuinely split is drawn where most of it is. A stream with no
    history at all returns undefined and the caller decides - treating it as landing on the default
    account is the safer error, since it then arrives on its own day rather than a fortnight later, and
-   the trough it contributes to appears early rather than not at all. */
-export function accountRoutingOf(txnsByStream){
+   the trough it contributes to appears early rather than not at all.
+
+   AND IN THE DIRECTION THE STREAM ACTUALLY MOVES MONEY, which a transfer makes essential. A monthly
+   transfer to savings is recorded as a PAIR - money out of the current account and the same money into
+   the savings one - and both legs carry the same stream allocation, because they are one act. Weighed
+   by magnitude alone the two legs tie exactly, so the winner was whichever the ledger happened to list
+   first; when that was the savings side, the stream was routed to an account the spending reading does
+   not cover and vanished from the forecast entirely. The transfer still appeared in the reconstructed
+   past, because that is read off the account, which is what made it look like a rendering problem
+   rather than a routing one.
+
+   The stream's own expected amount says which leg is the one that matters: a savings transfer is money
+   OUT, so it belongs to the account the money left. `directionOf` supplies that sign; where no leg
+   matches it, every leg counts, so a stream with a surprising sign is still placed somewhere. */
+export function accountRoutingOf(txnsByStream, directionOf){
 	const home = {};
 	Object.keys(txnsByStream).forEach(id => {
+		const dir = directionOf ? directionOf(id) : 0;
+		const all = txnsByStream[id];
+		const matching = dir ? all.filter(t => (t.amount < 0 ? -1 : 1) === dir) : [];
+		const use = matching.length ? matching : all;
 		const byAccount = {};
-		txnsByStream[id].forEach(t => {
+		use.forEach(t => {
 			if(!t.accountHash)return;
 			byAccount[t.accountHash] = (byAccount[t.accountHash] || 0) + Math.abs(t.amount);
 		});

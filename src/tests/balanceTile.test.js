@@ -90,16 +90,34 @@ test("mounts, and the title names the reading and the window", async () => {
 	expect(screen.getByText("this month")).toBeInTheDocument()
 })
 
-test("the windows are a month and a quarter, and nothing shorter", async () => {
+test("the window is a month, and the choice is which one", async () => {
 	const ref = await mount()
-	const seen = []
-	for(let i = 0; i < 3; i++){
-		seen.push(ref.current.state.days)
-		await act(async () => {fireEvent.click(screen.getByText(
-			["this month", "this quarter"][i % 2]))})
-	}
-	expect(seen).toEqual([30, 91, 30])
-	expect(Math.min.apply(null, seen)).toBe(30)
+	expect(ref.current.state.when).toBe("this")
+	await act(async () => {fireEvent.click(screen.getByText("this month"))})
+	expect(screen.getByText("last month")).toBeInTheDocument()
+	await act(async () => {fireEvent.click(screen.getByText("last month"))})
+	expect(screen.getByText("this month")).toBeInTheDocument()
+})
+
+test("last month is a settled CALENDAR month with nothing projected in it", async () => {
+	const ref = await mount()
+	await act(async () => {ref.current.setState({when: "last"})})
+	const a = ref.current.series()
+	expect(a.future.length).toBe(0)
+	expect(a.past.every(p => p.actual)).toBe(true)
+	//first to last of the previous calendar month, not "thirty days ago"
+	const now = ref.current.ledgerToday()
+	const first = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-1, 1))
+	const last = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
+	expect(a.past[0].date.getTime()).toBe(first.getTime())
+	expect(a.past[a.past.length-1].date.getTime()).toBe(last.getTime())
+})
+
+test("a settled month draws no today line and no dashed projection", async () => {
+	const ref = await mount()
+	await act(async () => {ref.current.setState({when: "last"})})
+	const svg = (ref.current.host.current || {}).innerHTML || ""
+	expect(svg).not.toContain("stroke-dasharray=\"" + "3,2.5")
 })
 
 /* ---- (a) which money am I looking at ------------------------------------------------------------ */
@@ -441,4 +459,29 @@ test("a weekly stream is forecast as weekly steps carrying the right monthly tot
 	expect(steps.length).toBeGreaterThanOrEqual(4)
 	expect(steps.length).toBeLessThanOrEqual(5)
 	steps.forEach(st => expect(Math.abs(st)).toBeGreaterThan(350))
+})
+
+/* ---- a transfer is routed by the leg that LEAVES ------------------------------------------------ */
+
+test("a paired transfer to savings is routed to the account the money left", () => {
+	//both legs carry the same stream allocation because they are one act, and they are equal in
+	//magnitude - so weighed by size alone the winner is whichever the ledger listed first, and when
+	//that was the savings side the stream vanished from the spending forecast entirely
+	const legs = []
+	for(let m = 0; m < 12; m++){
+		const d = new Date(Date.UTC(2025, m, 13))
+		legs.push({date: d, amount: -4000, accountHash: "chk"})
+		legs.push({date: d, amount:  4000, accountHash: "sav"})
+	}
+	const outward = () => -1     //a savings transfer expects money OUT
+	expect(accountRoutingOf({t: legs}, outward).t).toBe("chk")
+	expect(accountRoutingOf({t: legs.slice().reverse()}, outward).t).toBe("chk")
+	//without a direction it is order dependent, which is the fault
+	expect(accountRoutingOf({t: legs.slice().reverse()}).t).toBe("sav")
+})
+
+test("a stream whose legs all point the wrong way is still placed somewhere", () => {
+	//no leg matches the expected direction, so every leg counts rather than none
+	const legs = [{date: new Date(Date.UTC(2025, 0, 5)), amount: 500, accountHash: "chk"}]
+	expect(accountRoutingOf({t: legs}, () => -1).t).toBe("chk")
 })
