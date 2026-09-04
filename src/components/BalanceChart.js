@@ -56,9 +56,15 @@ const DOT_FOCAL = DOT_R * 1.25;        //the trough and the cursor, which must w
 const LOW_AT = 1000, HIGH_AT = 4000;
 const BLEND = HIGH_AT - LOW_AT;
 
-const PERIODS = [[30, "this month"], [15, "these two weeks"], [7, "this week"]];
-const READINGS = [["account", "in the bank"], ["true", "after cards"]];
+/* A MONTH AND A QUARTER. The week and the fortnight are gone: at 7 and 15 days almost nothing
+   recurring falls inside the window, so the line is nearly flat and the trough is whatever today
+   happens to be - the picture stops having anything to say. A quarter is the other end of the useful
+   range, far enough to show the annual bills arriving without becoming the texture a year was. */
+const PERIODS = [[30, "this month"], [91, "this quarter"]];
 const wordOf = (list, v) => (list.filter(o => o[0] === v)[0] || list[0])[1];
+
+/* the two synthetic sources, which are not accounts */
+const ALL = "__all__", NETTED = "__netted__";
 
 const MORPH_MS = 380;                  //page one's dataMs: a change of amounts
 const ZOOM_MS = 620;                   //page one's moveMs: a change of frame
@@ -138,12 +144,19 @@ const TitleButton = styled.button`
 	&:hover{border-bottom-color:${props => DS.getStyle().bodyText};}
 	&:focus-visible{outline:2px solid ${props => DS.getStyle().savings}; outline-offset:2px;}
 `
+/* ONE FACT, and small. It carried three at body size - the balance, the date and the stream - which
+   made it a second heading competing with the title rather than a caption under it, and a sentence
+   long enough to be read instead of glanced at. At rest it says the only thing the tile exists to
+   report: the low point. Under the cursor it says what moved the line, which is the only thing worth
+   knowing about a day you are pointing at.
+
+   The height stays RESERVED so going from one to the other moves nothing below it. */
 const Subtitle = styled.div`
-	font-family:Inter; font-size:${DS.fontSize.body}rem;
-	line-height:1.35rem; height:1.35rem; overflow:hidden;
-	margin:0.1rem 0 0.45rem; white-space:nowrap; text-overflow:ellipsis;
-	color:${props => DS.getStyle().bodyText};
-	& b{font-weight:600;}
+	font-family:Inter; font-size:${DS.fontSize.little}rem;
+	line-height:1.1rem; height:1.1rem; overflow:hidden;
+	margin:0.05rem 0 0.4rem; white-space:nowrap; text-overflow:ellipsis;
+	color:${props => DS.getStyle().bodyTextSecondary};
+	& b{font-weight:600; color:${props => DS.getStyle().bodyText};}
 	& b.bad{color:${props => DS.getStyle().alert};}
 `
 const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
@@ -158,12 +171,15 @@ const Empty = styled.div`
 `
 
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+//a stream name is user-typed and goes into innerHTML
+const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+	c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"});
 
 export default class BalanceChart extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {days:30, mode:"account", at:null, accounts:null, loaded:false}
+		this.state = {days:30, source:null, at:null, accounts:null, loaded:false}
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
@@ -195,29 +211,87 @@ export default class BalanceChart extends BaseComponent{
 	/* ---- the data ------------------------------------------------------------------------------- */
 	creditHashes(){return (this.state.accounts||[]).filter(a => a.type === "credit").map(a => a.hash)}
 	depositoryHashes(){return (this.state.accounts||[]).filter(a => a.type === "depository").map(a => a.hash)}
+	spendable(){return (this.state.accounts||[]).filter(a => a.type === "depository"
+		&& a.current !== undefined)}
 
-	//the anchor. `account` is the current accounts alone; `true` nets what the cards owe off it.
-	//Plaid signs a card's current balance POSITIVE for money owed, which is why this subtracts.
+	/* WHICH MONEY AM I LOOKING AT - one control, because it is one question. Combining every
+	   depository account was wrong by default: a savings balance sitting behind a checking one hides
+	   exactly the trough goal 1 is about, and the rent is then drawn against money that is not there
+	   to pay it. So the default is ONE account, and the others are on the toggle.
+
+	   The list is built from the accounts that actually exist, so a single-account user never sees a
+	   choice they do not have. "All accounts" appears only with more than one; "after cards" only
+	   where there is a card to net off. */
+	sources(){
+		const dep = this.spendable()
+		const out = dep.map(a => [a.hash, "in " + (a.name || "account")])
+		if(dep.length > 1)out.push([ALL, "in all accounts"])
+		if(this.creditHashes().length)out.push([NETTED, "after cards"])
+		return out.length ? out : [[ALL, "in all accounts"]]
+	}
+	//CHECKING FIRST, by subtype, falling back to the first account that reported anything
+	defaultSource(){
+		const dep = this.spendable()
+		const chk = dep.filter(a => (a.subtype || "").toLowerCase().indexOf("check") > -1)[0]
+		return (chk || dep[0] || {}).hash || ALL
+	}
+	source(){
+		const list = this.sources().map(o => o[0])
+		const cur = this.state.source
+		return (cur && list.indexOf(cur) > -1) ? cur : list[0]
+	}
+	//the account hashes this reading is made of
+	covered(){
+		const src = this.source()
+		if(src === NETTED)return this.depositoryHashes().concat(this.creditHashes())
+		if(src === ALL)return this.depositoryHashes()
+		return [src]
+	}
+
+	//the anchor. Plaid signs a card's current balance POSITIVE for money owed, which is why the
+	//netted reading subtracts rather than adds.
 	anchor(){
+		const src = this.source()
 		const accts = (this.state.accounts||[]).filter(a => a.current !== undefined)
+		if(src !== ALL && src !== NETTED){
+			const one = accts.filter(a => a.hash === src)[0]
+			return one ? one.current : 0
+		}
 		const dep = accts.filter(a => a.type === "depository").reduce((s,a) => s + a.current, 0)
-		if(this.state.mode !== "true")return dep
-		const owed = accts.filter(a => a.type === "credit").reduce((s,a) => s + a.current, 0)
-		return dep - owed
+		if(src === ALL)return dep
+		return dep - accts.filter(a => a.type === "credit").reduce((s,a) => s + a.current, 0)
 	}
 	hasAnchor(){return (this.state.accounts||[]).some(a => a.current !== undefined)}
 
-	//every transaction that touched the accounts this reading covers, at its raw amount. NOT the
-	//per-stream allocation: uncategorised money still moved, and a balance that ignored it would
-	//disagree with the bank for a reason the reader cannot see.
+	//streamId -> name, so a transaction can say what moved without a lookup per render
+	streamNames(){
+		if(this._names)return this._names
+		this._names = {}
+		this.terminals().forEach(s => {this._names[s.id] = s.name})
+		return this._names
+	}
+
+	/* every transaction that touched the accounts this reading covers, at its RAW amount. Not the
+	   per-stream allocation: uncategorised money still moved, and a balance that ignored it would
+	   disagree with the bank for a reason the reader cannot see.
+
+	   Each one carries the name of its LARGEST allocation, which is what lets the cursor say what
+	   moved the line. A transaction split across streams has one dominant one and that is the honest
+	   answer to "what was this"; an uncategorised transaction has none, and says so. */
 	ledger(){
-		const keep = this.state.mode === "true"
-			? this.depositoryHashes().concat(this.creditHashes())
-			: this.depositoryHashes()
+		const keep = this.covered()
+		const names = this.streamNames()
 		return (this.props.transactions||[])
 			.filter(t => keep.indexOf(t.userInstitutionAccountId) > -1)
-			.map(t => ({date:t.getDateInDisplayTimezone(), amount:t.amount,
-				accountHash:t.userInstitutionAccountId, streamName:null}))
+			.map(t => {
+				let who = null, big = 0
+				;(t.streamAllocation || []).forEach(al => {
+					if(Math.abs(al.amount) >= Math.abs(big)){big = al.amount
+						who = names[al.streamId] || al.streamName || null}
+				})
+				return {date:t.date, amount:t.amount,
+					accountHash:t.userInstitutionAccountId, streamName:who}
+			})
 	}
 
 	//one histogram per terminal, from that terminal's own categorised transactions
@@ -230,13 +304,13 @@ export default class BalanceChart extends BaseComponent{
 		txns.forEach(t => {
 			terminals.forEach(s => {
 				if(!t.isAllocatedToStream(s))return
-				byStream[s.id].push({date:t.getDateInDisplayTimezone(), amount:t.amount,
+				byStream[s.id].push({date:t.date, amount:t.amount,
 					accountHash:t.userInstitutionAccountId})
 			})
 		})
 		const shapes = {}
 		terminals.forEach(s => {shapes[s.id] = histogramOf(byStream[s.id])})
-		this._routing = accountRoutingOf(byStream, this.creditHashes())
+		this._routing = accountRoutingOf(byStream)
 		this._shapes = shapes
 		return shapes
 	}
@@ -255,23 +329,68 @@ export default class BalanceChart extends BaseComponent{
 		;(this.props.transactions||[]).forEach(t => {
 			if(cards.indexOf(t.userInstitutionAccountId) < 0)return
 			if(t.amount <= 0)return                       //a payment INTO the card reduces what is owed
-			byDay[t.getDateInDisplayTimezone().getUTCDate()] += t.amount
+			byDay[t.date.getUTCDate()] += t.amount
 		})
 		let best = 0, day = undefined
 		byDay.forEach((v,i) => {if(v > best){best = v; day = i}})
 		return day
 	}
 
+	/* TODAY, IN THE FRAME THE LEDGER USES.
+	   A transaction reports its date through getDateInDisplayTimezone(), which offsets the instant
+	   before anything asks which day it was. The series was walking back from a raw `new Date()`
+	   instead, so the two sides keyed the same calendar day differently and the whole reconstruction
+	   sat one day off: the step for a payment landed on the following day, and the cursor named the
+	   stream from the day before. It is invisible for part of the day and wrong for the rest, which is
+	   the worst kind of date bug.
+	   The frame that is RIGHT here is the raw UTC day, and that is not obvious. getDateInDisplayTimezone
+	   offsets an instant so that LOCAL getters read back the raw UTC day - it converts a UTC day into
+	   something local accessors can print. Read with toISOString(), which is what a day key does, the
+	   offset is applied a second time and an afternoon transaction moves to tomorrow. So the app's
+	   notion of "which day" IS the raw timestamp's UTC day, and both sides use it directly. */
+	ledgerToday(){
+		const n = new Date()
+		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))
+	}
+
 	series(){
 		const back = Math.floor(this.state.days/2), fwd = this.state.days - back
-		const now = new Date()
+		const now = this.ledgerToday()
 		const txns = this.ledger()
 		const bal = this.anchor()
+		const keep = this.covered(), cards = this.creditHashes()
+		const fallback = this.defaultSource()
+		/* a stream with no history has no home account. It is treated as landing on the DEFAULT
+		   account - the safer error, since it then arrives on its own day rather than a fortnight
+		   later inside a settlement lump. */
+		const covers = h => keep.indexOf(h || fallback) > -1
+		//the settlement is added only where the card sits OUTSIDE the reading: inside it, the
+		//spending is already counted on its own dates and the payment moves nothing
+		const netted = this.source() === NETTED
+		const settles = netted ? null : (h => cards.indexOf(h) > -1)
 		const past = reconstruct(txns, now, bal, new Date(now.getTime() - back*DAY))
 		const future = forecast({terminals:this.terminals(), shapes:this.shapes(),
-			routing:this.routing(), now:now, balanceNow:bal, days:fwd, mode:this.state.mode,
+			routing:this.routing(), now:now, balanceNow:bal, days:fwd,
+			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()})
 		return {past:past, future:future, txns:txns, now:now}
+	}
+
+	/* WHAT MOVED THE LINE ON THIS DAY. The curve is a step function, so the step at a day is exactly
+	   that day's movement, and the contributors are exactly that day's transactions - or, in the
+	   forecast, the expectations the forecast already attributed. Reading it off the drawn series
+	   rather than off a filtered event list is the point: the event list is thresholded and capped, so
+	   most days were not in it and the cursor had nothing to say about them. */
+	movementAt(series, i, txns){
+		if(i <= 0)return null
+		const p = series[i], step = p.value - series[i-1].value
+		if(Math.abs(step) < 0.005)return {step:0, stream:null, value:p.value}
+		if(!p.actual)return {step:step, stream:p.top || null, value:p.value}
+		const k = dayKey(p.date)
+		let who = null, big = 0
+		txns.forEach(t => {if(dayKey(t.date) !== k)return
+			if(Math.abs(t.amount) > Math.abs(big)){big = t.amount; who = t.streamName}})
+		return {step:step, stream:who, value:p.value}
 	}
 
 	/* ---- the picture ------------------------------------------------------------------------------ */
@@ -370,9 +489,13 @@ export default class BalanceChart extends BaseComponent{
 		this.held = null
 		if(this.state.at){
 			const k = dayKey(this.state.at)
-			const day = all.filter(p => dayKey(p.date) === k)[0]
+			let idx = -1
+			all.forEach((p,i) => {if(dayKey(p.date) === k)idx = i})
+			const day = idx > -1 ? all[idx] : null
 			if(day){
-				this.held = {day:day, event:evs.filter(e => dayKey(e.date) === k)[0] || null}
+				//read off the DRAWN series, not the thresholded event list - that list is capped at
+				//fourteen marks, so most days were not in it and the cursor had nothing to say
+				this.held = {day:day, move:this.movementAt(all, idx, this.ledger())}
 				cursor = '<line x1="' + X(day.date.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
 					+ X(day.date.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
 					+ '" stroke-width="1" opacity="0.7"/>'
@@ -434,7 +557,11 @@ export default class BalanceChart extends BaseComponent{
 	   them makes a week and a month the same width and then deforms one into the other, so the reader
 	   watches the picture change shape when nothing about the money moved. */
 	next(list, key){
-		const i = list.findIndex(o => o[0] === this.state[key])
+		//`source` falls back to a default rather than being seeded in the constructor, because the
+		//accounts have not arrived yet then - so resolve the CURRENT value the same way before
+		//stepping, or the first tap would always land on the second entry
+		const cur = key === "source" ? this.source() : this.state[key]
+		const i = list.findIndex(o => o[0] === cur)
 		return list[(i + 1) % list.length][0]
 	}
 
@@ -472,7 +599,7 @@ export default class BalanceChart extends BaseComponent{
 		})
 	}
 
-	/* A CHANGE OF AMOUNTS IS A MORPH, and it must not go through the zoom path: the two readings cover
+	/* A CHANGE OF AMOUNTS IS A MORPH, and it must not go through the zoom path: two sources cover
 	   exactly the same dates, so interpolating the domain interpolates nothing, and the frame would sit
 	   on the OLD curve for the whole duration and then snap to the new one. A stall and a jump, which
 	   is the one thing an animation here exists to prevent.
@@ -480,7 +607,7 @@ export default class BalanceChart extends BaseComponent{
 	morphTo(){
 		const before = this.series()
 		this.animating = true
-		this.setState({mode:this.next(READINGS,"mode"), at:null}, () => {
+		this.setState({source:this.next(this.sources(),"source"), at:null}, () => {
 			const after = this.series()
 			const a = before.past.concat(before.future), b = after.past.concat(after.future)
 			const n = Math.min(a.length, b.length)
@@ -534,26 +661,31 @@ export default class BalanceChart extends BaseComponent{
 	}
 
 	subtitle(){
-		if(!this.state.loaded)return "Reading balances…"
-		if(!this.hasAnchor())return "No balance reported by the bank yet"
-		//while the cursor is down it is the readout, which is the only thing worth saying then
+		if(!this.state.loaded)return "reading balances\u2026"
+		if(!this.hasAnchor())return ""
+		//under the cursor: WHAT MOVED. Not the balance as well - the cursor is already on the line
+		//saying where it is, so repeating it spends the one line on something already visible.
 		if(this.held){
-			const d = this.held.day, ev = this.held.event
-			return '<b>' + money(d.value) + '</b> on ' + onDate(d.date)
-				+ (ev && ev.stream ? ' · ' + ev.stream + ' '
-					+ (ev.step < 0 ? 'takes ' : 'adds ') + money(Math.abs(ev.step)) : '')
+			const m = this.held.move
+			if(m && m.step && m.stream)
+				return esc(m.stream) + ' <b>' + (m.step < 0 ? '\u2212' : '+')
+					+ money(Math.abs(m.step)).replace("-","") + '</b>'
+			if(m && m.step)return '<b>' + (m.step < 0 ? '\u2212' : '+')
+				+ money(Math.abs(m.step)).replace("-","") + '</b>'
+			return '<b>' + money(this.held.day.value) + '</b>'
 		}
-		const a = this.series()
-		const lo = trough(a.future)
-		if(lo && lo.value < 0)return '<b class="bad">short on ' + onDate(lo.date) + '</b>'
-		if(lo)return 'low of <b>' + money(lo.value) + '</b> on ' + onDate(lo.date)
-		return onDate(a.past[0].date) + ' – ' + onDate(a.future[a.future.length-1].date)
+		//at rest: the low point, which is the whole question
+		const lo = trough(this.series().future)
+		if(!lo)return ""
+		if(lo.value < 0)return '<b class="bad">short ' + money(lo.value) + '</b> on ' + onDate(lo.date)
+		return 'low <b>' + money(lo.value) + '</b> on ' + onDate(lo.date)
 	}
 
 	render(){
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
 			this._txns = this.props.transactions; this._shapes = null; this._routing = null
+			this._names = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
@@ -561,7 +693,7 @@ export default class BalanceChart extends BaseComponent{
 				<Title $big={!Core.isMobile()}>
 					{"Balance "}
 					<TitleButton type="button" onClick={() => this.morphTo()}
-					>{wordOf(READINGS, this.state.mode)}</TitleButton>{", "}
+					>{wordOf(this.sources(), this.source())}</TitleButton>{", "}
 					<TitleButton type="button" onClick={() => this.zoomTo()}
 					>{wordOf(PERIODS, this.state.days)}</TitleButton>
 				</Title>

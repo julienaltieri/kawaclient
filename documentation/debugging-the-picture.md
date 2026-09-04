@@ -205,3 +205,34 @@ differently, and only one of them was the question.
 - If a fix cannot be stated as "this measurement was X and is now Y", it is not finished.
 - Record what was MEASURED, separately from what it was taken to mean. The measurements in this
   codebase's history outlived three of the explanations built on them.
+
+## A conversion can be right and still be applied twice
+
+`getDateInDisplayTimezone()` offsets an instant so that **local** getters read back the raw **UTC**
+day. Read with `toISOString()` — which is what any day key does — the offset lands a second time, and
+an afternoon transaction moves to tomorrow.
+
+The balance view keyed its ledger through that conversion and walked its series off a plain
+`new Date()`, so the two sides disagreed about which day a payment fell on. The reconstruction placed
+every step one day late and the cursor named the stream from the day before.
+
+Three things made it expensive:
+
+- **It is invisible for part of the day.** Before the offset crosses midnight the two frames agree, so
+  the picture is correct in the morning and wrong in the afternoon.
+- **The failing assertion pointed at the wrong side.** The test compared against the raw date and the
+  component was using the converted one; the natural reading is "the component is off by one", and the
+  actual question was *which frame is right*, which neither side stated.
+- **Guessing produced a plausible wrong fix.** Putting `now` through the same conversion made both
+  sides agree — and agree on the wrong day. It looked like progress: the frames matched, and the tests
+  still failed for a reason that now looked like something else.
+
+What settled it was dumping both sides' day keys side by side rather than reasoning about the offset:
+the raw ISO, the converted ISO, the ledger's key, the series' keys, and the index where they met. The
+answer was visible in five printed lines and had been invisible in an hour of thinking about
+timezones.
+
+**A date has a frame, and a frame is not a fact about the date — it is a fact about the reader.** When
+two pieces of code disagree about a day, do not convert until they agree; find out which frame each is
+in and which one the domain actually means. Here it is the raw UTC day, and the conversion exists only
+to print it.

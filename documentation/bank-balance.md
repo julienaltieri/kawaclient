@@ -143,6 +143,33 @@ anchored on one account for both goals. That was wrong — it answered goal 1 an
 unreachable. It is still not net worth: no assets, no savings, no investments. It is **spendable cash,
 honestly dated**, which is a different and more useful thing than either.
 
+### §1c WHICH ACCOUNT, and why combining them was wrong
+
+The first version summed every depository account for the "in the bank" reading. That is wrong, and
+wrong in the direction that matters: **a savings balance sitting behind a checking one hides exactly
+the trough goal 1 is about.** With $12,000 in savings behind $3,200 in checking, the runway never goes
+near its floor, the rent is drawn against money that is not there to pay it, and the tile answers "can
+I buy the plane tickets" with a confident yes it has no basis for.
+
+So the default is **one account** — the checking one, chosen by `subtype` — and everything else is on
+the toggle. The source list is built from the accounts that actually exist:
+
+| entry | when it appears |
+|---|---|
+| *in ‹account›* | one per depository account that reported a balance |
+| *in all accounts* | only with more than one |
+| *after cards* | only where there is a credit account to net off |
+
+A single-account user therefore never sees a choice they do not have. And because the account and the
+reading are the same question — *which money am I looking at* — they are **one control**, not two: the
+title stays two tappable words on a phone.
+
+**Per-account forecasting follows from this.** Once the balance on screen can be one account, the
+forecast has to know which account each stream lands on, or the rent gets forecast against savings.
+`accountRoutingOf` therefore returns the **account a stream's money actually landed on** rather than a
+card/not-card boolean, and the forecast takes a `covers(accountHash)` predicate so one rule serves all
+three cases — a single account, several combined, or the netted position.
+
 ### Which is on screen
 
 They are two readings and both are wanted, so this is a control rather than a decision to be taken
@@ -342,6 +369,23 @@ and are now 27% of a distribution whose peak says "rent", so the bead on the lin
 and be labelled *Home*, and the reader loses the one thing they came for: *which* of those moved, and
 when. Per terminal, three distinguishable events survive; at the compound, one.
 
+**The histogram itself is shared with the macro graph.** Both charts needed amount-weighted bins over
+a period and each had written it out. They agree on everything except what to divide by, and that
+disagreement is the whole reason they looked like different functions — so
+[`AmountHistogram.js`](../src/processors/AmountHistogram.js) owns the binning and both normalisations,
+and makes the distinction explicit rather than papering over it:
+
+- `asShape` divides by the **maximum** — the tallest bin is 1. Right for **drawing**, because it fills
+  the height whatever the amounts are.
+- `asWeights` divides by the **sum** — the bins add to 1. Right for **forecasting**, and the only thing
+  that is: a shape used as weights multiplies the period's total by however many bins are non-trivial,
+  which is exactly the fault that put a nine-month ending balance at $324k.
+
+What is deliberately **not** shared is where a bin index comes from. The macro graph derives it from
+the period machinery and rotates the result; this view bins by day-of-month across a fixed 31, because
+its window is days centred on today rather than an analysis period. Forcing one to answer the other's
+calendar question would be a worse duplication than the one removed.
+
 **The single exception is the card settlement.** It is not a stream and no `expAmountHistory` backs it:
 it is a *re-timing* of streams that were already forecast at their own dates, moved to the day the
 money actually leaves the current account. That is precisely why it exists only in the account reading
@@ -379,14 +423,22 @@ The window is a period chosen from a list — a month by default — and today s
 it, not at the join between a long past and a long future. A month means the fifteen days behind and
 the fifteen ahead.
 
-**Three windows, and each is one turn of a real cycle:** *this month* (30d), *these two weeks* (15d),
-*this week* (7d). They are not round numbers — `monthly`, `semimonthly` and `weekly` are three of the
-six values a stream's `period` can take, so every window is a period the streams themselves run on.
+**Two windows: *this month* (30d) and *this quarter* (91d).**
 
-A year was offered at first and is **removed**. At 365 days every recurring stream repeats until the
-line is a texture, the trough is a pixel, and "can I cover what is coming" is not a question anyone
-asks twelve months out — the picture stops answering the thing it exists for. A quarter went with it
-for the same reason in weaker form.
+The list has been wrong in both directions and both errors are worth keeping.
+
+*Too long.* A year was offered first. At 365 days every recurring stream repeats until the line is a
+texture and the trough is a pixel, and "can I cover what is coming" is not a question anyone asks
+twelve months out — the picture stops answering the thing it exists for.
+
+*Too short.* A week and a fortnight replaced it, on the reasoning that every window should be one turn
+of a period the streams actually run on. That reasoning was tidy and the result was useless: at 7 and
+15 days almost nothing recurring falls inside the window, so the line is nearly flat and the "low
+point" is whatever today happens to be. A window has to be long enough to contain the events that make
+the shape, and the shortest thing that does is a month.
+
+A quarter is the other end of the useful range — far enough to show the annual bills arriving, not so
+far that they become texture.
 
 Centring is the whole of the rule, and it follows from what the view is for. Goal 1 is a decision
 being taken *now*: the relevant past is the few days that explain where the balance currently is, and
@@ -572,6 +624,19 @@ the trough is the lowest point of the FUTURE, which is what goal 1 actually asks
 — the rules for scale, the trough dot for the decision — and where they coincide the dot sits on the
 rule, which is the truth about that window rather than a collision.
 
+### §10e-b The cursor reads the STEP, not a filtered event list
+
+The readout was looking the cursor's day up in the event list that places the beads — which is
+thresholded to significant movements and capped at fourteen marks. Most days are not in it, so on most
+days the cursor could say nothing about what moved, which is the one thing worth knowing about a day
+you are pointing at.
+
+It now reads the **drawn series** directly. The curve is a step function, so the step at a day *is*
+that day's movement, and the contributors are exactly that day's transactions — or, in the forecast,
+the expectations the forecast already attributed. A transaction split across streams reports its
+largest allocation, which is the honest answer to "what was this"; an uncategorised one has no stream
+and says so rather than borrowing a neighbour's name.
+
 ### §10f One gesture, and it is page one's
 
 A cursor that follows the finger and writes what is under it into the heading — the day, what it is
@@ -688,7 +753,18 @@ windows.
 over the same dates, so the frame holds still and the values travel — which is the resampled morph
 of 10j, now used only where it is the true description.
 
-### §10l The title holds still; the SUBTITLE carries what changes
+### §10l The title holds still; the SUBTITLE carries what changes — and says ONE thing
+
+It shipped at body size carrying three facts — the balance, the date and the stream — which made it a
+second heading competing with the title rather than a caption under it, and a sentence long enough to
+be read rather than glanced at. It is now `little` in the secondary colour, and says exactly one thing:
+
+- **at rest**, the low point, which is the entire question the tile exists to answer;
+- **under the cursor**, what moved the line — and *not* the balance as well, because the cursor is
+  already sitting on the line saying where it is, so repeating it spends the one line on something the
+  reader can already see.
+
+Its height stays reserved, so going from one to the other moves nothing below it.
 
 Page one's arrangement: the year at title size, the date range under it at body size, both at FIXED
 offsets inside the plot — so a hovering finger rewrites the words and nothing moves.

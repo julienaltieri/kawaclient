@@ -2,6 +2,7 @@ import Core from '../core.js';
 import {Period,dateIterator,timeIntervals,createDate} from '../Time'
 import dateformat from "dateformat";
 import utils from '../utils'
+import * as histogram from './AmountHistogram'
 import AppConfig from '../AppConfig'
 
 
@@ -199,13 +200,17 @@ class StreamAnalysis extends Analysis{
 			let reportStartDate = period.previousDate(date);//calculates the subdivision index that corresponds to the beginning of the calendar period (1st of month, 1st day of the week, etc) - this makes the histogram exact even when aggregating data across periods of variable lenghts (ex: months)
 			let calendarZero = (period.periodCalendarStart(date)-reportStartDate)/period.subdivision.getTimeIntervalFromDate(reportStartDate);//position of the new [0] (calendar start) in subdivision array
 
-			//calculates the histogram from calendarZero
-			this.periodReports.forEach(r => {r.transactions.forEach(t => {
-				let bin =  Math.round((t.getDateInDisplayTimezone() - period.periodCalendarStart(t.getDateInDisplayTimezone()))/r.subReportingPeriod.getTimeIntervalFromDate(r.reportingStartDate))
-				bins[bin] = (bins[bin]||0)+Math.abs(t.moneyInForStream(this.stream))+Math.abs(t.savedForStream(this.stream))
-			})})
-			let max = utils.max(bins);
-			this.bins = utils.rotateLeft(bins.map(c => c/max),calendarZero); //normalize and rotates back to place calendarZero in its original position
+			//calculates the histogram from calendarZero. The binning and the normalisation are
+			//AmountHistogram's - shared with the balance forecast, which needs the same bins divided
+			//by their SUM rather than their max. Only the bin index and the rotation are this
+			//report's own, because they come from the period machinery.
+			let flat = [];
+			this.periodReports.forEach(r => {r.transactions.forEach(t => flat.push({t:t, r:r}))})
+			bins = histogram.accumulate(flat,
+				o => Math.round((o.t.getDateInDisplayTimezone() - period.periodCalendarStart(o.t.getDateInDisplayTimezone()))/o.r.subReportingPeriod.getTimeIntervalFromDate(o.r.reportingStartDate)),
+				o => Math.abs(o.t.moneyInForStream(this.stream))+Math.abs(o.t.savedForStream(this.stream)),
+				bins.length);
+			this.bins = utils.rotateLeft(histogram.asShape(bins),calendarZero); //rotates back to place calendarZero in its original position
 		}
 		return this.bins;
 	}
