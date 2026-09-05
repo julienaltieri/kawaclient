@@ -1265,6 +1265,112 @@ These change what gets built and are not mine to settle.
 
 ---
 
+## Roadmap: getting to a forecast that can be trusted
+
+Parked hypotheses, not decisions. Each is written with the trap it has to avoid, because most of them
+have one, and several are traps this file has already paid for once.
+
+### The cascade
+
+A per-stream ladder: use the most confident method a stream's own history supports, and fall to the
+next when it does not hold up.
+
+**Tier 1 — revise the expectation from the actuals.** The predictable streams give a baseline from the
+master stream; compare it with what actually happened and form a revised estimate; forecast the next
+cycle from the revised picture rather than the declared one.
+
+> *This is the highest-value idea on the list, and the one with the sharpest trap.* The master stream
+> is the user's **intent**, and page two treats it as authoritative. If page three quietly substitutes
+> an empirical estimate, the two tiles disagree about the same stream and the reader cannot tell which
+> is lying. That is a trust failure of exactly the kind this whole effort is trying to avoid.
+>
+> The fix is to make the revision **visible rather than silent**: forecast from the revised figure and
+> surface the divergence as a prompt — *"Rent has been $1,850 for three months; budgeted $1,700"*. The
+> modelling improvement then arrives as a feature rather than as a discrepancy.
+>
+> Statistically the right shape is **shrinkage**, not replacement: blend the declared amount with the
+> observed mean, weighted by how many observations there are. One month of data barely moves it; a
+> year of data dominates it. That degrades gracefully at n=1, where a pure empirical estimate is
+> reckless and a pure declared one is stale, and it needs no threshold.
+
+**Tier 2 — date variable, amount consistent.** Rent, bills, day-care cheques: a handful of
+transactions of very similar size, on a date that moves. Do **not** spread them. Take the centre of the
+histogram as the predicted date, and a robust recent amount as the predicted size.
+
+> *Right instinct, and it follows from what the tile is for:* a balance chart is read for its steps, so
+> a spread that is "less wrong" in absolute terms is more wrong in the only way that matters — it
+> removes the event. Concentrating is correct even when it costs L1 error.
+>
+> **Trap: the centre of a circular histogram is not its mean.** A payment landing on the 30th and the
+> 2nd has a mean day of 16, which is the one day of the month it never happens. The month is a cycle
+> (this file has already paid for that lesson once, in `consolidate`), so the centre must be a
+> **circular mean** — or, more robustly, the peak of the consolidated cluster, which is what
+> `consolidate` already computes.
+>
+> **On "median of the last 2":** the median of two numbers is their mean, so that phrasing buys no
+> robustness — and two observations is too thin a base to throw the rest away for. What is wanted is a
+> **robust recent** estimate: the median of the last k occurrences, with k around 3–6, so one strange
+> month cannot move it and a genuine step change is still picked up within a cycle or two.
+>
+> **The honest cost:** placing rent on the 3rd when it lands on the 6th makes the balance wrong by the
+> full rent for three days. That is an argument for drawing the **uncertainty of the date** — a shaded
+> band around the predicted day rather than a hard step — not for going back to spreading.
+
+**Tier 3 — no clear cluster: spread over the period.** Groceries and the like. This is what the model
+does today, and it is right for genuinely diffuse streams.
+
+**Falling between tiers.** The proposal is to cascade when the deviation is too big. That works, and it
+can be made to need no hand-set threshold: run every tier a stream qualifies for **out of sample** and
+keep whichever actually predicted best. That is cross-validation, it is exactly what the bench already
+computes, and it replaces an argument about thresholds with a measurement.
+
+### On Fourier, clustering and ML
+
+**A Fourier transform is the wrong instrument here**, for a domain reason rather than a mathematical
+one. Money is calendar-driven, not sinusoidal: "the first of the month" and "every other Friday" are
+not frequencies. Months are unequal in length, so a fixed-frequency basis smears precisely the events
+that are most regular — a monthly spike needs many harmonics to represent and comes back as a ripple.
+The candidate-set periodogram already in `detectCycle` is the same idea with the right basis: try the
+periods money actually uses, and score the fit.
+
+**Clustering is a real improvement, and a narrow one.** `consolidate` currently decides what counts as
+one event with hand-set numbers — runs spanning five days or fewer, bridged across gaps of two.
+Weighted **DBSCAN on the circular day axis** would find clusters of arbitrary width and shape, handle
+the wrap natively, and replace two tuned constants with one interpretable parameter. Worth doing when
+tier 2 is built, since tier 2 needs a cluster centre anyway.
+
+**Learned models are a poor fit at this data size.** Fifty-odd streams with twelve to thirty-six
+observations each is very little data, and any model with more than a few parameters will fit noise
+and report it as skill. The right family is **robust statistics with strong priors** — shrinkage,
+medians, circular means — not learning. The one place machine-learning *thinking* earns its keep is
+model selection by out-of-sample error, which is the cascade above.
+
+### What has to be measured before any of this is worth building
+
+The bench answers "how wrong, and whose fault" but not yet "wrong in a way that matters":
+
+- **Trough error, separately from total error.** Goal 1 is *can I cover what is coming*, so the depth
+  of the low point and the date it falls on are the numbers the decision actually rests on. A forecast
+  with worse L1 but the right trough is the better forecast, and today nothing says so.
+- **Error as a function of horizon.** Accuracy at three days out and at fifteen are different claims,
+  and only one of them is load-bearing for a decision taken now.
+- **Per-tier out-of-sample comparison**, which is what makes the cascade selectable rather than
+  guessed.
+
+### The change that may matter more than any of them
+
+The three principles — usefulness hinges on accuracy, accuracy cannot be perfect, so what is
+predictable must be very accurate — have a conclusion this roadmap keeps circling without stating:
+**the chart should stop claiming more than it knows.** Draw the predictable streams as a line and the
+erratic remainder as a **band**. A reader trusts a picture that is visibly uncertain about the part
+that genuinely is uncertain; the same picture drawn as one confident line is wrong in a way that costs
+trust in *everything* on it, including the parts that were right.
+
+That is a design change rather than a modelling one, it needs no new statistics, and it may buy more
+trust than every tier above put together.
+
+---
+
 ## What shipped, and what is still open
 
 1. ~~**Persist balances** (§0)~~ — **done.** Connector contract, both connectors, `BalanceSnapshot`
