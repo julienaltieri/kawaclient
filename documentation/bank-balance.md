@@ -614,6 +614,45 @@ It also removes a double computation that had been there from the start: the cap
 each asked for the series independently on every render, including on every day the cursor passed
 over.
 
+### §2c PREDICTABLE vs ERRATIC — because they need different fixes
+
+Three things are true at once, and together they set what "done" means for this view:
+
+1. its usefulness hinges on its accuracy;
+2. its accuracy cannot be perfect;
+3. therefore **what is predictable has to be very accurate**, and what is not has to be visibly
+   separated rather than quietly averaged in with it.
+
+Success is when the graph can be **trusted** — which is not the same as being right about everything.
+A regular payment drawn on the wrong day is a modelling bug and should be fixed; a genuinely erratic
+one is not a bug at all and never will be. Averaging them together hides both, and leaves no way to
+tell an improvable error from an irreducible one.
+
+**A balance chart is read for its STEPS**, so a stream is predictable exactly when you can say two
+things about it — *when* the money moves, and *how much* moves. Both are measured:
+
+| | what it measures | how |
+|---|---|---|
+| `timing` | how concentrated the money is inside one turn of the stream's own cycle | the cycle detector's own statistic, corrected for the concentration that more bins and fewer observations hand out free |
+| `steadiness` | how alike the turns are in size | one minus the coefficient of variation of the per-turn totals |
+
+**The silent turns count.** A stream that fires in three months out of twelve looks perfectly steady if
+you only measure the three it fired in — so every turn between the first and last observation is
+included, and the quiet ones are zeros. Without that, *sporadic* reads as *regular*, which is the one
+mistake this classification exists to prevent.
+
+**"Not enough data" is its own answer** and must never be dressed as either of the other two. Fewer
+than three observed turns cannot tell a rhythm from a coincidence.
+
+The rows are sorted by the money each stream carries, because a stream that is erratic and tiny is not
+a problem, and one that is erratic and large is the only thing worth looking at.
+
+**`regular only` forecasts the predictable streams alone.** Read against the benchmark it answers the
+question directly: if the benchmark tracks the record closely once the erratic streams are removed,
+then what is left to fix is *noise*, and the model is sound. If it still diverges, the fault is in the
+model and the erratic streams were never the problem. The reconstruction is untouched by the choice —
+what happened, happened.
+
 ### §2b THE BENCHMARK: the same forecast, run over what already happened
 
 Over the settled part of the window, a **dotted line** shows what the forecast would have predicted

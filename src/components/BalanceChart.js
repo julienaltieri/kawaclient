@@ -3,8 +3,9 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
+import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
-	monthlyExpectationAt} from '../processors/BankBalance.js';
+	monthlyExpectationAt, classifyAll, CLASSES} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -72,6 +73,17 @@ const BLEND = HIGH_AT - LOW_AT;
    happened", and every point in it is a record rather than a projection, which is why it draws as one
    solid line with no dashes anywhere. */
 const WHENS = [["this", "this month"], ["last", "last month"]];
+
+/* WHICH STREAMS THE FORECAST IS ALLOWED TO USE.
+
+   The accuracy of this picture cannot be perfect, so the useful question is not "how wrong is it" but
+   "which half of it is wrong". A regular payment drawn on the wrong day is a modelling fault worth
+   fixing; a genuinely erratic one is not a fault at all, and averaging the two together hides both.
+
+   `regular` forecasts only the streams whose timing and size are both measurably repeatable. Against
+   the benchmark line it answers the question directly: if the benchmark tracks the record closely with
+   only the regular streams, then what remains to be fixed is noise rather than model. */
+const BASES = [["all", "all streams"], ["regular", "regular only"]];
 const wordOf = (list, v) => (list.filter(o => o[0] === v)[0] || list[0])[1];
 
 /* THE TWO READINGS. Not a list of accounts: enumerating every connected one made the control a file
@@ -188,6 +200,17 @@ const Subtitle = styled.div`
 	& b{font-weight:600; color:${props => DS.getStyle().bodyText};}
 	& b.bad{color:${props => DS.getStyle().alert};}
 `
+/* STAGING ONLY. A question about accuracy is a question about fifty streams at once, and no picture
+   answers it - the numbers have to be readable somewhere. This is gated on AppConfig.staging, which is
+   false in the built app, so it never reaches a reader who did not go looking for it. */
+const ToolButton = styled.button`
+	appearance:none; cursor:pointer; font:inherit;
+	font-size:${DS.fontSize.little}rem;
+	background:none; color:${props => DS.getStyle().bodyTextSecondary};
+	border:1px dashed ${props => DS.getStyle().borderColor};
+	padding:0.15rem 0.5rem; border-radius:${DS.borderRadiusSmall}; white-space:nowrap;
+	&:hover{color:${props => DS.getStyle().bodyText};}
+`
 const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
 const ChartHost = styled.div`
 	overflow:hidden; -webkit-tap-highlight-color:transparent;
@@ -219,7 +242,8 @@ const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"num
 export default class BalanceChart extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {when:"this", source:null, at:null, accounts:null, loaded:false}
+		this.state = {when:"this", source:null, basis:"all", at:null, accounts:null,
+			loaded:false, copied:null}
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
@@ -359,6 +383,22 @@ export default class BalanceChart extends BaseComponent{
 		return {shapes: out, routing: accountRoutingOf(sliced, id => dir[id])}
 	}
 
+	/* every terminal, scored. Memoised with the grouped ledger it is derived from. */
+	classification(){
+		if(this._classes)return this._classes
+		const now = this.ledgerToday()
+		this._classes = classifyAll(this.terminals(), this.streamTxns(),
+			s => monthlyExpectationAt(s, now, "monthly"))
+		return this._classes
+	}
+	//the streams a given basis is allowed to forecast from
+	terminalsFor(basis){
+		if(basis !== "regular")return this.terminals()
+		const ok = {}
+		this.classification().forEach(r => {if(r.klass === CLASSES.predictable)ok[r.id] = true})
+		return this.terminals().filter(s => ok[s.id])
+	}
+
 	//one histogram per terminal, from that terminal's own categorised transactions
 	shapes(){
 		if(this._shapes)return this._shapes
@@ -456,12 +496,14 @@ export default class BalanceChart extends BaseComponent{
 	   passed over. */
 	allSeries(){
 		const src = this.source(), txns = this.props.transactions, acc = this.state.accounts
+		const basis = this.state.basis
 		const k = this._seriesKey
-		if(this._series && k && k.src === src && k.txns === txns && k.acc === acc)return this._series
+		if(this._series && k && k.src === src && k.txns === txns && k.acc === acc
+			&& k.basis === basis)return this._series
 		const out = {}
 		WHENS.forEach(o => {out[o[0]] = this.computeSeries(o[0])})
 		this._series = out
-		this._seriesKey = {src: src, txns: txns, acc: acc}
+		this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis}
 		return out
 	}
 	series(when){return this.allSeries()[when || this.state.when]}
@@ -486,7 +528,8 @@ export default class BalanceChart extends BaseComponent{
 		   that walk rather than a separate calculation from a guessed opening figure. */
 		let past = reconstruct(txns, now, bal, win.from)
 		if(win.to)past = past.filter(p => p.date <= win.to)
-		const future = win.fwd ? forecast({terminals:this.terminals(), shapes:this.shapes(),
+		const use = this.terminalsFor(this.state.basis)
+		const future = win.fwd ? forecast({terminals:use, shapes:this.shapes(),
 			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
 			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()}) : []
@@ -506,7 +549,7 @@ export default class BalanceChart extends BaseComponent{
 		if(past.length > 1){
 			const opened = past[0].date
 			const asOf = this.shapesAsOf(opened)
-			backtest = forecast({terminals:this.terminals(), shapes:asOf.shapes,
+			backtest = forecast({terminals:use, shapes:asOf.shapes,
 				routing:asOf.routing, now:opened, balanceNow:past[0].value,
 				days:Math.round((past[past.length-1].date - opened)/DAY),
 				covers:covers, settles:settles,
@@ -888,10 +931,14 @@ export default class BalanceChart extends BaseComponent{
 	   on the OLD curve for the whole duration and then snap to the new one. A stall and a jump, which
 	   is the one thing an animation here exists to prevent.
 	   The dates are identical, so the VALUES pair by index and lerp directly. */
-	morphTo(){
+	//a different set of streams is a different set of AMOUNTS over the same days, so it morphs
+	morphBasis(){this.morphWith({basis: this.next(BASES, "basis")})}
+	morphTo(){this.morphWith({source: this.next(this.sources(), "source")})}
+
+	morphWith(change){
 		const before = this.series()
 		this.animating = true
-		this.setState({source:this.next(this.sources(),"source"), at:null}, () => {
+		this.setState(Object.assign({at:null}, change), () => {
 			const after = this.series()
 			const a = before.past.concat(before.future), b = after.past.concat(after.future)
 			const n = Math.min(a.length, b.length)
@@ -924,6 +971,49 @@ export default class BalanceChart extends BaseComponent{
 			now, frame, backtest)
 	}
 
+	/* The classification, as text. Sorted by how much money each stream carries, because a stream that
+	   is erratic and tiny is not a problem and a stream that is erratic and large is the only thing
+	   worth looking at. */
+	report(){
+		const rows = this.classification()
+		const money0 = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString()
+		const groups = [[CLASSES.predictable, "PREDICTABLE"], [CLASSES.erratic, "ERRATIC"],
+			[CLASSES.thin, "NOT ENOUGH DATA"]]
+		const totalFlow = rows.reduce((a, r) => a + Math.abs(r.monthly), 0) || 1
+		const out = ["balance forecast \u2014 stream classification",
+			"taken " + new Date().toISOString(),
+			this.terminals().length + " terminal streams, "
+				+ money0(totalFlow) + "/month of gross flow", ""]
+		groups.forEach(g => {
+			const mine = rows.filter(r => r.klass === g[0])
+			const flow = mine.reduce((a, r) => a + Math.abs(r.monthly), 0)
+			out.push(g[1] + "  \u2014  " + mine.length + " streams, "
+				+ Math.round(100*flow/totalFlow) + "% of the money")
+			out.push("  " + "name".padEnd(28) + "cycle".padEnd(10) + "monthly".padStart(10)
+				+ "  timing  steady  turns  txns")
+			mine.forEach(r => out.push("  " + String(r.name).slice(0, 27).padEnd(28)
+				+ r.cycle.padEnd(10) + money0(r.monthly).padStart(10)
+				+ "   " + r.timing.toFixed(2) + "    " + r.steadiness.toFixed(2)
+				+ "   " + String(r.turns).padStart(4) + "  " + String(r.k).padStart(4)))
+			out.push("")
+		})
+		return out.join("\n")
+	}
+	copyReport(){
+		const text = this.report()
+		const done = ok => this.updateState({copied: ok ? "Copied" : "Copy failed"},
+			() => setTimeout(() => this.updateState({copied: null}), 1600))
+		try{
+			if(navigator.clipboard && navigator.clipboard.writeText)
+				return navigator.clipboard.writeText(text).then(() => done(true), () => done(false))
+			const ta = document.createElement("textarea")
+			ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"
+			document.body.appendChild(ta); ta.select()
+			const ok = document.execCommand("copy")
+			document.body.removeChild(ta); done(ok)
+		}catch(e){done(false)}
+	}
+
 	subtitle(){
 		if(!this.state.loaded)return "reading balances\u2026"
 		if(!this.hasAnchor())return ""
@@ -945,7 +1035,7 @@ export default class BalanceChart extends BaseComponent{
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
 			this._txns = this.props.transactions; this._shapes = null; this._routing = null
-			this._names = null; this._byStream = null
+			this._names = null; this._byStream = null; this._classes = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
@@ -955,8 +1045,14 @@ export default class BalanceChart extends BaseComponent{
 					<TitleButton type="button" onClick={() => this.morphTo()}
 					>{wordOf(this.sources(), this.source())}</TitleButton>{", "}
 					<TitleButton type="button" onClick={() => this.zoomTo()}
-					>{wordOf(WHENS, this.state.when)}</TitleButton>
+					>{wordOf(WHENS, this.state.when)}</TitleButton>{", "}
+					<TitleButton type="button" onClick={() => this.morphBasis()}
+					>{wordOf(BASES, this.state.basis)}</TitleButton>
 				</Title>
+				{AppConfig.staging ? <ToolButton type="button" data-no-drag
+					onClick={() => this.copyReport()}
+					title="Copy the predictable/erratic classification of every stream">
+					{this.state.copied || "Classify"}</ToolButton> : null}
 			</Head>
 			<Subtitle dangerouslySetInnerHTML={{__html:this.subtitle()}}/>
 			{/* the chart answers its own pointer gestures, so a drag starting on it belongs to it and

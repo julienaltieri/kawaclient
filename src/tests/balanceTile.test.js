@@ -16,7 +16,8 @@ import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
-import {histogramOf, reconstruct, forecast, accountRoutingOf} from '../processors/BankBalance'
+import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES}
+	from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -713,4 +714,94 @@ test("a divergence is inside the frame rather than clipped away", async () => {
 		expect(p.value).toBeGreaterThanOrEqual(f.y0)
 		expect(p.value).toBeLessThanOrEqual(f.y1)
 	})
+})
+
+/* ---- predictable vs erratic ---------------------------------------------------------------------- */
+
+const monthlyOn = (day, amount, months, jitterAmount) => {
+	const out = []
+	for(let m = 0; m < months; m++){
+		out.push({date: new Date(Date.UTC(2025, m, day)),
+			amount: amount * (jitterAmount ? (0.2 + (m % 5)) : 1)})
+	}
+	return out
+}
+
+test("a regular payment on a regular day is predictable", () => {
+	const r = classifyStream(monthlyOn(1, -1700, 12), -1700)
+	expect(r.klass).toBe(CLASSES.predictable)
+	expect(r.cycle).toBe("monthly")
+	expect(r.timing).toBeGreaterThan(0.9)
+	expect(r.steadiness).toBeGreaterThan(0.9)
+})
+
+test("a regular day with a wildly varying amount is NOT predictable", () => {
+	//you can say when, and not how much - and a balance chart is read for the size of its steps
+	const r = classifyStream(monthlyOn(1, -300, 12, true), -900)
+	expect(r.timing).toBeGreaterThan(0.9)
+	expect(r.steadiness).toBeLessThan(0.55)
+	expect(r.klass).toBe(CLASSES.erratic)
+})
+
+test("a steady amount on scattered days is NOT predictable", () => {
+	const scattered = []
+	for(let m = 0; m < 12; m++){
+		scattered.push({date: new Date(Date.UTC(2025, m, 1 + (m*7) % 27)), amount: -500})
+	}
+	const r = classifyStream(scattered, -500)
+	expect(r.steadiness).toBeGreaterThan(0.9)
+	expect(r.timing).toBeLessThan(0.45)
+	expect(r.klass).toBe(CLASSES.erratic)
+})
+
+test("the silent turns count, so a sporadic stream is not mistaken for a steady one", () => {
+	//three payments of exactly $500, in month 0, 6 and 11. Measured only on the months it fired, it
+	//looks perfectly steady; measured across the span it obviously is not.
+	const sporadic = [0, 6, 11].map(m => ({date: new Date(Date.UTC(2025, m, 4)), amount: -500}))
+	const r = classifyStream(sporadic, -125)
+	expect(r.turns).toBe(12)
+	expect(r.steadiness).toBeLessThan(0.55)
+	expect(r.klass).toBe(CLASSES.erratic)
+})
+
+test("not enough data is its own answer, never one of the other two", () => {
+	expect(classifyStream([], 0).klass).toBe(CLASSES.thin)
+	expect(classifyStream(monthlyOn(1, -1700, 1), -1700).klass).toBe(CLASSES.thin)
+	//two turns cannot tell a rhythm from a coincidence
+	expect(classifyStream(monthlyOn(1, -1700, 2), -1700).klass).toBe(CLASSES.thin)
+	expect(classifyStream(monthlyOn(1, -1700, 3), -1700).klass).toBe(CLASSES.predictable)
+})
+
+test("the regular-only basis forecasts a subset, and the benchmark honours it too", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const all = c.terminalsFor("all").length
+	const regular = c.terminalsFor("regular").length
+	expect(regular).toBeLessThanOrEqual(all)
+	//every stream it keeps is one the classifier called predictable
+	const ok = {}
+	c.classification().forEach(r => {if(r.klass === CLASSES.predictable)ok[r.id] = true})
+	c.terminalsFor("regular").forEach(s => expect(ok[s.id]).toBe(true))
+})
+
+test("switching basis rebuilds both months and leaves the record untouched", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const before = c.series()
+	const recordBefore = before.past.map(p => Math.round(p.value))
+	await act(async () => {c.setState({basis: "regular"})})
+	const after = c.series()
+	//the reconstruction is what HAPPENED - no choice about streams can move it
+	expect(after.past.map(p => Math.round(p.value))).toEqual(recordBefore)
+})
+
+test("the classification report names every stream exactly once", async () => {
+	const ref = await mount()
+	const text = ref.current.report()
+	ref.current.terminals().forEach(s => {
+		expect(text.split(s.name.slice(0, 27)).length - 1).toBeGreaterThanOrEqual(1)
+	})
+	expect(text).toContain("PREDICTABLE")
+	expect(text).toContain("ERRATIC")
+	expect(text).toContain("NOT ENOUGH DATA")
 })

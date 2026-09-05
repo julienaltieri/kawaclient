@@ -225,3 +225,80 @@ export function eventsIn(series, txns, floor){
 	}
 	return out;
 }
+
+/* ==================================================================================================
+   IS THIS STREAM PREDICTABLE?
+
+   The usefulness of the whole picture hinges on its accuracy; its accuracy cannot be perfect; so what
+   is PREDICTABLE has to be very accurate, and what is not has to be visibly separated rather than
+   quietly averaged in with it. Those are different natures and they want different fixes: a mis-timed
+   regular payment is a modelling bug, and a genuinely erratic one is not a bug at all.
+
+   A balance chart is read for its STEPS, so a stream is predictable exactly when you can say two
+   things about it: WHEN the money moves, and HOW MUCH moves. Both are measured, neither is declared.
+
+     timing     how concentrated the money is within one turn of the stream's own cycle. This is the
+                same statistic the cycle detector uses, corrected for the free concentration that more
+                bins and fewer observations hand out.
+     steadiness how alike the turns are in SIZE. Per-occurrence totals, then one minus their
+                coefficient of variation.
+
+   THE EMPTY TURNS COUNT. A stream that fires in three months out of twelve looks perfectly steady if
+   you only measure the three - so every turn between the first and the last observation is included,
+   and the silent ones are zeros. Without that, "sporadic" reads as "regular".
+
+   NOT ENOUGH DATA IS ITS OWN ANSWER, and it is the one that must never be dressed up as either of the
+   others. Fewer than three observed turns cannot distinguish a rhythm from a coincidence.
+   ================================================================================================== */
+
+export const CLASSES = {predictable: "predictable", erratic: "erratic", thin: "not enough data"};
+
+export function classifyStream(txns, monthlyAmount, opts){
+	const o = opts || {};
+	const minTiming = o.minTiming === undefined ? 0.45 : o.minTiming;
+	const minSteady = o.minSteady === undefined ? 0.55 : o.minSteady;
+	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
+	const k = (txns || []).length;
+	const out = {k: k, monthly: monthlyAmount || 0, cycle: "monthly",
+		timing: 0, steadiness: 0, turns: 0, klass: CLASSES.thin};
+	if(k < 2)return out;
+
+	const cycle = histogram.detectCycle(txns, dateOf, amountOf);
+	out.cycle = cycle.name;
+	out.timing = histogram.concentration(
+		histogram.accumulate(txns, t => cycle.phaseOf(dateOf(t)), amountOf, cycle.bins), k);
+
+	//per-occurrence totals, with the silent turns included as zeros
+	const byTurn = {};
+	let lo = Infinity, hi = -Infinity;
+	txns.forEach(t => {
+		const n = histogram.occurrenceOf(cycle, dateOf(t));
+		byTurn[n] = (byTurn[n] || 0) + Math.abs(amountOf(t));
+		if(n < lo)lo = n;
+		if(n > hi)hi = n;
+	});
+	const totals = [];
+	for(let n = lo; n <= hi; n++)totals.push(byTurn[n] || 0);
+	out.turns = totals.length;
+	if(out.turns < 3)return out;                 //a rhythm needs at least three beats to be one
+
+	const mean = totals.reduce((a, b) => a + b, 0)/totals.length;
+	const variance = totals.reduce((a, b) => a + (b - mean)*(b - mean), 0)/totals.length;
+	const cv = mean ? Math.sqrt(variance)/mean : 1;
+	out.steadiness = Math.max(0, 1 - cv);
+	out.klass = (out.timing >= minTiming && out.steadiness >= minSteady)
+		? CLASSES.predictable : CLASSES.erratic;
+	return out;
+}
+
+/* The whole portfolio, sorted by how much of the money each stream carries - because a stream that is
+   erratic and tiny is not a problem, and a stream that is erratic and large is the only thing worth
+   looking at. */
+export function classifyAll(terminals, txnsByStream, monthlyOf, opts){
+	const rows = terminals.map(s => Object.assign(
+		{id: s.id, name: s.name},
+		classifyStream(txnsByStream[s.id] || [], monthlyOf(s), opts)));
+	const total = rows.reduce((a, r) => a + Math.abs(r.monthly), 0) || 1;
+	rows.forEach(r => {r.share = Math.abs(r.monthly)/total});
+	return rows.sort((a, b) => Math.abs(b.monthly) - Math.abs(a.monthly));
+}

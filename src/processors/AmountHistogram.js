@@ -252,3 +252,10 @@ export function detectCycle(items, dateOf, amountOf, minObservations){
 	});
 	return best.cycle;
 }
+
+/* WHICH TURN of its cycle a date falls in - so per-occurrence amounts can be compared with each
+   other. Months are counted absolutely rather than by index, or December and January collide. */
+export function occurrenceOf(cycle, d){
+	if(cycle.bins === 31)return d.getUTCFullYear()*12 + d.getUTCMonth();
+	return Math.floor(utcDay(d)/cycle.span);
+}
