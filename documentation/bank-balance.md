@@ -614,6 +614,41 @@ It also removes a double computation that had been there from the start: the cap
 each asked for the series independently on every render, including on every day the cursor passed
 over.
 
+### §2d THE BENCH, on real data — in the staging Sandbox
+
+The tile's unit tests prove the model is **self-consistent**, not that it is **right**. Whether a
+classification matches this portfolio is a question about real transactions, and a fixture cannot
+answer it — nor can it answer the one that actually matters: *which streams have exhausted their
+potential, and which are still carrying a fixable mistake.*
+
+So the bench lives inside the app, on the staging-only Sandbox route
+([`BalanceBench.js`](../src/components/BalanceBench.js)), where the real ledger and the real forecast
+already meet. It runs the last settled month out of sample and attributes the error **one stream at a
+time**, splitting every error in two, because the two have different cures:
+
+| | what it is | what it means |
+|---|---|---|
+| **level** | `\|Σpredicted − Σactual\|` | the stream moved a different **total** than expected — the budgeted amount is stale, which is a fact about the master stream, not about the code |
+| **timing** | `Σ\|predicted[d] − actual[d]\| − level` | the same money on the **wrong days** — a shape or cycle that does not match reality |
+
+Crossing that split with the predictable/erratic class is what turns a number into a verdict:
+
+- **predictable + timing error → MODEL BUG.** The stream is regular and we are drawing it in the wrong
+  place. This is the only category that is worth engineering time.
+- **any + level error → budget stale.** Not a code problem; the expected amount needs editing.
+- **erratic + timing error → irreducible.** No amount of modelling fixes an irregular stream, and
+  pretending otherwise is precisely how a chart loses trust.
+- **no error → exhausted.** Already exact; nothing left to win.
+
+**The residual row is the point of the whole exercise.** Everything the account did that *no stream
+accounts for* — uncategorised transactions, unlinked transfers, the card settlement — is money the
+master stream cannot see. If the residual is large, no improvement to any stream will make the picture
+accurate, and the work is categorisation rather than modelling.
+
+That row also forced a change in the Sandbox itself: it had been filtering to categorised transactions
+before handing them on, which would have zeroed the residual while leaving it looking computed. The
+page now keeps everything and the header rows filter for themselves.
+
 ### §2c PREDICTABLE vs ERRATIC — because they need different fixes
 
 Three things are true at once, and together they set what "done" means for this view:

@@ -12,11 +12,17 @@ import {Period} from '../Time';
 import utils from '../utils';
 import PageLoader from './PageLoader';
 import HeaderRowDrawer from './HeaderRowDrawer';
+import BalanceBench from './BalanceBench';
 
-//General sandbox page, currently hosting one experiment: several real compound-stream header rows (the
-//same row CompoundStreamAuditView renders in StreamAuditView.js), composed from HeaderRowDrawer - the same
-//drawer component that row uses in production. A first-class route behind login, so it follows the same
+//General sandbox page, hosting experiments. A first-class route behind login, so it follows the same
 //loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's ready.
+//
+//Currently two:
+//  - the BALANCE FORECAST BENCH, which is where page three's accuracy is actually measured. Its unit
+//    tests only prove the model is self-consistent; whether it is RIGHT is a question about this
+//    portfolio's real transactions, and there is nowhere else in the app those and the forecast meet.
+//  - several real compound-stream header rows (the same row CompoundStreamAuditView renders in
+//    StreamAuditView.js), composed from HeaderRowDrawer - the same drawer that row uses in production.
 
 const titleStyle = {marginBottom:DS.spacing.xxs+"rem",textAlign:"left",fontWeight:"bold"};
 const ringConfig = {timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001};
@@ -101,20 +107,31 @@ export default class Sandbox extends BaseComponent{
 		//same range MissionControl fetches over, so these rows analyze the same real transactions the audit view does
 		return Core.loadData()
 			.then(() => Core.getTransactionsBetweenDates(new Date(Math.min(AppConfig.transactionFetchMinDate,getAnalysisStartDate())),new Date()))
-			.then(txns => this.updateState({fetching:false,transactions:(txns||[]).filter(t => t.categorized)}))
+			//ALL of them, categorised or not. The header rows want only the categorised ones and filter
+			//for themselves below; the balance bench needs the others, because money that no stream
+			//claims is exactly what its residual row exists to measure - and filtering here would have
+			//zeroed that row while leaving it looking computed.
+			.then(txns => this.updateState({fetching:false,transactions:(txns||[])}))
 	}
 	componentDidMount(){
 		super.componentDidMount?.();
 		this.loadData();
 	}
-	getTransactionsForStream(s){return this.state.transactions.filter(t => t.isAllocatedToStream(s))}
+	getTransactionsForStream(s){
+		return this.state.transactions.filter(t => t.categorized && t.isAllocatedToStream(s))}
 	render(){
 		if(this.state.fetching)return <PageLoader/>
 		var streams = pickStreams();
 		if(!streams.length)return <div style={{padding:DS.spacing.xs+"rem"}}>No streams to show.</div>
 		//DS.spacing.xs, not .l: production's header rows come within 1rem of the screen edge, and a page
 		//gutter three times that made every row narrower than the thing it is reproducing
-		return <div style={{maxWidth:"50rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
+		//the bench takes ALL the transactions, not one stream's: it reconstructs an account, and an
+		//account is moved by everything that touched it - including whatever no stream claims, which
+		//is the number it exists to surface
+		return <div style={{maxWidth:"60rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
+			<div style={titleStyle}>Balance forecast bench</div>
+			<BalanceBench transactions={this.state.transactions}/>
+			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Header rows</div>
 			{streams.map(s => <CompoundStreamHeaderRow key={s.id} stream={s} transactions={this.getTransactionsForStream(s)}/>)}
 		</div>
 	}
