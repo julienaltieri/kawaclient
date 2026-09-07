@@ -170,3 +170,63 @@ test("predicting the opposite direction goes NEGATIVE rather than flooring at ze
 	const backwards = new Array(30).fill(0); backwards[5] = 1000
 	expect(streamScore(backwards, act)).toBeLessThan(0)
 })
+
+/* ---- balance accuracy vs transaction accuracy -------------------------------------------------- */
+
+/* BALANCE compares the two curves; an error on day 3 is still wrong on day 30.
+   TRANSACTION compares the flows; an error costs once, on the day it happens.
+   The GAP between them is the diagnosis. */
+const both = (predFlow, actFlow, opening) => {
+	let pb = opening || 0, ab = opening || 0, surface = 0, area = 0
+	let flowErr = 0, flowMag = 0, biasSum = 0
+	for(let i = 0; i < actFlow.length; i++){
+		pb += predFlow[i]; ab += actFlow[i]
+		surface += Math.abs(pb - ab); area += Math.abs(ab)
+		flowErr += Math.abs(predFlow[i] - actFlow[i])
+		flowMag += Math.abs(actFlow[i]); biasSum += predFlow[i] - actFlow[i]
+	}
+	return {balance: area ? 1 - surface/area : 1, transaction: flowMag ? 1 - flowErr/flowMag : 1,
+		bias: flowMag ? biasSum/flowMag : 0}
+}
+
+test("one early miss ruins the BALANCE score while barely touching the transaction score", () => {
+	//this is why both exist: an error on day 3 is carried by every later balance
+	const act = new Array(30).fill(0); act[2] = -500
+	const pred = new Array(30).fill(0)
+	const r = both(pred, act, 10000)
+	expect(r.transaction).toBe(0)          //one flow missed out of one flow
+	expect(r.balance).toBeGreaterThan(0.9) //against a $10k balance, a $500 step is a small surface
+})
+
+test("the two scores are NOT comparable - a healthy balance flatters the balance metric", () => {
+	//the denominators differ by construction: one divides by the integral of the balance, the other
+	//by the integral of the flows. An account holding $5,000 and moving $100 a day makes the first
+	//denominator far larger, so a bias that compounds all month still scores well on balance.
+	const act = new Array(30).fill(-100)
+	const overspending = new Array(30).fill(-120)
+	const r = both(overspending, act, 5000)
+	expect(r.transaction).toBeCloseTo(0.8, 2)
+	expect(r.balance).toBeGreaterThan(r.transaction)   //flattered, despite compounding every day
+})
+
+test("BIAS is what detects compounding, not the gap between the scores", () => {
+	const act = new Array(30).fill(-100)
+	const compounding = both(new Array(30).fill(-120), act, 5000)
+	const cancelling = both(act.map((v, i) => i % 2 ? v - 40 : v + 40), act, 5000)
+	//the same transaction-level error, one systematic and one not
+	expect(cancelling.transaction).toBeLessThan(compounding.transaction)
+	//and only the bias tells them apart
+	expect(compounding.bias).toBeLessThan(-0.15)
+	expect(Math.abs(cancelling.bias)).toBeLessThan(0.02)
+	//the one that cancels leaves the balance nearly untouched, despite scoring worse per transaction
+	expect(cancelling.balance).toBeGreaterThan(0.99)
+})
+
+test("bias is SIGNED, because only a one-directional error can be corrected", () => {
+	const act = new Array(10).fill(-100)
+	const over = new Array(10).fill(-150), under = new Array(10).fill(-50)
+	expect(both(over, act, 1000).bias).toBeLessThan(0)
+	expect(both(under, act, 1000).bias).toBeGreaterThan(0)
+	//an unsigned error cannot tell these apart, and they need opposite corrections
+	expect(both(over, act, 1000).transaction).toBeCloseTo(both(under, act, 1000).transaction, 6)
+})

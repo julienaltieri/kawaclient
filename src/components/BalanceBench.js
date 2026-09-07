@@ -364,6 +364,46 @@ export default class BalanceBench extends BaseComponent{
 			gain[t.id] = denom > 0.005 ? 1 - err/denom : 1
 		})
 
+		/* TWO ACCURACIES, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
+
+		   BALANCE accuracy compares the two CURVES - predicted balance against actual balance, day by
+		   day. It is what the reader sees, and it is the number that matters. It also has a property
+		   worth naming: errors PERSIST. A payment missed on the 3rd is still wrong on the 30th,
+		   because every later balance carries it. One mistake early costs twenty-seven days of surface.
+
+		   TRANSACTION accuracy compares the FLOWS - what moved each day against what was predicted to
+		   move that day. An error costs once, on the day it happens. This is the model's own score,
+		   with accumulation taken out of it.
+
+		   THEY ARE NOT DIRECTLY COMPARABLE, and assuming otherwise produced a wrong diagnosis that a
+		   test caught. The denominators differ by construction: balance divides by the integral of the
+		   BALANCE, transactions by the integral of the FLOWS. An account holding $8,000 and moving
+		   $100 a day has a denominator eighty times larger on one than the other, so a bias that
+		   compounds all month still scores 91% on balance and 80% on transactions - the opposite way
+		   round from "biased errors show up as a low balance score". A healthy balance FLATTERS the
+		   balance metric, and no comparison between the two survives that.
+
+		   So read each for what it is, and use the other two figures for the diagnosis:
+		     BIAS, signed        -> the errors compound. Something is systematically over- or under-
+		                            predicted and the sign says which way. This is the fixable kind.
+		     HORIZON, degrading  -> the same thing seen over time: accuracy falling as the window
+		                            lengthens is accumulation, accuracy flat is noise.
+		     bias near zero, transaction accuracy low -> random error that cancels. The noise floor,
+		                            and no modelling removes it.
+
+		   BIAS is signed on purpose. An unsigned error cannot distinguish "wrong in both directions"
+		   from "always short", and only the second one can be corrected. */
+		let flowErr = 0, flowMag = 0, biasSum = 0
+		dayKeys.forEach((k, i) => {
+			if(!i)return
+			const p = total[k] || 0, act = actualFlow[k] || 0
+			flowErr += Math.abs(p - act)
+			flowMag += Math.abs(act)
+			biasSum += (p - act)
+		})
+		const flowAccuracy = flowMag ? 1 - flowErr/flowMag : 1
+		const bias = flowMag ? biasSum/flowMag : 0
+
 		/* ACCURACY BY HORIZON: the same metric truncated at n days.
 		   "How accurate is this chart" is not one question - a balance three days out and a balance
 		   thirty days out are different claims, and only one of them is load-bearing for a decision
@@ -383,6 +423,12 @@ export default class BalanceBench extends BaseComponent{
 		//taken on trust
 		const detail = {}
 		this.terminals().forEach(t => {
+			let fe = 0, fm = 0
+			dayKeys.forEach((k, i) => {
+				if(!i)return
+				fe += Math.abs((perStream[t.id][k] || 0) - (actualByStream[t.id][k] || 0))
+				fm += Math.abs(actualByStream[t.id][k] || 0)
+			})
 			let p = 0, a = 0, worst = 0, worstDay = null
 			dayKeys.forEach((k, i) => {
 				if(i){p += (perStream[t.id][k] || 0); a += (actualByStream[t.id][k] || 0)}
@@ -392,6 +438,7 @@ export default class BalanceBench extends BaseComponent{
 			dayKeys.forEach(k => {pt += (perStream[t.id][k] || 0); at += (actualByStream[t.id][k] || 0)})
 			const days = Object.keys(actualByStream[t.id]).sort()
 			detail[t.id] = {predTotal: pt, actTotal: at, worst: worst, worstDay: worstDay,
+				flowAccuracy: fm ? 1 - fe/fm : (fe > 0.005 ? 0 : 1),
 				actDays: days.map(d => d.slice(5) + " " + money(actualByStream[t.id][d])).join(", "),
 				predDays: Object.keys(perStream[t.id]).filter(k => Math.abs(perStream[t.id][k]) > 1)
 					.sort().map(d => d.slice(5) + " " + money(perStream[t.id][d])).join(", ")}
@@ -400,7 +447,7 @@ export default class BalanceBench extends BaseComponent{
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
 			since:since, surface:surface, area:area, error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
-			expectedFor:expectedFor}
+			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor}
 		return this._cache[key]
 	}
 	//the same month, one month earlier - a single score says nothing about whether the model is
@@ -515,10 +562,11 @@ export default class BalanceBench extends BaseComponent{
 		const out = []
 		if(a){
 			const prev = this.prior()
-			out.push("accuracy " + (a.accuracy*100).toFixed(1) + "%"
-				+ (prev ? "   prior month " + (prev.accuracy*100).toFixed(1) + "%" : "")
-				+ "   error " + (a.error*100).toFixed(1) + "%"
-				+ "   surface " + money(a.surface) + " / " + money(a.area) + " $-days")
+			out.push("BALANCE accuracy " + (a.accuracy*100).toFixed(1) + "%"
+				+ "   TRANSACTION accuracy " + (a.flowAccuracy*100).toFixed(1) + "%"
+				+ "   bias " + (a.bias > 0 ? "+" : "") + (a.bias*100).toFixed(1) + "%")
+			out.push("surface " + money(a.surface) + " / " + money(a.area) + " $-days"
+				+ (prev ? "   prior month " + (prev.accuracy*100).toFixed(1) + "%" : ""))
 			out.push("by horizon: " + a.horizon.map(h => "+" + h.days + "d "
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
@@ -546,6 +594,10 @@ export default class BalanceBench extends BaseComponent{
 						+ (r.detail.predDays || "nothing") + "]")
 					out.push("      actual    " + money(r.detail.actTotal) + "  ["
 						+ (r.detail.actDays || "nothing") + "]")
+					out.push("      transaction accuracy "
+						+ (r.detail.flowAccuracy*100).toFixed(0) + "%"
+						+ "   worst gap " + money(r.detail.worst)
+						+ (r.detail.worstDay ? " on " + r.detail.worstDay : ""))
 				}
 			})
 			out.push("")
@@ -579,9 +631,10 @@ export default class BalanceBench extends BaseComponent{
 			    else is benchmarked against cannot afford that ambiguity - accuracy reaches 100% when
 			    the forecast is perfect, error reaches 0%. */}
 			<Score>
-				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}<Small> accuracy</Small></Big>
-				<Note>error {a ? (a.error*100).toFixed(1) + "%" : "—"}
-					{" · "}surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
+				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}<Small> balance accuracy</Small></Big>
+				<Note>transactions {a ? (a.flowAccuracy*100).toFixed(1) + "%" : "—"}
+					{a ? " · bias " + (a.bias > 0 ? "+" : "") + (a.bias*100).toFixed(1) + "%" : ""}</Note>
+				<Note>surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
 				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
 					{a ? " · " + a.days + " settled days" : ""}</Note>
 				<Note>{this.prior() ? "prior month " + (this.prior().accuracy*100).toFixed(1) + "%" : ""}</Note>
@@ -610,6 +663,7 @@ export default class BalanceBench extends BaseComponent{
 					{r.detail && this.state.open === r.name ? <Line>
 						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}
 						{" — actual " + money(r.detail.actTotal) + ": " + (r.detail.actDays || "nothing")}
+						{" — transactions " + (r.detail.flowAccuracy*100).toFixed(0) + "%"}
 						{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
 							+ " on " + r.detail.worstDay : ""}
 					</Line> : null}
