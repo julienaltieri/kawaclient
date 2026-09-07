@@ -539,9 +539,16 @@ export default class BalanceChart extends BaseComponent{
 		const inferred = inferSettlements(this.props.transactions, keep, cards)
 		const excludeIds = {}
 		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-		const back90 = new Date(now.getTime() - 90*DAY)
-		const recent = inferred.filter(x => x.date >= back90)
-		const settleMonthly = recent.reduce((a, b) => a + b.amount, 0)/3
+		/* SIX MONTHS, because a card bill varies about 50% week to week and a short sample of it is
+		   noise rather than a forecast - see BalanceBench. A scheduled bill needs three observations;
+		   a variable one needs many, and a stream from six months ago is a different agreement while a
+		   card bill from six months ago is another draw from the same distribution. */
+		const SETTLE_MONTHS = 6
+		const settleFrom = new Date(now.getTime() - SETTLE_MONTHS*30.44*DAY)
+		const recent = inferred.filter(x => x.date >= settleFrom)
+		const monthsOfSettle = recent.length
+			? Math.max(1, (now - Math.min.apply(null, recent.map(x => +x.date)))/(30.44*DAY)) : 1
+		const settleMonthly = recent.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
 		const useSettle = !netted && Math.abs(settleMonthly) > 1 && recent.length > 1
 		const settles = (netted || useSettle) ? null : (h => cards.indexOf(h) > -1)
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to

@@ -112,7 +112,10 @@ test("weekly settlements are found and modelled, not left to a monthly due-day",
 	expect(a.settlements.length).toBeGreaterThan(4)
 	//and the modelled figure belongs to THIS analysis, not to whichever window ran last
 	expect(Math.abs(a.settleMonthly)).toBeGreaterThan(500)
-	//the widest window sees the same settlements spread over decades, and says so separately
+	//AND IT DOES NOT MOVE WITH THE STREAM WINDOW. The settlement has its own six-month sample
+	//because a card bill is a variable quantity, so selecting a different lookback for the streams
+	//must not change what the card is predicted to cost. It used to: the widest window divided a
+	//fixed set of settlements by fifty-six years of months and predicted almost nothing.
 	const all = ref.current.analyse(new Date(0))
-	expect(Math.abs(all.settleMonthly)).toBeLessThan(Math.abs(a.settleMonthly))
+	expect(all.settleMonthly).toBeCloseTo(a.settleMonthly, 6)
 })

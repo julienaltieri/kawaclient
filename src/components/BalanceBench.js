@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b14 - settlement from observation; TDZ fix";
+export const BENCH_VERSION = "b15 - settlement sampled over 6 months";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -264,9 +264,31 @@ export default class BalanceBench extends BaseComponent{
 		const excludeIds = {}
 		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
 
-		const settleSeen = inferred.filter(x => x.date >= since && x.date < open)
+		/* THE SETTLEMENT GETS ITS OWN LOOKBACK, and a longer one, because it is a different KIND of
+		   quantity from everything else here.
+
+		   A rent is scheduled: three observations describe it, and a fourth adds nothing. A card bill
+		   is whatever was spent, and measured on this portfolio it varies 49% from week to week. The
+		   streams' lookback samples about six of them, and the standard error of a six-draw mean at
+		   that spread is +/-20% - which is why the model said -$6,215 against -$9,800 actual and why
+		   the figure moved every time the window did. The estimator was never wrong; it was
+		   under-sampled, and no amount of re-modelling fixes a sample size.
+
+		   So the amount is measured over SETTLE_MONTHS regardless of what the streams use, still
+		   strictly out of sample. More draws, less noise, and the same answer whichever stream window
+		   is selected - which also stops the widest window collapsing, where dividing a fixed set of
+		   settlements by fifty-six years of months predicted a card bill of nearly nothing.
+
+		   Long windows are wrong for streams for a reason that does not apply here: a stream from two
+		   years ago is a different agreement wearing the same name, whereas a card bill from two years
+		   ago is a draw from the same distribution. Recency matters for identity, not for variance. */
+		const SETTLE_MONTHS = 6;
+		const settleFrom = new Date(open.getTime() - SETTLE_MONTHS*30.44*DAY)
+		const settleSeen = inferred.filter(x => x.date >= settleFrom && x.date < open)
 			.map(x => ({date: x.date, amount: x.amount, accountHash: x.accountHash}))
-		const monthsOfSettle = Math.max(1, (open - since)/(30.44*DAY))
+		const monthsOfSettle = settleSeen.length
+			? Math.max(1, (open - Math.min.apply(null, settleSeen.map(x => +x.date)))/(30.44*DAY))
+			: 1
 		const settleMonthly = settleSeen.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
 		const settleStream = {id: "__settlement__", name: "Card settlement",
 			getPreferredPeriod: () => "monthly",
@@ -597,7 +619,14 @@ export default class BalanceBench extends BaseComponent{
 		const byStream = this.byStream()
 		const a = this.analyse()
 		const since = (a && a.since) || this.windows(now)[0][1]
-		this._rows = this.terminals().map(s => {
+		//the settlement is forecast like a stream, so it is listed like one - otherwise the single
+		//largest outflow in the portfolio has no row and its accuracy cannot be read
+		const synthetic = (a && a.settleMonthly) ? [{name: "Card settlement (modelled)",
+			cycle: "weekly", expected: a.settleMonthly, tier: 3, day: "observed",
+			amount: a.settleMonthly, spread: 0, gain: (a.gain || {})["__settlement__"] || 0,
+			sort: Math.abs(a.settleMonthly),
+			detail: (a.detail || {})["__settlement__"] || null}] : []
+		this._rows = synthetic.concat(this.terminals().map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
 			const perMonth = monthlyExpectationAt(s, now, "monthly")
 			const perCycle = monthlyExpectationAt(s, now, declared)
@@ -625,7 +654,7 @@ export default class BalanceBench extends BaseComponent{
 				amount:(p.tier === TIERS.spread ? used : p.amount)/(ratio || 1),
 				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth),
 				detail:(a && a.detail && a.detail[s.id]) || null}
-		}).sort((x, y) => (x.gain - y.gain) || (y.sort - x.sort))
+		})).sort((x, y) => (x.gain - y.gain) || (y.sort - x.sort))
 		return this._rows
 	}
 	//grouped, because a list of eighty-seven is audited a tier at a time
