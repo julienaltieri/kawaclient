@@ -26,8 +26,23 @@ import AppConfig from './AppConfig'
    other page calls, and the server decides what those return. Nothing here grants access to anything;
    it only decides whether a link is worth showing. */
 const SANDBOX_OWNER = "julioo.altieri@gmail.com";
-const sandboxVisible = () => AppConfig.staging
-	|| (Core.getUserData() || {}).userId === SANDBOX_OWNER;
+
+/* AND A DOOR THAT DOES NOT DEPEND ON GUESSING THE IDENTITY.
+   The account id is whatever Cognito calls the user - it may be the email, it may be a uuid - and the
+   check above cannot be verified from the outside. Appending ?sandbox=1 once turns it on for this
+   browser and remembers it, so the workbench is reachable whether or not the identity matches. Same
+   convenience gate, one less assumption; ?sandbox=0 turns it off again. */
+const SANDBOX_FLAG = "kawa.sandbox";
+const sandboxFlag = () => {
+	try{
+		const q = new URLSearchParams(window.location.search).get("sandbox");
+		if(q === "1")window.localStorage.setItem(SANDBOX_FLAG, "1");
+		if(q === "0")window.localStorage.removeItem(SANDBOX_FLAG);
+		return window.localStorage.getItem(SANDBOX_FLAG) === "1";
+	}catch(e){return false}
+};
+const sandboxVisible = () => AppConfig.staging || sandboxFlag()
+	|| String((Core.getUserData() || {}).userId || "").toLowerCase() === SANDBOX_OWNER;
 
 export default class App extends BaseComponent{
   constructor(props){   
@@ -55,15 +70,17 @@ export default class App extends BaseComponent{
     Navigation.addView("Streams",NavRoutes.streams);
     Navigation.addView("Categorization",NavRoutes.categorization);
     Navigation.addView("Settings",NavRoutes.settings);
-    //Sandbox is a workbench, not a feature. Staging always has it; in production it is registered for
-    //the OWNER only, so the balance bench can be read from a phone away from the dev machine without
-    //the entry appearing for anyone else.
-    if(sandboxVisible())Navigation.addView("Sandbox",NavRoutes.sandbox);
+    //the Sandbox entry is NOT registered here: this runs once at start-up, before login and before
+    //any user data exists, so an identity check made at this moment is always false. It is registered
+    //from render() instead, where it is re-evaluated as the app settles. addView de-duplicates by
+    //name, so calling it on every render costs nothing and registers the moment it becomes true.
 
   }
 
   render(){
     Core.refreshTheme()
+    //see componentDidMount: registered here because the answer is not knowable at start-up
+    if(sandboxVisible())Navigation.addView("Sandbox",NavRoutes.sandbox);
     return (
     <Router>
         {!!this.state.modalController?<ModalContainer controller={this.state.modalController}/>:""}
