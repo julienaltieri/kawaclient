@@ -626,3 +626,38 @@ export function turnsPerMonth(cycleName){
 	const c = histogram.CYCLES[cycleName] || histogram.CYCLES.monthly;
 	return 30.44/c.span;
 }
+
+/* ==================================================================================================
+   IS THE CARD PAYMENT ALREADY IN THE LEDGER?
+
+   The settlement synthesis exists to re-time card spending: purchases happen on their own days, the
+   money leaves the current account weeks later in one lump. Where the card sits outside the reading,
+   its streams are excluded from the daily flows and that lump is added back on the settlement day.
+
+   That is correct exactly once. It stops being correct the moment the ledger ALSO contains a stream
+   for the payments themselves - a "Credit Card Payments" transfer, whose outgoing legs land on the
+   current account and which therefore routes to it and gets forecast like anything else. The
+   synthesis then adds a second model of the same money and the card is paid twice: a large phantom
+   outflow every month, in the spending reading only, which is why the netted reading - where nothing
+   is synthesised - looked BETTER than the one that was supposed to be more careful.
+
+   Detected structurally rather than by name: a transaction on the account being predicted whose
+   PAIRED partner sits on a credit account is a card payment, whatever the stream is called. When the
+   ledger shows those, it is already modelling the settlement, and measured beats synthesised - the
+   real stream carries actual timing and actual amounts, and the synthesis only ever had expectations.
+
+   Where a ledger does not pair its transfers, this finds nothing and the synthesis still runs, which
+   is the right fallback: better a modelled settlement than none.
+   ================================================================================================== */
+export function observedSettlement(transactions, coveredHashes, creditHashes){
+	const acctOf = {};
+	(transactions || []).forEach(t => {acctOf[t.transactionId] = t.userInstitutionAccountId});
+	let total = 0, count = 0;
+	(transactions || []).forEach(t => {
+		if(coveredHashes.indexOf(t.userInstitutionAccountId) < 0)return;
+		if(!t.pairedTransferTransactionId)return;
+		if(creditHashes.indexOf(acctOf[t.pairedTransferTransactionId]) < 0)return;
+		total += t.amount; count++;
+	});
+	return {total: total, count: count};
+}

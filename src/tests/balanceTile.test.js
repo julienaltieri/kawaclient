@@ -17,7 +17,8 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
-	groupByStream, pointPrediction, dayLabel, TIERS} from '../processors/BankBalance'
+	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement}
+	from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -1258,4 +1259,60 @@ test("a STEP is not a trend - a rate that moved and stayed is not still moving",
 	const straddling = [-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1700,-1700,-1700]
 		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 6)), amount: a}))
 	expect(pointPrediction(straddling, -1700).amount).toBe(-1600)
+})
+
+/* ---- the card must not be paid twice ------------------------------------------------------------ */
+
+const pairTxn = (id, partner, acct, amount) => ({categorized: true, amount: amount,
+	date: new Date(Date.UTC(2026, 0, 20)), userInstitutionAccountId: acct,
+	transactionId: id, pairedTransferTransactionId: partner, streamAllocation: []})
+
+test("a transfer from the predicted account to a card IS the settlement", () => {
+	//detected structurally - a paired partner sitting on a credit account - rather than by name
+	const txns = [pairTxn("a", "b", "chk", -9800), pairTxn("b", "a", "visa", 9800)]
+	const r = observedSettlement(txns, ["chk"], ["visa"])
+	expect(r.count).toBe(1)
+	expect(r.total).toBe(-9800)
+})
+
+test("an ordinary card purchase is not a settlement", () => {
+	//no pair, and it lands on the card rather than leaving the account being predicted
+	const buy = {categorized: true, amount: -60, date: new Date(Date.UTC(2026, 0, 4)),
+		userInstitutionAccountId: "visa", transactionId: "x", streamAllocation: []}
+	expect(observedSettlement([buy], ["chk"], ["visa"]).count).toBe(0)
+})
+
+test("a savings transfer is not a settlement either - the partner is not a card", () => {
+	const txns = [pairTxn("a", "b", "chk", -4000), pairTxn("b", "a", "sav", 4000)]
+	expect(observedSettlement(txns, ["chk"], ["visa"]).count).toBe(0)
+})
+
+test("a ledger with no pairing finds nothing, so the synthesis still runs", () => {
+	//the right fallback: better a modelled settlement than none
+	const unpaired = {categorized: true, amount: -9800, date: new Date(Date.UTC(2026, 0, 20)),
+		userInstitutionAccountId: "chk", transactionId: "z", streamAllocation: []}
+	expect(observedSettlement([unpaired], ["chk"], ["visa"]).count).toBe(0)
+})
+
+test("synthesising on top of a real payment stream pays the card twice", () => {
+	//the fault itself: card streams excluded and a lump added, while the payment stream on the
+	//predicted account is ALSO forecast. Two models of the same money.
+	const card = {id: "sub", name: "Subscriptions", getExpectedAmountAtDateByPeriod: () => -500}
+	const payment = {id: "pay", name: "Credit Card Payments",
+		getExpectedAmountAtDateByPeriod: () => -500}
+	const shapes = {sub: histogramOf([]), pay: histogramOf([])}
+	const routing = {sub: "visa", pay: "chk"}
+	const covers = h => ["chk"].indexOf(h || "chk") > -1
+	const opts = {terminals: [card, payment], shapes: shapes, routing: routing,
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly",
+		covers: covers}
+
+	const withSynthesis = forecast(Object.assign({}, opts,
+		{settles: h => ["visa"].indexOf(h) > -1, settlementDay: 20}))
+	const ledgerOnly = forecast(Object.assign({}, opts, {settles: null, settlementDay: null}))
+
+	//the payment stream alone is the truth: one month of card money leaving the account
+	expect(Math.round(ledgerOnly[ledgerOnly.length-1].value)).toBe(-500)
+	//with the synthesis on top it leaves twice
+	expect(Math.round(withSynthesis[withSynthesis.length-1].value)).toBe(-1000)
 })
