@@ -1172,3 +1172,42 @@ test("the forecast can be handed a caller's own expectation", () => {
 	expect(Math.round(plain[plain.length-1].value)).toBe(-1000)
 	expect(Math.round(remaining[remaining.length-1].value)).toBe(-250)
 })
+
+/* ---- routing decides WHERE, and needs every account to do it --------------------------------- */
+
+test("a stream that lives on another account is not forecast onto this one", () => {
+	//routing off an already-filtered ledger was a real fault: a stream paid entirely by credit card
+	//has no checking history, routed to undefined, fell through to the default account, and was
+	//forecast onto checking where nothing of it ever happens - guaranteed maximum error, on exactly
+	//the streams the model understands best
+	const onCard = []
+	for(let m = 0; m < 12; m++){
+		onCard.push({date: new Date(Date.UTC(2025, m, 12)), amount: -10, accountHash: "visa"})
+	}
+	const routed = accountRoutingOf({ins: onCard}, () => -1)
+	expect(routed.ins).toBe("visa")
+
+	const covers = h => ["chk"].indexOf(h || "chk") > -1
+	expect(covers(routed.ins)).toBe(false)      //excluded from the checking forecast, correctly
+})
+
+test("a stream with NO history at all still falls back to the default account", () => {
+	//the fallback is for genuine ignorance, not for "it lives somewhere else"
+	const routed = accountRoutingOf({fresh: []}, () => -1)
+	expect(routed.fresh).toBe(undefined)
+	const covers = h => ["chk"].indexOf(h || "chk") > -1
+	expect(covers(routed.fresh)).toBe(true)
+})
+
+test("routing needs the accounts the shape does NOT - they answer different questions", () => {
+	//half on checking, most on the card: the shape should learn from checking, routing should say card
+	const mixed = [
+		{date: new Date(Date.UTC(2025, 0, 12)), amount: -10, accountHash: "chk"},
+		{date: new Date(Date.UTC(2025, 1, 12)), amount: -400, accountHash: "visa"},
+		{date: new Date(Date.UTC(2025, 2, 12)), amount: -400, accountHash: "visa"}
+	]
+	expect(accountRoutingOf({m: mixed}, () => -1).m).toBe("visa")
+	//and filtering first would have said checking, which is the bug
+	const filtered = mixed.filter(t => t.accountHash === "chk")
+	expect(accountRoutingOf({m: filtered}, () => -1).m).toBe("chk")
+})

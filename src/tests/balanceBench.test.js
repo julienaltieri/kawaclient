@@ -121,3 +121,52 @@ test("the score can go negative, and should be allowed to", () => {
 	const actual = new Array(10).fill(1000)
 	expect(score(new Array(10).fill(-2000), actual).accuracy).toBeLessThan(0)
 })
+
+/* ---- per-stream accuracy, the four cases it has to get right ---------------------------------- */
+
+/* Same shape as the headline, asked of one stream: its predicted cumulative curve against its own
+   actual cumulative curve, and its own integral as the denominator. */
+const streamScore = (pred, act) => {
+	let p = 0, a = 0, err = 0, own = 0
+	for(let i = 0; i < act.length; i++){
+		p += pred[i]; a += act[i]
+		err += Math.abs(p - a); own += Math.abs(a)
+	}
+	const denom = own > 0.005 ? own : err
+	return denom > 0.005 ? 1 - err/denom : 1
+}
+
+test("moved nothing and predicted nothing is perfect, not undefined", () => {
+	expect(streamScore(new Array(30).fill(0), new Array(30).fill(0))).toBe(1)
+})
+
+test("moved nothing but predicted something scores zero, not infinity", () => {
+	const pred = new Array(30).fill(0); pred[5] = -1000
+	expect(streamScore(pred, new Array(30).fill(0))).toBe(0)
+})
+
+test("moved something and predicted nothing scores zero", () => {
+	const act = new Array(30).fill(0); act[5] = -1000
+	expect(streamScore(new Array(30).fill(0), act)).toBe(0)
+})
+
+test("predicted on the right day for the right amount is perfect", () => {
+	const both = new Array(30).fill(0); both[11] = -10
+	expect(streamScore(both.slice(), both)).toBe(1)
+})
+
+test("a day or two late still scores well - it is not a binary", () => {
+	//the case that looked broken in the report: a small, perfectly regular stream
+	const pred = new Array(30).fill(0); pred[11] = -10
+	const act = new Array(30).fill(0); act[13] = -10
+	const r = streamScore(pred, act)
+	expect(r).toBeGreaterThan(0.6)
+	expect(r).toBeLessThan(1)
+})
+
+test("predicting the opposite direction goes NEGATIVE rather than flooring at zero", () => {
+	//a floor would make "three times wrong" and "predicted nothing" look identical
+	const act = new Array(30).fill(0); act[5] = -1000
+	const backwards = new Array(30).fill(0); backwards[5] = 1000
+	expect(streamScore(backwards, act)).toBeLessThan(0)
+})

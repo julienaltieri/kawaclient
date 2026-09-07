@@ -91,7 +91,11 @@ export default class BalanceBench extends BaseComponent{
 	}
 
 	/* ---- the same inputs the tile uses ----------------------------------------------------------- */
-	terminals(){const m = Core.getMasterStream(); return m ? m.getAllTerminalStreams() : []}
+	/* ACTIVE STREAMS ONLY. A closed stream carries an endDate and is not going to move money again;
+	   listing it invites auditing a prediction nobody will ever see, and it pads the table with rows
+	   whose only honest verdict is "not applicable". getAllTerminalStreams(true) is the model's own
+	   filter, so this agrees with every other view rather than inventing a second definition. */
+	terminals(){const m = Core.getMasterStream(); return m ? m.getAllTerminalStreams(true) : []}
 	credit(){return (this.state.accounts||[]).filter(a => a.type === "credit").map(a => a.hash)}
 	spending(){
 		const dep = (this.state.accounts||[]).filter(a => a.type === "depository"
@@ -192,24 +196,31 @@ export default class BalanceBench extends BaseComponent{
 
 		const byStream = this.byStream()
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
-		const shapes = {}, dir = {}, sliced = {}
+		const shapes = {}, dir = {}, sliced = {}, seen = {}
 		this.terminals().forEach(t => {
-			/* OUT OF SAMPLE at the top, no further back than the lookback at the bottom, and ONLY
-			   TRANSACTIONS ON THE ACCOUNT BEING PREDICTED.
-
-			   This last one was the largest single error in the bench. A credit-card payment and a
-			   savings transfer both touch two accounts, and the shape was being learned from both
-			   sides at once: the weekly outflow from checking averaged together with its mirror
-			   arriving on the card, which describes no account and predicts neither. To predict an
-			   account, learn from that account. */
-			sliced[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since
-				&& keep.indexOf(x.accountHash) > -1)
+			//OUT OF SAMPLE at the top, no further back than the lookback at the bottom
+			seen[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since)
+			/* THE SHAPE learns only from the account being predicted. A card payment and a savings
+			   transfer both touch two accounts, and learning from both sides at once averages an
+			   outflow with its own mirror - describing no account and predicting neither. */
+			sliced[t.id] = seen[t.id].filter(x => keep.indexOf(x.accountHash) > -1)
 			shapes[t.id] = histogramOf(sliced[t.id], {prefer: t.getPreferredPeriod
 				? t.getPreferredPeriod() : "monthly"})
 			const a = monthlyExpectationAt(t, open, "monthly")
 			dir[t.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
-		const routed = accountRoutingOf(sliced, id => dir[id])
+		/* ROUTING SEES EVERY ACCOUNT, because deciding WHICH account a stream lives on is the one
+		   question that cannot be answered from a single account's ledger.
+
+		   Routing off the filtered set was a real fault and an expensive one: a stream paid entirely
+		   by credit card has no checking history, so it routed to `undefined`, fell through to the
+		   default account, and was forecast onto checking where nothing of it ever happens. Guaranteed
+		   maximum error, on exactly the streams the model understands best - a renter's insurance that
+		   pays $10 like clockwork scored 0%.
+
+		   The default is now reserved for a stream with no history AT ALL. A stream with history that
+		   simply is not here belongs somewhere else, and saying so is the whole point of routing. */
+		const routed = accountRoutingOf(seen, id => dir[id])
 		const days = Math.round((record[record.length-1].date - open)/DAY)
 		const covers = h => keep.indexOf(h || fallback) > -1
 		const settles = h => cards.indexOf(h) > -1
@@ -237,8 +248,27 @@ export default class BalanceBench extends BaseComponent{
 			const p = t.getPreferredPeriod ? t.getPreferredPeriod() : "monthly"
 			return p === "yearly" || p === "biyearly" || p === "bimonthly"
 		}
+		/* A ZERO-SUM STREAM STILL MOVES THIS ACCOUNT.
+		   "Zero sum" means the money comes back eventually, and that is true of a refund landing in
+		   the same account and false of a transfer between two. A credit-card payment nets to nothing
+		   across the pair and takes several thousand dollars out of checking every week, so a budget
+		   of $0 predicts $0 and the largest recurring outflow in the portfolio is simply missing.
+
+		   Where the declared budget is nothing and the ledger says otherwise, the ledger wins: the
+		   mean of what actually left this account over the lookback, per month. The MEAN rather than a
+		   median because these amounts are genuinely variable - a card bill is whatever was spent -
+		   and the median of a variable series systematically under-predicts its own total. */
+		const monthsSeen = Math.max(1, (open - since)/(30.44*DAY))
+		const observed = {}
+		this.terminals().forEach(t => {
+			let v = 0
+			sliced[t.id].forEach(x => {v += x.amount})
+			observed[t.id] = v/monthsSeen
+		})
 		const expectedFor = (t, when) => {
-			if(!longPeriod(t))return monthlyExpectationAt(t, when, "monthly")
+			const declared = monthlyExpectationAt(t, when, "monthly")
+			if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id]
+			if(!longPeriod(t))return declared
 			const budget = monthlyExpectationAt(t, when, t.getPreferredPeriod())
 			if(!budget)return 0
 			const left = budget - (spentSince[t.id] || 0)
@@ -322,8 +352,15 @@ export default class BalanceBench extends BaseComponent{
 				err += Math.abs(p - a)
 				own += Math.abs(a)
 			}
+			/* NOT FLOORED AT ZERO, for the same reason the headline is not: a stream predicted at
+			   three times reality is worse than one predicted at nothing, and a floor makes them look
+			   identical. The four cases this has to get right:
+			     moved nothing, predicted nothing  -> 100%, not undefined
+			     moved nothing, predicted something -> 0%, scored against the size of the mistake
+			     moved something, predicted nothing -> 0%
+			     predicted the opposite direction   -> negative, and it should say so */
 			const denom = own > 0.005 ? own : err
-			gain[t.id] = denom > 0.005 ? Math.max(0, 1 - err/denom) : 1
+			gain[t.id] = denom > 0.005 ? 1 - err/denom : 1
 		})
 
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
