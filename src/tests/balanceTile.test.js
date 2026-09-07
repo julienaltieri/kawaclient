@@ -18,7 +18,8 @@ import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements, cardCycles, cardSettlementForecast} from '../processors/BankBalance'
+	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay}
+	from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -1530,4 +1531,56 @@ test("two cards keep their own cycles rather than being averaged together", () =
 	const cy = cardCycles(out, ["visa", "amex"], inferSettlements(out, ["chk"], ["visa", "amex"]))
 	expect(Math.round(cy.visa.intervalDays)).toBe(7)
 	expect(Math.round(cy.amex.intervalDays)).toBe(28)
+})
+
+/* ---- the audit explains the forecast, not something like it ----------------------------------- */
+
+test("the day breakdown sums to exactly what the forecast put on that day", () => {
+	//if these two ever disagree, the audit sends the reader to inspect the wrong half
+	const rent = {id: "r", name: "Rent", getExpectedAmountAtDateByPeriod: () => -1700}
+	const food = {id: "f", name: "Food", getExpectedAmountAtDateByPeriod: () => -600}
+	const shapes = {
+		r: histogramOf([{date: "2026-01-02", amount: -1700}, {date: "2026-02-02", amount: -1700},
+			{date: "2026-03-02", amount: -1700}]),
+		f: histogramOf([])
+	}
+	const opts = {terminals: [rent, food], shapes: shapes, routing: {}, periodName: "monthly",
+		covers: () => true}
+	const series = forecast(Object.assign({now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0,
+		days: 31}, opts))
+
+	series.forEach((p, i) => {
+		if(!i)return
+		const step = p.value - series[i-1].value
+		const parts = contributionsOn(p.date, opts)
+		const sum = parts.reduce((a, b) => a + b.amount, 0)
+		expect(sum).toBeCloseTo(step, 6)
+	})
+})
+
+test("a stream this reading does not cover contributes nothing, and says so", () => {
+	const onCard = {id: "c", name: "Subscriptions", getExpectedAmountAtDateByPeriod: () => -500}
+	const opts = {terminals: [onCard], shapes: {c: histogramOf([])}, routing: {c: "visa"},
+		periodName: "monthly", covers: h => ["chk"].indexOf(h || "chk") > -1}
+	expect(shareOfDay(onCard, new Date(Date.UTC(2026, 8, 15)), opts)).toBe(0)
+	expect(contributionsOn(new Date(Date.UTC(2026, 8, 15)), opts).length).toBe(0)
+})
+
+test("an excluded stream contributes nothing even though it is covered", () => {
+	const pay = {id: "p", name: "Credit Card Payments", getExpectedAmountAtDateByPeriod: () => -900}
+	const opts = {terminals: [pay], shapes: {p: histogramOf([])}, routing: {p: "chk"},
+		periodName: "monthly", covers: () => true, excludeIds: {p: true}}
+	expect(shareOfDay(pay, new Date(Date.UTC(2026, 8, 15)), opts)).toBe(0)
+})
+
+test("explicit events appear in the breakdown beside the streams", () => {
+	//the card settlement is arithmetic rather than a stream, and an audit that omitted it would show
+	//a day whose parts do not add up to its step
+	const rent = {id: "r", name: "Rent", getExpectedAmountAtDateByPeriod: () => -1700}
+	const day = new Date(Date.UTC(2026, 8, 15))
+	const opts = {terminals: [rent], shapes: {r: histogramOf([])}, routing: {}, periodName: "monthly",
+		covers: () => true, extraFlow: {"2026-09-15": {amount: -2400, name: "Card settlement"}}}
+	const parts = contributionsOn(day, opts)
+	expect(parts.map(p => p.name)).toContain("Card settlement")
+	expect(parts.reduce((a, b) => a + b.amount, 0)).toBeCloseTo(-2400 + (-1700/30), 6)
 })

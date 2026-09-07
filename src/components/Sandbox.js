@@ -13,6 +13,8 @@ import utils from '../utils';
 import PageLoader from './PageLoader';
 import HeaderRowDrawer from './HeaderRowDrawer';
 import BalanceBench from './BalanceBench';
+import BalanceChart from './BalanceChart';
+import DayAudit from './DayAudit';
 
 //General sandbox page, hosting experiments. A first-class route behind login, so it follows the same
 //loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's ready.
@@ -98,7 +100,7 @@ function pickStreams(){
 export default class Sandbox extends BaseComponent{
 	constructor(props){
 		super(props);
-		this.state = {fetching:true,transactions:[]};
+		this.state = {fetching:true,transactions:[],day:null};
 	}
 	//Same loading lifecycle every page follows (see StreamView.js's MasterStreamView): fetching starts
 	//true, loadData() waits on Core.loadData() before touching Core for anything, then flips fetching
@@ -129,7 +131,18 @@ export default class Sandbox extends BaseComponent{
 		//account is moved by everything that touched it - including whatever no stream claims, which
 		//is the number it exists to surface
 		return <div style={{maxWidth:"60rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
-			<div style={titleStyle}>Balance forecast bench</div>
+			{/* THE GRAPH AND ITS NUMBERS ON ONE PAGE. Auditing meant flipping between two routes and
+			    reloading, which loses the cursor and the scroll position every time - and the whole
+			    job is comparing a point on the curve against the rows that made it. It opens on LAST
+			    month and the spending account, because that is the window being audited: a settled
+			    month, on the account the forecast is scored against. */}
+			<div style={titleStyle}>The tile, as shipped</div>
+			<div style={{maxWidth:"24.4rem"}}>
+				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
+					defaultWhen="last" onDay={d => this.updateState({day:d})}/>
+			</div>
+			<DayAudit day={this.state.day}/>
+			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>
 			<BalanceBench transactions={this.state.transactions}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Header rows</div>
 			{streams.map(s => <CompoundStreamHeaderRow key={s.id} stream={s} transactions={this.getTransactionsForStream(s)}/>)}

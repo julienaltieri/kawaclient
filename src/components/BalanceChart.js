@@ -6,7 +6,7 @@ import Core from '../core.js';
 import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement,
-	settlementInReading, inferSettlements} from '../processors/BankBalance.js';
+	settlementInReading, inferSettlements, contributionsOn} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -243,8 +243,9 @@ const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"num
 export default class BalanceChart extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {when:"this", source:null, basis:"all", at:null, accounts:null,
-			loaded:false, copied:null}
+		//the bench opens on the month it is auditing; the app opens on the one being lived in
+		this.state = {when:props.defaultWhen || "this", source:null, basis:"all", at:null,
+			accounts:null, loaded:false, copied:null}
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
@@ -263,7 +264,30 @@ export default class BalanceChart extends BaseComponent{
 		}
 	}
 	componentWillUnmount(){if(this.ro)this.ro.disconnect()}
-	componentDidUpdate(){this.paint()}
+	componentDidUpdate(){
+		this.paint()
+		/* THE AUDIT HOOK. The parent gets what actually posted that day and what the forecast expected
+		   of it, computed from the same inputs the forecast ran on - not re-derived. Fired only when
+		   the day changes, so dragging the cursor does not re-render the table on every frame. */
+		if(!this.props.onDay)return
+		const k = this.held ? dayKey(this.held.day.date) : null
+		if(k === this._toldDay)return
+		this._toldDay = k
+		this.props.onDay(k ? this.dayAudit(this.held.day) : null)
+	}
+
+	dayAudit(point){
+		const k = dayKey(point.date)
+		const actual = this.ledger().filter(t => dayKey(t.date) === k)
+			.map(t => ({name: t.streamName || "(uncategorised)", amount: t.amount}))
+			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+		const predicted = this._lastOpts
+			? contributionsOn(new Date(point.date), this._lastOpts) : []
+		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
+		return {date: k, balance: point.value, actual: actual, predicted: predicted,
+			actualTotal: sum(actual), predictedTotal: sum(predicted),
+			projected: point.actual === false}
+	}
 
 	//measured AFTER it exists: a measurement taken before the thing is on screen is a guess about it
 	measure(){
@@ -539,6 +563,7 @@ export default class BalanceChart extends BaseComponent{
 		const inferred = inferSettlements(this.props.transactions, keep, cards)
 		const excludeIds = {}
 		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
+		const extraFlow = null
 		/* SIX MONTHS, because a card bill varies about 50% week to week and a short sample of it is
 		   noise rather than a forecast - see BalanceBench. A scheduled bill needs three observations;
 		   a variable one needs many, and a stream from six months ago is a different agreement while a
@@ -595,6 +620,9 @@ export default class BalanceChart extends BaseComponent{
 			backtest = [{date:opened, value:past[0].value, bench:true}]
 				.concat(backtest.map(p => ({date:p.date, value:p.value, bench:true})))
 		}
+		//kept so a hovered day can be explained with exactly the inputs the forecast ran on
+		this._lastOpts = {terminals:use, shapes:shapes, routing:this.routing(), covers:covers,
+			periodName:"monthly", excludeIds:excludeIds, extraFlow:extraFlow}
 		return {past:past, future:future, backtest:backtest, txns:txns, now:now}
 	}
 

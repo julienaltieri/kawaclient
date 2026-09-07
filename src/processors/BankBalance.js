@@ -153,6 +153,50 @@ export function reconstruct(txns, now, balanceNow, from){
 /* ---- THE FUTURE -----------------------------------------------------------------------------------
    Each terminal's monthly expectation spread over the days of the month in the proportions its own
    histogram gives, summed, and accumulated forward from today's balance. */
+/* WHAT ONE STREAM CONTRIBUTES ON ONE DAY.
+
+   Pulled out of the forecast loop rather than written a second time beside it, because the audit
+   view's whole purpose is to show what the forecast did - and a breakdown computed by a near-copy
+   would eventually disagree with the thing it claims to explain, silently and in the direction of
+   whichever copy was edited last. One definition, two callers.
+
+   Returns 0 for a stream this reading does not cover, so a caller listing contributions gets the same
+   answer the forecast used, including the zeroes. */
+export function shareOfDay(s, d, opts){
+	const routing = opts.routing || {}, shapes = opts.shapes || {};
+	const covers = opts.covers || (() => true);
+	const periodName = opts.periodName;
+	const expectedFor = opts.expectedFor
+		|| ((st, when) => monthlyExpectationAt(st, when, periodName));
+	const amt = expectedFor(s, d);
+	if(!amt)return 0;
+	if(opts.excludeIds && opts.excludeIds[s.id])return 0;
+	if(!covers(routing[s.id]))return 0;
+	const nDays = daysInMonth(d);
+	const h = shapes[s.id];
+	let w;
+	if(h && h.any && h.cycle){
+		if(h.cycle.dayShare)w = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
+		else w = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
+	}else w = 1/nDays;
+	return amt * w;
+}
+
+/* Every stream's share of one day, biggest first, with the explicit events alongside. This is what an
+   audit reads: not "the forecast said -$400" but which streams that -$400 is made of. */
+export function contributionsOn(d, opts){
+	const out = [];
+	(opts.terminals || []).forEach(s => {
+		const part = shareOfDay(s, d, opts);
+		if(Math.abs(part) > 0.005)out.push({name: s.name, id: s.id, amount: part});
+	});
+	const ex = opts.extraFlow ? opts.extraFlow[dayKey(d)] : null;
+	if(ex && Math.abs(ex.amount) > 0.005){
+		out.push({name: ex.name || "Card settlement", id: "__card__", amount: ex.amount});
+	}
+	return out.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+}
+
 export function forecast(opts){
 	const terminals = opts.terminals, shapes = opts.shapes, routing = opts.routing;
 	const now = opts.now, periodName = opts.periodName;
@@ -175,40 +219,9 @@ export function forecast(opts){
 		   both pays the card twice, and forecasting neither pays it not at all. */
 		const expectedFor = opts.expectedFor || ((st, when) => monthlyExpectationAt(st, when, periodName));
 		terminals.forEach(s => {
-			const amt = expectedFor(s, d);
-			if(!amt)return;
-			/* in the NETTED reading every stream lands on the day it is spent and the settlement is
-			   not spending at all. In an account reading, a stream that lives on some other account
-			   never touches this one - the card's settlement does, and it is added below as a lump. */
-			if(opts.excludeIds && opts.excludeIds[s.id])return;
-			if(!covers(routing[s.id]))return;
-			const h = shapes[s.id];
-			/* THE WEIGHTS DESCRIBE ONE TURN OF THE STREAM'S OWN CYCLE, which is not always a month.
-			   `amt` is a MONTHLY figure, so it is first divided into the cycles that fit in this month
-			   and then placed inside one of them:
-
-			       part = (monthly / cyclesPerMonth) * weight[phase]
-
-			   For a monthly stream cyclesPerMonth is 1 and this is exactly what it was before. For a
-			   weekly one there are ~4.3 turns in a month, each carrying ~a quarter of the money, and
-			   the whole of a turn lands on the weekday it actually lands on.
-
-			   And no factor for the number of periods AGGREGATED: the weights already sum to 1 over
-			   one turn, so scaling by how many turns were measured forecasts the stream that many
-			   times over - the fault that once put a nine-month ending balance at $324k. */
-			let w;
-			if(h && h.any && h.cycle){
-				/* A CALENDAR-ANCHORED CYCLE KNOWS ITS OWN MONTH-END RULE, and it is not a
-				   renormalisation. Money aimed at a day the month does not have arrives on the last day
-				   it does: payroll due on the 30th is paid on the 28th in February, not skipped and not
-				   quietly redistributed across the month. Cycles anchored to the WEEK have no such
-				   problem - every weekday exists in every month - so they keep the plain rule, where a
-				   fixed per-occurrence amount means a four-Monday month really does carry less than a
-				   five-Monday one. */
-				if(h.cycle.dayShare)w = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
-				else w = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
-			}else w = 1/nDays;
-			const part = amt * w;
+			const part = shareOfDay(s, d, {routing: routing, shapes: shapes, covers: covers,
+				periodName: periodName, expectedFor: expectedFor, excludeIds: opts.excludeIds});
+			if(!part)return;
 			/* WHO MOVED IT. A forecast day is a sum, and without carrying the biggest contributor out
 			   with it a mark in the future has a size and no name - every label downstream could then
 			   only say "payments". One comparison per stream per day. */
