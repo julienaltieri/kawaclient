@@ -17,8 +17,8 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
-	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading}
-	from '../processors/BankBalance'
+	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
+	inferSettlements} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -1358,4 +1358,52 @@ test("a stream on this account budgeted at nothing that still moves money IS the
 	expect(settlementInReading([pay], {cc: "chk"}, {cc: 0}, covers, declared)).toBe(false)
 	//nor is one that lives on the card rather than on this account
 	expect(settlementInReading([pay], {cc: "visa"}, {cc: -9800}, covers, declared)).toBe(false)
+})
+
+/* ---- deferred card lumps, with nothing linking them ------------------------------------------- */
+
+const tx = (day, amount, acct) => ({categorized: true, amount: amount,
+	date: new Date(Date.UTC(2026, 0, day)), userInstitutionAccountId: acct,
+	transactionId: acct + "-" + day + "-" + amount, streamAllocation: []})
+
+test("two settlements, one per card, are matched to their cards by amount and date", () => {
+	//purchases land on the cards over a week; $60 leaves checking as TWO transactions when they
+	//settle, carrying no reference to what they pay
+	const txns = [
+		tx(2, -10, "visa"), tx(4, -20, "visa"), tx(5, -30, "amex"),
+		tx(20, -30, "chk"), tx(20, -30, "chk"),        //the settlements
+		tx(21, 30, "visa"), tx(21, 30, "amex")         //received on each card
+	]
+	const found = inferSettlements(txns, ["chk"], ["visa", "amex"])
+	expect(found.length).toBe(2)
+	expect(found.reduce((a, b) => a + b.amount, 0)).toBe(-60)
+})
+
+test("each side is consumed once, so two equal payments match two receipts", () => {
+	//not one receipt matched twice
+	const txns = [tx(20, -30, "chk"), tx(20, -30, "chk"), tx(21, 30, "visa")]
+	expect(inferSettlements(txns, ["chk"], ["visa"]).length).toBe(1)
+})
+
+test("an ordinary purchase on the card is never a settlement", () => {
+	//it never touched the account being predicted, and nothing arrives on a card to match it
+	const txns = [tx(2, -10, "visa"), tx(4, -20, "visa")]
+	expect(inferSettlements(txns, ["chk"], ["visa"]).length).toBe(0)
+})
+
+test("a payment far from any card receipt is not a settlement", () => {
+	//the window is days, not months - a coincidence of amount two weeks apart is a coincidence
+	const txns = [tx(2, -30, "chk"), tx(25, 30, "visa")]
+	expect(inferSettlements(txns, ["chk"], ["visa"]).length).toBe(0)
+})
+
+test("a savings transfer of the same size is not a settlement", () => {
+	//the money has to arrive on a CREDIT account, which is what makes it a card payment
+	const txns = [tx(13, -4000, "chk"), tx(13, 4000, "sav")]
+	expect(inferSettlements(txns, ["chk"], ["visa"]).length).toBe(0)
+})
+
+test("the closest receipt in time wins when several match the amount", () => {
+	const txns = [tx(20, -30, "chk"), tx(23, 30, "visa"), tx(20, 30, "amex")]
+	expect(inferSettlements(txns, ["chk"], ["visa", "amex"])[0].card).toBe("amex")
 })

@@ -6,7 +6,7 @@ import Core from '../core.js';
 import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement,
-	settlementInReading} from '../processors/BankBalance.js';
+	settlementInReading, inferSettlements} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -531,6 +531,7 @@ export default class BalanceChart extends BaseComponent{
 			observedMonthly[t.id] = v/12
 		})
 		const carried = observedSettlement(this.props.transactions, keep, cards).count > 0
+			|| inferSettlements(this.props.transactions, keep, cards).length > 0
 			|| settlementInReading(this.terminals(), this.routing(), observedMonthly, covers,
 				t => monthlyExpectationAt(t, now, "monthly"))
 		const settles = (netted || carried) ? null : (h => cards.indexOf(h) > -1)

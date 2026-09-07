@@ -691,3 +691,57 @@ export function observedSettlement(transactions, coveredHashes, creditHashes){
 	});
 	return {total: total, count: count};
 }
+
+/* ==================================================================================================
+   FINDING THE CARD SETTLEMENTS WHEN NOTHING LINKS THEM.
+
+   The shape of the thing: purchases of $10, $20 and $30 land on the CARD accounts over a week, and
+   then $60 leaves CHECKING when the cards settle - as two transactions, one per connected card, not
+   as one lump and not carrying any reference to what they pay.
+
+   `observedSettlement` looks for a stored pairedTransferTransactionId and finds nothing here, because
+   nothing in the data says these belong together. So the association has to be INFERRED, and the only
+   evidence available is the one every ledger has: an amount leaving one account and the same amount
+   arriving on another, at about the same time.
+
+   MATCHED ON AMOUNT AND DATE, ACROSS THE ACCOUNT BOUNDARY. A negative on an account being predicted
+   is a settlement when a credit account received the same amount within a few days. Each side is
+   consumed once, so two payments of the same size in one week match two receipts rather than one
+   twice. The window is days rather than exact, because a transfer posts on its own schedule at each
+   end.
+
+   WHY THIS MATTERS RATHER THAN BEING TIDY: card purchases must not count against the spending account
+   - they never touched it - while the settlement must, because it is the only moment card money
+   actually leaves. Getting that pair of facts wrong in either direction is a whole month of error, and
+   it is the difference between a forecast that under-spends by the entire card bill and one that
+   spends it twice.
+
+   Deliberately NOT matched by name, category or stream: those are conventions a user can change, and
+   the amount arriving where the amount left is a fact about the money.
+   ================================================================================================== */
+export function inferSettlements(transactions, coveredHashes, creditHashes, opts){
+	const o = opts || {};
+	const windowDays = o.windowDays === undefined ? 4 : o.windowDays;
+	const txns = transactions || [];
+	//receipts on a credit account: money arriving to pay the card down
+	const receipts = txns.filter(t => creditHashes.indexOf(t.userInstitutionAccountId) > -1
+		&& t.amount > 0).map(t => ({t: t, used: false}));
+	const out = [];
+	txns.filter(t => coveredHashes.indexOf(t.userInstitutionAccountId) > -1 && t.amount < 0)
+		.forEach(t => {
+			const want = Math.abs(t.amount);
+			let best = null, bestGap = Infinity;
+			receipts.forEach(r => {
+				if(r.used)return;
+				if(Math.abs(Math.abs(r.t.amount) - want) > 0.005)return;
+				const gap = Math.abs(new Date(r.t.date) - new Date(t.date))/86400000;
+				if(gap > windowDays)return;
+				if(gap < bestGap){bestGap = gap; best = r}
+			});
+			if(!best)return;
+			best.used = true;
+			out.push({date: t.date, amount: t.amount, accountHash: t.userInstitutionAccountId,
+				card: best.t.userInstitutionAccountId});
+		});
+	return out;
+}

@@ -5,8 +5,8 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
-	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading}
-	from '../processors/BankBalance.js';
+	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
+	inferSettlements} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
@@ -269,7 +269,14 @@ export default class BalanceBench extends BaseComponent{
 			sliced[t.id].forEach(x => {v += x.amount})
 			observed[t.id] = v/monthsSeen
 		})
+		/* three ways to know the ledger already carries the payment, in order of how directly they
+		   say so: a stored pair, an inferred one (same amount leaving here and arriving on a card
+		   within days), or a stream on this account budgeted at nothing that still moves money. Any of
+		   them means synthesising a second settlement would pay the card twice. */
+		const inferred = inferSettlements(this.props.transactions, keep, cards)
+		this._settlements = inferred
 		if(observedSettlement(this.props.transactions, keep, cards).count > 0
+			|| inferred.length > 0
 			|| settlementInReading(this.terminals(), routed, observed,
 				h => keep.indexOf(h || fallback) > -1,
 				t => monthlyExpectationAt(t, open, "monthly")))settles = null
@@ -579,6 +586,10 @@ export default class BalanceBench extends BaseComponent{
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
+			const st = this._settlements || []
+			const inWin = st.filter(x => x.date >= a.open && x.date <= a.close)
+			out.push("card settlements found: " + st.length + " total, " + inWin.length
+				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")")
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
@@ -648,6 +659,8 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{this.prior() ? "prior month " + (this.prior().accuracy*100).toFixed(1) + "%" : ""}</Note>
 				<Note>{a && a.horizon ? "by horizon " + a.horizon.map(h => "+" + h.days + "d "
 					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
+				<Note>{this._settlements
+					? "card settlements matched: " + this._settlements.length : ""}</Note>
 			</Score>
 			<Score>
 				<Note>lookback windows, same forecast, same month:</Note>
