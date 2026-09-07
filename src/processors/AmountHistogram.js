@@ -169,13 +169,54 @@ export const CYCLES = {
 	/* biweekly needs a fixed origin or its phase means nothing between one call and the next; the
 	   epoch is as good as any, because only the RELATIVE phase of the transactions matters. */
 	weekly:   {name:"weekly",   bins:7,  span:7,
-		phaseOf: d => ((utcDay(d) % 7) + 7) % 7,   daysPerCycle: () => 7},
+		phaseOf: d => ((utcDay(d) % 7) + 7) % 7,    daysPerCycle: () => 7, reach: () => 7},
 	biweekly: {name:"biweekly", bins:14, span:14,
-		phaseOf: d => ((utcDay(d) % 14) + 14) % 14, daysPerCycle: () => 14},
-	//monthly also covers semimonthly: a twice-a-month stream is two spikes in a month of bins, which
-	//is a true description of it and needs no candidate of its own
+		phaseOf: d => ((utcDay(d) % 14) + 14) % 14, daysPerCycle: () => 14, reach: () => 14},
+
+	/* SEMIMONTHLY IS A CANDIDATE OF ITS OWN, and leaving it out was a mistake worth recording. The
+	   note that used to sit here said monthly already covered it - "a twice-a-month stream is two
+	   spikes in a month of bins, which is a true description". That is true for FORECASTING, where two
+	   spikes place the money correctly, and false for everything else: the fit score sees a
+	   distribution split across two peaks and reads it as half-concentrated, so a payroll that never
+	   misses scored 0.46 and was called erratic; and a point prediction can only name ONE day, so the
+	   most reliable stream in the portfolio reported 46% confidence in a date. The reader who says
+	   "I can see two clear peaks and semimonthly fits better" is doing something the detector was
+	   never allowed to do.
+
+	   The phase is the position within the HALF month: days 1-15 map to 0-14, days 16-end map to
+	   0-15. A stream paid on the 15th and the 30th lands on phase 14 both times and scores a perfect
+	   fit, which is exactly what it deserves. Sixteen bins, because a 31-day month has a 16-day second
+	   half. */
+	semimonthly: {name:"semimonthly", bins:16, span:15.22,
+		phaseOf: d => {const day = d.getUTCDate(); return day <= 15 ? day-1 : day-16},
+		daysPerCycle: d => lastOfMonth(d)/2,
+		reach: d => lastOfMonth(d) >= 31 ? 16 : 15,
+		/* MONEY AIMED AT A DAY THE MONTH DOES NOT HAVE ARRIVES ON THE LAST DAY IT DOES.
+		   Payroll on the 15th and the 30th has no 30th in February, and it is not skipped that month -
+		   it is paid on the 28th. Without this the second paycheck simply evaporated and February
+		   forecast $8,098 of a $15,674 month, which is a money-losing bug rather than a rounding one.
+		   Each phase carries half the month (two turns), except phase 15, which the first half of a
+		   month is too short to contain and which therefore fires once. */
+		dayShare: (w, day, nDays) => {
+			let share = 0;
+			if(day <= 15)share += (w[day-1] || 0)/2;
+			else share += (w[day-16] || 0)/2;
+			if(day === nDays){
+				for(let p = 0; p <= 14; p++){if(p + 16 > nDays)share += (w[p] || 0)/2}
+				if(16 > nDays || nDays < 31)share += (w[15] || 0);
+			}
+			return share;
+		}},
+
 	monthly:  {name:"monthly",  bins:31, span:30.44,
-		phaseOf: d => d.getUTCDate()-1,             daysPerCycle: d => lastOfMonth(d)}
+		phaseOf: d => d.getUTCDate()-1,             daysPerCycle: d => lastOfMonth(d),
+		reach: d => lastOfMonth(d),
+		//same rule: a payment budgeted for the 31st happens on the 30th in a thirty-day month
+		dayShare: (w, day, nDays) => {
+			let share = w[day-1] || 0;
+			if(day === nDays){for(let p = nDays; p < w.length; p++)share += (w[p] || 0)}
+			return share;
+		}}
 };
 
 /* How concentrated a set of bins is, corrected for the free concentration that more bins and fewer
@@ -242,7 +283,8 @@ export function detectCycle(items, dateOf, amountOf, minObservations){
 	   can possibly have watched a full turn of - without it ever facing the confidence test. A short
 	   history must fall back, not commit. */
 	let best = {cycle: CYCLES.monthly, score: fits(CYCLES.monthly) ? scoreOf(CYCLES.monthly) : 0};
-	[CYCLES.biweekly, CYCLES.weekly].forEach(c => {
+	//LONGEST FIRST after monthly, so a shorter cycle must still beat the longer one it contains
+	[CYCLES.semimonthly, CYCLES.biweekly, CYCLES.weekly].forEach(c => {
 		if(!fits(c))return;
 		//how often scatter alone would agree this well, on THIS many bins with THIS many observations
 		const byChance = Math.pow(c.bins, 1 - k);
@@ -256,6 +298,10 @@ export function detectCycle(items, dateOf, amountOf, minObservations){
 /* WHICH TURN of its cycle a date falls in - so per-occurrence amounts can be compared with each
    other. Months are counted absolutely rather than by index, or December and January collide. */
 export function occurrenceOf(cycle, d){
-	if(cycle.bins === 31)return d.getUTCFullYear()*12 + d.getUTCMonth();
+	if(cycle.name === "monthly")return d.getUTCFullYear()*12 + d.getUTCMonth();
+	//a half-month is a turn of its own: the two paydays in a month are two occurrences, not one
+	if(cycle.name === "semimonthly"){
+		return (d.getUTCFullYear()*12 + d.getUTCMonth())*2 + (d.getUTCDate() <= 15 ? 0 : 1);
+	}
 	return Math.floor(utcDay(d)/cycle.span);
 }

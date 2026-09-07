@@ -175,9 +175,15 @@ export function forecast(opts){
 			   times over - the fault that once put a nine-month ending balance at $324k. */
 			let w;
 			if(h && h.any && h.cycle){
-				const cycleDays = h.cycle.daysPerCycle(d);
-				const mass = h.cycle.bins > 20 ? h.massIn(nDays) : 1;
-				w = (cycleDays/nDays) * (h.weights[h.cycle.phaseOf(d)]/mass);
+				/* A CALENDAR-ANCHORED CYCLE KNOWS ITS OWN MONTH-END RULE, and it is not a
+				   renormalisation. Money aimed at a day the month does not have arrives on the last day
+				   it does: payroll due on the 30th is paid on the 28th in February, not skipped and not
+				   quietly redistributed across the month. Cycles anchored to the WEEK have no such
+				   problem - every weekday exists in every month - so they keep the plain rule, where a
+				   fixed per-occurrence amount means a four-Monday month really does carry less than a
+				   five-Monday one. */
+				if(h.cycle.dayShare)w = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
+				else w = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
 			}else w = 1/nDays;
 			const part = amt * w;
 			/* WHO MOVED IT. A forecast day is a sum, and without carrying the biggest contributor out
@@ -428,7 +434,7 @@ export function pointPrediction(txns, monthlyAmount, opts){
 	const c = classifyStream(txns, monthlyAmount, opts);
 	const out = {tier: TIERS.spread, cycle: c.cycle, timing: c.timing, steadiness: c.steadiness,
 		turns: c.turns, k: c.k, perTurn: 0, day: null, second: null, confidence: 0,
-		amount: monthlyAmount || 0, thin: c.klass === CLASSES.thin};
+		amount: monthlyAmount || 0, perTurnAmount: null, thin: c.klass === CLASSES.thin};
 
 	if(!txns || !txns.length)return out;
 
@@ -478,7 +484,10 @@ export function pointPrediction(txns, monthlyAmount, opts){
 		if(totals.length){
 			const sorted = totals.slice().sort((a, b) => a - b);
 			const mid = Math.floor(sorted.length/2);
-			out.amount = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid])/2;
+			out.perTurnAmount = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid])/2;
+			//stated per MONTH as well, since the caller wants it in the stream's own declared period
+			//and the detected cycle is rarely the same thing
+			out.amount = out.perTurnAmount * (30.44/(cyc.span || 30.44));
 		}
 	}
 	return out;
@@ -490,5 +499,14 @@ export function dayLabel(cycleName, day){
 	if(day === null || day === undefined)return "spread";
 	if(cycleName === "weekly")return WEEKDAYS[day % 7];
 	if(cycleName === "biweekly")return WEEKDAYS[day % 7] + (day < 7 ? " A" : " B");
+	//a semimonthly phase is TWO days a month, and naming one of them would be half an answer
+	if(cycleName === "semimonthly")return "day " + (day + 1) + " & " + (day + 16);
 	return "day " + (day + 1);
+}
+
+/* the turns of this cycle that fit in a month - so an amount measured per turn can be stated per
+   month, and from there in whatever period the stream itself declares */
+export function turnsPerMonth(cycleName){
+	const c = histogram.CYCLES[cycleName] || histogram.CYCLES.monthly;
+	return 30.44/c.span;
 }

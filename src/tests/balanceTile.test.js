@@ -972,3 +972,93 @@ test("the predicted day is the cluster PEAK, so a wrapped cluster is not average
 	const p = pointPrediction(t, -800)
 	if(p.day !== null)expect([0, 1, 29, 30]).toContain(p.day)
 })
+
+/* ---- semimonthly ---------------------------------------------------------------------------- */
+
+const payroll = (months) => {
+	const out = []
+	for(let m = 0; m < months; m++){
+		[15, 30].forEach(nominal => {
+			const dt = new Date(Date.UTC(2024, m, nominal))
+			const dow = dt.getUTCDay()
+			const day = dow === 0 ? nominal - 2 : (dow === 6 ? nominal - 1 : nominal)
+			out.push({date: new Date(Date.UTC(2024, m, day)), amount: 7837})
+		})
+	}
+	return out
+}
+
+test("a twice-a-month payroll is detected as semimonthly, not monthly", () => {
+	//monthly binning splits it across two peaks and reads it as half-concentrated, so a payroll that
+	//never misses scored 0.46 and was called erratic
+	const p = pointPrediction(payroll(24), 7837*2)
+	expect(p.cycle).toBe("semimonthly")
+	expect(p.tier).toBe(TIERS.dated)
+})
+
+test("semimonthly names BOTH its days, and is confident about them", () => {
+	const p = pointPrediction(payroll(24), 7837*2)
+	expect(dayLabel(p.cycle, p.day)).toBe("day 15 & 30")
+	expect(p.confidence).toBeGreaterThan(0.9)
+})
+
+test("the amount is stated per turn AND per month, since they are different questions", () => {
+	const p = pointPrediction(payroll(24), 7837*2)
+	expect(Math.round(p.perTurnAmount)).toBe(7837)
+	expect(Math.round(p.amount)).toBe(7837*2)
+})
+
+test("February still gets BOTH paychecks - money aimed at a missing day lands on the last one", () => {
+	//"the 30th" does not exist in February and the payment is not skipped that month, it is paid on
+	//the 28th. Without the month-end rule the second paycheck evaporated and February forecast
+	//$8,098 of a $15,674 month.
+	const s = {id: "w", name: "Wages", getExpectedAmountAtDateByPeriod: () => 7837*2}
+	const shape = histogramOf(payroll(24))
+	const run = (y, m, d, days) => forecast({terminals: [s], shapes: {w: shape}, routing: {},
+		now: new Date(Date.UTC(y, m, d)), balanceNow: 0, days: days, periodName: "monthly"})
+	const feb = run(2026, 0, 31, 28), oct = run(2026, 8, 30, 31), apr = run(2026, 3, 30, 30)
+	;[feb, oct, apr].forEach(out => {
+		expect(Math.round(out[out.length-1].value)).toBe(15674)
+		const big = out.filter((q, i) => i && (q.value - out[i-1].value) > 5000)
+		expect(big.length).toBe(2)          //two paydays, in every month length
+	})
+})
+
+test("a monthly payment budgeted for the 31st happens on the 30th in a thirty-day month", () => {
+	//every transaction genuinely on a 31st, so the shape has all its weight on the last bin
+	const t = []
+	;[0, 2, 4, 6, 7, 9, 11].forEach(m => t.push({date: new Date(Date.UTC(2025, m, 31)), amount: -900}))
+	const s = {id: "r", name: "Odd", getExpectedAmountAtDateByPeriod: () => -900}
+	const shape = histogramOf(t)
+	//JUNE, which has thirty days - forecasting from April 30 would land in May and never test it
+	const june = forecast({terminals: [s], shapes: {r: shape}, routing: {},
+		now: new Date(Date.UTC(2026, 4, 31)), balanceNow: 0, days: 30, periodName: "monthly"})
+	expect(Math.round(june[june.length-1].value)).toBe(-900)
+	//and it lands on the last day the month has, not spread across it
+	const steps = june.filter((q, i) => i && Math.abs(q.value - june[i-1].value) > 1)
+	expect(steps.length).toBe(1)
+	expect(steps[0].date.getUTCDate()).toBe(30)
+	//a 31-day month puts it on the 31st, where it belongs
+	const july = forecast({terminals: [s], shapes: {r: shape}, routing: {},
+		now: new Date(Date.UTC(2026, 5, 30)), balanceNow: 0, days: 31, periodName: "monthly"})
+	expect(Math.round(july[july.length-1].value)).toBe(-900)
+})
+
+test("a weekly stream keeps a FIXED per-occurrence amount, so its month total varies", () => {
+	//no month-end rule applies: every weekday exists in every month, and a four-Monday month really
+	//does carry less than a five-Monday one
+	const weekly = []
+	for(let i = 0; i < 52; i++){
+		const d = new Date(Date.UTC(2025, 0, 6)); d.setUTCDate(d.getUTCDate() + 7*i)
+		weekly.push({date: d, amount: -400})
+	}
+	const s = {id: "w", name: "Weekly", getExpectedAmountAtDateByPeriod: () => -400*52/12}
+	const out = forecast({terminals: [s], shapes: {w: histogramOf(weekly)}, routing: {},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly"})
+	const steps = out.filter((q, i) => i && Math.abs(q.value - out[i-1].value) > 100)
+	steps.forEach((q, i) => {
+		const st = Math.abs(q.value - out[out.indexOf(q)-1].value)
+		expect(st).toBeGreaterThan(350)
+		expect(st).toBeLessThan(450)
+	})
+})

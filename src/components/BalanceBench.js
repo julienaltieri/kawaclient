@@ -128,11 +128,18 @@ export default class BalanceBench extends BaseComponent{
 	   The headline is one number so improvements can be compared rather than argued about. The
 	   per-stream figure beside it answers the only question that follows from a bad one: WHICH stream.
 
-	   Attribution is LEAVE-ONE-OUT, not a share of the error. Splitting an absolute value among
-	   contributors is arbitrary once they cancel, and it answers a question nobody asked. Replacing one
-	   stream's forecast with what actually happened, and re-scoring, answers exactly the question worth
-	   asking: how much accuracy would perfect knowledge of this stream buy? A stream whose errors
-	   happen to cancel another's correctly scores near zero - fixing it alone would gain nothing. */
+	   PER-STREAM ERROR IS THE STREAM ON ITS OWN, not its effect on the total.
+
+	   Leave-one-out was tried and is wrong here, for a reason worth keeping: it credits CANCELLATION.
+	   A stream forecast badly whose error happens to offset another stream's error scores near zero,
+	   because removing it alone changes little - and that offset is luck, not a property of either
+	   stream and not something anyone controls. Next month it cancels the other way and both look
+	   terrible with nothing having changed.
+
+	   So each stream is reconstructed alone: its own predicted cumulative curve against its own actual
+	   cumulative curve, both starting from zero, and the dollar-days between them. That number is a
+	   fact about that stream and nothing else. It is divided by the same account-level denominator as
+	   the headline, so a stream's figure reads directly as "this much of a full-scale error is mine". */
 	analyse(){
 		if(this._analysis)return this._analysis
 		const now = this.today()
@@ -209,15 +216,18 @@ export default class BalanceBench extends BaseComponent{
 		record.forEach(p => {area += Math.abs(p.value)})
 		const surface = surfaceOf(total)
 
-		const swap = (id, replacement) => {
-			const f = {}
-			dayKeys.forEach(k => {f[k] = (total[k]||0) - ((perStream[id]||{})[k] || 0)
-				+ ((replacement||{})[k] || 0)})
-			return f
-		}
+		//each stream against itself: predicted cumulative vs actual cumulative, both from zero
 		const gain = {}
 		this.terminals().forEach(t => {
-			gain[t.id] = area ? (surface - surfaceOf(swap(t.id, actualByStream[t.id])))/area : 0
+			let p = 0, a = 0, err = 0
+			for(let k = 0; k < dayKeys.length; k++){
+				if(k){
+					p += (perStream[t.id][dayKeys[k]] || 0)
+					a += (actualByStream[t.id][dayKeys[k]] || 0)
+				}
+				err += Math.abs(p - a)
+			}
+			gain[t.id] = area ? err/area : 0
 		})
 
 		this._analysis = {open:open, close:record[record.length-1].date, days:record.length,
@@ -300,7 +310,7 @@ export default class BalanceBench extends BaseComponent{
 		this.groups().forEach(g => {
 			if(!g[2].length)return
 			out.push(g[1])
-			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","gain"]))
+			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","err"]))
 			g[2].forEach(r => out.push(line(["  " + r.name, r.cycle, money(r.expected),
 				(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
 				(r.gain*100).toFixed(1) + "%"])))
@@ -348,7 +358,7 @@ export default class BalanceBench extends BaseComponent{
 				<Head>{g[1]}</Head>
 				{g[2].map((r,i) => <Row key={i}>
 					<Name>{r.name}</Name>
-					<Tier $t={r.tier}>{r.gain > 0.001 ? "+" + (r.gain*100).toFixed(1) + "%" : ""}</Tier>
+					<Tier $t={r.tier}>{r.gain > 0.0005 ? (r.gain*100).toFixed(1) + "% err" : ""}</Tier>
 					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
 				</Row>)}
