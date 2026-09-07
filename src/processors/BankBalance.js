@@ -153,8 +153,12 @@ export function forecast(opts){
 	for(let d = new Date(now.getTime() + DAY); d <= end; d = new Date(d.getTime() + DAY)){
 		let day = 0, who = null, big = 0;
 		const nDays = daysInMonth(d);
+		/* the caller may supply its own expectation - a yearly budget spread over the months it has
+		   LEFT rather than over twelve, for instance. Defaulting to the master's own figure keeps this
+		   module ignorant of the reporting calendar. */
+		const expectedFor = opts.expectedFor || ((st, when) => monthlyExpectationAt(st, when, periodName));
 		terminals.forEach(s => {
-			const amt = monthlyExpectationAt(s, d, periodName);
+			const amt = expectedFor(s, d);
 			if(!amt)return;
 			/* in the NETTED reading every stream lands on the day it is spent and the settlement is
 			   not spending at all. In an account reading, a stream that lives on some other account
@@ -198,8 +202,7 @@ export function forecast(opts){
 			//expected amounts. Not a stream of its own - a RE-TIMING of streams already counted,
 			//which is why it exists only where the card is outside the reading.
 			let bill = 0;
-			terminals.forEach(s => {if(opts.settles(routing[s.id])){
-				bill += monthlyExpectationAt(s, d, periodName)}});
+			terminals.forEach(s => {if(opts.settles(routing[s.id])){bill += expectedFor(s, d)}});
 			day += bill;
 			if(Math.abs(bill) > Math.abs(big)){big = bill; who = "Credit card payment"}
 		}
@@ -308,8 +311,23 @@ export function classifyStream(txns, monthlyAmount, opts){
 	out.turns = totals.length;
 	if(out.turns < 3)return out;                 //a rhythm needs at least three beats to be one
 
-	const mean = totals.reduce((a, b) => a + b, 0)/totals.length;
-	const variance = totals.reduce((a, b) => a + (b - mean)*(b - mean), 0)/totals.length;
+	/* OUTLIERS ARE EXCLUDED FROM THE SCORE, NOT FROM REALITY.
+	   A savings transfer that goes out every month and occasionally comes BACK is two different
+	   events: the outgoing one is regular and predictable, the return is neither. Scored together the
+	   stream looks erratic and is forecast as a spread, which loses the regular half as well - so the
+	   monthly $4,000 disappears from the picture because the occasional $3,000 unsave exists.
+
+	   Rejection is by median absolute deviation, which is the general tool rather than a rule about
+	   savings: it makes no assumption about sign, direction or stream type, needs no threshold in
+	   dollars, and applies unchanged to a refund on an expense stream or a one-off top-up on any
+	   other. A turn more than three MADs from the median is not evidence about the typical turn.
+	   The count is reported, because a stream with many "outliers" does not have outliers - it has a
+	   distribution, and that is exactly the tier 3 case. */
+	const kept = rejectOutliers(totals);
+	out.outlierTurns = totals.length - kept.length;
+	const base = kept.length >= 3 ? kept : totals;
+	const mean = base.reduce((a, b) => a + b, 0)/base.length;
+	const variance = base.reduce((a, b) => a + (b - mean)*(b - mean), 0)/base.length;
 	const cv = mean ? Math.sqrt(variance)/mean : 1;
 	out.steadiness = Math.max(0, 1 - cv);
 	out.klass = (out.timing >= minTiming && out.steadiness >= minSteady)
@@ -435,6 +453,30 @@ export function groupByStream(transactions, terminalIds, directionOf){
    ================================================================================================== */
 
 export const TIERS = {dated: 1, drifting: 2, spread: 3};
+
+const median = xs => {
+	const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
+	return a.length % 2 ? a[m] : (a[m-1] + a[m])/2;
+};
+/* A turn more than `k` median-absolute-deviations from the median is not evidence about a typical
+   turn. MAD rather than standard deviation because the outlier is exactly what would inflate an SD
+   and hide itself. Too few turns to have a middle, or a distribution where more than a third are
+   "outliers", means there is no outlier to reject - only a spread. */
+function rejectOutliers(totals, k){
+	if(!totals || totals.length < 4)return (totals || []).slice();
+	const med = median(totals);
+	const mad = median(totals.map(v => Math.abs(v - med)));
+	/* MAD IS ZERO WHENEVER THE MAJORITY ARE IDENTICAL, which is not the absence of an outlier - it is
+	   the strongest possible evidence of one. Eleven transfers of exactly $4,000 and one reversal give
+	   a median absolute deviation of 0, and bailing out on that left the reversal in the score, which
+	   is precisely the case this exists for. With no spread to measure against, the tolerance falls
+	   back to a small fraction of the median: identical turns still pass, anything genuinely different
+	   does not. */
+	const tol = mad ? (k === undefined ? 3 : k)*mad : Math.abs(med)*0.01;
+	if(!tol)return totals.slice();
+	const kept = totals.filter(v => Math.abs(v - med) <= tol);
+	return (kept.length >= Math.ceil(totals.length*2/3)) ? kept : totals.slice();
+}
 const MAX_PER_TURN = 3;          //more transactions than this in a turn is not one event
 const RECENT_TURNS = 6;
 
@@ -444,8 +486,10 @@ export function pointPrediction(txns, monthlyAmount, opts){
 	const minSteady = o.minSteady === undefined ? 0.55 : o.minSteady;
 	const c = classifyStream(txns, monthlyAmount, o);
 	const out = {tier: TIERS.spread, cycle: c.cycle, timing: c.timing, steadiness: c.steadiness,
+		outlierTurns: c.outlierTurns || 0,
 		turns: c.turns, k: c.k, perTurn: 0, day: null, second: null, confidence: 0,
-		amount: monthlyAmount || 0, perTurnAmount: null, thin: c.klass === CLASSES.thin};
+		amount: monthlyAmount || 0, perTurnAmount: null, outliers: 0, regimeTurns: 0,
+		thin: c.klass === CLASSES.thin};
 
 	if(!txns || !txns.length)return out;
 
@@ -480,7 +524,15 @@ export function pointPrediction(txns, monthlyAmount, opts){
 	}
 
 	/* the amount: a median of the most recent turns, INCLUDING the silent ones inside the span, since
-	   a stream that skipped a month really did move nothing that month */
+	   a stream that skipped a month really did move nothing that month.
+
+	   ONLY THE CURRENT REGIME. When a stream's expected amount changes - a rent increase, a day-care
+	   rate going from $1,500 to $1,700 in July - the turns before that change describe a different
+	   agreement. Averaging across the change predicts a number that was never true and will never be
+	   true again. `regimeFrom` is the date of the most recent change in the stream's own history, and
+	   turns before it are not evidence about what happens next. Below three turns since the change
+	   there is nothing to measure, so the declared figure stands - which is the right answer for a
+	   rate that has only just been set. */
 	if(out.tier !== TIERS.spread){
 		const byTurn = {};
 		let lo = Infinity, hi = -Infinity;
@@ -490,12 +542,14 @@ export function pointPrediction(txns, monthlyAmount, opts){
 			if(n < lo)lo = n;
 			if(n > hi)hi = n;
 		});
+		const first = o.regimeFrom ? histogram.occurrenceOf(cyc, o.regimeFrom) : lo;
 		const totals = [];
-		for(let n = Math.max(lo, hi - RECENT_TURNS + 1); n <= hi; n++)totals.push(byTurn[n] || 0);
-		if(totals.length){
-			const sorted = totals.slice().sort((a, b) => a - b);
-			const mid = Math.floor(sorted.length/2);
-			out.perTurnAmount = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid])/2;
+		for(let n = Math.max(lo, first, hi - RECENT_TURNS + 1); n <= hi; n++)totals.push(byTurn[n] || 0);
+		out.regimeTurns = totals.length;
+		const usable = rejectOutliers(totals);
+		out.outliers = totals.length - usable.length;
+		if(usable.length >= (o.regimeFrom ? 3 : 1)){
+			out.perTurnAmount = median(usable);
 			//stated per MONTH as well, since the caller wants it in the stream's own declared period
 			//and the detected cycle is rarely the same thing
 			out.amount = out.perTurnAmount * (30.44/(cyc.span || 30.44));

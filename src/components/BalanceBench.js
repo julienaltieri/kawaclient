@@ -194,8 +194,16 @@ export default class BalanceBench extends BaseComponent{
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
 		const shapes = {}, dir = {}, sliced = {}
 		this.terminals().forEach(t => {
-			//OUT OF SAMPLE at the top, and no further back than the lookback window at the bottom
-			sliced[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since)
+			/* OUT OF SAMPLE at the top, no further back than the lookback at the bottom, and ONLY
+			   TRANSACTIONS ON THE ACCOUNT BEING PREDICTED.
+
+			   This last one was the largest single error in the bench. A credit-card payment and a
+			   savings transfer both touch two accounts, and the shape was being learned from both
+			   sides at once: the weekly outflow from checking averaged together with its mirror
+			   arriving on the card, which describes no account and predicts neither. To predict an
+			   account, learn from that account. */
+			sliced[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since
+				&& keep.indexOf(x.accountHash) > -1)
 			shapes[t.id] = histogramOf(sliced[t.id], {prefer: t.getPreferredPeriod
 				? t.getPreferredPeriod() : "monthly"})
 			const a = monthlyExpectationAt(t, open, "monthly")
@@ -205,7 +213,43 @@ export default class BalanceBench extends BaseComponent{
 		const days = Math.round((record[record.length-1].date - open)/DAY)
 		const covers = h => keep.indexOf(h || fallback) > -1
 		const settles = h => cards.indexOf(h) > -1
+		/* A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth.
+		   A $10,000 yearly stream with $6,000 already gone has $4,000 left, and dividing the whole
+		   budget by twelve forecasts money that has already been spent - twice over by December. The
+		   reporting side of the app has always done this (getProjectedPeriodicAmountForStream: "if
+		   there is $600 left to spend over 4 months, this should return $150"), and the balance view
+		   was the only place still dividing by twelve.
+
+		   It reads the stream's own budget for its own period, subtracts what the ledger says has gone
+		   since that period began, and spreads the rest over the months remaining. Clamped at zero in
+		   the direction of spending: a budget already overspent predicts nothing further rather than
+		   predicting money coming back. */
+		const cycleFrom = this.cycleStart(now)
+		const monthsLeft = Math.max(1, 12 - Math.round((open - cycleFrom)/(30.44*DAY)))
+		const spentSince = {}
+		this.terminals().forEach(t => {
+			let v = 0
+			byStream[t.id].forEach(x => {if(x.date >= cycleFrom && x.date < open
+				&& keep.indexOf(x.accountHash) > -1)v += x.amount})
+			spentSince[t.id] = v
+		})
+		const longPeriod = t => {
+			const p = t.getPreferredPeriod ? t.getPreferredPeriod() : "monthly"
+			return p === "yearly" || p === "biyearly" || p === "bimonthly"
+		}
+		const expectedFor = (t, when) => {
+			if(!longPeriod(t))return monthlyExpectationAt(t, when, "monthly")
+			const budget = monthlyExpectationAt(t, when, t.getPreferredPeriod())
+			if(!budget)return 0
+			const left = budget - (spentSince[t.id] || 0)
+			//never predict the opposite direction: an exhausted budget is done, not reversed
+			if(budget < 0 && left > 0)return 0
+			if(budget > 0 && left < 0)return 0
+			return left/monthsLeft
+		}
+
 		const run = (terms, withSettlement) => forecast({terminals:terms, shapes:shapes,
+			expectedFor:expectedFor,
 			routing:routed, now:open, balanceNow:0, days:days, covers:covers,
 			settles: withSettlement ? settles : null, periodName:"monthly",
 			settlementDay: withSettlement ? this.settlementDay() : null})
@@ -257,18 +301,29 @@ export default class BalanceBench extends BaseComponent{
 		record.forEach(p => {area += Math.abs(p.value)})
 		const surface = surfaceOf(total)
 
-		//each stream against itself: predicted cumulative vs actual cumulative, both from zero
+		/* Each stream scored the way the account is scored, but ON ITSELF: its predicted cumulative
+		   curve against its own actual cumulative curve, and its own integral as the denominator. A
+		   share of the account's error told you how much a stream mattered and not how well it was
+		   predicted - a large stream forecast well outscored a small one forecast disastrously. This
+		   is the same question the headline asks, asked of one stream: how accurate would this stream
+		   have been in isolation.
+
+		   A stream that moved nothing and was predicted to move nothing is perfect, not undefined. One
+		   that moved nothing and WAS predicted has no denominator of its own, so it is scored against
+		   the size of the mistake - which lands it at zero rather than at infinity. */
 		const gain = {}
 		this.terminals().forEach(t => {
-			let p = 0, a = 0, err = 0
+			let p = 0, a = 0, err = 0, own = 0
 			for(let k = 0; k < dayKeys.length; k++){
 				if(k){
 					p += (perStream[t.id][dayKeys[k]] || 0)
 					a += (actualByStream[t.id][dayKeys[k]] || 0)
 				}
 				err += Math.abs(p - a)
+				own += Math.abs(a)
 			}
-			gain[t.id] = area ? err/area : 0
+			const denom = own > 0.005 ? own : err
+			gain[t.id] = denom > 0.005 ? Math.max(0, 1 - err/denom) : 1
 		})
 
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
@@ -313,6 +368,21 @@ export default class BalanceBench extends BaseComponent{
 	   The conversion ratio is taken from the model rather than a table of periods: asking the stream
 	   for its expectation in two periods and dividing gives the occurrences per month, whatever the
 	   period is, with no second place to keep in step. */
+	/* the date this stream's CURRENT agreement began: the last time its expected amount changed. Turns
+	   before it describe a different arrangement - a day-care rate that went from $1,500 to $1,700 in
+	   July is not evidence of $1,600. */
+	regimeStart(s){
+		const h = (s.expAmountHistory || []).slice()
+			.sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
+		const now = this.today()
+		let last = null, prev = null
+		h.forEach(e => {
+			if(new Date(e.startDate) > now)return
+			if(prev === null || e.amount !== prev){last = new Date(e.startDate); prev = e.amount}
+		})
+		return last
+	}
+
 	rows(){
 		if(this._rows)return this._rows
 		const now = this.today()
@@ -327,7 +397,7 @@ export default class BalanceBench extends BaseComponent{
 			const declaredCycle = ["monthly","semimonthly","weekly","biweekly"]
 				.indexOf(declared) > -1 ? declared : "monthly"
 			const p = pointPrediction((byStream[s.id] || []).filter(x => x.date >= since), perMonth,
-				{prefer: declaredCycle,
+				{prefer: declaredCycle, regimeFrom: this.regimeStart(s),
 					//what the stream ITSELF expected at that moment - a turn it was budgeted at
 					//nothing for is not a turn it failed to fill
 					expectedAt: d => Math.abs(monthlyExpectationAt(s, d, "monthly")) > 0.005})
@@ -339,7 +409,7 @@ export default class BalanceBench extends BaseComponent{
 			return {name:s.name, cycle:declared, expected:perCycle,
 				tier:p.thin ? 0 : p.tier, day:day, amount:p.amount/(ratio || 1),
 				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth)}
-		}).sort((x, y) => (y.gain - x.gain) || (y.sort - x.sort))
+		}).sort((x, y) => (x.gain - y.gain) || (y.sort - x.sort))
 		return this._rows
 	}
 	//grouped, because a list of eighty-seven is audited a tier at a time
@@ -372,10 +442,10 @@ export default class BalanceBench extends BaseComponent{
 		this.groups().forEach(g => {
 			if(!g[2].length)return
 			out.push(g[1])
-			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","err"]))
+			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","acc"]))
 			g[2].forEach(r => out.push(line(["  " + r.name, r.cycle, money(r.expected),
 				(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
-				(r.gain*100).toFixed(1) + "%"])))
+				(r.gain*100).toFixed(0) + "%"])))
 			out.push("")
 		})
 		return out.join("\n")
@@ -427,7 +497,7 @@ export default class BalanceBench extends BaseComponent{
 				<Head>{g[1]}</Head>
 				{g[2].map((r,i) => <Row key={i}>
 					<Name>{r.name}</Name>
-					<Tier $t={r.tier}>{r.gain > 0.0005 ? (r.gain*100).toFixed(1) + "% err" : ""}</Tier>
+					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
 					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
 				</Row>)}

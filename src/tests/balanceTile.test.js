@@ -1119,3 +1119,56 @@ test("dormancy awareness does not rescue a genuinely sporadic stream", () => {
 	const p = pointPrediction(t, -125, {expectedAt: () => true})
 	expect(p.tier).toBe(TIERS.spread)
 })
+
+/* ---- outliers, regimes, and per-stream accuracy ---------------------------------------------- */
+
+const monthlyAt = (day, amounts) => amounts.map((a, m) =>
+	({date: new Date(Date.UTC(2025, m, day)), amount: a}))
+
+test("an occasional reversal does not make a regular stream erratic", () => {
+	//savings: $4,000 out every month, and once it comes back. Scored together the stream looks
+	//erratic and is forecast as a spread, which loses the regular half too.
+	const withReturn = monthlyAt(13, [-4000,-4000,-4000,-4000,3000,-4000,-4000,-4000,-4000,-4000,-4000,-4000])
+	const clean = monthlyAt(13, new Array(12).fill(-4000))
+	const a = pointPrediction(withReturn, -4000)
+	const b = pointPrediction(clean, -4000)
+	expect(a.outlierTurns).toBe(1)
+	expect(a.tier).toBe(b.tier)
+	expect(a.amount).toBe(-4000)          //the typical turn, not the average including the reversal
+})
+
+test("many outliers are not outliers - that is a distribution, and tier 3", () => {
+	const scattered = monthlyAt(13, [-100,-4000,-80,-3000,-50,-2000,-90,-5000,-70,-1000,-60,-4000])
+	const p = pointPrediction(scattered, -1700)
+	expect(p.tier).toBe(TIERS.spread)
+})
+
+test("a rate change starts a new regime - the prediction is the new rate, not a blend", () => {
+	//$1,500 until October, $1,700 after. The recency window alone still straddles the change and
+	//predicts $1,600 - a number that was never true and never will be.
+	const t = monthlyAt(6, [-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1700,-1700,-1700])
+	expect(pointPrediction(t, -1700).amount).toBe(-1600)
+	const october = new Date(Date.UTC(2025, 9, 1))
+	expect(pointPrediction(t, -1700, {regimeFrom: october}).amount).toBe(-1700)
+})
+
+test("too few turns since a change means the declared figure stands", () => {
+	//a rate set last month has nothing to measure, and the number the user typed is the best answer
+	const t = monthlyAt(6, [-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1700])
+	const dec = new Date(Date.UTC(2025, 11, 1))
+	expect(pointPrediction(t, -1700, {regimeFrom: dec}).amount).toBe(-1700)
+})
+
+test("the forecast can be handed a caller's own expectation", () => {
+	//a yearly budget spreads what is LEFT over the months that are left, which is the reporting
+	//side's rule - the balance view was the only place still dividing by twelve
+	const s = {id: "y", name: "Yearly", getExpectedAmountAtDateByPeriod: () => -1000}
+	const shape = histogramOf([])
+	const plain = forecast({terminals: [s], shapes: {y: shape}, routing: {},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly"})
+	const remaining = forecast({terminals: [s], shapes: {y: shape}, routing: {},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly",
+		expectedFor: () => -250})
+	expect(Math.round(plain[plain.length-1].value)).toBe(-1000)
+	expect(Math.round(remaining[remaining.length-1].value)).toBe(-250)
+})
