@@ -530,21 +530,37 @@ export default class BalanceChart extends BaseComponent{
 				if(keep.indexOf(x.accountHash) > -1)v += x.amount})
 			observedMonthly[t.id] = v/12
 		})
-		/* the SETTLEMENT STREAM is the duplicate, not the synthesis - see BalanceBench. The synthesis
-		   re-times the card's own streams onto the due day using their expectations; the payment
-		   stream is the same money seen from the other end and predicted from a noisier mean. Drop the
-		   stream, keep the synthesis, and the card is paid once from the better estimate. */
+		/* THE SETTLEMENT IS MODELLED FROM THE SETTLEMENTS THEMSELVES - see BalanceBench for the three
+		   configurations measured before this one. Neither the card streams' expectations (what was
+		   budgeted) nor the payment stream's mean (a noisy read of a variable bill) is the settlement;
+		   the settlements are observable, and they have their own timing - weekly here, which no
+		   single monthly due-day can represent. So they are forecast like any other stream, and both
+		   the card streams and the real payment stream stay out of the daily flows. */
+		const inferred = inferSettlements(this.props.transactions, keep, cards)
 		const excludeIds = {}
-		inferSettlements(this.props.transactions, keep, cards)
-			.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-		const settles = netted ? null : (h => cards.indexOf(h) > -1)
+		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
+		const back90 = new Date(now.getTime() - 90*DAY)
+		const recent = inferred.filter(x => x.date >= back90)
+		const settleMonthly = recent.reduce((a, b) => a + b.amount, 0)/3
+		const useSettle = !netted && Math.abs(settleMonthly) > 1 && recent.length > 1
+		const settles = (netted || useSettle) ? null : (h => cards.indexOf(h) > -1)
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
 		   the one balance that is actually known (see the drift note), so a past window is a slice of
 		   that walk rather than a separate calculation from a guessed opening figure. */
 		let past = reconstruct(txns, now, bal, win.from)
 		if(win.to)past = past.filter(p => p.date <= win.to)
-		const use = this.terminalsFor(this.state.basis)
-		const future = win.fwd ? forecast({terminals:use, shapes:this.shapes(), excludeIds:excludeIds,
+		let use = this.terminalsFor(this.state.basis)
+		const shapes = this.shapes()
+		if(useSettle){
+			const settleStream = {id:"__settlement__", name:"Card settlement",
+				getPreferredPeriod: () => "monthly",
+				getExpectedAmountAtDateByPeriod: () => settleMonthly}
+			shapes[settleStream.id] = histogramOf(recent.map(x => ({date:x.date, amount:x.amount})),
+				{prefer:"weekly"})
+			this.routing()[settleStream.id] = keep[0]
+			use = use.concat([settleStream])
+		}
+		const future = win.fwd ? forecast({terminals:use, shapes:shapes, excludeIds:excludeIds,
 			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
 			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()}) : []
