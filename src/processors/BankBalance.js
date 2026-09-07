@@ -427,8 +427,8 @@ export function pointPrediction(txns, monthlyAmount, opts){
 	const minSteady = o.minSteady === undefined ? 0.55 : o.minSteady;
 	const c = classifyStream(txns, monthlyAmount, opts);
 	const out = {tier: TIERS.spread, cycle: c.cycle, timing: c.timing, steadiness: c.steadiness,
-		turns: c.turns, k: c.k, perTurn: 0, day: null, amount: monthlyAmount || 0,
-		thin: c.klass === CLASSES.thin};
+		turns: c.turns, k: c.k, perTurn: 0, day: null, second: null, confidence: 0,
+		amount: monthlyAmount || 0, thin: c.klass === CLASSES.thin};
 
 	if(!txns || !txns.length)return out;
 
@@ -446,11 +446,20 @@ export function pointPrediction(txns, monthlyAmount, opts){
 		out.tier = c.timing >= minTiming ? TIERS.dated : TIERS.drifting;
 	}
 
-	//the day: the heaviest bin of the consolidated shape, which is already a circular answer
-	if(out.tier !== TIERS.spread && c.bins && c.bins.length){
-		let peak = 0;
-		c.bins.forEach((v, i) => {if(v > c.bins[peak])peak = i});
-		out.day = peak;
+	/* the day: the heaviest bin of the consolidated shape, which is already a circular answer.
+	   `confidence` is the share of the stream's money that lands on that one day - how much of a
+	   point prediction the point actually is. A tier-2 stream with 0.9 there is a date that wobbles;
+	   the same stream at 0.3 is barely a date at all, and the tier boundary is not saying so. */
+	if(c.bins && c.bins.length){
+		let peak = 0, total = 0;
+		c.bins.forEach((v, i) => {total += v; if(v > c.bins[peak])peak = i});
+		out.confidence = total ? c.bins[peak]/total : 0;
+		//the SECOND peak too, for a stream that fires twice a turn - a semimonthly wage has two
+		//paydays and one of them is not the answer
+		let second = -1;
+		c.bins.forEach((v, i) => {if(i !== peak && (second < 0 || v > c.bins[second]))second = i});
+		out.second = (second >= 0 && total && c.bins[second]/total > 0.15) ? second : null;
+		if(out.tier !== TIERS.spread)out.day = peak;
 	}
 
 	/* the amount: a median of the most recent turns, INCLUDING the silent ones inside the span, since

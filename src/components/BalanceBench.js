@@ -63,6 +63,13 @@ const Line = styled.div`
 	color:${props => DS.getStyle().bodyTextSecondary};
 	font-family:Barlow,sans-serif; overflow-wrap:anywhere;
 `
+const Small = styled.span`
+	font-size:${DS.fontSize.little}rem; color:${props => DS.getStyle().bodyTextSecondary};
+`
+const Head = styled.div`
+	font-size:${DS.fontSize.little}rem; font-weight:600; margin-top:${DS.spacing.s}rem;
+	color:${props => DS.getStyle().bodyTextSecondary};
+`
 const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin:${DS.spacing.xs}rem 0;`
 const Btn = styled.button`
 	appearance:none; cursor:pointer; font:inherit; font-size:${DS.fontSize.little}rem;
@@ -117,7 +124,15 @@ export default class BalanceBench extends BaseComponent{
 		return this._byStream
 	}
 
-	/* ---- the score ------------------------------------------------------------------------------- */
+	/* ---- the score, and who is responsible for it ----------------------------------------------
+	   The headline is one number so improvements can be compared rather than argued about. The
+	   per-stream figure beside it answers the only question that follows from a bad one: WHICH stream.
+
+	   Attribution is LEAVE-ONE-OUT, not a share of the error. Splitting an absolute value among
+	   contributors is arbitrary once they cancel, and it answers a question nobody asked. Replacing one
+	   stream's forecast with what actually happened, and re-scoring, answers exactly the question worth
+	   asking: how much accuracy would perfect knowledge of this stream buy? A stream whose errors
+	   happen to cancel another's correctly scores near zero - fixing it alone would gain nothing. */
 	analyse(){
 		if(this._analysis)return this._analysis
 		const now = this.today()
@@ -132,40 +147,85 @@ export default class BalanceBench extends BaseComponent{
 		const byStream = this.byStream()
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
 		const shapes = {}, dir = {}, sliced = {}
-		this.terminals().forEach(s => {
-			sliced[s.id] = byStream[s.id].filter(t => t.date < open)
-			shapes[s.id] = histogramOf(sliced[s.id])
-			const a = monthlyExpectationAt(s, open, "monthly")
-			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
+		this.terminals().forEach(t => {
+			sliced[t.id] = byStream[t.id].filter(x => x.date < open)
+			shapes[t.id] = histogramOf(sliced[t.id])
+			const a = monthlyExpectationAt(t, open, "monthly")
+			dir[t.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
 		const routed = accountRoutingOf(sliced, id => dir[id])
+		const days = Math.round((record[record.length-1].date - open)/DAY)
+		const covers = h => keep.indexOf(h || fallback) > -1
+		const settles = h => cards.indexOf(h) > -1
+		const run = (terms, withSettlement) => forecast({terminals:terms, shapes:shapes,
+			routing:routed, now:open, balanceNow:0, days:days, covers:covers,
+			settles: withSettlement ? settles : null, periodName:"monthly",
+			settlementDay: withSettlement ? this.settlementDay() : null})
+		const flowsOf = series => {
+			const d = {}
+			for(let k = 1; k < series.length; k++){
+				d[dayKey(series[k].date)] = series[k].value - series[k-1].value
+			}
+			return d
+		}
 
-		const predicted = forecast({terminals:this.terminals(), shapes:shapes, routing:routed,
-			now:open, balanceNow:record[0].value,
-			days:Math.round((record[record.length-1].date - open)/DAY),
-			covers:h => keep.indexOf(h || fallback) > -1,
-			settles:h => cards.indexOf(h) > -1,
-			periodName:"monthly", settlementDay:this.settlementDay()})
+		const dayKeys = record.map(p => dayKey(p.date))
+		const actualFlow = {}
+		record.forEach((p, k) => {if(k)actualFlow[dayKeys[k]] = p.value - record[k-1].value})
 
-		//paired by DAY, so a missing day on either side cannot silently shift the comparison
-		const predByDay = {}
-		predicted.forEach(p => {predByDay[dayKey(p.date)] = p.value})
-		let surface = 0, area = 0, paired = 0
-		record.forEach(p => {
-			const k = dayKey(p.date)
-			const q = predByDay[k]
-			area += Math.abs(p.value)
-			if(q === undefined)return
-			surface += Math.abs(q - p.value)
-			paired++
+		//the settlement is not a stream, so it is measured as what having it adds
+		const withS = flowsOf(run(this.terminals(), true))
+		const withoutS = flowsOf(run(this.terminals(), false))
+		const settlementFlow = {}
+		dayKeys.forEach(k => {settlementFlow[k] = (withS[k]||0) - (withoutS[k]||0)})
+
+		const perStream = {}, actualByStream = {}
+		this.terminals().forEach(t => {
+			perStream[t.id] = flowsOf(run([t], false))
+			const act = {}
+			byStream[t.id].forEach(x => {
+				if(x.date < open || x.date > close || !covers(x.accountHash))return
+				const k = dayKey(x.date); act[k] = (act[k]||0) + x.amount
+			})
+			actualByStream[t.id] = act
 		})
+
+		//score a set of daily flows against the record, in dollar-days
+		const surfaceOf = flow => {
+			let bal = record[0].value, out = 0
+			for(let k = 0; k < dayKeys.length; k++){
+				if(k)bal += (flow[dayKeys[k]] || 0)
+				out += Math.abs(bal - record[k].value)
+			}
+			return out
+		}
+		const total = {}
+		dayKeys.forEach(k => {
+			let v = settlementFlow[k] || 0
+			this.terminals().forEach(t => {v += (perStream[t.id][k] || 0)})
+			total[k] = v
+		})
+		let area = 0
+		record.forEach(p => {area += Math.abs(p.value)})
+		const surface = surfaceOf(total)
+
+		const swap = (id, replacement) => {
+			const f = {}
+			dayKeys.forEach(k => {f[k] = (total[k]||0) - ((perStream[id]||{})[k] || 0)
+				+ ((replacement||{})[k] || 0)})
+			return f
+		}
+		const gain = {}
+		this.terminals().forEach(t => {
+			gain[t.id] = area ? (surface - surfaceOf(swap(t.id, actualByStream[t.id])))/area : 0
+		})
+
 		this._analysis = {open:open, close:record[record.length-1].date, days:record.length,
-			paired:paired, surface:surface, area:area,
-			accuracy: area ? 1 - surface/area : 0,
-			opening:record[0].value, closing:record[record.length-1].value,
-			predClose: predicted.length ? predicted[predicted.length-1].value : record[0].value}
+			surface:surface, area:area, error: area ? surface/area : 0,
+			accuracy: area ? 1 - surface/area : 0, gain:gain}
 		return this._analysis
 	}
+
 	settlementDay(){
 		const cards = this.credit()
 		if(!cards.length)return undefined
@@ -179,20 +239,48 @@ export default class BalanceBench extends BaseComponent{
 		return day
 	}
 
-	/* ---- the table ------------------------------------------------------------------------------- */
+	/* ---- the table -------------------------------------------------------------------------------
+	   THE CYCLE AND THE AMOUNTS ARE THE STREAM'S OWN, not the detector's. Wages Julien is semimonthly
+	   by definition and the table said "monthly", because it was reporting what `detectCycle` found in
+	   the transactions - and the detector has no semimonthly candidate on purpose: two paydays show up
+	   as two spikes in a month of bins, which is a true description and is what the forecast wants.
+	   Both are right about different questions. This column answers "what did the user declare", so it
+	   reads `period` off the stream, and the amounts are converted into that period - which is why the
+	   expected figure was twice what a payslip says.
+
+	   The conversion ratio is taken from the model rather than a table of periods: asking the stream
+	   for its expectation in two periods and dividing gives the occurrences per month, whatever the
+	   period is, with no second place to keep in step. */
 	rows(){
 		if(this._rows)return this._rows
 		const now = this.today()
 		const byStream = this.byStream()
+		const a = this.analyse()
 		this._rows = this.terminals().map(s => {
-			const expected = monthlyExpectationAt(s, now, "monthly")
-			const p = pointPrediction(byStream[s.id] || [], expected)
-			const perCycle = p.cycle === "weekly" ? expected*7/30.44
-				: (p.cycle === "biweekly" ? expected*14/30.44 : expected)
-			return {name:s.name, cycle:p.cycle, expected:perCycle, tier:p.tier, thin:p.thin,
-				day:dayLabel(p.cycle, p.day), amount:p.amount, sort:Math.abs(perCycle)}
-		}).sort((a,b) => b.sort - a.sort)
+			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
+			const perMonth = monthlyExpectationAt(s, now, "monthly")
+			const perCycle = monthlyExpectationAt(s, now, declared)
+			const ratio = (perCycle && perMonth) ? perMonth/perCycle : 1
+			const p = pointPrediction(byStream[s.id] || [], perMonth)
+			let day = dayLabel(p.cycle, p.day)
+			//a stream that fires twice a turn has two answers, and one of them is not the prediction
+			if(p.day !== null && p.second !== null && Math.abs(ratio) > 1.5){
+				day += " + " + dayLabel(p.cycle, p.second)
+			}
+			return {name:s.name, cycle:declared, expected:perCycle,
+				tier:p.thin ? 0 : p.tier, day:day, amount:p.amount/(ratio || 1),
+				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth)}
+		}).sort((x, y) => (y.gain - x.gain) || (y.sort - x.sort))
 		return this._rows
+	}
+	//grouped, because a list of eighty-seven is audited a tier at a time
+	groups(){
+		const by = {1:[], 2:[], 3:[], 0:[]}
+		this.rows().forEach(r => by[r.tier].push(r))
+		return [[1, "TIER 1  dated - same day, same amount", by[1]],
+			[2, "TIER 2  drifting - same amount, moving day", by[2]],
+			[3, "TIER 3  spread - no single event", by[3]],
+			[0, "NO DATA", by[0]]]
 	}
 
 	report(){
@@ -200,16 +288,24 @@ export default class BalanceBench extends BaseComponent{
 		const out = []
 		if(a){
 			out.push("accuracy " + (a.accuracy*100).toFixed(1) + "%"
-				+ "   surface " + money(a.surface) + " over " + money(a.area) + " $-days"
-				+ "   " + dayKey(a.open) + " to " + dayKey(a.close))
+				+ "   error " + (a.error*100).toFixed(1) + "%"
+				+ "   surface " + money(a.surface) + " / " + money(a.area) + " $-days")
+			out.push(dayKey(a.open) + " to " + dayKey(a.close))
 			out.push("")
 		}
-		const w = [26, 10, 12, 6, 9, 12]
-		const line = c => "  " + c[0].slice(0,w[0]).padEnd(w[0]) + c[1].padEnd(w[1])
-			+ c[2].padStart(w[2]) + c[3].padStart(w[3]) + c[4].padStart(w[4]) + c[5].padStart(w[5])
-		out.push(line(["stream","cycle","expected","tier","pred day","pred amount"]))
-		this.rows().forEach(r => out.push(line([r.name, r.cycle, money(r.expected),
-			r.thin ? "-" : String(r.tier), r.day, money(r.amount)])))
+		const w = [26, 12, 12, 9, 14, 12, 7]
+		const line = c => c[0].slice(0,w[0]).padEnd(w[0]) + c[1].padEnd(w[1])
+			+ c[2].padStart(w[2]) + c[3].padStart(w[3]) + "  " + c[4].padEnd(w[4])
+			+ c[5].padStart(w[5]) + c[6].padStart(w[6])
+		this.groups().forEach(g => {
+			if(!g[2].length)return
+			out.push(g[1])
+			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","gain"]))
+			g[2].forEach(r => out.push(line(["  " + r.name, r.cycle, money(r.expected),
+				(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
+				(r.gain*100).toFixed(1) + "%"])))
+			out.push("")
+		})
 		return out.join("\n")
 	}
 
@@ -230,25 +326,33 @@ export default class BalanceBench extends BaseComponent{
 
 	render(){
 		if(!this.state.accounts)return <Wrap>Reading balances…</Wrap>
-		let a, rows, err = null
-		try{a = this.analyse(); rows = this.rows()}
-		catch(e){err = (e && e.message) + "\n" + (e && e.stack)}
+		let a, groups, err = null
+		try{a = this.analyse(); groups = this.groups()}
+		catch(e){err = (e && e.message) + " | " + (e && e.stack)}
 		if(err)return <Wrap><Line>{err}</Line></Wrap>
 		return <Wrap>
+			{/* BOTH numbers, both named. One of them was read as the other, and a metric everything
+			    else is benchmarked against cannot afford that ambiguity - accuracy reaches 100% when
+			    the forecast is perfect, error reaches 0%. */}
 			<Score>
-				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}</Big>
-				<Note>accuracy over {a ? a.days : 0} settled days{a
-					? ", " + dayKey(a.open) + " to " + dayKey(a.close) : ""}</Note>
-				<Note>surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
+				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}<Small> accuracy</Small></Big>
+				<Note>error {a ? (a.error*100).toFixed(1) + "%" : "—"}
+					{" · "}surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
+				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
+					{a ? " · " + a.days + " settled days" : ""}</Note>
 			</Score>
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
 			</Bar>
-			{(rows||[]).map((r,i) => <Row key={i}>
-				<Name>{r.name}</Name>
-				<Tier $t={r.tier}>{r.thin ? "no data" : "tier " + r.tier}</Tier>
-				<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}</Line>
-			</Row>)}
+			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
+				<Head>{g[1]}</Head>
+				{g[2].map((r,i) => <Row key={i}>
+					<Name>{r.name}</Name>
+					<Tier $t={r.tier}>{r.gain > 0.001 ? "+" + (r.gain*100).toFixed(1) + "%" : ""}</Tier>
+					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
+						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
+				</Row>)}
+			</div> : null)}
 		</Wrap>
 	}
 }
