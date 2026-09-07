@@ -1211,3 +1211,51 @@ test("routing needs the accounts the shape does NOT - they answer different ques
 	const filtered = mixed.filter(t => t.accountHash === "chk")
 	expect(accountRoutingOf({m: filtered}, () => -1).m).toBe("chk")
 })
+
+/* ---- drift ------------------------------------------------------------------------------------ */
+
+test("a rising bill is predicted to keep rising, not to return to its median", () => {
+	//utilities climbing all year: a median of the last six months predicts the middle of a trend,
+	//which is a number the bill passed on its way up and will not see again
+	const rising = [-200,-210,-222,-235,-248,-260,-272,-285,-298,-312,-325,-340]
+		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 2)), amount: a}))
+	const p = pointPrediction(rising, -225)
+	expect(p.amount).toBeLessThan(-340)          //past the last observation, not between
+})
+
+test("scatter with a sign is not a trend", () => {
+	//the slope has to clear the noise, or random variation becomes a confident forecast of more
+	const noisy = [-200,-260,-210,-255,-205,-265,-215,-250,-208,-262,-212,-258]
+		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 2)), amount: a}))
+	const p = pointPrediction(noisy, -230)
+	expect(p.amount).toBeGreaterThan(-280)
+	expect(p.amount).toBeLessThan(-190)
+})
+
+test("a flat stream is untouched by the trend logic", () => {
+	const flat = new Array(12).fill(0)
+		.map((_, m) => ({date: new Date(Date.UTC(2025, m, 2)), amount: -1700}))
+	expect(pointPrediction(flat, -1700).amount).toBe(-1700)
+})
+
+test("one strange month cannot set the direction", () => {
+	//Theil-Sen takes the median of pairwise slopes, so a single spike does not become a trend
+	const spike = [-100,-100,-100,-100,-100,-3000,-100,-100,-100,-100,-100,-100]
+		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 2)), amount: a}))
+	const p = pointPrediction(spike, -100)
+	expect(Math.abs(p.amount)).toBeLessThan(500)
+})
+
+test("a STEP is not a trend - a rate that moved and stayed is not still moving", () => {
+	//Theil-Sen cannot tell a step from a ramp on its own: every pair on either side of the change is
+	//flat, and the slope comes entirely from the pairs that straddle it. Extrapolating that predicts a
+	//decline nobody is having.
+	const stepped = [-1500,-1500,-1500,-1500,-1500,-1500,-1700,-1700,-1700,-1700,-1700,-1700]
+		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 6)), amount: a}))
+	expect(pointPrediction(stepped, -1700).amount).toBe(-1700)
+
+	//and the half-way case: the change lands inside the recency window, so the median straddles it
+	const straddling = [-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1500,-1700,-1700,-1700]
+		.map((a, m) => ({date: new Date(Date.UTC(2025, m, 6)), amount: a}))
+	expect(pointPrediction(straddling, -1700).amount).toBe(-1600)
+})

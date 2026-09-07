@@ -82,7 +82,7 @@ const Btn = styled.button`
 export default class BalanceBench extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {accounts:null, copied:null}
+		this.state = {accounts:null, copied:null, open:null}
 	}
 	componentDidMount(){
 		Core.getAccountsWithBalances()
@@ -180,14 +180,15 @@ export default class BalanceBench extends BaseComponent{
 	   cumulative curve, both starting from zero, and the dollar-days between them. That number is a
 	   fact about that stream and nothing else. It is divided by the same account-level denominator as
 	   the headline, so a stream's figure reads directly as "this much of a full-scale error is mine". */
-	analyse(from){
-		const key = from ? from.getTime() : "default"
+	analyse(from, monthsBack){
+		const back = monthsBack || 0
+		const key = (from ? from.getTime() : "default") + "|" + back
 		this._cache = this._cache || {}
 		if(this._cache[key])return this._cache[key]
 		const now = this.today()
 		const since = from || this.windows(now)[0][1]
 		const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate()
-		const c = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1,
+		const c = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1 - back,
 			Math.min(now.getUTCDate(), lastDay)))
 		const open = new Date(c.getTime() - 15*DAY), close = new Date(c.getTime() + 15*DAY)
 		const record = reconstruct(this.ledger(), now, this.anchor(), open)
@@ -363,10 +364,52 @@ export default class BalanceBench extends BaseComponent{
 			gain[t.id] = denom > 0.005 ? 1 - err/denom : 1
 		})
 
+		/* ACCURACY BY HORIZON: the same metric truncated at n days.
+		   "How accurate is this chart" is not one question - a balance three days out and a balance
+		   thirty days out are different claims, and only one of them is load-bearing for a decision
+		   taken now. Truncating the surface rather than comparing single points keeps it the same
+		   measure at every horizon, so the numbers are comparable down the row. */
+		const horizon = [1, 3, 7, 14, 30].filter(n => n < dayKeys.length).map(n => {
+			let bal = record[0].value, e = 0, ar = 0
+			for(let k = 0; k <= n; k++){
+				if(k)bal += (total[dayKeys[k]] || 0)
+				e += Math.abs(bal - record[k].value)
+				ar += Math.abs(record[k].value)
+			}
+			return {days: n, accuracy: ar ? 1 - e/ar : 1}
+		})
+
+		//the arithmetic behind one stream's score, so a surprising number can be audited rather than
+		//taken on trust
+		const detail = {}
+		this.terminals().forEach(t => {
+			let p = 0, a = 0, worst = 0, worstDay = null
+			dayKeys.forEach((k, i) => {
+				if(i){p += (perStream[t.id][k] || 0); a += (actualByStream[t.id][k] || 0)}
+				if(Math.abs(p - a) > Math.abs(worst)){worst = p - a; worstDay = k}
+			})
+			let pt = 0, at = 0
+			dayKeys.forEach(k => {pt += (perStream[t.id][k] || 0); at += (actualByStream[t.id][k] || 0)})
+			const days = Object.keys(actualByStream[t.id]).sort()
+			detail[t.id] = {predTotal: pt, actTotal: at, worst: worst, worstDay: worstDay,
+				actDays: days.map(d => d.slice(5) + " " + money(actualByStream[t.id][d])).join(", "),
+				predDays: Object.keys(perStream[t.id]).filter(k => Math.abs(perStream[t.id][k]) > 1)
+					.sort().map(d => d.slice(5) + " " + money(perStream[t.id][d])).join(", ")}
+		})
+
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
 			since:since, surface:surface, area:area, error: area ? surface/area : 0,
-			accuracy: area ? 1 - surface/area : 0, gain:gain}
+			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
+			expectedFor:expectedFor}
 		return this._cache[key]
+	}
+	//the same month, one month earlier - a single score says nothing about whether the model is
+	//improving or the month was simply kind
+	prior(){
+		if(this._prior === undefined){
+			try{this._prior = this.analyse(null, 1)}catch(e){this._prior = null}
+		}
+		return this._prior
 	}
 	//every window scored, so the choice is a measurement rather than an argument
 	scoreboard(){
@@ -443,9 +486,17 @@ export default class BalanceBench extends BaseComponent{
 			if(p.day !== null && p.second !== null && Math.abs(ratio) > 1.5){
 				day += " + " + dayLabel(p.cycle, p.second)
 			}
+			/* THE AMOUNT THE FORECAST ACTUALLY USES, not the one the classifier would like to.
+			   A yearly budget spreads its REMAINDER over the months that are left, and a zero-sum
+			   stream is predicted from the ledger - so the table was reporting a figure the forecast
+			   never saw. A column that disagrees with the thing it describes is worse than no column,
+			   because it sends the reader to audit a number nobody used. */
+			const used = a && a.expectedFor ? a.expectedFor(s, now) : p.amount
 			return {name:s.name, cycle:declared, expected:perCycle,
-				tier:p.thin ? 0 : p.tier, day:day, amount:p.amount/(ratio || 1),
-				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth)}
+				tier:p.thin ? 0 : p.tier, day:day,
+				amount:(p.tier === TIERS.spread ? used : p.amount)/(ratio || 1),
+				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth),
+				detail:(a && a.detail && a.detail[s.id]) || null}
 		}).sort((x, y) => (x.gain - y.gain) || (y.sort - x.sort))
 		return this._rows
 	}
@@ -456,16 +507,20 @@ export default class BalanceBench extends BaseComponent{
 		return [[1, "TIER 1  dated - same day, same amount", by[1]],
 			[2, "TIER 2  drifting - same amount, moving day", by[2]],
 			[3, "TIER 3  spread - no single event", by[3]],
-			[0, "NO DATA", by[0]]]
+			[0, "TOO LITTLE HISTORY  spread by fallback - still forecast", by[0]]]
 	}
 
 	report(){
 		const a = this.analyse()
 		const out = []
 		if(a){
+			const prev = this.prior()
 			out.push("accuracy " + (a.accuracy*100).toFixed(1) + "%"
+				+ (prev ? "   prior month " + (prev.accuracy*100).toFixed(1) + "%" : "")
 				+ "   error " + (a.error*100).toFixed(1) + "%"
 				+ "   surface " + money(a.surface) + " / " + money(a.area) + " $-days")
+			out.push("by horizon: " + a.horizon.map(h => "+" + h.days + "d "
+				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
@@ -480,9 +535,19 @@ export default class BalanceBench extends BaseComponent{
 			if(!g[2].length)return
 			out.push(g[1])
 			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","acc"]))
-			g[2].forEach(r => out.push(line(["  " + r.name, r.cycle, money(r.expected),
-				(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
-				(r.gain*100).toFixed(0) + "%"])))
+			g[2].forEach(r => {
+				out.push(line(["  " + r.name, r.cycle, money(r.expected),
+					(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
+					(r.gain*100).toFixed(0) + "%"]))
+				//the arithmetic behind a surprising score, for the rows where it is worth seeing
+				if(r.detail && r.gain < 0.9 && (Math.abs(r.detail.predTotal) > 1
+						|| Math.abs(r.detail.actTotal) > 1)){
+					out.push("      predicted " + money(r.detail.predTotal) + "  ["
+						+ (r.detail.predDays || "nothing") + "]")
+					out.push("      actual    " + money(r.detail.actTotal) + "  ["
+						+ (r.detail.actDays || "nothing") + "]")
+				}
+			})
 			out.push("")
 		})
 		return out.join("\n")
@@ -519,6 +584,9 @@ export default class BalanceBench extends BaseComponent{
 					{" · "}surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
 				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
 					{a ? " · " + a.days + " settled days" : ""}</Note>
+				<Note>{this.prior() ? "prior month " + (this.prior().accuracy*100).toFixed(1) + "%" : ""}</Note>
+				<Note>{a && a.horizon ? "by horizon " + a.horizon.map(h => "+" + h.days + "d "
+					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
 			</Score>
 			<Score>
 				<Note>lookback windows, same forecast, same month:</Note>
@@ -532,11 +600,19 @@ export default class BalanceBench extends BaseComponent{
 			</Bar>
 			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
 				<Head>{g[1]}</Head>
-				{g[2].map((r,i) => <Row key={i}>
+				{g[2].map((r,i) => <Row key={i}
+						onClick={() => this.updateState({open: this.state.open === r.name ? null : r.name})}
+						style={{cursor:"pointer"}}>
 					<Name>{r.name}</Name>
 					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
 					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
+					{r.detail && this.state.open === r.name ? <Line>
+						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}
+						{" — actual " + money(r.detail.actTotal) + ": " + (r.detail.actDays || "nothing")}
+						{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
+							+ " on " + r.detail.worstDay : ""}
+					</Line> : null}
 				</Row>)}
 			</div> : null)}
 		</Wrap>

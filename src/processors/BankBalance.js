@@ -462,6 +462,57 @@ const median = xs => {
    turn. MAD rather than standard deviation because the outlier is exactly what would inflate an SD
    and hide itself. Too few turns to have a middle, or a distribution where more than a third are
    "outliers", means there is no outlier to reject - only a spread. */
+/* THE MEDIAN LAGS A TREND, and a utility bill that has been climbing all year is not going to stop
+   because the middle of the last six months was lower. Prices rise; the prediction should say so.
+
+   The slope is THEIL-SEN - the median of the pairwise slopes between turns - rather than a least
+   squares fit, for the same reason the level is a median: one strange month must not set the
+   direction. It is the standard robust estimator, so this is a general treatment of drift rather than
+   a rule about utilities.
+
+   IT ONLY APPLIES WHEN THE DRIFT IS BIGGER THAN THE NOISE. A slope smaller than the typical
+   turn-to-turn deviation is not a trend, it is scatter with a sign, and extrapolating it would turn
+   random variation into a confident forecast of more of the same. Below that bar the median stands.
+
+   Extrapolated ONE turn past the last observation, never further: the next turn is what the forecast
+   needs, and a slope estimated from a handful of points is not evidence about next year. */
+function theilSen(ys){
+	const slopes = [];
+	for(let i = 0; i < ys.length; i++){
+		for(let j = i+1; j < ys.length; j++)slopes.push((ys[j] - ys[i])/(j - i));
+	}
+	return slopes.length ? median(slopes) : 0;
+}
+function trendedMedian(all, usable){
+	const level = median(usable);
+	if(!all || all.length < 4)return level;
+	const slope = theilSen(all);
+	//the typical turn-to-turn move, as the bar a real trend has to clear
+	const noise = median(all.map(v => Math.abs(v - level))) || 0;
+	if(!slope || Math.abs(slope) < noise*0.5)return level;
+
+	/* A STEP IS NOT A TREND, and Theil-Sen cannot tell them apart on its own. A rate that went from
+	   $1,500 to $1,700 and stayed there produces a slope purely from the pairs that straddle the
+	   change - every pair on either side of it is flat - and extrapolating that predicts $1,775 next
+	   month, which is a decline nobody is having. A rising utility bill and a one-off rate change look
+	   identical to a single slope and want opposite treatments.
+
+	   They separate on the HALVES: a genuine ramp is still sloping inside its own first and second
+	   half, and a step is flat in both. So the trend is only extrapolated when each half agrees with
+	   the whole - same direction, and not a token amount of it. A step then falls through to the
+	   median, which is the honest answer when the level has moved but is not moving. (Where the change
+	   is recorded in the stream's own history, `regimeFrom` handles it better still, by not mixing the
+	   two levels at all.) */
+	const mid = Math.floor(all.length/2);
+	const first = theilSen(all.slice(0, mid)), second = theilSen(all.slice(mid));
+	const agrees = x => x !== 0 && (x > 0) === (slope > 0) && Math.abs(x) >= Math.abs(slope)*0.3;
+	if(!agrees(first) || !agrees(second))return level;
+
+	//from the middle of the observed run to one turn past its end
+	const step = (all.length - 1)/2 + 1;
+	return level + slope*step;
+}
+
 function rejectOutliers(totals, k){
 	if(!totals || totals.length < 4)return (totals || []).slice();
 	const med = median(totals);
@@ -549,7 +600,7 @@ export function pointPrediction(txns, monthlyAmount, opts){
 		const usable = rejectOutliers(totals);
 		out.outliers = totals.length - usable.length;
 		if(usable.length >= (o.regimeFrom ? 3 : 1)){
-			out.perTurnAmount = median(usable);
+			out.perTurnAmount = trendedMedian(totals, usable);
 			//stated per MONTH as well, since the caller wants it in the stream's own declared period
 			//and the detected cycle is rarely the same thing
 			out.amount = out.perTurnAmount * (30.44/(cyc.span || 30.44));
