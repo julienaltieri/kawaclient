@@ -3,65 +3,72 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
-import {histogramOf, accountRoutingOf, reconstruct, forecast, dayKey, monthlyExpectationAt,
-	classifyAll, CLASSES, groupByStream} from '../processors/BankBalance.js';
+import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
+	groupByStream, pointPrediction, dayLabel, TIERS} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
 
-   WHY THIS EXISTS. The tile's tests are synthetic: they prove the classifier is self-consistent, not
-   that it is right about THIS portfolio. And the question that actually matters cannot be answered by
-   a fixture at all - which streams have exhausted their potential, and which are still carrying a
-   fixable mistake. That needs the real ledger, so the bench lives inside the app, behind staging.
+   The tile's tests prove the model is self-consistent, not that it is right about THIS portfolio.
+   Whether a stream is regular is a question about real transactions, and no fixture can answer it.
 
-   WHAT IT MEASURES. For the last settled month it runs the same forecast the tile runs, OUT OF SAMPLE
-   (shapes built only from transactions before the window opened), and then attributes the error one
-   stream at a time. Every error is split in two, because the two have different cures:
+   ONE HEADLINE NUMBER, so improvements can be compared rather than argued about.
 
-     LEVEL   the stream moved a different TOTAL than expected over the window.
-             |sum(predicted) - sum(actual)|. The budgeted amount is out of date - a fact about the
-             master stream, fixable by editing it.
+     surface error  = integral |predicted balance - actual balance| dt, over the settled month
+     normaliser     = integral |actual balance| dt, over the same days
+     accuracy       = 1 - surface/normaliser
 
-     TIMING  the same money, on the wrong days.
-             sum(|predicted[d] - actual[d]|) - level. A shape or cycle that does not match reality.
-             Fixable IF the stream is regular; irreducible if it genuinely is not.
+   Dollar-days rather than dollars, because a balance chart is a CURVE and being wrong for a day is a
+   smaller error than being wrong for three weeks - a plain end-of-month difference cannot tell those
+   apart and would score a forecast that was wrong all month and right on the last day as perfect.
+   Normalising by the actual integral makes it comparable across months and across balances: without
+   it, the same model scores better in a month that simply held less money.
 
-   Crossing that split with the predictable/erratic class is what produces a verdict rather than a
-   number:
-
-     predictable + timing error  -> a MODELLING BUG. The stream is regular and we are drawing it in
-                                    the wrong place. This is the category worth working on.
-     any + level error           -> the BUDGET is stale. Not a code problem.
-     erratic + timing error      -> IRREDUCIBLE. No amount of modelling fixes an irregular stream, and
-                                    pretending otherwise is how a chart loses trust.
-
-   THE RESIDUAL ROW IS THE POINT OF THE WHOLE EXERCISE. Everything the account did that no stream
-   accounts for - uncategorised transactions, unlinked transfers, the card settlement - is money the
-   master stream cannot see. If the residual is large, no improvement to any stream will make the
-   picture accurate, and the fix is categorisation rather than modelling.
+   The forecast it scores is run OUT OF SAMPLE - shapes and routing built only from transactions dated
+   before the window opened - so it is the prediction that would have been made on the day.
    ================================================================================================== */
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
-const pad = (t, n) => String(t === undefined || t === null ? "" : t).slice(0, n).padEnd(n);
-const padL = (t, n) => String(t === undefined || t === null ? "" : t).padStart(n);
 
 const Wrap = styled.div`
-	max-width:60rem; margin:0 auto; padding:${DS.spacing.xs}rem;
-	color:${props => DS.getStyle().bodyText};
+	max-width:60rem; margin:0 auto; color:${props => DS.getStyle().bodyText};
 `
-const Pre = styled.pre`
-	font-family:Barlow,ui-monospace,monospace; font-size:0.72rem; line-height:1.35;
-	white-space:pre; overflow-x:auto; margin:0;
+/* MOBILE FIRST, because that is where it is read. A pre-formatted table cannot fit 360 pixels and
+   there is no font size at which it can - so the screen gets stacked rows that wrap, and the CLIPBOARD
+   gets the aligned columns. Two renderings of one dataset, each shaped for the reader it has. */
+const Score = styled.div`
 	background:${props => DS.getStyle().UIElementBackground};
-	padding:${DS.spacing.xs}rem; border-radius:${DS.borderRadius};
+	border-radius:${DS.borderRadius}; padding:${DS.spacing.xs}rem;
+	margin-bottom:${DS.spacing.xs}rem;
 `
-const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin-bottom:${DS.spacing.xs}rem;`
+const Big = styled.div`
+	font-size:2rem; font-weight:400; line-height:1.1; font-family:Barlow,sans-serif;
+`
+const Note = styled.div`
+	font-size:${DS.fontSize.little}rem; color:${props => DS.getStyle().bodyTextSecondary};
+	margin-top:0.15rem;
+`
+const Row = styled.div`
+	display:grid; grid-template-columns:1fr auto; gap:0.1rem 0.5rem;
+	padding:0.45rem 0; border-top:1px solid ${props => DS.getStyle().borderColor};
+`
+const Name = styled.div`font-size:${DS.fontSize.body}rem; overflow-wrap:anywhere;`
+const Tier = styled.div`
+	font-size:${DS.fontSize.little}rem; white-space:nowrap; align-self:start;
+	color:${props => props.$t === 3 ? DS.getStyle().bodyTextSecondary : DS.getStyle().bodyText};
+`
+const Line = styled.div`
+	grid-column:1 / -1; font-size:${DS.fontSize.little}rem;
+	color:${props => DS.getStyle().bodyTextSecondary};
+	font-family:Barlow,sans-serif; overflow-wrap:anywhere;
+`
+const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin:${DS.spacing.xs}rem 0;`
 const Btn = styled.button`
 	appearance:none; cursor:pointer; font:inherit; font-size:${DS.fontSize.little}rem;
 	background:none; color:${props => DS.getStyle().bodyText};
 	border:1px dashed ${props => DS.getStyle().borderColor};
-	padding:0.2rem 0.6rem; border-radius:${DS.borderRadiusSmall};
+	padding:0.25rem 0.7rem; border-radius:${DS.borderRadiusSmall};
 `
 
 export default class BalanceBench extends BaseComponent{
@@ -75,7 +82,7 @@ export default class BalanceBench extends BaseComponent{
 			.catch(() => this.updateState({accounts:[]}))
 	}
 
-	/* ---- the same inputs the tile uses, derived the same way ------------------------------------ */
+	/* ---- the same inputs the tile uses ----------------------------------------------------------- */
 	terminals(){const m = Core.getMasterStream(); return m ? m.getAllTerminalStreams() : []}
 	credit(){return (this.state.accounts||[]).filter(a => a.type === "credit").map(a => a.hash)}
 	spending(){
@@ -91,7 +98,6 @@ export default class BalanceBench extends BaseComponent{
 		return (this.state.accounts||[]).filter(a => a.current !== undefined
 			&& keep.indexOf(a.hash) > -1).reduce((s,a) => s + a.current, 0)
 	}
-	//every transaction on the spending account, at its raw amount - categorised or not
 	ledger(){
 		const keep = this.spending()
 		return (this.props.transactions||[])
@@ -111,134 +117,99 @@ export default class BalanceBench extends BaseComponent{
 		return this._byStream
 	}
 
-	/* ---- the analysis ---------------------------------------------------------------------------- */
+	/* ---- the score ------------------------------------------------------------------------------- */
 	analyse(){
+		if(this._analysis)return this._analysis
 		const now = this.today()
+		const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate()
 		const c = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1,
-			Math.min(now.getUTCDate(),
-				new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate())))
+			Math.min(now.getUTCDate(), lastDay)))
 		const open = new Date(c.getTime() - 15*DAY), close = new Date(c.getTime() + 15*DAY)
-		const txns = this.ledger()
-		const record = reconstruct(txns, now, this.anchor(), open).filter(p => p.date <= close)
+		const record = reconstruct(this.ledger(), now, this.anchor(), open)
+			.filter(p => p.date <= close)
 		if(record.length < 2)return null
 
-		const days = Math.round((record[record.length-1].date - open)/DAY)
 		const byStream = this.byStream()
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
-		const covers = h => keep.indexOf(h || fallback) > -1
-		const settles = h => cards.indexOf(h) > -1
-
-		//OUT OF SAMPLE: nothing dated inside the window may inform the prediction of it
-		const shapes = {}, routing = {}, dir = {}
+		const shapes = {}, dir = {}, sliced = {}
 		this.terminals().forEach(s => {
-			const before = byStream[s.id].filter(t => t.date < open)
-			shapes[s.id] = histogramOf(before)
+			sliced[s.id] = byStream[s.id].filter(t => t.date < open)
+			shapes[s.id] = histogramOf(sliced[s.id])
 			const a = monthlyExpectationAt(s, open, "monthly")
 			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
-		const sliced = {}
-		this.terminals().forEach(s => {sliced[s.id] = byStream[s.id].filter(t => t.date < open)})
 		const routed = accountRoutingOf(sliced, id => dir[id])
 
-		const deltasOf = series => {
-			const d = {}
-			for(let i = 1; i < series.length; i++){
-				d[dayKey(series[i].date)] = series[i].value - series[i-1].value
-			}
-			return d
-		}
-		const runFor = terms => forecast({terminals:terms, shapes:shapes, routing:routed,
-			now:open, balanceNow:0, days:days, covers:covers, settles:null,
-			periodName:"monthly", settlementDay:null})
+		const predicted = forecast({terminals:this.terminals(), shapes:shapes, routing:routed,
+			now:open, balanceNow:record[0].value,
+			days:Math.round((record[record.length-1].date - open)/DAY),
+			covers:h => keep.indexOf(h || fallback) > -1,
+			settles:h => cards.indexOf(h) > -1,
+			periodName:"monthly", settlementDay:this.settlementDay()})
 
-		//what actually moved on the account, per day
-		const actualAll = {}
-		record.forEach((p,i) => {if(i)actualAll[dayKey(p.date)] = p.value - record[i-1].value})
-
-		const classes = {}
-		classifyAll(this.terminals(), byStream, s => monthlyExpectationAt(s, now, "monthly"))
-			.forEach(r => {classes[r.id] = r})
-
-		const inWindow = t => t.date >= open && t.date <= close
-		const rows = []
-		let attributed = {}
-		this.terminals().forEach(s => {
-			const pred = deltasOf(runFor([s]))
-			const act = {}
-			byStream[s.id].filter(t => inWindow(t) && covers(t.accountHash)).forEach(t => {
-				const k = dayKey(t.date); act[k] = (act[k]||0) + t.amount
-				attributed[k] = (attributed[k]||0) + t.amount
-			})
-			const keys = {}
-			Object.keys(pred).forEach(k => {keys[k] = true})
-			Object.keys(act).forEach(k => {keys[k] = true})
-			let sp = 0, sa = 0, l1 = 0
-			Object.keys(keys).forEach(k => {
-				const p = pred[k]||0, a = act[k]||0
-				sp += p; sa += a; l1 += Math.abs(p - a)
-			})
-			if(!sp && !sa && !l1)return                     //silent all window: nothing to report
-			const level = Math.abs(sp - sa)
-			rows.push({id:s.id, name:s.name, klass:(classes[s.id]||{}).klass,
-				cycle:(classes[s.id]||{}).cycle, timingScore:(classes[s.id]||{}).timing || 0,
-				steadyScore:(classes[s.id]||{}).steadiness || 0,
-				predicted:sp, actual:sa, level:level, timing:Math.max(0, l1 - level), total:l1})
+		//paired by DAY, so a missing day on either side cannot silently shift the comparison
+		const predByDay = {}
+		predicted.forEach(p => {predByDay[dayKey(p.date)] = p.value})
+		let surface = 0, area = 0, paired = 0
+		record.forEach(p => {
+			const k = dayKey(p.date)
+			const q = predByDay[k]
+			area += Math.abs(p.value)
+			if(q === undefined)return
+			surface += Math.abs(q - p.value)
+			paired++
 		})
-
-		//everything the account did that no stream explains
-		let residual = 0
-		Object.keys(actualAll).forEach(k => {residual += Math.abs(actualAll[k] - (attributed[k]||0))})
-
-		const benchAll = runFor(this.terminals())
-		const regular = this.terminals().filter(s =>
-			(classes[s.id]||{}).klass === CLASSES.predictable)
-		const benchReg = runFor(regular)
-		const closeActual = record[record.length-1].value - record[0].value
-		rows.sort((a,b) => b.total - a.total)
-		return {open:open, close:record[record.length-1].date, days:days, rows:rows,
-			residual:residual, opening:record[0].value,
-			actualMove:closeActual,
-			predAll:benchAll.length ? benchAll[benchAll.length-1].value : 0,
-			predReg:benchReg.length ? benchReg[benchReg.length-1].value : 0,
-			regularCount:regular.length}
+		this._analysis = {open:open, close:record[record.length-1].date, days:record.length,
+			paired:paired, surface:surface, area:area,
+			accuracy: area ? 1 - surface/area : 0,
+			opening:record[0].value, closing:record[record.length-1].value,
+			predClose: predicted.length ? predicted[predicted.length-1].value : record[0].value}
+		return this._analysis
+	}
+	settlementDay(){
+		const cards = this.credit()
+		if(!cards.length)return undefined
+		const byDay = new Array(32).fill(0)
+		;(this.props.transactions||[]).forEach(t => {
+			if(cards.indexOf(t.userInstitutionAccountId) < 0 || t.amount <= 0)return
+			byDay[t.date.getUTCDate()] += t.amount
+		})
+		let best = 0, day
+		byDay.forEach((v,i) => {if(v > best){best = v; day = i}})
+		return day
 	}
 
-	verdict(r){
-		if(r.klass === CLASSES.thin)return "no data yet"
-		if(r.total < 1)return "exact"
-		if(r.level > r.timing)return "budget stale"
-		if(r.klass === CLASSES.predictable)return "MODEL BUG"
-		return "irreducible"
+	/* ---- the table ------------------------------------------------------------------------------- */
+	rows(){
+		if(this._rows)return this._rows
+		const now = this.today()
+		const byStream = this.byStream()
+		this._rows = this.terminals().map(s => {
+			const expected = monthlyExpectationAt(s, now, "monthly")
+			const p = pointPrediction(byStream[s.id] || [], expected)
+			const perCycle = p.cycle === "weekly" ? expected*7/30.44
+				: (p.cycle === "biweekly" ? expected*14/30.44 : expected)
+			return {name:s.name, cycle:p.cycle, expected:perCycle, tier:p.tier, thin:p.thin,
+				day:dayLabel(p.cycle, p.day), amount:p.amount, sort:Math.abs(perCycle)}
+		}).sort((a,b) => b.sort - a.sort)
+		return this._rows
 	}
 
 	report(){
 		const a = this.analyse()
-		if(!a)return "no settled window to analyse (no balance, or no transactions)"
-		const d = x => new Date(x).toISOString().slice(0,10)
 		const out = []
-		out.push("BALANCE FORECAST BENCH  " + new Date().toISOString())
-		out.push("window " + d(a.open) + " to " + d(a.close) + "  (" + a.days + " settled days)")
-		out.push("opening balance " + money(a.opening))
-		out.push("")
-		out.push("            what the account did   " + padL(money(a.actualMove), 12))
-		out.push("  forecast, all streams            " + padL(money(a.predAll), 12)
-			+ "   drift " + money(a.predAll - a.actualMove))
-		out.push("  forecast, regular streams only   " + padL(money(a.predReg), 12)
-			+ "   drift " + money(a.predReg - a.actualMove)
-			+ "   (" + a.regularCount + " of " + this.terminals().length + " streams)")
-		out.push("")
-		out.push("  unexplained by ANY stream        " + padL(money(a.residual), 12)
-			+ "   <- categorisation, not modelling")
-		out.push("")
-		out.push("ERROR BY STREAM, out of sample, biggest first")
-		out.push("  " + pad("stream", 26) + pad("class", 13) + pad("cycle", 10)
-			+ padL("predicted", 11) + padL("actual", 11) + padL("level", 9) + padL("timing", 9)
-			+ "  tim/std   verdict")
-		a.rows.forEach(r => out.push("  " + pad(r.name, 26) + pad(r.klass, 13) + pad(r.cycle, 10)
-			+ padL(money(r.predicted), 11) + padL(money(r.actual), 11)
-			+ padL(money(r.level), 9) + padL(money(r.timing), 9)
-			+ "  " + r.timingScore.toFixed(2) + "/" + r.steadyScore.toFixed(2)
-			+ "   " + this.verdict(r)))
+		if(a){
+			out.push("accuracy " + (a.accuracy*100).toFixed(1) + "%"
+				+ "   surface " + money(a.surface) + " over " + money(a.area) + " $-days"
+				+ "   " + dayKey(a.open) + " to " + dayKey(a.close))
+			out.push("")
+		}
+		const w = [26, 10, 12, 6, 9, 12]
+		const line = c => "  " + c[0].slice(0,w[0]).padEnd(w[0]) + c[1].padEnd(w[1])
+			+ c[2].padStart(w[2]) + c[3].padStart(w[3]) + c[4].padStart(w[4]) + c[5].padStart(w[5])
+		out.push(line(["stream","cycle","expected","tier","pred day","pred amount"]))
+		this.rows().forEach(r => out.push(line([r.name, r.cycle, money(r.expected),
+			r.thin ? "-" : String(r.tier), r.day, money(r.amount)])))
 		return out.join("\n")
 	}
 
@@ -259,14 +230,25 @@ export default class BalanceBench extends BaseComponent{
 
 	render(){
 		if(!this.state.accounts)return <Wrap>Reading balances…</Wrap>
-		let text
-		try{text = this.report()}
-		catch(e){text = "bench failed: " + (e && e.message) + "\n" + (e && e.stack)}
+		let a, rows, err = null
+		try{a = this.analyse(); rows = this.rows()}
+		catch(e){err = (e && e.message) + "\n" + (e && e.stack)}
+		if(err)return <Wrap><Line>{err}</Line></Wrap>
 		return <Wrap>
+			<Score>
+				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}</Big>
+				<Note>accuracy over {a ? a.days : 0} settled days{a
+					? ", " + dayKey(a.open) + " to " + dayKey(a.close) : ""}</Note>
+				<Note>surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
+			</Score>
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
 			</Bar>
-			<Pre>{text}</Pre>
+			{(rows||[]).map((r,i) => <Row key={i}>
+				<Name>{r.name}</Name>
+				<Tier $t={r.tier}>{r.thin ? "no data" : "tier " + r.tier}</Tier>
+				<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}</Line>
+			</Row>)}
 		</Wrap>
 	}
 }

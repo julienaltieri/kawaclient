@@ -74,3 +74,50 @@ test("timing can never be negative", () => {
 		expect(r.level).toBeGreaterThanOrEqual(0)
 	})
 })
+
+/* ---- the accuracy score ---------------------------------------------------------------------- */
+
+/* surface = integral |predicted - actual| dt ;  area = integral |actual| dt ;  accuracy = 1 - s/a
+   Dollar-DAYS, not dollars: a balance chart is a curve, and being wrong for one day is a smaller
+   error than being wrong for three weeks. */
+const score = (pred, act) => {
+	let surface = 0, area = 0
+	act.forEach((v, i) => {area += Math.abs(v); surface += Math.abs(pred[i] - v)})
+	return {surface: surface, area: area, accuracy: area ? 1 - surface/area : 0}
+}
+
+test("a perfect forecast scores 100%", () => {
+	const a = [1000, 900, 800, 1200]
+	expect(score(a.slice(), a).accuracy).toBe(1)
+})
+
+test("being wrong for three weeks costs more than being wrong for one day", () => {
+	//the whole reason the metric integrates rather than comparing endpoints
+	const actual = new Array(30).fill(1000)
+	const oneDay = actual.slice(); oneDay[15] = 1500
+	const allMonth = actual.map(v => v + 500)
+	expect(score(oneDay, actual).accuracy).toBeGreaterThan(score(allMonth, actual).accuracy)
+})
+
+test("a forecast that is wrong all month and right at the end still scores badly", () => {
+	//an end-of-month difference would call this perfect
+	const actual = new Array(30).fill(1000)
+	const wrong = actual.map((v, i) => i === 29 ? v : v + 800)
+	const r = score(wrong, actual)
+	expect(wrong[29]).toBe(actual[29])
+	expect(r.accuracy).toBeLessThan(0.3)
+})
+
+test("normalising by the actual integral makes months comparable", () => {
+	//the same relative error scores the same whether the account held $1k or $10k
+	const poor = new Array(30).fill(1000), rich = new Array(30).fill(10000)
+	const poorPred = poor.map(v => v*1.1), richPred = rich.map(v => v*1.1)
+	expect(score(poorPred, poor).accuracy).toBeCloseTo(score(richPred, rich).accuracy, 9)
+})
+
+test("the score can go negative, and should be allowed to", () => {
+	//a forecast wrong by more than the balance itself is worse than predicting nothing, and a metric
+	//that floored at zero would hide how much worse
+	const actual = new Array(10).fill(1000)
+	expect(score(new Array(10).fill(-2000), actual).accuracy).toBeLessThan(0)
+})

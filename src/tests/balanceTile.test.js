@@ -17,7 +17,7 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
-	groupByStream} from '../processors/BankBalance'
+	groupByStream, pointPrediction, dayLabel, TIERS} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -896,4 +896,79 @@ test("double counting a transfer would have made it look erratic - and no longer
 	const r = classifyStream(g.sav, -4000)
 	expect(r.klass).toBe(CLASSES.predictable)
 	expect(r.steadiness).toBeGreaterThan(0.95)
+})
+
+/* ---- the three tiers ----------------------------------------------------------------------------- */
+
+const on = (y, m, d, amount) => ({date: new Date(Date.UTC(y, m, d)), amount: amount})
+
+test("tier 1: same day, same amount", () => {
+	const t = []
+	for(let m = 0; m < 12; m++)t.push(on(2025, m, 1, -1700))
+	const p = pointPrediction(t, -1700)
+	expect(p.tier).toBe(TIERS.dated)
+	expect(dayLabel(p.cycle, p.day)).toBe("day 1")
+	expect(p.amount).toBe(-1700)
+})
+
+test("tier 2: the day moves, the amount does not - and it is NOT spread", () => {
+	//rent, bills, a day-care cheque. Spreading would remove the event, which is what the chart is read
+	//for, so tier 2 keeps it as one step and accepts error on the day.
+	const t = []
+	const days = [2, 9, 4, 14, 6, 11, 3, 13, 5, 10, 7, 12]
+	days.forEach((d, m) => t.push(on(2025, m, d, -1700)))
+	const p = pointPrediction(t, -1700)
+	expect(p.tier).toBe(TIERS.drifting)
+	expect(p.day).not.toBe(null)
+	expect(p.amount).toBe(-1700)
+})
+
+test("tier 3: twenty transactions a month is not an event, however concentrated", () => {
+	const t = []
+	for(let m = 0; m < 12; m++)for(let k = 0; k < 20; k++)t.push(on(2025, m, 1 + k, -25))
+	const p = pointPrediction(t, -500)
+	expect(p.perTurn).toBeGreaterThan(3)
+	expect(p.tier).toBe(TIERS.spread)
+	expect(dayLabel(p.cycle, p.day)).toBe("spread")
+})
+
+test("tier 3 also catches a discrete event whose SIZE is not repeatable", () => {
+	const t = []
+	;[-100, -2400, -300, -1900, -80, -3000, -150, -2200].forEach((a, m) => t.push(on(2025, m, 5, a)))
+	const p = pointPrediction(t, -1200)
+	expect(p.perTurn).toBeLessThanOrEqual(3)
+	expect(p.steadiness).toBeLessThan(0.55)
+	expect(p.tier).toBe(TIERS.spread)
+})
+
+test("the predicted amount is a MEDIAN of recent turns, not the last one and not the mean", () => {
+	//one strange month must not move the prediction
+	const t = []
+	for(let m = 0; m < 11; m++)t.push(on(2025, m, 1, -1000))
+	t.push(on(2025, 11, 1, -9000))            //one outlier, most recent
+	const p = pointPrediction(t, -1000)
+	expect(p.amount).toBe(-1000)
+})
+
+test("a genuine step change is picked up within a cycle or two", () => {
+	const t = []
+	for(let m = 0; m < 6; m++)t.push(on(2025, m, 1, -1000))
+	for(let m = 6; m < 12; m++)t.push(on(2025, m, 1, -1500))
+	const p = pointPrediction(t, -1000)
+	expect(p.amount).toBe(-1500)
+})
+
+test("with no history at all, the master's expectation is the only figure available", () => {
+	const p = pointPrediction([], -450)
+	expect(p.amount).toBe(-450)
+	expect(p.tier).toBe(TIERS.spread)
+	expect(p.thin).toBe(true)
+})
+
+test("the predicted day is the cluster PEAK, so a wrapped cluster is not averaged to mid-month", () => {
+	//the 30th and the 2nd have a mean day of 16 - the one day of the month it never happens
+	const t = []
+	for(let m = 0; m < 6; m++){t.push(on(2025, m, 30, -800)); t.push(on(2025, m+6, 2, -800))}
+	const p = pointPrediction(t, -800)
+	if(p.day !== null)expect([0, 1, 29, 30]).toContain(p.day)
 })

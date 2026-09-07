@@ -265,8 +265,17 @@ export function classifyStream(txns, monthlyAmount, opts){
 
 	const cycle = histogram.detectCycle(txns, dateOf, amountOf);
 	out.cycle = cycle.name;
-	out.timing = histogram.concentration(
-		histogram.accumulate(txns, t => cycle.phaseOf(dateOf(t)), amountOf, cycle.bins), k);
+	/* CONSOLIDATED FIRST - the same shape histogramOf hands the forecaster.
+	   Scoring the raw bins here meant the classifier and the forecaster disagreed about the same
+	   stream: a payday that moves off a weekend was smeared across four days for the classifier, which
+	   called it erratic, while the forecaster saw the collapsed spike and drew it correctly. A
+	   classification that describes a shape nobody uses cannot be acted on. */
+	const maxSpan = Math.max(2, Math.round(cycle.bins/6));
+	const bins = histogram.consolidate(
+		histogram.accumulate(txns, t => cycle.phaseOf(dateOf(t)), amountOf, cycle.bins),
+		maxSpan, cycle.bins > 20 ? 2 : 1);
+	out.timing = histogram.concentration(bins, k);
+	out.bins = bins;
 
 	//per-occurrence totals, with the silent turns included as zeros
 	const byTurn = {};
@@ -373,4 +382,104 @@ export function groupByStream(transactions, terminalIds, directionOf){
 		out[c.streamId].push({date: c.date, amount: c.amount, accountHash: c.accountHash});
 	});
 	return out;
+}
+
+/* ==================================================================================================
+   THE THREE TIERS, and what each one predicts.
+
+   Predictable/erratic was one axis and the forecast needs two, because "can I say WHEN" and "can I say
+   HOW MUCH" fail independently and want different treatments:
+
+     TIER 1  a discrete event, on a repeatable day, of a repeatable size.
+             Predict the day and the amount. Nothing here is guesswork.
+
+     TIER 2  a discrete event of a repeatable size, on a day that MOVES - rent, bills, a day-care
+             cheque. Spreading it would be the wrong answer: a balance chart is read for its steps and
+             a spread removes the event entirely. Predict the CENTRE of its cluster as the day, and a
+             robust recent figure as the amount, and accept that the day carries error.
+
+     TIER 3  no clear cluster - groceries, and anything whose size is not repeatable either.
+             Spread it across the period, which is the only honest thing left.
+
+   WHAT SEPARATES TIER 2 FROM TIER 3 IS NOT TIMING, it is whether there is an EVENT at all. One rent
+   payment a month is discrete however much the day wanders; twenty grocery transactions are not, and
+   no amount of concentration would make them one. So the discriminator is transactions per turn, and
+   timing only decides between tier 1 and tier 2.
+
+   THE PREDICTED DAY IS THE PEAK OF THE CONSOLIDATED HISTOGRAM, not the mean of the raw one. The month
+   is a cycle: a payment landing on the 30th and the 2nd has a mean day of 16, the one day of the month
+   it never happens. `consolidate` already merges wrapped clusters onto their heaviest day, so its peak
+   is a circular answer by construction.
+
+   THE PREDICTED AMOUNT IS A MEDIAN OF RECENT TURNS, not a mean and not the last one. A median cannot
+   be moved by a single strange month; six turns is enough to be robust and short enough that a genuine
+   step change is picked up within a cycle or two. Where there is no history it falls back to what the
+   master stream expects, which is the only figure available.
+   ================================================================================================== */
+
+export const TIERS = {dated: 1, drifting: 2, spread: 3};
+const MAX_PER_TURN = 3;          //more transactions than this in a turn is not one event
+const RECENT_TURNS = 6;
+
+export function pointPrediction(txns, monthlyAmount, opts){
+	const o = opts || {};
+	const minTiming = o.minTiming === undefined ? 0.45 : o.minTiming;
+	const minSteady = o.minSteady === undefined ? 0.55 : o.minSteady;
+	const c = classifyStream(txns, monthlyAmount, opts);
+	const out = {tier: TIERS.spread, cycle: c.cycle, timing: c.timing, steadiness: c.steadiness,
+		turns: c.turns, k: c.k, perTurn: 0, day: null, amount: monthlyAmount || 0,
+		thin: c.klass === CLASSES.thin};
+
+	if(!txns || !txns.length)return out;
+
+	const cyc = histogram.CYCLES[c.cycle] || histogram.CYCLES.monthly;
+	//how many transactions land in a turn that has any - a turn with nothing in it says nothing about
+	//whether this stream arrives as one event or as twenty
+	const perTurn = {};
+	txns.forEach(t => {const n = histogram.occurrenceOf(cyc, new Date(t.date));
+		perTurn[n] = (perTurn[n] || 0) + 1});
+	const counts = Object.keys(perTurn).map(n => perTurn[n]).sort((a, b) => a - b);
+	out.perTurn = counts.length ? counts[Math.floor(counts.length/2)] : 0;
+
+	const discrete = out.perTurn <= MAX_PER_TURN;
+	if(discrete && c.steadiness >= minSteady){
+		out.tier = c.timing >= minTiming ? TIERS.dated : TIERS.drifting;
+	}
+
+	//the day: the heaviest bin of the consolidated shape, which is already a circular answer
+	if(out.tier !== TIERS.spread && c.bins && c.bins.length){
+		let peak = 0;
+		c.bins.forEach((v, i) => {if(v > c.bins[peak])peak = i});
+		out.day = peak;
+	}
+
+	/* the amount: a median of the most recent turns, INCLUDING the silent ones inside the span, since
+	   a stream that skipped a month really did move nothing that month */
+	if(out.tier !== TIERS.spread){
+		const byTurn = {};
+		let lo = Infinity, hi = -Infinity;
+		txns.forEach(t => {
+			const n = histogram.occurrenceOf(cyc, new Date(t.date));
+			byTurn[n] = (byTurn[n] || 0) + t.amount;
+			if(n < lo)lo = n;
+			if(n > hi)hi = n;
+		});
+		const totals = [];
+		for(let n = Math.max(lo, hi - RECENT_TURNS + 1); n <= hi; n++)totals.push(byTurn[n] || 0);
+		if(totals.length){
+			const sorted = totals.slice().sort((a, b) => a - b);
+			const mid = Math.floor(sorted.length/2);
+			out.amount = sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid])/2;
+		}
+	}
+	return out;
+}
+
+/* How a predicted day reads, in the vocabulary of its own cycle. */
+const WEEKDAYS = ["Thu","Fri","Sat","Sun","Mon","Tue","Wed"];   //day 0 of the unix epoch was a Thursday
+export function dayLabel(cycleName, day){
+	if(day === null || day === undefined)return "spread";
+	if(cycleName === "weekly")return WEEKDAYS[day % 7];
+	if(cycleName === "biweekly")return WEEKDAYS[day % 7] + (day < 7 ? " A" : " B");
+	return "day " + (day + 1);
 }
