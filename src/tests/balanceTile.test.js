@@ -1296,9 +1296,11 @@ test("a ledger with no pairing finds nothing, so the synthesis still runs", () =
 	expect(observedSettlement([unpaired], ["chk"], ["visa"]).count).toBe(0)
 })
 
-test("synthesising on top of a real payment stream pays the card twice", () => {
-	//the fault itself: card streams excluded and a lump added, while the payment stream on the
-	//predicted account is ALSO forecast. Two models of the same money.
+test("the card must be paid exactly once - and the PAYMENT STREAM is the duplicate", () => {
+	//two models of the same money: the synthesis re-times the card's own streams onto the due day
+	//using their expectations, and the payment stream is the same money seen from the other end.
+	//Dropping the synthesis and keeping the stream cost 27 points of accuracy in one step, because a
+	//six-week mean of a variable card bill under-predicts a heavy month.
 	const card = {id: "sub", name: "Subscriptions", getExpectedAmountAtDateByPeriod: () => -500}
 	const payment = {id: "pay", name: "Credit Card Payments",
 		getExpectedAmountAtDateByPeriod: () => -500}
@@ -1406,4 +1408,42 @@ test("a savings transfer of the same size is not a settlement", () => {
 test("the closest receipt in time wins when several match the amount", () => {
 	const txns = [tx(20, -30, "chk"), tx(23, 30, "visa"), tx(20, 30, "amex")]
 	expect(inferSettlements(txns, ["chk"], ["visa", "amex"])[0].card).toBe("amex")
+})
+
+test("excludeIds drops a stream from the forecast entirely", () => {
+	const card = {id: "sub", name: "Subscriptions", getExpectedAmountAtDateByPeriod: () => -500}
+	const payment = {id: "pay", name: "Credit Card Payments",
+		getExpectedAmountAtDateByPeriod: () => -500}
+	const opts = {terminals: [card, payment], shapes: {sub: histogramOf([]), pay: histogramOf([])},
+		routing: {sub: "visa", pay: "chk"},
+		now: new Date(Date.UTC(2026, 8, 30)), balanceNow: 0, days: 31, periodName: "monthly",
+		covers: h => ["chk"].indexOf(h || "chk") > -1}
+
+	//synthesis on, payment stream dropped: the card is paid ONCE, from the card streams' own
+	//expectations rather than from a mean of what the payment happened to be
+	const right = forecast(Object.assign({}, opts, {settles: h => ["visa"].indexOf(h) > -1,
+		settlementDay: 20, excludeIds: {pay: true}}))
+	expect(Math.round(right[right.length-1].value)).toBe(-500)
+
+	//both: twice
+	const twice = forecast(Object.assign({}, opts, {settles: h => ["visa"].indexOf(h) > -1,
+		settlementDay: 20}))
+	expect(Math.round(twice[twice.length-1].value)).toBe(-1000)
+
+	//neither: not at all
+	const never = forecast(Object.assign({}, opts, {settles: null, settlementDay: null,
+		excludeIds: {pay: true}}))
+	expect(Math.round(never[never.length-1].value)).toBe(0)
+})
+
+test("a settlement carries the streams it was allocated to, so they can be excluded", () => {
+	const settle = {categorized: true, amount: -60, date: new Date(Date.UTC(2026, 0, 20)),
+		userInstitutionAccountId: "chk", transactionId: "s1",
+		streamAllocation: [{streamId: "ccpay", amount: -60}]}
+	const receipt = {categorized: true, amount: 60, date: new Date(Date.UTC(2026, 0, 21)),
+		userInstitutionAccountId: "visa", transactionId: "r1", streamAllocation: []}
+	const found = inferSettlements([settle, receipt], ["chk"], ["visa"])
+	expect(found.length).toBe(1)
+	expect(found[0].streamIds).toEqual(["ccpay"])
+	expect(found[0].id).toBe("s1")
 })

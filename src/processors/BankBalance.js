@@ -168,7 +168,11 @@ export function forecast(opts){
 		const nDays = daysInMonth(d);
 		/* the caller may supply its own expectation - a yearly budget spread over the months it has
 		   LEFT rather than over twelve, for instance. Defaulting to the master's own figure keeps this
-		   module ignorant of the reporting calendar. */
+		   module ignorant of the reporting calendar.
+
+		   `excludeIds` drops named streams entirely. It exists for the card SETTLEMENT stream, whose
+		   money is already modelled by re-timing the card's own streams onto the due day - forecasting
+		   both pays the card twice, and forecasting neither pays it not at all. */
 		const expectedFor = opts.expectedFor || ((st, when) => monthlyExpectationAt(st, when, periodName));
 		terminals.forEach(s => {
 			const amt = expectedFor(s, d);
@@ -176,6 +180,7 @@ export function forecast(opts){
 			/* in the NETTED reading every stream lands on the day it is spent and the settlement is
 			   not spending at all. In an account reading, a stream that lives on some other account
 			   never touches this one - the card's settlement does, and it is added below as a lump. */
+			if(opts.excludeIds && opts.excludeIds[s.id])return;
 			if(!covers(routing[s.id]))return;
 			const h = shapes[s.id];
 			/* THE WEIGHTS DESCRIBE ONE TURN OF THE STREAM'S OWN CYCLE, which is not always a month.
@@ -741,7 +746,8 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
 			if(!best)return;
 			best.used = true;
 			out.push({date: t.date, amount: t.amount, accountHash: t.userInstitutionAccountId,
-				card: best.t.userInstitutionAccountId});
+				card: best.t.userInstitutionAccountId, id: t.transactionId,
+				streamIds: (t.streamAllocation || []).map(al => al.streamId)});
 		});
 	return out;
 }

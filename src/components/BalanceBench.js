@@ -269,17 +269,25 @@ export default class BalanceBench extends BaseComponent{
 			sliced[t.id].forEach(x => {v += x.amount})
 			observed[t.id] = v/monthsSeen
 		})
-		/* three ways to know the ledger already carries the payment, in order of how directly they
-		   say so: a stored pair, an inferred one (same amount leaving here and arriving on a card
-		   within days), or a stream on this account budgeted at nothing that still moves money. Any of
-		   them means synthesising a second settlement would pay the card twice. */
+		/* WHICH SIDE OF THE CARD IS THE DUPLICATE - and I had it backwards.
+
+		   The settlement is a RE-TIMING of the card's own streams: they are excluded from the daily
+		   flows and their total is added back on the due day. That synthesis uses the streams'
+		   expectations, which is the best information available about what a month of card spending
+		   costs.
+
+		   The payment STREAM is the same money seen from the other end, and predicting it from a
+		   six-week observed mean is strictly worse: a card bill is whatever was spent, so the mean of
+		   a short window under-predicts a heavy month. Measured -$5,613 against -$9,800 actual.
+
+		   Suppressing the synthesis and keeping the stream cost 27 points of accuracy in one step. So
+		   the stream is what gets dropped, the synthesis stays, and the card is paid exactly once from
+		   the better estimate. */
 		const inferred = inferSettlements(this.props.transactions, keep, cards)
 		this._settlements = inferred
-		if(observedSettlement(this.props.transactions, keep, cards).count > 0
-			|| inferred.length > 0
-			|| settlementInReading(this.terminals(), routed, observed,
-				h => keep.indexOf(h || fallback) > -1,
-				t => monthlyExpectationAt(t, open, "monthly")))settles = null
+		const excludeIds = {}
+		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
+		this._excluded = Object.keys(excludeIds).length
 
 		const expectedFor = (t, when) => {
 			const declared = monthlyExpectationAt(t, when, "monthly")
@@ -295,7 +303,7 @@ export default class BalanceBench extends BaseComponent{
 		}
 
 		const run = (terms, withSettlement) => forecast({terminals:terms, shapes:shapes,
-			expectedFor:expectedFor,
+			expectedFor:expectedFor, excludeIds:excludeIds,
 			routing:routed, now:open, balanceNow:0, days:days, covers:covers,
 			settles: withSettlement ? settles : null, periodName:"monthly",
 			settlementDay: withSettlement ? this.settlementDay() : null})
@@ -589,7 +597,8 @@ export default class BalanceBench extends BaseComponent{
 			const st = this._settlements || []
 			const inWin = st.filter(x => x.date >= a.open && x.date <= a.close)
 			out.push("card settlements found: " + st.length + " total, " + inWin.length
-				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")")
+				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")"
+				+ "   payment streams excluded: " + (this._excluded || 0))
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
@@ -660,7 +669,8 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{a && a.horizon ? "by horizon " + a.horizon.map(h => "+" + h.days + "d "
 					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
 				<Note>{this._settlements
-					? "card settlements matched: " + this._settlements.length : ""}</Note>
+					? "card settlements matched: " + this._settlements.length
+						+ " · payment streams excluded: " + (this._excluded || 0) : ""}</Note>
 			</Score>
 			<Score>
 				<Note>lookback windows, same forecast, same month:</Note>

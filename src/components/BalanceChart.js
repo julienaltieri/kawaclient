@@ -530,18 +530,21 @@ export default class BalanceChart extends BaseComponent{
 				if(keep.indexOf(x.accountHash) > -1)v += x.amount})
 			observedMonthly[t.id] = v/12
 		})
-		const carried = observedSettlement(this.props.transactions, keep, cards).count > 0
-			|| inferSettlements(this.props.transactions, keep, cards).length > 0
-			|| settlementInReading(this.terminals(), this.routing(), observedMonthly, covers,
-				t => monthlyExpectationAt(t, now, "monthly"))
-		const settles = (netted || carried) ? null : (h => cards.indexOf(h) > -1)
+		/* the SETTLEMENT STREAM is the duplicate, not the synthesis - see BalanceBench. The synthesis
+		   re-times the card's own streams onto the due day using their expectations; the payment
+		   stream is the same money seen from the other end and predicted from a noisier mean. Drop the
+		   stream, keep the synthesis, and the card is paid once from the better estimate. */
+		const excludeIds = {}
+		inferSettlements(this.props.transactions, keep, cards)
+			.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
+		const settles = netted ? null : (h => cards.indexOf(h) > -1)
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
 		   the one balance that is actually known (see the drift note), so a past window is a slice of
 		   that walk rather than a separate calculation from a guessed opening figure. */
 		let past = reconstruct(txns, now, bal, win.from)
 		if(win.to)past = past.filter(p => p.date <= win.to)
 		const use = this.terminalsFor(this.state.basis)
-		const future = win.fwd ? forecast({terminals:use, shapes:this.shapes(),
+		const future = win.fwd ? forecast({terminals:use, shapes:this.shapes(), excludeIds:excludeIds,
 			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
 			covers:covers, settles:settles,
 			periodName:"monthly", settlementDay:this.settlementDay()}) : []
@@ -561,7 +564,7 @@ export default class BalanceChart extends BaseComponent{
 		if(past.length > 1){
 			const opened = past[0].date
 			const asOf = this.shapesAsOf(opened)
-			backtest = forecast({terminals:use, shapes:asOf.shapes,
+			backtest = forecast({terminals:use, shapes:asOf.shapes, excludeIds:excludeIds,
 				routing:asOf.routing, now:opened, balanceNow:past[0].value,
 				days:Math.round((past[past.length-1].date - opened)/DAY),
 				covers:covers, settles:settles,
