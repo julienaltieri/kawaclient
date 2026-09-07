@@ -97,7 +97,20 @@ export function accountRoutingOf(txnsByStream, directionOf){
 	Object.keys(txnsByStream).forEach(id => {
 		const dir = directionOf ? directionOf(id) : 0;
 		const all = txnsByStream[id];
-		const matching = dir ? all.filter(t => (t.amount < 0 ? -1 : 1) === dir) : [];
+		let matching = dir ? all.filter(t => (t.amount < 0 ? -1 : 1) === dir) : [];
+		/* A ZERO-SUM STREAM DECLARES NOTHING, AND STILL MOVES MONEY ONE WAY FIRST.
+		   With no declared direction there was nothing to break the tie with, and a transfer's two
+		   legs are equal by construction - a card payment is exactly -$9,800 on checking and +$9,800
+		   on the card. The winner was whichever the ledger happened to list first, and when the card
+		   won, the stream was routed off the account being predicted and the single largest outflow in
+		   the portfolio was forecast as $0.
+
+		   The same tie, in a third place. Savings had it, paired transfers had it, and it reappeared
+		   wherever the direction was unknown rather than merely unhelpful. So the rule is the one
+		   groupByStream already uses: with nothing declared, FOLLOW THE MONEY OUT. A balance is moved
+		   by what leaves the account, the outgoing leg is the one that moves it, and the two functions
+		   now agree instead of each guessing. */
+		if(!matching.length && !dir)matching = all.filter(t => t.amount < 0);
 		const use = matching.length ? matching : all;
 		const byAccount = {};
 		use.forEach(t => {
@@ -649,6 +662,23 @@ export function turnsPerMonth(cycleName){
    Where a ledger does not pair its transfers, this finds nothing and the synthesis still runs, which
    is the right fallback: better a modelled settlement than none.
    ================================================================================================== */
+/* Does the reading already contain a stream that pays the card?
+   `observedSettlement` looks for PAIRED transfers, which is exact and finds nothing in a ledger that
+   does not pair them - and a ledger that does not pair them is precisely the one where the payment is
+   an ordinary stream on the account. So the second test is behavioural: a stream sitting on the
+   account being predicted, budgeted at nothing, and moving real money out of it, IS a settlement in
+   everything but name. Synthesising a second one on top of it pays the card twice. */
+export function settlementInReading(terminals, routing, observedMonthly, covers, declaredMonthly){
+	let found = false;
+	terminals.forEach(s => {
+		if(found)return;
+		if(!covers(routing[s.id]))return;
+		if(Math.abs(declaredMonthly(s)) > 0.005)return;
+		if(Math.abs(observedMonthly[s.id] || 0) > 50)found = true;
+	});
+	return found;
+}
+
 export function observedSettlement(transactions, coveredHashes, creditHashes){
 	const acctOf = {};
 	(transactions || []).forEach(t => {acctOf[t.transactionId] = t.userInstitutionAccountId});

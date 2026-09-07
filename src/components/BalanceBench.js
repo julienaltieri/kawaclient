@@ -5,7 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
-	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement}
+	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -225,10 +225,9 @@ export default class BalanceBench extends BaseComponent{
 		const routed = accountRoutingOf(seen, id => dir[id])
 		const days = Math.round((record[record.length-1].date - open)/DAY)
 		const covers = h => keep.indexOf(h || fallback) > -1
-		//not when the ledger already carries the payment: synthesising on top of a real transfer
-		//stream pays the card twice, which is a phantom outflow every month
-		const inLedger = observedSettlement(this.props.transactions, keep, cards).count > 0
-		const settles = inLedger ? null : (h => cards.indexOf(h) > -1)
+		//decided below, once `observed` is known - a stream on this account that is budgeted at
+		//nothing and still moves money IS the settlement, whether or not the ledger pairs it
+		let settles = h => cards.indexOf(h) > -1
 		/* A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth.
 		   A $10,000 yearly stream with $6,000 already gone has $4,000 left, and dividing the whole
 		   budget by twelve forecasts money that has already been spent - twice over by December. The
@@ -270,6 +269,11 @@ export default class BalanceBench extends BaseComponent{
 			sliced[t.id].forEach(x => {v += x.amount})
 			observed[t.id] = v/monthsSeen
 		})
+		if(observedSettlement(this.props.transactions, keep, cards).count > 0
+			|| settlementInReading(this.terminals(), routed, observed,
+				h => keep.indexOf(h || fallback) > -1,
+				t => monthlyExpectationAt(t, open, "monthly")))settles = null
+
 		const expectedFor = (t, when) => {
 			const declared = monthlyExpectationAt(t, when, "monthly")
 			if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id]

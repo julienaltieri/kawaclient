@@ -16,6 +16,19 @@ import PageLoader from './components/PageLoader'
 import Sandbox from './components/Sandbox'
 import AppConfig from './AppConfig'
 
+/* WHO SEES THE WORKBENCH.
+   Staging always. In production, the account that owns the app - so the balance bench is readable from
+   a phone, away from the dev machine, without putting a developer tool in front of anyone else.
+
+   This is a CONVENIENCE GATE, not a security boundary: it hides a menu entry and a route in a bundle
+   every visitor downloads, and anyone reading the source can see the address. That is acceptable
+   because the page shows only the reader's OWN data - it calls the same authenticated endpoints every
+   other page calls, and the server decides what those return. Nothing here grants access to anything;
+   it only decides whether a link is worth showing. */
+const SANDBOX_OWNER = "julioo.altieri@gmail.com";
+const sandboxVisible = () => AppConfig.staging
+	|| (Core.getUserData() || {}).userId === SANDBOX_OWNER;
+
 export default class App extends BaseComponent{
   constructor(props){   
     super(props);
@@ -42,9 +55,10 @@ export default class App extends BaseComponent{
     Navigation.addView("Streams",NavRoutes.streams);
     Navigation.addView("Categorization",NavRoutes.categorization);
     Navigation.addView("Settings",NavRoutes.settings);
-    //Sandbox is a workbench, not a feature: only staging registers the menu entry, so production never
-    //shows a dead entry and the route below never exists to be guessed at.
-    if(AppConfig.staging)Navigation.addView("Sandbox",NavRoutes.sandbox);
+    //Sandbox is a workbench, not a feature. Staging always has it; in production it is registered for
+    //the OWNER only, so the balance bench can be read from a phone away from the dev machine without
+    //the entry appearing for anyone else.
+    if(sandboxVisible())Navigation.addView("Sandbox",NavRoutes.sandbox);
 
   }
 
@@ -60,10 +74,10 @@ export default class App extends BaseComponent{
             <Route path={NavRoutes.categorization}  element={<CategorizationRulesView refresh={this.refresh}/>}/>
             <Route path={NavRoutes.home}            element={<MissionControl refresh={this.refresh}/>}/>
             <Route path={NavRoutes.settings}        element={<SettingPage refresh={this.refresh}/>}/>
-            {/*Sandbox: a workbench, not a feature. Only registered in staging (AppConfig.staging) so
-               production never exposes the route or the menu entry. Delete this line and the addView
-               call above, and the Sandbox import, to remove it entirely.*/}
-            {AppConfig.staging?<Route path={NavRoutes.sandbox}     element={<Sandbox refresh={this.refresh}/>}/>:""}
+            {/*Sandbox: a workbench, not a feature. Staging, or the owner in production - see
+               sandboxVisible. Delete that helper, this line, the addView call above and the Sandbox
+               import to remove it entirely.*/}
+            {sandboxVisible()?<Route path={NavRoutes.sandbox}     element={<Sandbox refresh={this.refresh}/>}/>:""}
           </Routes>:<Routes>
             <Route path={NavRoutes.login}           element={<LoginPage refresh={this.refresh}/>}/>
             <Route path={"*"}                       element={<PageLoader/>}/>

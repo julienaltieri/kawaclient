@@ -5,8 +5,8 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
-	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement}
-	from '../processors/BankBalance.js';
+	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement,
+	settlementInReading} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -520,10 +520,20 @@ export default class BalanceChart extends BaseComponent{
 		//the settlement is added only where the card sits OUTSIDE the reading: inside it, the
 		//spending is already counted on its own dates and the payment moves nothing
 		const netted = this.source() === NETTED
-		/* and NOT when the ledger already carries the payment. Synthesising on top of a real transfer
-		   stream pays the card twice - see observedSettlement. */
-		const inLedger = observedSettlement(this.props.transactions, keep, cards).count > 0
-		const settles = (netted || inLedger) ? null : (h => cards.indexOf(h) > -1)
+		/* and NOT when the reading already carries the payment. A stream on this account budgeted at
+		   nothing that still moves money IS the settlement, named or not, and synthesising a second
+		   one on top pays the card twice - see settlementInReading. */
+		const observedMonthly = {}
+		this.terminals().forEach(t => {
+			let v = 0
+			;(this.streamTxns()[t.id] || []).forEach(x => {
+				if(keep.indexOf(x.accountHash) > -1)v += x.amount})
+			observedMonthly[t.id] = v/12
+		})
+		const carried = observedSettlement(this.props.transactions, keep, cards).count > 0
+			|| settlementInReading(this.terminals(), this.routing(), observedMonthly, covers,
+				t => monthlyExpectationAt(t, now, "monthly"))
+		const settles = (netted || carried) ? null : (h => cards.indexOf(h) > -1)
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
 		   the one balance that is actually known (see the drift note), so a past window is a slice of
 		   that walk rather than a separate calculation from a guessed opening figure. */

@@ -17,7 +17,7 @@ import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
-	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement}
+	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading}
 	from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -492,8 +492,10 @@ test("a paired transfer to savings is routed to the account the money left", () 
 	const outward = () => -1     //a savings transfer expects money OUT
 	expect(accountRoutingOf({t: legs}, outward).t).toBe("chk")
 	expect(accountRoutingOf({t: legs.slice().reverse()}, outward).t).toBe("chk")
-	//without a direction it is order dependent, which is the fault
-	expect(accountRoutingOf({t: legs.slice().reverse()}).t).toBe("sav")
+	//and with NO declared direction at all it is still deterministic, because the outflow rule
+	//covers that case too - this used to be order dependent, which was the fault
+	expect(accountRoutingOf({t: legs}).t).toBe("chk")
+	expect(accountRoutingOf({t: legs.slice().reverse()}).t).toBe("chk")
 })
 
 test("a stream whose legs all point the wrong way is still placed somewhere", () => {
@@ -1315,4 +1317,45 @@ test("synthesising on top of a real payment stream pays the card twice", () => {
 	expect(Math.round(ledgerOnly[ledgerOnly.length-1].value)).toBe(-500)
 	//with the synthesis on top it leaves twice
 	expect(Math.round(withSynthesis[withSynthesis.length-1].value)).toBe(-1000)
+})
+
+/* ---- a zero-sum stream still moves money one way first ---------------------------------------- */
+
+test("a stream declaring $0 is routed by the money LEAVING, not by whichever leg came first", () => {
+	//a transfer's two legs are equal by construction, so with no declared direction there was nothing
+	//to break the tie with - and when the card side won, the largest outflow in the portfolio was
+	//routed off the account being predicted and forecast as $0
+	const legs = []
+	for(let w = 0; w < 8; w++){
+		const d = new Date(Date.UTC(2026, 0, 3 + w*7))
+		legs.push({date: d, amount: -2400, accountHash: "chk"})
+		legs.push({date: d, amount: 2400, accountHash: "visa"})
+	}
+	const zeroSum = () => 0
+	expect(accountRoutingOf({cc: legs}, zeroSum).cc).toBe("chk")
+	expect(accountRoutingOf({cc: legs.slice().reverse()}, zeroSum).cc).toBe("chk")
+})
+
+test("a declared direction still wins over the outflow rule", () => {
+	//income declares positive, and its money arrives rather than leaves
+	const wages = [
+		{date: new Date(Date.UTC(2026, 0, 15)), amount: 7800, accountHash: "chk"},
+		{date: new Date(Date.UTC(2026, 0, 15)), amount: -7800, accountHash: "employer"}
+	]
+	expect(accountRoutingOf({w: wages}, () => 1).w).toBe("chk")
+})
+
+test("a stream on this account budgeted at nothing that still moves money IS the settlement", () => {
+	//behavioural, so it works on a ledger that does not pair its transfers - which is the ledger
+	//where the payment is an ordinary stream rather than a linked pair
+	const covers = h => ["chk"].indexOf(h || "chk") > -1
+	const pay = {id: "cc", name: "Credit Card Payments"}
+	const rent = {id: "rent", name: "Rent"}
+	const declared = s => s.id === "rent" ? -3100 : 0
+	expect(settlementInReading([pay, rent], {cc: "chk", rent: "chk"},
+		{cc: -9800, rent: -3100}, covers, declared)).toBe(true)
+	//a zero-budget stream that moves nothing is not a settlement
+	expect(settlementInReading([pay], {cc: "chk"}, {cc: 0}, covers, declared)).toBe(false)
+	//nor is one that lives on the card rather than on this account
+	expect(settlementInReading([pay], {cc: "visa"}, {cc: -9800}, covers, declared)).toBe(false)
 })
