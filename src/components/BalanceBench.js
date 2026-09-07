@@ -4,7 +4,7 @@ import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, dayKey, monthlyExpectationAt,
-	classifyAll, CLASSES} from '../processors/BankBalance.js';
+	classifyAll, CLASSES, groupByStream} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
@@ -100,17 +100,15 @@ export default class BalanceBench extends BaseComponent{
 	}
 	byStream(){
 		if(this._byStream)return this._byStream
-		const out = {}
-		this.terminals().forEach(s => {out[s.id] = []})
-		;(this.props.transactions||[]).filter(t => t.categorized).forEach(t => {
-			this.terminals().forEach(s => {
-				if(!t.isAllocatedToStream(s))return
-				out[s.id].push({date:t.date, amount:t.amount,
-					accountHash:t.userInstitutionAccountId})
-			})
+		const now = this.today()
+		const dir = {}
+		this.terminals().forEach(s => {
+			const a = monthlyExpectationAt(s, now, "monthly")
+			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
-		this._byStream = out
-		return out
+		this._byStream = groupByStream(this.props.transactions, this.terminals().map(s => s.id),
+			id => dir[id])
+		return this._byStream
 	}
 
 	/* ---- the analysis ---------------------------------------------------------------------------- */

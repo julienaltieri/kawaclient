@@ -5,7 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
-	monthlyExpectationAt, classifyAll, CLASSES} from '../processors/BankBalance.js';
+	monthlyExpectationAt, classifyAll, CLASSES, groupByStream} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -351,18 +351,15 @@ export default class BalanceChart extends BaseComponent{
 	//any slice of them without walking the ledger again
 	streamTxns(){
 		if(this._byStream)return this._byStream
-		const terminals = this.terminals()
-		const byStream = {}
-		terminals.forEach(s => {byStream[s.id] = []})
-		;(this.props.transactions||[]).filter(t => t.categorized).forEach(t => {
-			terminals.forEach(s => {
-				if(!t.isAllocatedToStream(s))return
-				byStream[s.id].push({date:t.date, amount:t.amount,
-					accountHash:t.userInstitutionAccountId})
-			})
+		const now = this.ledgerToday()
+		const dir = {}
+		this.terminals().forEach(s => {
+			const a = monthlyExpectationAt(s, now, "monthly")
+			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
-		this._byStream = byStream
-		return byStream
+		this._byStream = groupByStream(this.props.transactions, this.terminals().map(s => s.id),
+			id => dir[id])
+		return this._byStream
 	}
 
 	/* THE SHAPES AS THEY WOULD HAVE LOOKED ON A GIVEN DAY - nothing after `cutoff` is allowed in.

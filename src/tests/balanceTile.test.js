@@ -16,8 +16,8 @@ import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
-import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES}
-	from '../processors/BankBalance'
+import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
+	groupByStream} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -804,4 +804,96 @@ test("the classification report names every stream exactly once", async () => {
 	expect(text).toContain("PREDICTABLE")
 	expect(text).toContain("ERRATIC")
 	expect(text).toContain("NOT ENOUGH DATA")
+})
+
+/* ---- what counts as a stream's own transactions -------------------------------------------------- */
+
+const txn = (o) => Object.assign({categorized: true, amount: 0, date: new Date(Date.UTC(2026,0,1)),
+	userInstitutionAccountId: "chk", transactionId: "t" + Math.random(), streamAllocation: []}, o)
+
+test("a split transaction counts its ALLOCATION, not the whole transaction", () => {
+	//a $200 order split $150/$50 is not evidence that either stream moves $200 - and steadiness is a
+	//measure of how alike the amounts are, so inflating them corrupts the classification directly
+	const t = txn({amount: -200, streamAllocation: [
+		{streamId: "emile", amount: -150}, {streamId: "eleonore", amount: -50}]})
+	const g = groupByStream([t], ["emile", "eleonore"])
+	expect(g.emile.length).toBe(1)
+	expect(g.eleonore.length).toBe(1)
+	expect(g.emile[0].amount).toBe(-150)
+	expect(g.eleonore[0].amount).toBe(-50)
+})
+
+test("the SIGN comes from the transaction, since every part of a split moves the same way", () => {
+	const t = txn({amount: -200, streamAllocation: [{streamId: "a", amount: 150}]})
+	expect(groupByStream([t], ["a"]).a[0].amount).toBe(-150)
+})
+
+test("a paired transfer is ONE event, not two", () => {
+	//a $4,000 move to savings is stored as two legs carrying the same allocation. Counting both makes
+	//it look like $8,000 of activity every month, and steadiness then measures a quantity that never
+	//existed.
+	const out = txn({amount: -4000, transactionId: "A", pairedTransferTransactionId: "B",
+		userInstitutionAccountId: "chk", streamAllocation: [{streamId: "sav", amount: -4000}]})
+	const back = txn({amount: 4000, transactionId: "B", pairedTransferTransactionId: "A",
+		userInstitutionAccountId: "savAcct", streamAllocation: [{streamId: "sav", amount: 4000}]})
+	const g = groupByStream([out, back], ["sav"], () => -1)
+	expect(g.sav.length).toBe(1)
+	expect(Math.abs(g.sav[0].amount)).toBe(4000)
+})
+
+test("the leg kept is the one matching the stream's direction, whatever the order", () => {
+	//so routing then sees the account the money actually LEFT
+	const out = txn({amount: -4000, transactionId: "A", pairedTransferTransactionId: "B",
+		userInstitutionAccountId: "chk", streamAllocation: [{streamId: "sav", amount: -4000}]})
+	const back = txn({amount: 4000, transactionId: "B", pairedTransferTransactionId: "A",
+		userInstitutionAccountId: "savAcct", streamAllocation: [{streamId: "sav", amount: 4000}]})
+	expect(groupByStream([out, back], ["sav"], () => -1).sav[0].accountHash).toBe("chk")
+	expect(groupByStream([back, out], ["sav"], () => -1).sav[0].accountHash).toBe("chk")
+})
+
+test("a pair is collapsed whatever its signs - direction picks the leg, not whether to collapse", () => {
+	const a = txn({amount: 100, transactionId: "A", pairedTransferTransactionId: "B",
+		userInstitutionAccountId: "one", streamAllocation: [{streamId: "x", amount: 100}]})
+	const b = txn({amount: 100, transactionId: "B", pairedTransferTransactionId: "A",
+		userInstitutionAccountId: "two", streamAllocation: [{streamId: "x", amount: 100}]})
+	//neither leg matches "money out", and it is still ONE event
+	expect(groupByStream([a, b], ["x"], () => -1).x.length).toBe(1)
+})
+
+test("with no direction to go on, the OUTGOING leg wins - not whichever was listed first", () => {
+	//picking by ledger order here would reintroduce exactly the order-dependence routing had to fix
+	const out = txn({amount: -75, transactionId: "A", pairedTransferTransactionId: "B",
+		userInstitutionAccountId: "chk", streamAllocation: [{streamId: "x", amount: -75}]})
+	const back = txn({amount: 75, transactionId: "B", pairedTransferTransactionId: "A",
+		userInstitutionAccountId: "other", streamAllocation: [{streamId: "x", amount: 75}]})
+	expect(groupByStream([out, back], ["x"], () => 0).x[0].accountHash).toBe("chk")
+	expect(groupByStream([back, out], ["x"], () => 0).x[0].accountHash).toBe("chk")
+})
+
+test("a half-pair whose partner is out of range is still counted", () => {
+	const only = txn({amount: -4000, transactionId: "A", pairedTransferTransactionId: "B",
+		streamAllocation: [{streamId: "sav", amount: -4000}]})
+	expect(groupByStream([only], ["sav"], () => -1).sav.length).toBe(1)
+})
+
+test("uncategorised transactions belong to no stream", () => {
+	const t = txn({categorized: false, amount: -50, streamAllocation: null})
+	expect(groupByStream([t], ["a"]).a.length).toBe(0)
+})
+
+test("double counting a transfer would have made it look erratic - and no longer does", () => {
+	//twelve identical monthly transfers, each stored as two legs
+	const legs = []
+	for(let m = 0; m < 12; m++){
+		const d = new Date(Date.UTC(2025, m, 13))
+		legs.push(txn({amount: -4000, date: d, transactionId: "o" + m, pairedTransferTransactionId: "i" + m,
+			userInstitutionAccountId: "chk", streamAllocation: [{streamId: "sav", amount: -4000}]}))
+		legs.push(txn({amount: 4000, date: d, transactionId: "i" + m, pairedTransferTransactionId: "o" + m,
+			userInstitutionAccountId: "savAcct", streamAllocation: [{streamId: "sav", amount: 4000}]}))
+	}
+	const g = groupByStream(legs, ["sav"], () => -1)
+	expect(g.sav.length).toBe(12)
+	const r = classifyStream(g.sav, -4000)
+	expect(r.klass).toBe(CLASSES.predictable)
+	expect(r.steadiness).toBeGreaterThan(0.95)
 })

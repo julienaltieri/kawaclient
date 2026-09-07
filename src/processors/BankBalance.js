@@ -302,3 +302,75 @@ export function classifyAll(terminals, txnsByStream, monthlyOf, opts){
 	rows.forEach(r => {r.share = Math.abs(r.monthly)/total});
 	return rows.sort((a, b) => Math.abs(b.monthly) - Math.abs(a.monthly));
 }
+
+/* ==================================================================================================
+   EACH TERMINAL'S OWN TRANSACTIONS - which is not "every transaction that mentions it".
+
+   Two things were being counted wrong, and both corrupt the classification rather than merely the
+   totals - which is why they survived: every sum in the app was right.
+
+   THE ALLOCATED AMOUNT, NOT THE TRANSACTION'S. A $200 order split $150/$50 across two streams is not
+   evidence that either stream moves $200. Feeding the whole transaction to both inflates their
+   histogram weights and destroys `steadiness`, which is a measure of how alike the amounts are.
+   TransactionEvaluator has always used `Math.abs(allocation.amount)`; this now agrees with it.
+   The SIGN comes from the transaction, because that is the direction the money moved on the account,
+   and every part of a split moves the same way.
+
+   A PAIRED TRANSFER IS ONE EVENT. A monthly move to savings is stored as two legs carrying the same
+   allocation, so counting both made a $4,000 transfer look like $8,000 of activity every month - and
+   `steadiness` then measured a quantity that never existed. TransactionEvaluator skips the second leg
+   for exactly this reason.
+
+   Direction decides WHICH leg is kept, never WHETHER to collapse: a pair is one event whatever its
+   signs. That serves routing as well - a savings transfer expects money OUT, so the outgoing leg is
+   kept and `accountRoutingOf` then sees the account the money actually left. Where the expected
+   direction says nothing, the OUTGOING leg wins, because a spending account is moved by what leaves
+   it; picking by ledger order there would reintroduce the order-dependence that routing already had
+   to have fixed once.
+
+   Allocations name their stream directly, so this also stops asking every stream about every
+   transaction.
+   ================================================================================================== */
+export function groupByStream(transactions, terminalIds, directionOf){
+	const out = {};
+	(terminalIds || []).forEach(id => {out[id] = []});
+	const candidates = [];
+	(transactions || []).forEach(t => {
+		if(!t.categorized || !t.streamAllocation)return;
+		t.streamAllocation.forEach(al => {
+			if(!out[al.streamId])return;
+			const sign = t.amount < 0 ? -1 : 1;
+			candidates.push({streamId: al.streamId, date: t.date,
+				amount: sign*Math.abs(al.amount || 0),
+				accountHash: t.userInstitutionAccountId,
+				txnId: t.transactionId, pairId: t.pairedTransferTransactionId});
+		});
+	});
+
+	//one leg per pair per stream, chosen by the stream's direction
+	const pairs = {};
+	candidates.forEach(c => {
+		if(!c.pairId)return;
+		const key = c.streamId + "::" + [String(c.txnId), String(c.pairId)].sort().join("|");
+		(pairs[key] = pairs[key] || []).push(c);
+	});
+	const dropped = {};
+	Object.keys(pairs).forEach(key => {
+		const legs = pairs[key];
+		if(legs.length < 2)return;                       //the other leg is out of range: keep this one
+		const dir = directionOf ? directionOf(legs[0].streamId) : 0;
+		const wanted = dir ? legs.filter(l => (l.amount < 0 ? -1 : 1) === dir) : [];
+		const outgoing = legs.filter(l => l.amount < 0);
+		const keep = wanted.length ? wanted[0] : (outgoing.length ? outgoing[0] : legs[0]);
+		legs.forEach(l => {if(l !== keep)dropped[key + "::" + l.txnId] = true});
+	});
+
+	candidates.forEach(c => {
+		if(c.pairId){
+			const key = c.streamId + "::" + [String(c.txnId), String(c.pairId)].sort().join("|");
+			if(dropped[key + "::" + c.txnId])return;
+		}
+		out[c.streamId].push({date: c.date, amount: c.amount, accountHash: c.accountHash});
+	});
+	return out;
+}

@@ -649,6 +649,33 @@ That row also forced a change in the Sandbox itself: it had been filtering to ca
 before handing them on, which would have zeroed the residual while leaving it looking computed. The
 page now keeps everything and the header rows filter for themselves.
 
+### §2e WHAT COUNTS AS A STREAM'S OWN TRANSACTIONS
+
+Before any threshold is worth arguing about, the classifier has to be scoring the right numbers. Two
+things it was fed were wrong, and both corrupt the *classification* while leaving every *total* in the
+app correct — which is exactly why they survived this long.
+
+**The allocated amount, not the transaction's.** A $200 order split $150/$50 across two streams is not
+evidence that either stream moves $200. Feeding the whole transaction to both inflated their histogram
+weights and destroyed `steadiness`, which measures how alike the amounts are.
+`TransactionEvaluator` has always used `Math.abs(allocation.amount)`; the balance view now agrees with
+it. The **sign** still comes from the transaction, because that is the direction the money moved on
+the account, and every part of a split moves the same way.
+
+**A paired transfer is one event.** A monthly move to savings is stored as two legs carrying the same
+allocation, so counting both made a $4,000 transfer look like **$8,000 of activity every month** — and
+`steadiness` then measured a quantity that never existed. `TransactionEvaluator` skips the second leg
+for precisely this reason.
+
+Direction decides *which* leg is kept, never *whether* to collapse: a pair is one event whatever its
+signs. That serves routing too — a savings transfer expects money out, so the outgoing leg is kept and
+`accountRoutingOf` sees the account the money actually left. Where the expected direction says
+nothing, the outgoing leg wins; picking by ledger order there would reintroduce the order-dependence
+that routing had already had to fix once.
+
+Allocations name their stream directly, so this also stopped asking every stream about every
+transaction — the grouping is now one pass instead of fifty-odd.
+
 ### §2c PREDICTABLE vs ERRATIC — because they need different fixes
 
 Three things are true at once, and together they set what "done" means for this view:
