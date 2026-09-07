@@ -49,9 +49,10 @@ export function monthlyExpectationAt(stream, when, periodName){
    is one event recorded on several days; left spread, the forecast draws several small steps where one
    large one belongs, and the balance chart is read for its steps. consolidate() collapses only runs
    narrow enough to be one event that moved, so a genuinely diffuse stream is untouched. */
-export function histogramOf(txnsForStream){
+export function histogramOf(txnsForStream, opts){
 	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
-	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf);
+	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf,
+		{prefer: (opts || {}).prefer});
 	const bins = histogram.accumulate(txnsForStream, t => cycle.phaseOf(dateOf(t)), amountOf,
 		cycle.bins);
 	/* the collapse radius scales with the cycle. Five days either side is right in a month and absurd
@@ -269,7 +270,7 @@ export function classifyStream(txns, monthlyAmount, opts){
 		timing: 0, steadiness: 0, turns: 0, klass: CLASSES.thin};
 	if(k < 2)return out;
 
-	const cycle = histogram.detectCycle(txns, dateOf, amountOf);
+	const cycle = histogram.detectCycle(txns, dateOf, amountOf, {prefer: o.prefer});
 	out.cycle = cycle.name;
 	/* CONSOLIDATED FIRST - the same shape histogramOf hands the forecaster.
 	   Scoring the raw bins here meant the classifier and the forecaster disagreed about the same
@@ -284,6 +285,7 @@ export function classifyStream(txns, monthlyAmount, opts){
 	out.bins = bins;
 
 	//per-occurrence totals, with the silent turns included as zeros
+	const cyc0 = cycle;
 	const byTurn = {};
 	let lo = Infinity, hi = -Infinity;
 	txns.forEach(t => {
@@ -292,8 +294,17 @@ export function classifyStream(txns, monthlyAmount, opts){
 		if(n < lo)lo = n;
 		if(n > hi)hi = n;
 	});
+	/* A TURN BEFORE THE STREAM EXISTED IS NOT A MISSED PAYMENT.
+	   The silent turns are counted as zeros so a sporadic stream cannot masquerade as a steady one -
+	   but a stream budgeted at nothing until May and $1,000 after it was being scored against five
+	   months of zeros it was never supposed to fill, and came out erratic for doing exactly what it
+	   said it would. `expectedAt` is the stream's own step function, so the turns it was dormant in
+	   are excluded rather than held against it. */
 	const totals = [];
-	for(let n = lo; n <= hi; n++)totals.push(byTurn[n] || 0);
+	for(let n = lo; n <= hi; n++){
+		if(o.expectedAt && !o.expectedAt(histogram.dateOfOccurrence(cyc0, n)))continue;
+		totals.push(byTurn[n] || 0);
+	}
 	out.turns = totals.length;
 	if(out.turns < 3)return out;                 //a rhythm needs at least three beats to be one
 
@@ -431,7 +442,7 @@ export function pointPrediction(txns, monthlyAmount, opts){
 	const o = opts || {};
 	const minTiming = o.minTiming === undefined ? 0.45 : o.minTiming;
 	const minSteady = o.minSteady === undefined ? 0.55 : o.minSteady;
-	const c = classifyStream(txns, monthlyAmount, opts);
+	const c = classifyStream(txns, monthlyAmount, o);
 	const out = {tier: TIERS.spread, cycle: c.cycle, timing: c.timing, steadiness: c.steadiness,
 		turns: c.turns, k: c.k, perTurn: 0, day: null, second: null, confidence: 0,
 		amount: monthlyAmount || 0, perTurnAmount: null, thin: c.klass === CLASSES.thin};

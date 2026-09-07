@@ -3,6 +3,7 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
+import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
 	groupByStream, pointPrediction, dayLabel, TIERS} from '../processors/BankBalance.js';
 
@@ -100,6 +101,41 @@ export default class BalanceBench extends BaseComponent{
 	}
 	today(){const n = new Date()
 		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))}
+
+	/* HOW FAR BACK TO LOOK, and the default is SHORT.
+	   Three years of history was the wrong instrument: a stream is coherent within its own year, and
+	   before that it is a different stream wearing the same name - a rent that has moved, a childcare
+	   bill that changed provider, a salary from another job. Averaging those together produces a shape
+	   that describes nothing that is currently happening.
+
+	   The floor is the start of the CURRENT reporting year, because a stream's definition is set
+	   against that cycle and history before it belongs to the previous one. The ceiling is three
+	   months, which is long enough to see a monthly rhythm three times over. Whichever is SHORTER
+	   wins - in February that is a few weeks, and a few weeks of truth beats three years of averages.
+
+	   The alternatives are offered beside it rather than argued about: the bench scores every window,
+	   so "does a longer lookback help" is answered by the number rather than by me. */
+	cycleStart(now){
+		const day = (Core.getUserData() || {}).userPreferences
+			? ((Core.getUserData().userPreferences || {}).reportingStartingDay
+				|| reportingConfig.startingDay) : reportingConfig.startingDay
+		const m = reportingConfig.startingMonth - 1
+		let start = new Date(Date.UTC(now.getUTCFullYear(), m, day))
+		if(start > now)start = new Date(Date.UTC(now.getUTCFullYear() - 1, m, day))
+		return start
+	}
+	windows(now){
+		const threeMonths = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3,
+			now.getUTCDate()))
+		const cycle = this.cycleStart(now)
+		const short = threeMonths > cycle ? threeMonths : cycle
+		return [
+			["short", short],
+			["cycle", cycle],
+			["1 year", new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()))],
+			["all", new Date(0)]
+		]
+	}
 	anchor(){
 		const keep = this.spending()
 		return (this.state.accounts||[]).filter(a => a.current !== undefined
@@ -140,9 +176,12 @@ export default class BalanceBench extends BaseComponent{
 	   cumulative curve, both starting from zero, and the dollar-days between them. That number is a
 	   fact about that stream and nothing else. It is divided by the same account-level denominator as
 	   the headline, so a stream's figure reads directly as "this much of a full-scale error is mine". */
-	analyse(){
-		if(this._analysis)return this._analysis
+	analyse(from){
+		const key = from ? from.getTime() : "default"
+		this._cache = this._cache || {}
+		if(this._cache[key])return this._cache[key]
 		const now = this.today()
+		const since = from || this.windows(now)[0][1]
 		const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0)).getUTCDate()
 		const c = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1,
 			Math.min(now.getUTCDate(), lastDay)))
@@ -155,8 +194,10 @@ export default class BalanceBench extends BaseComponent{
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
 		const shapes = {}, dir = {}, sliced = {}
 		this.terminals().forEach(t => {
-			sliced[t.id] = byStream[t.id].filter(x => x.date < open)
-			shapes[t.id] = histogramOf(sliced[t.id])
+			//OUT OF SAMPLE at the top, and no further back than the lookback window at the bottom
+			sliced[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since)
+			shapes[t.id] = histogramOf(sliced[t.id], {prefer: t.getPreferredPeriod
+				? t.getPreferredPeriod() : "monthly"})
 			const a = monthlyExpectationAt(t, open, "monthly")
 			dir[t.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
 		})
@@ -230,10 +271,21 @@ export default class BalanceBench extends BaseComponent{
 			gain[t.id] = area ? err/area : 0
 		})
 
-		this._analysis = {open:open, close:record[record.length-1].date, days:record.length,
-			surface:surface, area:area, error: area ? surface/area : 0,
+		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
+			since:since, surface:surface, area:area, error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain}
-		return this._analysis
+		return this._cache[key]
+	}
+	//every window scored, so the choice is a measurement rather than an argument
+	scoreboard(){
+		if(this._board)return this._board
+		const now = this.today()
+		this._board = this.windows(now).map(w => {
+			let a = null
+			try{a = this.analyse(w[1])}catch(e){}
+			return {name:w[0], since:w[1], accuracy:a ? a.accuracy : null}
+		})
+		return this._board
 	}
 
 	settlementDay(){
@@ -266,12 +318,19 @@ export default class BalanceBench extends BaseComponent{
 		const now = this.today()
 		const byStream = this.byStream()
 		const a = this.analyse()
+		const since = (a && a.since) || this.windows(now)[0][1]
 		this._rows = this.terminals().map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
 			const perMonth = monthlyExpectationAt(s, now, "monthly")
 			const perCycle = monthlyExpectationAt(s, now, declared)
 			const ratio = (perCycle && perMonth) ? perMonth/perCycle : 1
-			const p = pointPrediction(byStream[s.id] || [], perMonth)
+			const declaredCycle = ["monthly","semimonthly","weekly","biweekly"]
+				.indexOf(declared) > -1 ? declared : "monthly"
+			const p = pointPrediction((byStream[s.id] || []).filter(x => x.date >= since), perMonth,
+				{prefer: declaredCycle,
+					//what the stream ITSELF expected at that moment - a turn it was budgeted at
+					//nothing for is not a turn it failed to fill
+					expectedAt: d => Math.abs(monthlyExpectationAt(s, d, "monthly")) > 0.005})
 			let day = dayLabel(p.cycle, p.day)
 			//a stream that fires twice a turn has two answers, and one of them is not the prediction
 			if(p.day !== null && p.second !== null && Math.abs(ratio) > 1.5){
@@ -300,7 +359,10 @@ export default class BalanceBench extends BaseComponent{
 			out.push("accuracy " + (a.accuracy*100).toFixed(1) + "%"
 				+ "   error " + (a.error*100).toFixed(1) + "%"
 				+ "   surface " + money(a.surface) + " / " + money(a.area) + " $-days")
-			out.push(dayKey(a.open) + " to " + dayKey(a.close))
+			out.push(dayKey(a.open) + " to " + dayKey(a.close)
+				+ "   lookback since " + dayKey(a.since))
+			out.push("windows: " + this.scoreboard().map(w => w.name + " "
+				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
 		}
 		const w = [26, 12, 12, 9, 14, 12, 7]
@@ -350,6 +412,13 @@ export default class BalanceBench extends BaseComponent{
 					{" · "}surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
 				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
 					{a ? " · " + a.days + " settled days" : ""}</Note>
+			</Score>
+			<Score>
+				<Note>lookback windows, same forecast, same month:</Note>
+				{this.scoreboard().map(w => <Note key={w.name}>
+					{w.name.padEnd(7)} {w.accuracy === null ? "—"
+						: (w.accuracy*100).toFixed(1) + "%"} {" · since " + dayKey(w.since)}
+				</Note>)}
 			</Score>
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>

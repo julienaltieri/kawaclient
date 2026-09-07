@@ -1062,3 +1062,60 @@ test("a weekly stream keeps a FIXED per-occurrence amount, so its month total va
 		expect(st).toBeLessThan(450)
 	})
 })
+
+/* ---- the declaration is the baseline, and dormancy is not failure --------------------------- */
+
+test("the stream's declared period is the hypothesis, not monthly", () => {
+	//two clean semimonthly turns: too little for the detector to CLAIM semimonthly on its own
+	//(1-in-16 is not evidence), but the user already said so, and nothing beats it
+	const t = [
+		{date: new Date(Date.UTC(2026, 0, 15)), amount: 4000},
+		{date: new Date(Date.UTC(2026, 0, 31)), amount: 4000},
+		{date: new Date(Date.UTC(2026, 1, 15)), amount: 4000}
+	]
+	expect(pointPrediction(t, 8000, {prefer: "semimonthly"}).cycle).toBe("semimonthly")
+	expect(pointPrediction(t, 8000).cycle).toBe("monthly")
+})
+
+test("a declaration can still be overturned by the ledger", () => {
+	//declared monthly, paid every Monday for a year - the ledger wins, with a margin
+	const weekly = []
+	for(let i = 0; i < 52; i++){
+		const d = new Date(Date.UTC(2025, 0, 6)); d.setUTCDate(d.getUTCDate() + 7*i)
+		weekly.push({date: d, amount: -400})
+	}
+	expect(pointPrediction(weekly, -1733, {prefer: "monthly"}).cycle).toBe("weekly")
+})
+
+test("a stream that only STARTS in May is already unaffected - turns before its first are not counted", () => {
+	const t = []
+	for(let m = 4; m < 12; m++)t.push({date: new Date(Date.UTC(2025, m, 3)), amount: -1000})
+	const p = pointPrediction(t, -1000)
+	expect(p.turns).toBe(8)                      //May..Dec, not Jan..Dec
+	expect(p.tier).toBe(TIERS.dated)
+})
+
+test("a stream budgeted at nothing MID-history is not scored against those months", () => {
+	//active Jan-Mar, dormant Apr-Aug by its own definition, active again Sep-Dec. The dormant months
+	//sit between two real ones, so they ARE counted as silent turns - and the stream came out erratic
+	//for doing exactly what it said it would.
+	const t = []
+	;[0,1,2,8,9,10,11].forEach(m => t.push({date: new Date(Date.UTC(2025, m, 3)), amount: -1000}))
+	const budgeted = d => {const m = d.getUTCMonth(); return !(m >= 3 && m <= 7)}
+
+	const naive = pointPrediction(t, -1000)
+	const aware = pointPrediction(t, -1000, {expectedAt: budgeted})
+	expect(naive.turns).toBe(12)
+	expect(aware.turns).toBe(7)
+	expect(aware.steadiness).toBeGreaterThan(naive.steadiness)
+	expect(naive.tier).toBe(TIERS.spread)
+	expect(aware.tier).toBe(TIERS.dated)
+	expect(aware.amount).toBe(-1000)
+})
+
+test("dormancy awareness does not rescue a genuinely sporadic stream", () => {
+	//active all year by its own definition, and firing in three months of twelve
+	const t = [0, 6, 11].map(m => ({date: new Date(Date.UTC(2025, m, 4)), amount: -500}))
+	const p = pointPrediction(t, -125, {expectedAt: () => true})
+	expect(p.tier).toBe(TIERS.spread)
+})

@@ -254,8 +254,9 @@ export function concentration(bins, observations){
    A candidate must also have been OBSERVED for at least one full turn. Two payments three days apart
    say nothing about a fortnight - not because the sample is small, but because the question was never
    put to them. */
-export function detectCycle(items, dateOf, amountOf, minObservations){
-	const min = minObservations === undefined ? 2 : minObservations;
+export function detectCycle(items, dateOf, amountOf, opts){
+	const o = (typeof opts === "number") ? {minObservations: opts} : (opts || {});
+	const min = o.minObservations === undefined ? 2 : o.minObservations;
 	if(!items || items.length < min)return CYCLES.monthly;
 	const days = items.map(it => utcDay(dateOf(it)));
 	const span = Math.max.apply(null, days) - Math.min.apply(null, days);
@@ -282,9 +283,17 @@ export function detectCycle(items, dateOf, amountOf, minObservations){
 	   put a stream with a single week of history straight onto "weekly" - the only candidate a week
 	   can possibly have watched a full turn of - without it ever facing the confidence test. A short
 	   history must fall back, not commit. */
-	let best = {cycle: CYCLES.monthly, score: fits(CYCLES.monthly) ? scoreOf(CYCLES.monthly) : 0};
-	//LONGEST FIRST after monthly, so a shorter cycle must still beat the longer one it contains
-	[CYCLES.semimonthly, CYCLES.biweekly, CYCLES.weekly].forEach(c => {
+	/* THE STREAM'S OWN DECLARED PERIOD IS THE BASELINE, and anything else must beat it.
+	   Monthly used to be the default for every stream, which threw away the one piece of information
+	   the user has already given us. A stream declared semimonthly is a statement of intent; the
+	   detector's job is to check it against the ledger, not to start from scratch. Where the
+	   declaration names a period with no candidate of its own - yearly, bimonthly - monthly stands in,
+	   since it is the longest thing that can be measured over a short window. */
+	const base = CYCLES[o.prefer] || CYCLES.monthly;
+	let best = {cycle: base, score: fits(base) ? scoreOf(base) : 0};
+	//longest first, so a shorter cycle must beat the longer one it is contained in
+	[CYCLES.monthly, CYCLES.semimonthly, CYCLES.biweekly, CYCLES.weekly]
+		.filter(c => c !== base).forEach(c => {
 		if(!fits(c))return;
 		//how often scatter alone would agree this well, on THIS many bins with THIS many observations
 		const byChance = Math.pow(c.bins, 1 - k);
@@ -304,4 +313,15 @@ export function occurrenceOf(cycle, d){
 		return (d.getUTCFullYear()*12 + d.getUTCMonth())*2 + (d.getUTCDate() <= 15 ? 0 : 1);
 	}
 	return Math.floor(utcDay(d)/cycle.span);
+}
+
+/* The DATE a turn falls on, so a caller can ask what the stream expected at the time. Inverse of
+   occurrenceOf; the day within the turn is arbitrary and only the turn matters. */
+export function dateOfOccurrence(cycle, n){
+	if(cycle.name === "monthly")return new Date(Date.UTC(Math.floor(n/12), n % 12, 15));
+	if(cycle.name === "semimonthly"){
+		const half = ((n % 2) + 2) % 2, m = (n - half)/2;
+		return new Date(Date.UTC(Math.floor(m/12), m % 12, half ? 23 : 8));
+	}
+	return new Date(n * cycle.span * 86400000);
 }
