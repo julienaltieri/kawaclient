@@ -52,24 +52,30 @@ beforeEach(() => {
 	])
 
 	txns = []
-	//two months of a portfolio with the shapes that have caused trouble: a paycheck, rent, card
-	//purchases, and WEEKLY card settlements that are not paired to anything
-	for(let w = 0; w < 9; w++){
-		const day = d(70 - w*7)
-		txns.push(new GenericTransaction(day.toISOString(), -260, "card bill",
-			[{streamId: "ccpay", amount: -260}], CHECKING, undefined, undefined,
+	/* A COHERENT CARD: the settlements have to be produced by the purchases, or the causal model is
+	   being asked to predict a bill from spending that never happened. Each week puts three purchases
+	   on the card and then settles exactly that from checking - which is the relationship the model
+	   claims to find, so the fixture has to contain it. */
+	for(let w = 0; w < 26; w++){
+		const settleDay = d(190 - w*7)
+		for(let i = 0; i < 3; i++){
+			const buy = new Date(settleDay.getTime() - (5 - i)*24*3600*1000)
+			txns.push(new GenericTransaction(buy.toISOString(), -87, "purchase",
+				[{streamId: "food", amount: -87}], CARD, undefined, undefined,
+				"b" + w + "-" + i, "b" + w + "-" + i))
+		}
+		txns.push(new GenericTransaction(settleDay.toISOString(), -261, "card bill",
+			[{streamId: "ccpay", amount: -261}], CHECKING, undefined, undefined,
 			"s" + w, "s" + w))
-		const back = new Date(day.getTime() + 24*3600*1000)
-		txns.push(new GenericTransaction(back.toISOString(), 260, "payment received",
-			[{streamId: "ccpay", amount: 260}], CARD, undefined, undefined, "r" + w, "r" + w))
+		const back = new Date(settleDay.getTime() + 24*3600*1000)
+		txns.push(new GenericTransaction(back.toISOString(), 261, "payment received",
+			[{streamId: "ccpay", amount: 261}], CARD, undefined, undefined, "r" + w, "r" + w))
 	}
-	for(let m = 0; m < 3; m++){
-		txns.push(new GenericTransaction(d(60 - m*30).toISOString(), 5100, "pay",
+	for(let m = 0; m < 6; m++){
+		txns.push(new GenericTransaction(d(170 - m*30).toISOString(), 5100, "pay",
 			[{streamId: "base", amount: 5100}], CHECKING, undefined, undefined, "p" + m, "p" + m))
-		txns.push(new GenericTransaction(d(58 - m*30).toISOString(), -1700, "rent",
+		txns.push(new GenericTransaction(d(168 - m*30).toISOString(), -1700, "rent",
 			[{streamId: "rent", amount: -1700}], CHECKING, undefined, undefined, "t" + m, "t" + m))
-		txns.push(new GenericTransaction(d(50 - m*30).toISOString(), -90, "groceries",
-			[{streamId: "food", amount: -90}], CARD, undefined, undefined, "f" + m, "f" + m))
 	}
 })
 
@@ -110,8 +116,9 @@ test("weekly settlements are found and modelled, not left to a monthly due-day",
 	const ref = await mount()
 	const a = ref.current.analyse()
 	expect(a.settlements.length).toBeGreaterThan(4)
-	//and the modelled figure belongs to THIS analysis, not to whichever window ran last
-	expect(Math.abs(a.settleMonthly)).toBeGreaterThan(500)
+	//four weekly bills of $261 is about $1,130 a month, predicted from the purchases that produce it
+	expect(Math.abs(a.settleMonthly)).toBeGreaterThan(700)
+	expect(Math.abs(a.settleMonthly)).toBeLessThan(1600)
 	//AND IT DOES NOT MOVE WITH THE STREAM WINDOW. The settlement has its own six-month sample
 	//because a card bill is a variable quantity, so selecting a different lookback for the streams
 	//must not change what the card is predicted to cost. It used to: the widest window divided a

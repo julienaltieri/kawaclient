@@ -18,7 +18,7 @@ import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements} from '../processors/BankBalance'
+	inferSettlements, cardCycles, cardSettlementForecast} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -1446,4 +1446,88 @@ test("a settlement carries the streams it was allocated to, so they can be exclu
 	expect(found.length).toBe(1)
 	expect(found[0].streamIds).toEqual(["ccpay"])
 	expect(found[0].id).toBe("s1")
+})
+
+/* ---- the bill is arithmetic on the spending that produces it ---------------------------------- */
+
+const card = (day, amount, acct, id) => ({categorized: true, amount: amount,
+	date: new Date(Date.UTC(2026, 0, day)), userInstitutionAccountId: acct,
+	transactionId: id, streamAllocation: []})
+
+//four weekly cycles: three purchases of $87 on the card, then $261 settled from checking
+const weeklyCard = () => {
+	const out = []
+	for(let w = 0; w < 8; w++){
+		const settleDay = 3 + w*7
+		for(let i = 0; i < 3; i++)out.push(card(settleDay - 3 + i, -87, "visa", "b" + w + i))
+		out.push(card(settleDay, -261, "chk", "s" + w))
+		out.push(card(settleDay + 1, 261, "visa", "r" + w))
+	}
+	return out
+}
+
+test("the cycle is measured: its length, and how much of it each settlement clears", () => {
+	const txns = weeklyCard()
+	const found = inferSettlements(txns, ["chk"], ["visa"])
+	const cy = cardCycles(txns, ["visa"], found).visa
+	expect(Math.round(cy.intervalDays)).toBe(7)
+	//paid in full, so the settlement clears the whole cycle
+	expect(cy.ratio).toBeCloseTo(1, 1)
+})
+
+test("a revolver's ratio is measured, not assumed to be full payment", () => {
+	//half the cycle paid each time - assuming full payment would over-predict the outflow every week
+	const out = []
+	for(let w = 0; w < 8; w++){
+		const settleDay = 3 + w*7
+		for(let i = 0; i < 3; i++)out.push(card(settleDay - 3 + i, -100, "visa", "b" + w + i))
+		out.push(card(settleDay, -150, "chk", "s" + w))
+		out.push(card(settleDay + 1, 150, "visa", "r" + w))
+	}
+	const cy = cardCycles(out, ["visa"], inferSettlements(out, ["chk"], ["visa"])).visa
+	expect(cy.ratio).toBeCloseTo(0.5, 1)
+})
+
+test("the next bill is what has POSTED plus what is still to be spent", () => {
+	const txns = weeklyCard()
+	const found = inferSettlements(txns, ["chk"], ["visa"])
+	//stand at a moment two days after a settlement, with one purchase already posted since
+	const from = new Date(Date.UTC(2026, 1, 1))
+	const r = cardSettlementForecast(txns, ["visa"], found, from,
+		new Date(Date.UTC(2026, 1, 28)))
+	expect(r.events.length).toBeGreaterThan(2)
+	//each projected bill is about one cycle of spending, not two or three
+	r.events.forEach(e => {
+		expect(Math.abs(e.amount)).toBeGreaterThan(120)
+		expect(Math.abs(e.amount)).toBeLessThan(450)
+	})
+})
+
+test("each settlement clears only what accrued since the one before it", () => {
+	//measured from the window start instead, the second bill charged two cycles, the third three,
+	//and a month of weekly settlements came out at double the truth
+	const txns = weeklyCard()
+	const found = inferSettlements(txns, ["chk"], ["visa"])
+	const r = cardSettlementForecast(txns, ["visa"], found, new Date(Date.UTC(2026, 1, 1)),
+		new Date(Date.UTC(2026, 1, 28)))
+	const sizes = r.events.map(e => Math.abs(e.amount))
+	//no bill is more than about half again the smallest - they do not grow down the list
+	expect(Math.max.apply(null, sizes)).toBeLessThan(Math.min.apply(null, sizes)*1.8)
+})
+
+test("two cards keep their own cycles rather than being averaged together", () => {
+	const out = []
+	for(let w = 0; w < 8; w++){
+		out.push(card(3 + w*7, -50, "visa", "v" + w))
+		out.push(card(4 + w*7, -100, "chk", "sv" + w))
+		out.push(card(5 + w*7, 100, "visa", "rv" + w))
+	}
+	for(let m = 0; m < 2; m++){
+		out.push(card(2 + m*28, -900, "amex", "a" + m))
+		out.push(card(10 + m*28, -900, "chk", "sa" + m))
+		out.push(card(11 + m*28, 900, "amex", "ra" + m))
+	}
+	const cy = cardCycles(out, ["visa", "amex"], inferSettlements(out, ["chk"], ["visa", "amex"]))
+	expect(Math.round(cy.visa.intervalDays)).toBe(7)
+	expect(Math.round(cy.amex.intervalDays)).toBe(28)
 })

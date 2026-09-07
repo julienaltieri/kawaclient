@@ -224,6 +224,16 @@ export function forecast(opts){
 			day += bill;
 			if(Math.abs(bill) > Math.abs(big)){big = bill; who = "Credit card payment"}
 		}
+		/* EXPLICIT EVENTS the caller has computed itself, keyed by day. The card settlement is one:
+		   its amount is arithmetic on posted transactions rather than a rate times a shape, so it
+		   cannot be expressed as a stream and a histogram. */
+		if(opts.extraFlow){
+			const ex = opts.extraFlow[dayKey(d)];
+			if(ex){
+				day += ex.amount;
+				if(Math.abs(ex.amount) > Math.abs(big)){big = ex.amount; who = ex.name || "Card settlement"}
+			}
+		}
 		day -= (opts.leakPerMonth||0)/nDays;
 		bal += day;
 		out.push({date: new Date(d), value: bal, actual: false, top: who, topAmount: big});
@@ -750,4 +760,122 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
 				streamIds: (t.streamAllocation || []).map(al => al.streamId)});
 		});
 	return out;
+}
+
+/* ==================================================================================================
+   PREDICTING THE CARD BILL FROM THE SPENDING THAT WILL PRODUCE IT.
+
+   A six-month mean predicts the AVERAGE card month, and no sample size makes it predict THIS one. But
+   the bill is not a random draw at all - it is arithmetic on transactions we already hold. The chain,
+   end to end:
+
+     purchases post to a CARD account
+       -> they accumulate over a statement cycle
+         -> a settlement event arrives on that card (the receipt)
+           -> the matching outflow leaves the CHECKING account (found by inferSettlements)
+
+   So the next bill is: what has ALREADY POSTED on that card since its last settlement, plus whatever
+   is still to be spent before the next one. The first half is known exactly - it is not a forecast at
+   all - and only the remainder is estimated, at the card's own recent daily rate. Every day that
+   passes converts more of the estimate into fact, which is why this gets better as the settlement
+   approaches while a mean stays equally vague throughout.
+
+   PER CARD, because two cards settle on their own cycles and averaging them describes neither. Each
+   carries its own interval, its own rate and its own outstanding balance.
+
+   THE PASS-THROUGH RATIO IS MEASURED, NOT ASSUMED. A card paid in full settles the whole cycle and the
+   ratio is 1; a card carrying a balance settles less, and a minimum payment much less. Taking that
+   from history rather than assuming full payment is what stops the model over-predicting an outflow
+   for someone who revolves.
+   ================================================================================================== */
+
+const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
+	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
+
+export function cardCycles(transactions, creditHashes, settlements){
+	const out = {};
+	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0}});
+	(settlements || []).forEach(s => {if(out[s.card])out[s.card].events.push(s)});
+
+	Object.keys(out).forEach(c => {
+		const o = out[c];
+		o.events.sort((a, b) => new Date(a.date) - new Date(b.date));
+		const spent = (transactions || []).filter(t =>
+			t.userInstitutionAccountId === c && t.amount < 0);
+
+		//how long a cycle runs, and how much of the cycle's spending each settlement actually clears
+		const gaps = [], ratios = [];
+		for(let i = 1; i < o.events.length; i++){
+			const a = new Date(o.events[i-1].date), b = new Date(o.events[i].date);
+			gaps.push((b - a)/86400000);
+			let cycleSpend = 0;
+			spent.forEach(t => {const d = new Date(t.date); if(d > a && d <= b)cycleSpend += -t.amount});
+			if(cycleSpend > 1)ratios.push(Math.abs(o.events[i].amount)/cycleSpend);
+		}
+		o.intervalDays = gaps.length ? MED(gaps) : 30.44;
+		//clamped: a ratio far from 1 is usually a mis-matched settlement rather than a revolver, and
+		//an unclamped one compounds every cycle
+		o.ratio = ratios.length ? Math.min(1.5, Math.max(0.2, MED(ratios))) : 1;
+	});
+	return out;
+}
+
+/* The settlement events expected between `from` and `to`, per card, as {date, amount}. */
+export function cardSettlementForecast(transactions, creditHashes, settlements, from, to, opts){
+	const o = opts || {};
+	const rateDays = o.rateDays === undefined ? 90 : o.rateDays;
+	const cycles = cardCycles(transactions, creditHashes, settlements);
+	const events = [];
+
+	Object.keys(cycles).forEach(c => {
+		const cy = cycles[c];
+		const spent = (transactions || []).filter(t =>
+			t.userInstitutionAccountId === c && t.amount < 0 && new Date(t.date) < from);
+		//the card's own recent daily spend, which is what the unposted remainder is estimated at
+		/* DIVIDED BY THE DAYS ACTUALLY OBSERVED, not by the size of the window asked for. A card with
+		   two months of history divided by ninety days reports two thirds of its real spending rate,
+		   and the bill comes out short for a reason that has nothing to do with the card. */
+		const rateFrom = new Date(from.getTime() - rateDays*86400000);
+		let recent = 0, earliest = null;
+		spent.forEach(t => {
+			const d = new Date(t.date);
+			if(d < rateFrom)return;
+			recent += -t.amount;
+			if(!earliest || d < earliest)earliest = d;
+		});
+		const observedDays = earliest ? Math.max(1, (from - earliest)/86400000) : rateDays;
+		const rate = recent/Math.min(rateDays, observedDays);
+
+		const past = cy.events.filter(e => new Date(e.date) < from);
+		const last = past.length ? new Date(past[past.length-1].date) : null;
+		if(!last && !rate)return;
+
+		//what is ALREADY on the card and not yet paid: known, not estimated
+		let posted = 0;
+		spent.forEach(t => {const d = new Date(t.date); if(!last || d > last)posted += -t.amount});
+
+		let when = last ? new Date(last.getTime() + cy.intervalDays*86400000)
+			: new Date(from.getTime() + cy.intervalDays*86400000);
+		/* EACH SETTLEMENT CLEARS ONLY WHAT ACCRUED SINCE THE ONE BEFORE IT.
+		   Measured from the window start instead, the second bill charged two weeks of spending, the
+		   third charged three, and a month of weekly settlements came out at double the truth. Every
+		   settlement resets the meter: `covered` is the moment the previous one cleared, and only the
+		   days after it are projected onto the next. */
+		let covered = from;
+		let guard = 0;
+		while(when <= to && guard++ < 64){
+			if(when >= from){
+				//what is already posted and unpaid, plus only the days since the previous settlement
+				const ahead = Math.max(0, (when - covered)/86400000);
+				const spend = posted + rate*ahead;
+				if(spend > 1)events.push({date: new Date(when), card: c,
+					amount: -spend*cy.ratio, posted: posted, projected: rate*ahead});
+				posted = 0;                       //this settlement clears it
+				covered = new Date(when);
+			}
+			when = new Date(when.getTime() + cy.intervalDays*86400000);
+		}
+	});
+	events.sort((a, b) => a.date - b.date);
+	return {events: events, cycles: cycles};
 }

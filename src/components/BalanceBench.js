@@ -6,7 +6,7 @@ import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements} from '../processors/BankBalance.js';
+	inferSettlements, cardSettlementForecast} from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b15 - settlement sampled over 6 months";
+export const BENCH_VERSION = "b16 - card bill from the spending that produces it";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -264,49 +264,34 @@ export default class BalanceBench extends BaseComponent{
 		const excludeIds = {}
 		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
 
-		/* THE SETTLEMENT GETS ITS OWN LOOKBACK, and a longer one, because it is a different KIND of
-		   quantity from everything else here.
+		/* THE BILL IS ARITHMETIC ON TRANSACTIONS WE ALREADY HOLD, not a draw from a distribution.
 
-		   A rent is scheduled: three observations describe it, and a fourth adds nothing. A card bill
-		   is whatever was spent, and measured on this portfolio it varies 49% from week to week. The
-		   streams' lookback samples about six of them, and the standard error of a six-draw mean at
-		   that spread is +/-20% - which is why the model said -$6,215 against -$9,800 actual and why
-		   the figure moved every time the window did. The estimator was never wrong; it was
-		   under-sampled, and no amount of re-modelling fixes a sample size.
+		   A six-month mean predicts the AVERAGE card month and no sample size makes it predict THIS
+		   one. But the next settlement is: what has already POSTED on that card since its last
+		   settlement, plus what is still to be spent before the next. The first half is known exactly,
+		   and only the remainder is estimated - so the forecast sharpens every day as more of the
+		   estimate turns into fact, which a mean never does.
 
-		   So the amount is measured over SETTLE_MONTHS regardless of what the streams use, still
-		   strictly out of sample. More draws, less noise, and the same answer whichever stream window
-		   is selected - which also stops the widest window collapsing, where dividing a fixed set of
-		   settlements by fifty-six years of months predicted a card bill of nearly nothing.
-
-		   Long windows are wrong for streams for a reason that does not apply here: a stream from two
-		   years ago is a different agreement wearing the same name, whereas a card bill from two years
-		   ago is a draw from the same distribution. Recency matters for identity, not for variance. */
-		const SETTLE_MONTHS = 6;
-		const settleFrom = new Date(open.getTime() - SETTLE_MONTHS*30.44*DAY)
-		const settleSeen = inferred.filter(x => x.date >= settleFrom && x.date < open)
-			.map(x => ({date: x.date, amount: x.amount, accountHash: x.accountHash}))
-		const monthsOfSettle = settleSeen.length
-			? Math.max(1, (open - Math.min.apply(null, settleSeen.map(x => +x.date)))/(30.44*DAY))
-			: 1
-		const settleMonthly = settleSeen.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
-		const settleStream = {id: "__settlement__", name: "Card settlement",
-			getPreferredPeriod: () => "monthly",
-			getExpectedAmountAtDateByPeriod: () => settleMonthly}
-		const useSettle = Math.abs(settleMonthly) > 1 && settleSeen.length > 1
+		   Strictly out of sample: only transactions dated before the window opens are read. */
+		const settleModel = cardSettlementForecast(this.props.transactions, cards, inferred,
+			open, new Date(record[record.length-1].date))
+		const extraFlow = {}
+		settleModel.events.forEach(e => {
+			const k2 = dayKey(e.date)
+			extraFlow[k2] = {amount: ((extraFlow[k2] || {}).amount || 0) + e.amount,
+				name: "Card settlement"}
+		})
+		const settleMonthly = settleModel.events.reduce((a, b) => a + b.amount, 0)
+			/ Math.max(1, (record[record.length-1].date - open)/(30.44*DAY))
+		const useSettle = settleModel.events.length > 0
 
 		/* WIRED HERE, not beside `routed`, because every name it needs is only in scope now.
 		   The first version of this reached forward to consts declared eighty lines below it, which a
 		   bundler is entitled to turn into "Cannot access before initialization" - and did, in
 		   production, on a page that had passed every test. The tests never caught it because they
 		   exercise the processor, not this method. */
-		if(useSettle){
-			shapes[settleStream.id] = histogramOf(settleSeen, {prefer: "weekly"})
-			routed[settleStream.id] = keep[0]
-		}
-		//the settlement carries the card now, so nothing is synthesised on top of it
-		const forecastTerminals = useSettle
-			? this.terminals().concat([settleStream]) : this.terminals()
+		//the settlement arrives as explicit events, so nothing is synthesised on top of it
+		const forecastTerminals = this.terminals()
 		const settles = useSettle ? null : (h => cards.indexOf(h) > -1)
 
 
@@ -378,8 +363,9 @@ export default class BalanceBench extends BaseComponent{
 			return left/monthsLeft
 		}
 
-		const run = (terms, withSettlement) => forecast({terminals:terms, shapes:shapes,
+		const run = (terms, withSettlement, withCard) => forecast({terminals:terms, shapes:shapes,
 			expectedFor:expectedFor, excludeIds:excludeIds,
+			extraFlow: withCard === false ? null : extraFlow,
 			routing:routed, now:open, balanceNow:0, days:days, covers:covers,
 			settles: withSettlement ? settles : null, periodName:"monthly",
 			settlementDay: withSettlement ? this.settlementDay() : null})
@@ -396,16 +382,20 @@ export default class BalanceBench extends BaseComponent{
 		record.forEach((p, k) => {if(k)actualFlow[dayKeys[k]] = p.value - record[k-1].value})
 
 		//the settlement is not a stream, so it is measured as what having it adds
-		const withS = flowsOf(run(forecastTerminals, true))
-		const withoutS = flowsOf(run(forecastTerminals, false))
+		/* THE CARD IS COUNTED ONCE, and it is not a stream, so it is kept out of the per-stream runs
+		   entirely and added back as its own series. Leaving extraFlow switched on inside them would
+		   have put a whole card bill into every one of eighty-seven streams. */
+		const withS = flowsOf(run(forecastTerminals, true, false))
+		const withoutS = flowsOf(run(forecastTerminals, false, false))
 		const settlementFlow = {}
-		dayKeys.forEach(k => {settlementFlow[k] = (withS[k]||0) - (withoutS[k]||0)})
+		dayKeys.forEach(k => {settlementFlow[k] = (withS[k]||0) - (withoutS[k]||0)
+			+ ((extraFlow[k] || {}).amount || 0)})
 
 		const settleActual = inferred.map(x => ({date: x.date, amount: x.amount,
 			accountHash: x.accountHash}))
 		const perStream = {}, actualByStream = {}
 		forecastTerminals.forEach(t => {
-			perStream[t.id] = flowsOf(run([t], false))
+			perStream[t.id] = flowsOf(run([t], false, false))
 			const act = {}
 			;(t.id === "__settlement__" ? settleActual : byStream[t.id]).forEach(x => {
 				if(x.date < open || x.date > close || !covers(x.accountHash))return
@@ -413,6 +403,18 @@ export default class BalanceBench extends BaseComponent{
 			})
 			actualByStream[t.id] = act
 		})
+
+		//the card as a pseudo-stream for scoring only: predicted events against real settlements
+		const CARD_ID = "__card__"
+		perStream[CARD_ID] = {}
+		dayKeys.forEach(k => {perStream[CARD_ID][k] = (extraFlow[k] || {}).amount || 0})
+		actualByStream[CARD_ID] = {}
+		settleActual.forEach(x => {
+			if(x.date < open || x.date > close || keep.indexOf(x.accountHash) < 0)return
+			const k = dayKey(x.date)
+			actualByStream[CARD_ID][k] = (actualByStream[CARD_ID][k] || 0) + x.amount
+		})
+
 
 		//score a set of daily flows against the record, in dollar-days
 		const surfaceOf = flow => {
@@ -425,7 +427,7 @@ export default class BalanceBench extends BaseComponent{
 		}
 		const total = {}
 		dayKeys.forEach(k => {
-			let v = settlementFlow[k] || 0
+			let v = (extraFlow[k] || {}).amount || 0
 			forecastTerminals.forEach(t => {v += (perStream[t.id][k] || 0)})
 			total[k] = v
 		})
@@ -444,7 +446,7 @@ export default class BalanceBench extends BaseComponent{
 		   that moved nothing and WAS predicted has no denominator of its own, so it is scored against
 		   the size of the mistake - which lands it at zero rather than at infinity. */
 		const gain = {}
-		forecastTerminals.forEach(t => {
+		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).forEach(t => {
 			let p = 0, a = 0, err = 0, own = 0
 			for(let k = 0; k < dayKeys.length; k++){
 				if(k){
@@ -523,7 +525,7 @@ export default class BalanceBench extends BaseComponent{
 		//the arithmetic behind one stream's score, so a surprising number can be audited rather than
 		//taken on trust
 		const detail = {}
-		forecastTerminals.forEach(t => {
+		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).forEach(t => {
 			let fe = 0, fm = 0
 			dayKeys.forEach((k, i) => {
 				if(!i)return
@@ -621,11 +623,11 @@ export default class BalanceBench extends BaseComponent{
 		const since = (a && a.since) || this.windows(now)[0][1]
 		//the settlement is forecast like a stream, so it is listed like one - otherwise the single
 		//largest outflow in the portfolio has no row and its accuracy cannot be read
-		const synthetic = (a && a.settleMonthly) ? [{name: "Card settlement (modelled)",
-			cycle: "weekly", expected: a.settleMonthly, tier: 3, day: "observed",
-			amount: a.settleMonthly, spread: 0, gain: (a.gain || {})["__settlement__"] || 0,
+		const synthetic = (a && a.settleMonthly) ? [{name: "Card settlement (from card spend)",
+			cycle: "per cycle", expected: a.settleMonthly, tier: 3, day: "posted + rate",
+			amount: a.settleMonthly, spread: 0, gain: (a.gain || {})["__card__"] || 0,
 			sort: Math.abs(a.settleMonthly),
-			detail: (a.detail || {})["__settlement__"] || null}] : []
+			detail: (a.detail || {})["__card__"] || null}] : []
 		this._rows = synthetic.concat(this.terminals().map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
 			const perMonth = monthlyExpectationAt(s, now, "monthly")
