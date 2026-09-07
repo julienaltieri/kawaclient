@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b13 - settlement modelled from observed settlements";
+export const BENCH_VERSION = "b14 - settlement from observation; TDZ fix";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -229,6 +229,55 @@ export default class BalanceBench extends BaseComponent{
 		   The default is now reserved for a stream with no history AT ALL. A stream with history that
 		   simply is not here belongs somewhere else, and saying so is the whole point of routing. */
 		const routed = accountRoutingOf(seen, id => dir[id])
+		const days = Math.round((record[record.length-1].date - open)/DAY)
+		const covers = h => keep.indexOf(h || fallback) > -1
+
+		/* THE SETTLEMENT IS MODELLED FROM THE SETTLEMENTS THEMSELVES.
+
+		   Three configurations have now been measured and all three were wrong in a different way:
+
+		     stream in, synthesis out   43.9%  the payment predicted from a six-week mean, which
+		                                       under-samples a variable card bill
+		     stream out, synthesis in   71.3%  right total BY ACCIDENT - the payment stream happened
+		                                       to route to the card, so its observed amount was added
+		                                       to the card streams' expectations and the two summed to
+		                                       about the real bill
+		     stream out, synthesis out  39.4%  the card paid not at all, once routing was fixed and the
+		                                       accident stopped happening
+
+		   The 71.3% was a coincidence and would not survive the next month. What all three were
+		   working around is that neither source is the settlement: the card streams' expectations are
+		   what was BUDGETED, and the payment stream's mean is a noisy read of a variable bill.
+
+		   The settlements are observable. They have their own amounts and their own timing - weekly
+		   here, which no single monthly due-day could ever represent, and the synthesis was putting a
+		   month of card money on one day. So they are forecast like any other stream: their own
+		   histogram for when, their own observed total for how much. Card-routed streams stay out of
+		   the daily flows, the real payment stream stays out too, and this one series carries the
+		   card. One model, from the best available evidence. */
+		/* PER-ANALYSIS, NOT PER-INSTANCE. These were fields on the component, and scoreboard() re-runs
+		   analyse() once per lookback window - so the figure the report printed came from whichever
+		   window happened to run LAST (the "all" window, dividing by fifty-six years of months) rather
+		   than from the one on screen. A number that describes a different calculation than the one it
+		   sits beside is worse than no number. */
+		const inferred = inferSettlements(this.props.transactions, keep, cards)
+		const excludeIds = {}
+		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
+
+		const settleSeen = inferred.filter(x => x.date >= since && x.date < open)
+			.map(x => ({date: x.date, amount: x.amount, accountHash: x.accountHash}))
+		const monthsOfSettle = Math.max(1, (open - since)/(30.44*DAY))
+		const settleMonthly = settleSeen.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
+		const settleStream = {id: "__settlement__", name: "Card settlement",
+			getPreferredPeriod: () => "monthly",
+			getExpectedAmountAtDateByPeriod: () => settleMonthly}
+		const useSettle = Math.abs(settleMonthly) > 1 && settleSeen.length > 1
+
+		/* WIRED HERE, not beside `routed`, because every name it needs is only in scope now.
+		   The first version of this reached forward to consts declared eighty lines below it, which a
+		   bundler is entitled to turn into "Cannot access before initialization" - and did, in
+		   production, on a page that had passed every test. The tests never caught it because they
+		   exercise the processor, not this method. */
 		if(useSettle){
 			shapes[settleStream.id] = histogramOf(settleSeen, {prefer: "weekly"})
 			routed[settleStream.id] = keep[0]
@@ -236,12 +285,9 @@ export default class BalanceBench extends BaseComponent{
 		//the settlement carries the card now, so nothing is synthesised on top of it
 		const forecastTerminals = useSettle
 			? this.terminals().concat([settleStream]) : this.terminals()
-		settles = useSettle ? null : settles
-		const days = Math.round((record[record.length-1].date - open)/DAY)
-		const covers = h => keep.indexOf(h || fallback) > -1
-		//decided below, once `observed` is known - a stream on this account that is budgeted at
-		//nothing and still moves money IS the settlement, whether or not the ledger pairs it
-		let settles = h => cards.indexOf(h) > -1
+		const settles = useSettle ? null : (h => cards.indexOf(h) > -1)
+
+
 		/* A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth.
 		   A $10,000 yearly stream with $6,000 already gone has $4,000 left, and dividing the whole
 		   budget by twelve forecasts money that has already been spent - twice over by December. The
@@ -297,45 +343,6 @@ export default class BalanceBench extends BaseComponent{
 		   Suppressing the synthesis and keeping the stream cost 27 points of accuracy in one step. So
 		   the stream is what gets dropped, the synthesis stays, and the card is paid exactly once from
 		   the better estimate. */
-		/* THE SETTLEMENT IS MODELLED FROM THE SETTLEMENTS THEMSELVES.
-
-		   Three configurations have now been measured and all three were wrong in a different way:
-
-		     stream in, synthesis out   43.9%  the payment predicted from a six-week mean, which
-		                                       under-samples a variable card bill
-		     stream out, synthesis in   71.3%  right total BY ACCIDENT - the payment stream happened
-		                                       to route to the card, so its observed amount was added
-		                                       to the card streams' expectations and the two summed to
-		                                       about the real bill
-		     stream out, synthesis out  39.4%  the card paid not at all, once routing was fixed and the
-		                                       accident stopped happening
-
-		   The 71.3% was a coincidence and would not survive the next month. What all three were
-		   working around is that neither source is the settlement: the card streams' expectations are
-		   what was BUDGETED, and the payment stream's mean is a noisy read of a variable bill.
-
-		   The settlements are observable. They have their own amounts and their own timing - weekly
-		   here, which no single monthly due-day could ever represent, and the synthesis was putting a
-		   month of card money on one day. So they are forecast like any other stream: their own
-		   histogram for when, their own observed total for how much. Card-routed streams stay out of
-		   the daily flows, the real payment stream stays out too, and this one series carries the
-		   card. One model, from the best available evidence. */
-		const inferred = inferSettlements(this.props.transactions, keep, cards)
-		this._settlements = inferred
-		const excludeIds = {}
-		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-		this._excluded = Object.keys(excludeIds).length
-
-		const settleSeen = inferred.filter(x => x.date >= since && x.date < open)
-			.map(x => ({date: x.date, amount: x.amount, accountHash: x.accountHash}))
-		const monthsOfSettle = Math.max(1, (open - since)/(30.44*DAY))
-		const settleMonthly = settleSeen.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
-		this._settleMonthly = settleMonthly
-		const settleStream = {id: "__settlement__", name: "Card settlement",
-			getPreferredPeriod: () => "monthly",
-			getExpectedAmountAtDateByPeriod: () => settleMonthly}
-		const useSettle = Math.abs(settleMonthly) > 1 && settleSeen.length > 1
-
 		const expectedFor = (t, when) => {
 			const declared = monthlyExpectationAt(t, when, "monthly")
 			if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id]
@@ -519,7 +526,9 @@ export default class BalanceBench extends BaseComponent{
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
 			since:since, surface:surface, area:area, error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
-			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor}
+			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
+			settlements:inferred, settleMonthly:settleMonthly,
+			excluded:Object.keys(excludeIds).length}
 		return this._cache[key]
 	}
 	//the same month, one month earlier - a single score says nothing about whether the model is
@@ -643,12 +652,12 @@ export default class BalanceBench extends BaseComponent{
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
-			const st = this._settlements || []
+			const st = a.settlements || []
 			const inWin = st.filter(x => x.date >= a.open && x.date <= a.close)
-			out.push("card settlement modelled at " + money(this._settleMonthly || 0) + "/month")
+			out.push("card settlement modelled at " + money(a.settleMonthly || 0) + "/month")
 			out.push("card settlements found: " + st.length + " total, " + inWin.length
 				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")"
-				+ "   payment streams excluded: " + (this._excluded || 0))
+				+ "   payment streams excluded: " + (a.excluded || 0))
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
@@ -719,9 +728,9 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{a && a.horizon ? "by horizon " + a.horizon.map(h => "+" + h.days + "d "
 					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
 				<Note>{BENCH_VERSION}</Note>
-				<Note>{this._settlements
-					? "card settlements matched: " + this._settlements.length
-						+ " · payment streams excluded: " + (this._excluded || 0) : ""}</Note>
+				<Note>{a ? "card settlements matched: " + (a.settlements || []).length
+					+ " · excluded: " + (a.excluded || 0)
+					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
 			</Score>
 			<Score>
 				<Note>lookback windows, same forecast, same month:</Note>
