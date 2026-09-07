@@ -138,8 +138,10 @@ export default class Sandbox extends BaseComponent{
 			    month, on the account the forecast is scored against. */}
 			<div style={titleStyle}>The tile, as shipped</div>
 			<div style={{maxWidth:"24.4rem"}}>
+				{/* sticky: the table below is meant to be READ and copied, which needs the finger
+				    somewhere else. Tapping the same day again clears it. */}
 				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
-					defaultWhen="last" onDay={d => this.updateState({day:d})}/>
+					defaultWhen="last" sticky={true} onDay={d => this.updateState({day:d})}/>
 			</div>
 			<DayAudit day={this.state.day}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>

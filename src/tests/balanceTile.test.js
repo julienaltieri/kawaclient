@@ -18,7 +18,7 @@ import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay}
+	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey}
 	from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -1583,4 +1583,52 @@ test("explicit events appear in the breakdown beside the streams", () => {
 	const parts = contributionsOn(day, opts)
 	expect(parts.map(p => p.name)).toContain("Card settlement")
 	expect(parts.reduce((a, b) => a + b.amount, 0)).toBeCloseTo(-2400 + (-1700/30), 6)
+})
+
+/* ---- the cursor can outlive the finger -------------------------------------------------------- */
+
+const mountWith = async (props) => {
+	const ref = React.createRef()
+	await act(async () => {render(<BalanceChart ref={ref} stream={master}
+		transactions={txns} {...props}/>)})
+	return ref
+}
+
+test("by default the cursor clears on release - the resting subtitle is the headline", async () => {
+	const ref = await mountWith({})
+	await act(async () => {ref.current.setState({at: rentDay})})
+	expect(ref.current.state.at).toBeTruthy()
+	const host = ref.current.host.current
+	await act(async () => {
+		host.dispatchEvent(new Event("pointerdown", {bubbles: true}))
+		host.dispatchEvent(new Event("pointerup", {bubbles: true}))
+	})
+	expect(ref.current.state.at).toBe(null)
+})
+
+test("sticky keeps the day after release, so the table can be read and copied", async () => {
+	//on a touch screen, reading the breakdown means lifting the finger and reaching for a button
+	const ref = await mountWith({sticky: true})
+	await act(async () => {ref.current.setState({at: rentDay})})
+	const host = ref.current.host.current
+	await act(async () => {host.dispatchEvent(new Event("pointerup", {bubbles: true}))})
+	expect(ref.current.state.at).toBeTruthy()
+})
+
+test("the audit payload names both sides of the day and its difference", async () => {
+	const ref = await mountWith({sticky: true, defaultWhen: "last"})
+	const a = ref.current.series()
+	const day = a.past.filter(p => dayKey(p.date) === dayKey(rentDay))[0] || a.past[3]
+	const audit = ref.current.dayAudit(day)
+	expect(audit.date).toBe(dayKey(day.date))
+	expect(Array.isArray(audit.actual)).toBe(true)
+	expect(Array.isArray(audit.predicted)).toBe(true)
+	expect(audit.predictedTotal - audit.actualTotal).toBe(audit.predictedTotal - audit.actualTotal)
+})
+
+test("defaultWhen opens the tile on the month being audited", async () => {
+	const ref = await mountWith({defaultWhen: "last"})
+	expect(ref.current.state.when).toBe("last")
+	const plain = await mountWith({})
+	expect(plain.current.state.when).toBe("this")
 })

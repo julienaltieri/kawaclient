@@ -895,18 +895,46 @@ export default class BalanceChart extends BaseComponent{
 		if(!host)return
 		const dateAt = e => {
 			const r = host.getBoundingClientRect()
+			//a pointer event without coordinates - or before the chart has a width - yields NaN, and
+			//a NaN date throws the moment anything asks for its ISO form. Nothing to point at is a
+			//legitimate answer; a crash is not.
+			if(!isFinite(e.clientX) || !r.width)return null
 			const f = Math.max(0, Math.min(1, (e.clientX - r.left)/r.width))
 			const t = this.drag.x0 + f*(this.drag.x1 - this.drag.x0)
+			if(!isFinite(t))return null
 			return new Date(Math.round(t/DAY)*DAY)
 		}
 		const to = e => {const d = dateAt(e)
+			if(!d)return
 			if(!this.state.at || dayKey(d) !== dayKey(this.state.at))this.updateState({at:d})}
 		host.addEventListener("pointerdown", e => {
 			this.drag.down = true
 			try{host.setPointerCapture(e.pointerId)}catch(err){}
+			/* STICKY: tapping the day already selected clears it, so there is a way back to the
+			   resting state without a second control. */
+			const here = dateAt(e)
+			if(this.props.sticky && this.state.at && here
+				&& dayKey(here) === dayKey(this.state.at)){
+				this.drag.cleared = true
+				this.updateState({at:null})
+				return
+			}
+			this.drag.cleared = false
 			to(e)})
-		host.addEventListener("pointermove", e => {if(this.drag.down)to(e)})
-		const end = () => {if(!this.drag.down)return; this.drag.down = false; this.updateState({at:null})}
+		host.addEventListener("pointermove", e => {if(this.drag.down && !this.drag.cleared)to(e)})
+		/* THE CURSOR CAN OUTLIVE THE FINGER, and on a touch screen it has to. Reading the day's
+		   breakdown means lifting the finger and reaching for a button, and a cursor that clears on
+		   pointerup destroys the thing being read before it can be read - the table appeared and
+		   vanished with the gesture, so it could be looked at but never copied.
+
+		   Opt-in, because the shipped tile wants the opposite: its resting subtitle carries the low
+		   point, which is the headline the whole view exists for, and a cursor that stuck would hide
+		   it behind whatever was last touched. The bench sets it; the app does not. */
+		const end = () => {
+			if(!this.drag.down)return
+			this.drag.down = false
+			if(!this.props.sticky)this.updateState({at:null})
+		}
 		host.addEventListener("pointerup", end)
 		host.addEventListener("pointercancel", end)
 		host.addEventListener("pointerleave", end)
