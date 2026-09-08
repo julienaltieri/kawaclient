@@ -19,7 +19,7 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
-	buildModel, eventsPerTurn,
+	buildModel, eventsPerTurn, cardPaymentStreams,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -2207,4 +2207,41 @@ test("two cards on one payment stream are modelled separately", () => {
 	//each keeps its own closing offset rather than being averaged into one
 	expect(Math.abs(cy.his.lagDays - 3)).toBeLessThanOrEqual(1)
 	expect(Math.abs(cy.hers.lagDays - 6)).toBeLessThanOrEqual(1)
+})
+
+test("a spending stream split across a card and the current account is NOT a card payment", () => {
+	/* b28 shipped the opposite and it cost ten points of balance accuracy. Groceries are bought on a
+	   card some weeks and on the debit card others; childcare is paid by card one month and by
+	   transfer the next. Those straddle the account boundary and are not card payments, but they were
+	   treated as such - seven streams excluded from the forecast instead of one, deleting about
+	   $4,250 a month of real outflow.
+
+	   What makes a card payment different is that it CANCELS: money leaves the account and the same
+	   money ARRIVES on the card. Groceries are negative on both sides and never cancel. */
+	const txns = []
+	for(let w = 0; w < 12; w++){
+		//groceries: some on the card, some on the debit card, plus the odd refund
+		txns.push(evTxn(new Date(Date.UTC(2026, 2 + (w >> 2), 3 + (w % 4)*7)), -140, "food",
+			"visa", "gc" + w))
+		txns.push(evTxn(new Date(Date.UTC(2026, 2 + (w >> 2), 5 + (w % 4)*7)), -90, "food",
+			"chk", "gd" + w))
+		if(w % 6 === 0)txns.push(evTxn(new Date(Date.UTC(2026, 2 + (w >> 2), 6)), 40, "food",
+			"visa", "gr" + w))
+		//and a genuine card payment on its own stream
+		const pay = new Date(Date.UTC(2026, 2 + (w >> 2), 2 + (w % 4)*7))
+		txns.push(evTxn(pay, -560, "ccpay", "chk", "pp" + w))
+		txns.push(evTxn(pay, 560, "ccpay", "visa", "pr" + w))
+	}
+	const found = cardPaymentStreams(txns, ["chk"], ["visa"])
+	expect(found).toContain("ccpay")
+	expect(found).not.toContain("food")
+
+	//and the grocery stream therefore keeps contributing to the forecast
+	const st = evStream("food", "Groceries", -920)
+	const pay = evStream("ccpay", "Credit Card Payments", 0)
+	const m = buildModel({transactions: txns, terminals: [st, pay], covered: ["chk"],
+		cards: ["visa"], asOf: new Date(Date.UTC(2026, 6, 1)),
+		until: new Date(Date.UTC(2026, 6, 31)), since: new Date(Date.UTC(2026, 2, 1))})
+	expect(m.excludeIds.food).toBeUndefined()
+	expect(m.excludeIds.ccpay).toBe(true)
 })

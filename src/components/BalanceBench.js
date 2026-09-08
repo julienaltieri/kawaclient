@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b28 - the card model, rebuilt to spec";
+export const BENCH_VERSION = "b29 - a card payment cancels; groceries do not";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -221,7 +221,14 @@ export default class BalanceBench extends BaseComponent{
 		const forecastTerminals = model.terminals
 		const excludeIds = model.excludeIds
 		const shapes = model.shapes, routed = model.routing
-		const sliced = model.meta.sliced, byStream = model.meta.byStream
+		const sliced = model.meta.sliced
+		/* TWO LEDGERS, AND THEY ARE NOT INTERCHANGEABLE. The model's is truncated at the as-of date -
+		   that is the law it is built on - so scoring against it asked what actually happened using a
+		   ledger that stops before the window opens, and every stream's actuals came back empty. The
+		   report printed "actual $0" beside every prediction and transaction accuracy went negative.
+		   Named apart so the two can never be swapped again by autocomplete. */
+		const modelLedger = model.meta.byStream
+		const actualLedger = this.byStream()
 		const inferred = model.meta.inferred
 		const extraFlow = model.extraFlow || {}
 		const observed = model.meta.observed
@@ -268,7 +275,7 @@ export default class BalanceBench extends BaseComponent{
 		forecastTerminals.forEach(t => {
 			perStream[t.id] = flowsOf(run([t], false, false))
 			const act = {}
-			;(t.id === "__settlement__" ? settleActual : byStream[t.id]).forEach(x => {
+			;(t.id === "__settlement__" ? settleActual : (actualLedger[t.id] || [])).forEach(x => {
 				if(x.date < open || x.date > close || !covers(x.accountHash))return
 				const k = dayKey(x.date); act[k] = (act[k]||0) + x.amount
 			})
@@ -585,10 +592,10 @@ export default class BalanceBench extends BaseComponent{
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
 			const st = a.settlements || []
-			const inWin = st.filter(x => x.date >= a.open && x.date <= a.close)
 			out.push("card settlement modelled at " + money(a.settleMonthly || 0) + "/month")
-			out.push("card settlements found: " + st.length + " total, " + inWin.length
-				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")"
+			//NOT filtered to the window: the model may not see inside it, so every settlement here is
+			//by construction before it, and a count of those inside could only ever be zero
+			out.push("card settlements identified before the window: " + st.length
 				+ "   payment streams excluded: " + (a.excluded || 0))
 			this.cardLines().forEach(c => {
 				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases

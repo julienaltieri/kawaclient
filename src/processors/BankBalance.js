@@ -956,17 +956,48 @@ const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.
 	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
 
 export function cardPaymentStreams(transactions, coveredHashes, creditHashes){
-	const onCovered = {}, onCard = {};
+	/* IT IS NOT ENOUGH FOR A STREAM TO TOUCH BOTH SIDES, and b28 shipped exactly that mistake.
+
+	   Groceries are bought on a card some weeks and on the debit card others. Childcare is paid by
+	   card one month and by transfer the next. Those streams have legs on both a covered account and a
+	   credit account and are not card payments at all - and treating them as such excluded seven
+	   streams from the forecast instead of one, deleting about $4,250 a month of real outflow and
+	   costing ten points of balance accuracy.
+
+	   What makes a card payment different is that it CANCELS. Money leaves the current account and the
+	   same money arrives on the card: the covered legs are negative, the card legs are POSITIVE, and
+	   the two roughly sum to nothing. A grocery bill has negative legs on both sides and never
+	   cancels, however it is split. That is the "zero sum" property, measured rather than assumed -
+	   and where the stream is declared zero-sum, that declaration is accepted as well. */
+	const acc = {};
 	(transactions || []).forEach(t => {
-		const acct = t.userInstitutionAccountId;
-		const here = coveredHashes.indexOf(acct) > -1, card = creditHashes.indexOf(acct) > -1;
+		const a = t.userInstitutionAccountId;
+		const here = coveredHashes.indexOf(a) > -1, card = creditHashes.indexOf(a) > -1;
 		if(!here && !card)return;
 		(t.streamAllocation || []).forEach(al => {
-			if(here)onCovered[al.streamId] = true;
-			if(card)onCard[al.streamId] = true;
+			const o = acc[al.streamId] = acc[al.streamId]
+				|| {out: 0, cardIn: 0, cardOut: 0, gross: 0};
+			if(here && t.amount < 0)o.out += -t.amount;
+			if(card && t.amount > 0)o.cardIn += t.amount;
+			if(card && t.amount < 0)o.cardOut += -t.amount;
+			o.gross += Math.abs(t.amount);
 		});
 	});
-	return Object.keys(onCovered).filter(id => onCard[id]);
+	return Object.keys(acc).filter(id => {
+		const o = acc[id];
+		if(o.out < 1 || o.cardIn < 1)return false;
+		/* THE CARD SIDE MUST BE MONEY ARRIVING. This is the test that does the work: a grocery stream
+		   split across a card and a debit card has negative legs on both sides and is rejected here,
+		   whatever else is true of it. A refund does not save it - refunds are small beside the
+		   spending they come from. */
+		if(o.cardOut > o.cardIn*0.5)return false;
+		/* AND THE CARD CANNOT RECEIVE MORE THAN THE ACCOUNT PAID OUT on the same stream, which is what
+		   "cancels" means here. Deliberately one-sided: requiring the two to match closely in BOTH
+		   directions rejects the very case the amount fallback exists for - two cards on one stream
+		   where only one returns payment receipts, so the outflows legitimately exceed the receipts by
+		   the whole of the second card. */
+		return o.cardIn <= o.out*1.2;
+	});
 }
 
 /* WHICH CARD A PAYMENT CLEARED.
@@ -980,6 +1011,8 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
 	const txns = transactions || [];
 	const streams = {};
 	cardPaymentStreams(txns, coveredHashes, creditHashes).forEach(id => {streams[id] = true});
+	//a stream the user has DECLARED zero-sum is one they have already told us cancels
+	(o.zeroSumIds || []).forEach(id => {streams[id] = true});
 
 	const receipts = txns.filter(t => creditHashes.indexOf(t.userInstitutionAccountId) > -1
 		&& t.amount > 0).map(t => ({t: t, used: false}));
@@ -1385,7 +1418,8 @@ export function buildModel(input){
 	/* THE CARD. Settlements are inferred from the pair - the outflow on the covered account and the
 	   receipt on the credit account - and the streams they are categorised to are then excluded, so
 	   the bill is counted once. */
-	const inferred = inferSettlements(past, covered, cards);
+	const inferred = inferSettlements(past, covered, cards,
+		{zeroSumIds: terminals.filter(t => t.isZeroSumStream).map(t => t.id)});
 	const excludeIds = {};
 	inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}));
 
