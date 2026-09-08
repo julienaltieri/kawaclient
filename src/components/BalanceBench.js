@@ -6,7 +6,8 @@ import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements, cardSettlementForecast} from '../processors/BankBalance.js';
+	inferSettlements, cardSettlementForecast, buildForecastInputs}
+	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
@@ -34,7 +35,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b18 - sticky cursor on the bench";
+export const BENCH_VERSION = "b19 - tile and bench on the same model";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -204,31 +205,12 @@ export default class BalanceBench extends BaseComponent{
 
 		const byStream = this.byStream()
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
-		const shapes = {}, dir = {}, sliced = {}, seen = {}
-		this.terminals().forEach(t => {
-			//OUT OF SAMPLE at the top, no further back than the lookback at the bottom
-			seen[t.id] = byStream[t.id].filter(x => x.date < open && x.date >= since)
-			/* THE SHAPE learns only from the account being predicted. A card payment and a savings
-			   transfer both touch two accounts, and learning from both sides at once averages an
-			   outflow with its own mirror - describing no account and predicting neither. */
-			sliced[t.id] = seen[t.id].filter(x => keep.indexOf(x.accountHash) > -1)
-			shapes[t.id] = histogramOf(sliced[t.id], {prefer: t.getPreferredPeriod
-				? t.getPreferredPeriod() : "monthly"})
-			const a = monthlyExpectationAt(t, open, "monthly")
-			dir[t.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
-		})
-		/* ROUTING SEES EVERY ACCOUNT, because deciding WHICH account a stream lives on is the one
-		   question that cannot be answered from a single account's ledger.
-
-		   Routing off the filtered set was a real fault and an expensive one: a stream paid entirely
-		   by credit card has no checking history, so it routed to `undefined`, fell through to the
-		   default account, and was forecast onto checking where nothing of it ever happens. Guaranteed
-		   maximum error, on exactly the streams the model understands best - a renter's insurance that
-		   pays $10 like clockwork scored 0%.
-
-		   The default is now reserved for a stream with no history AT ALL. A stream with history that
-		   simply is not here belongs somewhere else, and saying so is the whole point of routing. */
-		const routed = accountRoutingOf(seen, id => dir[id])
+		/* ONE BUILDER, shared with the tile. These were two implementations of the same idea and
+		   they had drifted into two different models - see buildForecastInputs. */
+		const built = buildForecastInputs({terminals: this.terminals(), byStream: byStream,
+			since: since, until: open, covered: keep,
+			expectationAt: (st, d) => monthlyExpectationAt(st, d, "monthly")})
+		const shapes = built.shapes, sliced = built.sliced, routed = built.routing
 		const days = Math.round((record[record.length-1].date - open)/DAY)
 		const covers = h => keep.indexOf(h || fallback) > -1
 

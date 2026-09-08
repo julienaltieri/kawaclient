@@ -18,8 +18,8 @@ import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey}
-	from '../processors/BankBalance'
+	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
+	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -1631,4 +1631,58 @@ test("defaultWhen opens the tile on the month being audited", async () => {
 	expect(ref.current.state.when).toBe("last")
 	const plain = await mountWith({})
 	expect(plain.current.state.when).toBe("this")
+})
+
+/* ---- the tile and the bench must run the SAME model ------------------------------------------- */
+
+test("the shared builder windows history, filters to the account, and takes the declared period", () => {
+	//each filter answers a different question, and dropping any of them is a different fault
+	const s1 = {id: "sav", name: "Savings", period: "monthly",
+		getPreferredPeriod: () => "monthly", getExpectedAmountAtDateByPeriod: () => -4000}
+	const byStream = {sav: [
+		//old: a previous arrangement, on the 2nd
+		{date: new Date(Date.UTC(2024, 0, 2)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2024, 1, 2)), amount: -4000, accountHash: "chk"},
+		//current: the 15th, on checking
+		{date: new Date(Date.UTC(2026, 3, 15)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2026, 4, 15)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2026, 5, 15)), amount: -4000, accountHash: "chk"},
+		//the other leg, on the savings account - describes a different account entirely
+		{date: new Date(Date.UTC(2026, 3, 15)), amount: 4000, accountHash: "sav"},
+		{date: new Date(Date.UTC(2026, 4, 15)), amount: 4000, accountHash: "sav"}
+	]}
+	const built = buildForecastInputs({terminals: [s1], byStream: byStream,
+		since: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 6, 1)),
+		covered: ["chk"]})
+	//all the weight on one day, because only three checking transactions on the 15th survived
+	expect(built.shapes.sav.weights[14]).toBeCloseTo(1, 6)
+	//and it routes to the account the money left
+	expect(built.routing.sav).toBe("chk")
+})
+
+test("without the filters the same stream smears - which is what the app was doing", () => {
+	const s1 = {id: "sav", name: "Savings", getPreferredPeriod: () => "monthly",
+		getExpectedAmountAtDateByPeriod: () => -4000}
+	const byStream = {sav: [
+		{date: new Date(Date.UTC(2024, 0, 2)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2024, 1, 2)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2026, 3, 15)), amount: -4000, accountHash: "chk"},
+		{date: new Date(Date.UTC(2026, 4, 15)), amount: -4000, accountHash: "chk"}
+	]}
+	//no window, no account filter: two eras averaged together, and the peak day carries half
+	const loose = buildForecastInputs({terminals: [s1], byStream: byStream, covered: ["chk", "sav"]})
+	expect(loose.shapes.sav.weights[14]).toBeLessThan(0.75)
+})
+
+test("the tile uses the shared builder, so its shapes match the bench's", async () => {
+	const ref = await mount()
+	const built = buildForecastInputs({
+		terminals: ref.current.terminals(), byStream: ref.current.streamTxns(),
+		since: ref.current.lookbackFrom(ref.current.ledgerToday()),
+		until: ref.current.ledgerToday(), covered: ref.current.covered()})
+	const mine = ref.current.shapes()
+	ref.current.terminals().forEach(s => {
+		expect(mine[s.id].weights).toEqual(built.shapes[s.id].weights)
+	})
+	expect(ref.current.routing()).toEqual(built.routing)
 })

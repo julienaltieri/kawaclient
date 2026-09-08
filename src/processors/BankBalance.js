@@ -892,3 +892,44 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 	events.sort((a, b) => a.date - b.date);
 	return {events: events, cycles: cycles};
 }
+
+/* ==================================================================================================
+   THE INPUTS A FORECAST RUNS ON - built once, for whoever is forecasting.
+
+   The bench and the tile had each grown their own version of this, and they had drifted badly: the
+   bench windowed its history, filtered to the account being predicted, and told the detector what
+   period the stream declares, while the tile used every transaction ever recorded across every
+   account with no declared period at all. The bench measured one model and the app shipped another,
+   so every improvement scored here for six rounds was invisible where it mattered.
+
+   It surfaced from an audit of a single day: a savings transfer the bench placed as one $4,000 step
+   appeared in the app as $1,929 smeared across several days, because the app's histogram was built
+   from years of both legs rather than months of one.
+
+   THE THREE FILTERS EACH ANSWER A DIFFERENT QUESTION, and dropping any of them is a different fault:
+     since/until  - WHEN was this stream itself. Older history is a different agreement, and anything
+                    dated at or after `until` is the answer we are pretending not to know.
+     covered      - WHICH account we are predicting. A transfer's two legs describe two accounts, and
+                    learning from both describes neither.
+     declared     - WHAT the user says the stream is, as the hypothesis the ledger must beat.
+
+   Routing sees the UNFILTERED set on purpose: deciding which account a stream lives on is the one
+   question a single account's ledger cannot answer.
+   ================================================================================================== */
+export function buildForecastInputs(opts){
+	const terminals = opts.terminals || [], byStream = opts.byStream || {};
+	const covered = opts.covered || [], since = opts.since, until = opts.until;
+	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
+	const shapes = {}, sliced = {}, seen = {}, dir = {};
+	terminals.forEach(s => {
+		const all = byStream[s.id] || [];
+		seen[s.id] = all.filter(x => (!until || x.date < until) && (!since || x.date >= since));
+		sliced[s.id] = seen[s.id].filter(x => covered.indexOf(x.accountHash) > -1);
+		shapes[s.id] = histogramOf(sliced[s.id],
+			{prefer: s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"});
+		const a = expectationAt(s, until || new Date());
+		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
+	});
+	return {shapes: shapes, sliced: sliced, seen: seen,
+		routing: accountRoutingOf(seen, id => dir[id])};
+}

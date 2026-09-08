@@ -3,10 +3,12 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
+import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement,
-	settlementInReading, inferSettlements, contributionsOn} from '../processors/BankBalance.js';
+	settlementInReading, inferSettlements, contributionsOn, buildForecastInputs}
+	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -390,20 +392,40 @@ export default class BalanceChart extends BaseComponent{
 	/* THE SHAPES AS THEY WOULD HAVE LOOKED ON A GIVEN DAY - nothing after `cutoff` is allowed in.
 	   This is what makes the backtest worth drawing: a forecast fitted to the period it is predicting
 	   has already seen the answer, and the agreement it then shows is its own reflection. */
-	shapesAsOf(cutoff){
-		const byStream = this.streamTxns(), out = {}, dir = {}
-		const terminals = this.terminals()
-		terminals.forEach(s => {
-			const before = cutoff ? byStream[s.id].filter(t => t.date < cutoff) : byStream[s.id]
-			out[s.id] = histogramOf(before)
-			const a = monthlyExpectationAt(s, cutoff || this.ledgerToday(), "monthly")
-			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
-		})
-		const sliced = {}
-		terminals.forEach(s => {sliced[s.id] = cutoff
-			? byStream[s.id].filter(t => t.date < cutoff) : byStream[s.id]})
-		return {shapes: out, routing: accountRoutingOf(sliced, id => dir[id])}
+	/* HOW FAR BACK THE TILE LOOKS, which until now was "everything ever recorded".
+	   The floor is the start of the current reporting year, the ceiling three months, whichever is
+	   shorter - the same rule the bench measures with. History older than that is a stream under a
+	   previous agreement: a rent that has moved, a childcare bill from another provider. */
+	lookbackFrom(now){
+		const prefs = (Core.getUserData() || {}).userPreferences || {}
+		const day = prefs.reportingStartingDay || reportingConfig.startingDay
+		const m = reportingConfig.startingMonth - 1
+		let cycle = new Date(Date.UTC(now.getUTCFullYear(), m, day))
+		if(cycle > now)cycle = new Date(Date.UTC(now.getUTCFullYear() - 1, m, day))
+		const threeMonths = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3,
+			now.getUTCDate()))
+		return threeMonths > cycle ? threeMonths : cycle
 	}
+
+	/* THE SAME INPUTS THE BENCH SCORES. This method and the bench's had drifted into two different
+	   models: the bench windowed its history, filtered to the account being predicted and passed the
+	   declared period as the detector's hypothesis, and this one did none of the three. So the bench
+	   measured one forecast for six rounds while the app shipped another, and a savings transfer the
+	   bench placed as a single $4,000 step appeared here as $1,929 smeared over several days.
+	   buildForecastInputs is now the only place that answers this, for both. */
+	inputs(until){
+		const now = this.ledgerToday()
+		const at = until || now
+		const key = this.source() + "|" + at.getTime()
+		this._inputs = this._inputs || {}
+		if(this._inputs[key])return this._inputs[key]
+		this._inputs[key] = buildForecastInputs({
+			terminals: this.terminals(), byStream: this.streamTxns(),
+			since: this.lookbackFrom(at), until: at, covered: this.covered(),
+			expectationAt: (st, d) => monthlyExpectationAt(st, d, "monthly")})
+		return this._inputs[key]
+	}
+	shapesAsOf(cutoff){return this.inputs(cutoff)}
 
 	/* every terminal, scored. Memoised with the grouped ledger it is derived from. */
 	classification(){
@@ -422,26 +444,8 @@ export default class BalanceChart extends BaseComponent{
 	}
 
 	//one histogram per terminal, from that terminal's own categorised transactions
-	shapes(){
-		if(this._shapes)return this._shapes
-		const terminals = this.terminals()
-		const byStream = this.streamTxns()
-		const shapes = {}
-		const now = this.ledgerToday()
-		terminals.forEach(s => {shapes[s.id] = histogramOf(byStream[s.id])})
-		/* the DIRECTION each stream moves money, so a transfer is routed by the leg that leaves rather
-		   than the leg that arrives - the two legs of a pair are equal in magnitude and would otherwise
-		   tie (see accountRoutingOf) */
-		const dir = {}
-		terminals.forEach(s => {
-			const a = monthlyExpectationAt(s, now, "monthly")
-			dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0)
-		})
-		this._routing = accountRoutingOf(byStream, id => dir[id])
-		this._shapes = shapes
-		return shapes
-	}
-	routing(){this.shapes(); return this._routing || {}}
+	shapes(){return this.inputs().shapes}
+	routing(){return this.inputs().routing}
 	terminals(){
 		const master = this.props.stream || Core.getMasterStream()
 		return master ? master.getAllTerminalStreams() : []
@@ -1128,7 +1132,7 @@ export default class BalanceChart extends BaseComponent{
 	render(){
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
-			this._txns = this.props.transactions; this._shapes = null; this._routing = null
+			this._txns = this.props.transactions; this._inputs = null
 			this._names = null; this._byStream = null; this._classes = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
