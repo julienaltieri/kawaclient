@@ -269,3 +269,46 @@ test("the model reads nothing dated on or after its as-of date", async () => {
 	expect(inside.length).toBeGreaterThan(10)
 	expect(inside.filter(t => /bill/.test(t.description)).length).toBeGreaterThan(2)
 })
+
+/* =================================================================================================
+   THE ROW SHOWS ITS ARITHMETIC. "Day care Emile is monthly, how was it predicted at $406" could not
+   be answered from the table: $406 out of a $1,700 month is a weight of 0.24, and 0.24 is either
+   four clusters in the histogram or a sub-monthly cycle taking its days' share - one of those is a
+   fault and the other is the stream genuinely being paid four times a month.
+   ================================================================================================= */
+test("every predicted row carries the expectation and the weight it came from", async () => {
+	const chart = await mount("last")
+	const a = chart.series()
+	//the first day that actually has contributions - most days of a month have none in this fixture
+	let audit = null
+	a.backtest.forEach(p => {
+		if(audit)return
+		const x = chart.dayAudit({date: p.date, value: p.value, actual: true})
+		if(x.predicted.length)audit = x
+	})
+	expect(audit).toBeTruthy()
+	expect(audit.predicted.length).toBeGreaterThan(0)
+	audit.predicted.filter(r => !/Card settlement/.test(r.name)).forEach(r => {
+		expect(typeof r.expected).toBe("number")
+		expect(typeof r.weight).toBe("number")
+		expect(typeof r.cycle).toBe("string")
+		//the product must BE the arithmetic, not a number that merely sits beside it
+		expect(r.expected*r.weight).toBeCloseTo(r.amount, 6)
+	})
+})
+
+test("a stream that was budgeted but did not fire says why", async () => {
+	const chart = await mount("last")
+	const a = chart.series()
+	//rent is monthly, so on most days of the month it is expected and silent
+	let found = null
+	a.backtest.forEach(p => {
+		if(found)return
+		const audit = chart.dayAudit({date: p.date, value: p.value, actual: true})
+		const r = (audit.silent || []).filter(x => x.name === "Rent")[0]
+		if(r)found = r
+	})
+	expect(found).toBeTruthy()
+	expect(found.why).toMatch(/another day|another account|card settlement|no expected amount/)
+	expect(Math.abs(found.expected)).toBeGreaterThan(1000)
+})

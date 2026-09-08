@@ -6,7 +6,7 @@ import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
-	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, contributionsOn}
+	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -286,9 +286,11 @@ export default class BalanceChart extends BaseComponent{
 		   future, and they do not run the same model */
 		const a = this.series()
 		const opts = (point.actual === false ? a.live : (a.bench || a.live))
-		const predicted = opts ? contributionsOn(new Date(point.date), opts) : []
+		const ex = opts ? explainOn(new Date(point.date), opts) : {rows: [], silent: []}
+		const predicted = ex.rows
 		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
 		return {date: k, balance: point.value, actual: actual, predicted: predicted,
+			silent: ex.silent,
 			actualTotal: sum(actual), predictedTotal: sum(predicted),
 			projected: point.actual === false}
 	}

@@ -53,6 +53,15 @@ const Line = styled.div`
 	font-size:${DS.fontSize.little}rem; font-family:Barlow,sans-serif;
 	padding:0.1rem 0; overflow-wrap:anywhere;
 `
+/* THE DERIVATION, under the number it produced. Every prediction is an expectation times a weight,
+   and printing only the product turned each surprising row into a session of guessing: $406 out of a
+   $1,700 month is a weight of 0.24, and 0.24 is either four clusters in the histogram or a weekly
+   cycle taking 7/31 - one of those is a fault and the other is the stream genuinely being paid four
+   times a month. The product alone cannot say which. */
+const Why = styled.div`
+	font-size:${DS.fontSize.little}rem; color:${props => DS.getStyle().bodyTextSecondary};
+	font-family:Barlow,sans-serif; opacity:0.85; padding:0 0 0.2rem 0;
+`
 const Total = styled(Line)`
 	border-top:1px solid ${props => DS.getStyle().borderColor};
 	margin-top:0.25rem; padding-top:0.25rem; font-weight:600;
@@ -70,6 +79,14 @@ export default class DayAudit extends BaseComponent{
 		this.state = {copied:null}
 	}
 
+	//"monthly x0.24 of $1,700, lands on 4 days" - the arithmetic behind the row, in one clause
+	why(t){
+		if(t.expected === undefined)return null
+		const pct = Math.round((t.weight || 0)*1000)/10
+		return t.cycle + " \u00d7" + pct + "% of " + money(t.expected)
+			+ (t.liveDays ? ", on " + t.liveDays + (t.liveDays === 1 ? " day" : " days") : "")
+	}
+
 	text(){
 		const d = this.props.day
 		if(!d)return ""
@@ -84,10 +101,24 @@ export default class DayAudit extends BaseComponent{
 		out.push("")
 		out.push("PREDICTED")
 		if(!d.predicted.length)out.push("  (nothing)")
-		d.predicted.forEach(t => out.push(line(t.name, money(t.amount))))
+		d.predicted.forEach(t => {
+			out.push(line(t.name, money(t.amount)))
+			const y = this.why(t)
+			if(y)out.push("      " + y)
+		})
 		out.push(line("total", money(d.predictedTotal)))
 		out.push("")
 		out.push(line("difference", money(d.predictedTotal - d.actualTotal)))
+		/* AND WHAT DID NOT FIRE. A rent absent from the day it posted on reads as an oversight, when
+		   it is one of four decisions with four different fixes - a zero weight, a zero expectation,
+		   an exclusion, or an account filter. Listing the silence with its reason is the only way an
+		   audit can be read as complete. */
+		if(d.silent && d.silent.length){
+			out.push("")
+			out.push("NOT TODAY")
+			d.silent.slice(0, 10).forEach(t =>
+				out.push(line("  " + t.name, money(t.expected)) + "   " + t.why))
+		}
 		return out.join("\n")
 	}
 
@@ -129,11 +160,22 @@ export default class DayAudit extends BaseComponent{
 				<Col>
 					<ColHead>PREDICTED</ColHead>
 					{d.predicted.length ? d.predicted.map((t, i) =>
-						<Line key={i}><span>{t.name}</span><span>{money(t.amount)}</span></Line>)
+						<React.Fragment key={i}>
+							<Line><span>{t.name}</span><span>{money(t.amount)}</span></Line>
+							{this.why(t) ? <Why>{this.why(t)}</Why> : null}
+						</React.Fragment>)
 						: <Line><span>nothing</span><span/></Line>}
 					<Total><span>total</span><span>{money(d.predictedTotal)}</span></Total>
 				</Col>
 			</Cols>
+			{d.silent && d.silent.length ? <Col style={{marginTop:"0.4rem"}}>
+				<ColHead>NOT TODAY</ColHead>
+				{d.silent.slice(0, 10).map((t, i) =>
+					<React.Fragment key={i}>
+						<Line><span>{t.name}</span><span>{money(t.expected)}</span></Line>
+						<Why>{t.why}</Why>
+					</React.Fragment>)}
+			</Col> : null}
 		</Wrap>
 	}
 }

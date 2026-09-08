@@ -178,24 +178,48 @@ export function reconstruct(txns, now, balanceNow, from){
 
    Returns 0 for a stream this reading does not cover, so a caller listing contributions gets the same
    answer the forecast used, including the zeroes. */
-export function shareOfDay(s, d, opts){
+/* WHAT A DAY'S SHARE IS MADE OF, and not only what it comes to.
+
+   Every contribution is an expectation times a weight, and the table printed only the product. So
+   "day care Emile is monthly, how was it predicted at $406" costs a session: $406 is what a $1,700
+   month looks like at a weight of 0.24, and a weight of 0.24 is what you get from four clusters in
+   the histogram OR from a weekly cycle taking 7/31 - two different faults, one of them not a fault at
+   all, indistinguishable from the product alone.
+
+   The reason a stream contributes NOTHING is the same question and the harder one, because a missing
+   row looks like an oversight rather than a decision. A rent of $3,121 absent from the day it posted
+   on is either a weight of zero (the shape puts it elsewhere), an expectation of zero (the budget
+   says nothing), an exclusion (its money is inside a card settlement) or an account filter (it does
+   not leave this reading). Those have four different fixes and the table could not tell them apart.
+
+   So the derivation travels with the number. */
+export function shareOfDayDetail(s, d, opts){
 	const routing = opts.routing || {}, shapes = opts.shapes || {};
 	const covers = opts.covers || (() => true);
 	const periodName = opts.periodName;
 	const expectedFor = opts.expectedFor
 		|| ((st, when) => monthlyExpectationAt(st, when, periodName));
-	const amt = expectedFor(s, d);
-	if(!amt)return 0;
-	if(opts.excludeIds && opts.excludeIds[s.id])return 0;
-	if(!covers(routing[s.id]))return 0;
 	const nDays = daysInMonth(d);
 	const h = shapes[s.id];
-	let w;
+	const out = {amount: 0, expected: 0, weight: 0, cycle: h && h.cycle ? h.cycle.name : "flat",
+		liveDays: 0, why: null};
+	if(h && h.any && h.weights)
+		h.weights.forEach(w => {if(w > 0.005)out.liveDays++});
+	out.expected = expectedFor(s, d);
+	if(!out.expected){out.why = "no expected amount"; return out}
+	if(opts.excludeIds && opts.excludeIds[s.id]){out.why = "inside a card settlement"; return out}
+	if(!covers(routing[s.id])){out.why = "another account"; return out}
 	if(h && h.any && h.cycle){
-		if(h.cycle.dayShare)w = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
-		else w = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
-	}else w = 1/nDays;
-	return amt * w;
+		if(h.cycle.dayShare)out.weight = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
+		else out.weight = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
+	}else out.weight = 1/nDays;
+	out.amount = out.expected * out.weight;
+	if(!out.weight)out.why = "shape puts it on another day";
+	return out;
+}
+
+export function shareOfDay(s, d, opts){
+	return shareOfDayDetail(s, d, opts).amount;
 }
 
 /* Every stream's share of one day, biggest first, with the explicit events alongside. This is what an
@@ -203,8 +227,9 @@ export function shareOfDay(s, d, opts){
 export function contributionsOn(d, opts){
 	const out = [];
 	(opts.terminals || []).forEach(s => {
-		const part = shareOfDay(s, d, opts);
-		if(Math.abs(part) > 0.005)out.push({name: s.name, id: s.id, amount: part});
+		const det = shareOfDayDetail(s, d, opts);
+		if(Math.abs(det.amount) > 0.005)out.push({name: s.name, id: s.id, amount: det.amount,
+			expected: det.expected, weight: det.weight, cycle: det.cycle, liveDays: det.liveDays});
 	});
 	/* EVERY OTHER TERM THE FORECAST ADDS TO A DAY. A breakdown that lists only the streams is not a
 	   breakdown, it is a subset - and a subset reads as an accounting, so the reader trusts it and
@@ -239,6 +264,25 @@ export function contributionsOn(d, opts){
 			amount: -opts.leakPerMonth/daysInMonth(d)});
 	}
 	return out.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+}
+
+/* The rows, plus the streams that were expected to move money this month and did not move it TODAY,
+   each with the reason. Ordered by how much they were expected to be worth, because a rent that
+   silently landed on another day matters and a $3-a-month subscription does not. */
+export function explainOn(d, opts){
+	const rows = contributionsOn(d, opts);
+	const shown = {};
+	rows.forEach(r => {shown[r.id] = true});
+	const silent = [];
+	(opts.terminals || []).forEach(s => {
+		if(shown[s.id])return;
+		const det = shareOfDayDetail(s, d, opts);
+		if(Math.abs(det.expected) < 1)return;         //nothing budgeted: not a silence worth reporting
+		silent.push({name: s.name, id: s.id, expected: det.expected, cycle: det.cycle,
+			liveDays: det.liveDays, why: det.why || "shape puts it on another day"});
+	});
+	silent.sort((a, b) => Math.abs(b.expected) - Math.abs(a.expected));
+	return {rows: rows, silent: silent};
 }
 
 export function forecast(opts){
