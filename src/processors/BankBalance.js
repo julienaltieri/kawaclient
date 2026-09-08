@@ -1670,6 +1670,16 @@ export function buildModel(input){
 		const left = budget - (spentSince[t.id] || 0);
 		if(budget < 0 && left > 0)return 0;
 		if(budget > 0 && left < 0)return 0;
+		/* PROMOTED: one instalment per turn, until the budget is used up.
+		   The shape has already resolved to a day, so returning the instalment puts the whole charge
+		   there rather than a twelfth of a year. The last one is clamped to whatever is actually left,
+		   and once nothing is left the stream predicts nothing - a budget cannot be overspent by a
+		   forecast, only by a person. */
+		if(built.promoted[t.id]){
+			const size = built.instalment[t.id];
+			if(!size)return 0;
+			return Math.abs(left) < Math.abs(size) ? left : size;
+		}
 		return left/monthsLeft;
 	};
 
@@ -1739,6 +1749,7 @@ export function buildModel(input){
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
 			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
+			promoted: built.promoted, instalment: built.instalment,
 			cardNamed: cardNamed,
 			cycleStart: cycleFrom, inferred: inferred,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
@@ -1765,6 +1776,7 @@ export function buildForecastInputs(opts){
 	const wide = opts.sinceShape;
 	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
 	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {}, settled = {};
+	const promoted = {}, instalment = {};
 	terminals.forEach(s => {
 		const all = byStream[s.id] || [];
 		seen[s.id] = all.filter(x => (!until || x.date < until) && (!since || x.date >= since));
@@ -1809,13 +1821,56 @@ export function buildForecastInputs(opts){
 		   bonus that genuinely lands on one date should be allowed to say so. */
 		const longOutflow = LONG_PERIODS[period] && a < 0;
 		const longInflow = LONG_PERIODS[period] && a > 0;
-		shapes[s.id] = histogramOf(use, {prefer: period,
-			events: longOutflow ? null : events[s.id],
+		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
 		shapes[s.id].spreadReason = null;
 		shapes[s.id].notForecast = longInflow
 			? "yearly income - no date and no rhythm, so not forecast" : null;
-		if(longOutflow && shapes[s.id].any){
+
+		/* UNPREDICTABLE UNTIL IT BECOMES PREDICTABLE.
+
+		   A yearly budget spreads because a year is a budgeting period, not a rhythm - Hobby mdm is
+		   $250 a year arriving whenever the hobby needs something. But some yearly budgets are spent
+		   in instalments, and once two of them have landed the stream has stopped being a budget and
+		   started being a schedule. Gembah: $2,626 on the 28th of June and $2,626 on the 28th of
+		   July, against a $10,000 declaration. Spreading that draws $27 a day for a charge that
+		   arrives whole, four times, and the trough it makes is the whole reason to draw this chart.
+
+		   ONE payment is not evidence - it is a payment. The second one is what turns a pair of dates
+		   into an interval, so nothing changes until it lands and the remainder keeps spreading
+		   until then.
+
+		   THREE THINGS MUST AGREE, and the third is what tells Gembah from Hobby mdm:
+		     - one movement per turn, so it is a lump rather than a trickle
+		     - a settled date: the shape resolved to one or two days
+		     - a CONSISTENT interval that matches the detected cycle - Gembah's two charges are thirty
+		       days apart against a monthly cycle; Hobby mdm's are eighty-nine and sixty-one, which is
+		       a budget being drawn on, not a schedule being kept
+		   The amounts must agree too, since instalments of a budget are the same size and a scatter of
+		   unrelated charges is not. */
+		let promotedNow = false;
+		if(longOutflow && shapes[s.id].any && use.length >= 2){
+			const live = shapes[s.id].weights.filter(w => w > 0.0001).length;
+			const sizes = use.map(x => Math.abs(x.amount)).sort((p, q) => p - q);
+			const mid = sizes[Math.floor(sizes.length/2)];
+			const sameSize = mid > 0 && sizes.every(v => Math.abs(v - mid) <= 0.35*mid);
+			const at = use.map(x => new Date(x.date).getTime()).sort((p, q) => p - q);
+			const gaps = [];
+			for(let i = 1; i < at.length; i++)gaps.push((at[i] - at[i-1])/DAY);
+			const g = gaps.slice().sort((p, q) => p - q)[Math.floor(gaps.length/2)];
+			const span = shapes[s.id].cycle ? shapes[s.id].cycle.span : 30.44;
+			const sameGap = gaps.length > 0 && gaps.every(v => Math.abs(v - g) <= 0.3*g)
+				&& Math.abs(g - span) <= 0.3*span;
+			promotedNow = live > 0 && live <= 2 && events[s.id] && events[s.id] <= 1.5
+				&& sameSize && sameGap;
+			if(promotedNow)instalment[s.id] = (a < 0 ? -1 : 1)*mid;
+		}
+		promoted[s.id] = promotedNow;
+		//said whether or not there is a histogram to flatten: a stream with no history is spread by
+		//the same rule, and reporting nothing there reads as a detection that failed
+		if(longOutflow && !promotedNow)
+			shapes[s.id].spreadReason = "long-period expense, spread by budget";
+		if(longOutflow && !promotedNow && shapes[s.id].any){
 			/* AND THE SHAPE IS REPLACED, not merely left unconcentrated. Hobby mdm's three
 			   occurrences all fell on the 16th, so the histogram said "the 16th" without any help
 			   from the concentration step - three draws a year agreeing on a day-of-month is a
@@ -1849,5 +1904,6 @@ export function buildForecastInputs(opts){
 		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
 	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,
-		settled: settled, routing: accountRoutingOf(seen, id => dir[id])};
+		settled: settled, promoted: promoted, instalment: instalment,
+		routing: accountRoutingOf(seen, id => dir[id])};
 }

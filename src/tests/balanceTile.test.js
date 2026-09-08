@@ -2637,3 +2637,83 @@ test("a lump on a card is forecast by name, and leaves the average behind it", (
 		})
 	})
 })
+
+/* =================================================================================================
+   UNPREDICTABLE UNTIL IT BECOMES PREDICTABLE.
+
+   Gembah: a $10,000 yearly declaration spent in instalments of $2,626. Spread, it draws $27 a day
+   for a charge that arrives whole - and the trough it makes is the whole reason to draw this chart.
+   One payment is not evidence; the second is what turns two dates into an interval.
+   ================================================================================================= */
+const instalments = n => {
+	const txns = []
+	for(let i = 0; i < n; i++)
+		txns.push(evTxn(new Date(Date.UTC(2026, 5 + i, 28)), -2626, "gem", "chk", "g" + i))
+	return txns
+}
+//a REAL yearly stream answers per period: the yearly figure for "yearly", a twelfth for "monthly".
+//evStream returns the same number whichever is asked, which made the monthly expectation twelve
+//times too large and every downstream ratio with it
+const yearlyStream = (id, name, perYear) => ({id: id, name: name,
+	getPreferredPeriod: () => "yearly",
+	getExpectedAmountAtDateByPeriod: (when, p) => p === "yearly" ? perYear : perYear/12})
+const gembahAt = (txns, mth) => {
+	const st = yearlyStream("gem", "Gembah", -10000)
+	return {st: st, m: buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, mth, 5)), until: new Date(Date.UTC(2026, mth + 1, 5)),
+		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})}
+}
+
+test("before any instalment, a yearly budget spreads", () => {
+	const {st, m} = gembahAt([], 5)
+	expect(m.shapes.gem.spreadReason).toBeTruthy()
+	expect(m.meta.promoted.gem).toBe(false)
+})
+
+test("after ONE instalment it still spreads - a payment is not a rhythm", () => {
+	const {st, m} = gembahAt(instalments(1), 6)
+	expect(m.meta.promoted.gem).toBe(false)
+	expect(m.shapes.gem.spreadReason).toBeTruthy()
+	//and what is left of the budget is what gets spread
+	const at = new Date(Date.UTC(2026, 6, 5))
+	expect(Math.abs(m.expectedFor(st, at))).toBeLessThan(1500)
+})
+
+test("after TWO at a monthly interval it becomes one dated charge", () => {
+	const {st, m} = gembahAt(instalments(2), 7)
+	expect(m.meta.promoted.gem).toBe(true)
+	expect(m.shapes.gem.spreadReason).toBe(null)
+	expect(m.shapes.gem.weights.filter(w => w > 0.0001).length).toBe(1)
+	//the whole instalment lands on one day, not a twelfth of a year on each
+	const days = []
+	for(let d = 1; d <= 31; d++)days.push(shareOfDay(st, new Date(Date.UTC(2026, 7, d)), m))
+	expect(Math.round(Math.min.apply(null, days))).toBe(-2626)
+	expect(days.filter(v => Math.abs(v) > 1).length).toBe(1)
+})
+
+test("it stops when the budget is used up, not a month later", () => {
+	//four instalments of $2,626 is $10,504 against a $10,000 budget
+	const {st, m} = gembahAt(instalments(4), 9)
+	const at = new Date(Date.UTC(2026, 9, 5))
+	expect(m.expectedFor(st, at)).toBe(0)
+	//and the third one is clamped to what was actually left
+	const three = gembahAt(instalments(3), 8)
+	const v = three.m.expectedFor(three.st, new Date(Date.UTC(2026, 8, 5)))
+	expect(Math.abs(v)).toBeGreaterThan(1)
+	expect(Math.abs(v)).toBeLessThan(2626)
+})
+
+test("a yearly budget drawn on at irregular intervals still spreads", () => {
+	/* Hobby mdm: $250 three times, on the 16th each time, but eighty-nine and sixty-one days apart.
+	   Same amount and same day of the month as Gembah - it is the INTERVAL that tells them apart, a
+	   budget being drawn on rather than a schedule being kept. */
+	const st = yearlyStream("hob", "Hobby mdm", -3000)
+	const txns = [evTxn(new Date(Date.UTC(2026, 1, 16)), -250, "hob", "chk", "h1"),
+		evTxn(new Date(Date.UTC(2026, 4, 16)), -250, "hob", "chk", "h2"),
+		evTxn(new Date(Date.UTC(2026, 6, 16)), -250, "hob", "chk", "h3")]
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	expect(m.meta.promoted.hob).toBe(false)
+	expect(m.shapes.hob.spreadReason).toMatch(/long-period/)
+})
