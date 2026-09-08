@@ -83,8 +83,10 @@ export default class DayAudit extends BaseComponent{
 	why(t){
 		if(t.expected === undefined)return null
 		const pct = Math.round((t.weight || 0)*1000)/10
+		const ev = t.events ? Math.round(t.events*10)/10 : null
 		return t.cycle + " \u00d7" + pct + "% of " + money(t.expected)
 			+ (t.liveDays ? ", on " + t.liveDays + (t.liveDays === 1 ? " day" : " days") : "")
+			+ (ev ? ", " + ev + (ev === 1 ? " event" : " events") + "/turn" : "")
 	}
 
 	text(){

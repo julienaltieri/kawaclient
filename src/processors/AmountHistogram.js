@@ -254,6 +254,35 @@ export function concentration(bins, observations){
    A candidate must also have been OBSERVED for at least one full turn. Two payments three days apart
    say nothing about a fortnight - not because the sample is small, but because the question was never
    put to them. */
+/* ONE EVENT DOES NOT SPREAD.
+
+   A histogram is a description of WHEN money moved, and normalising it to weights silently turns it
+   into a claim about HOW MUCH moves each day. For a stream that genuinely trickles - groceries, forty
+   card transactions a month - those are the same statement. For one that arrives as a single payment
+   whose date wanders, they are not: the weights say "a bit on each of these days" when the truth is
+   "all of it, on one of them".
+
+   Spreading an event is not a neutral hedge either. This chart exists to find the trough, and a
+   smeared payment has no trough - a $4,000 transfer drawn as $130 a day for a month erases exactly
+   the dip the reader is looking for, and the error is in the dangerous direction.
+
+   So a stream known to arrive in `events` lumps per turn keeps only its `events` strongest clusters,
+   renormalised. The count comes from evidence, never from the stream's declared period - a period is
+   a budgeting choice and says nothing about whether the money leaves in one go. */
+export function concentrateTo(weights, events){
+	const n = Math.max(1, Math.round(events || 1));
+	if(!weights || n >= weights.length)return weights;
+	const live = weights.map((w, i) => ({i: i, w: w})).filter(o => o.w > 0.0001);
+	if(live.length <= n)return weights;
+	live.sort((a, b) => b.w - a.w);
+	const keep = live.slice(0, n);
+	const total = keep.reduce((a, b) => a + b.w, 0);
+	if(!total)return weights;
+	const out = weights.map(() => 0);
+	keep.forEach(o => {out[o.i] = o.w/total});
+	return out;
+}
+
 export function detectCycle(items, dateOf, amountOf, opts){
 	const o = (typeof opts === "number") ? {minObservations: opts} : (opts || {});
 	const min = o.minObservations === undefined ? 2 : o.minObservations;
@@ -298,6 +327,21 @@ export function detectCycle(items, dateOf, amountOf, opts){
 		//how often scatter alone would agree this well, on THIS many bins with THIS many observations
 		const byChance = Math.pow(c.bins, 1 - k);
 		if(byChance > 0.05)return;
+		/* A CYCLE IS A CLAIM ABOUT HOW OFTEN, and only the timing was ever tested.
+
+		   "Weekly" over three months asserts about thirteen movements. A daycare bill that moved three
+		   times cannot be weekly whatever weekday it favours - but scored on concentration alone it
+		   can win, because three payments that happen to share a weekday concentrate perfectly in
+		   seven bins while the same three drifting across days 10, 10 and 12 do not concentrate in
+		   thirty-one. The forecast then drew a $1,800 monthly bill as four weekly steps of $406.
+
+		   So a candidate must also predict roughly the number of movements observed. Half the turns is
+		   the floor rather than one per turn, because a stream can skip one - a holiday month, a
+		   payment that landed a day outside the window - and a skipped turn is not evidence of a
+		   different rhythm. Swept over every genuinely-monthly pattern drifting up to four days either
+		   side: 28 misdetections before, none after, and no cost to genuinely weekly, biweekly or
+		   semimonthly streams. */
+		if(k < 0.5*(span/c.span))return;
 		const score = scoreOf(c);
 		if(score > best.score + 0.15 && score > 0.3)best = {cycle: c, score: score};
 	});

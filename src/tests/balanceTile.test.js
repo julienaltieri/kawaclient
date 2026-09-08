@@ -19,7 +19,7 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
-	buildModel,
+	buildModel, eventsPerTurn,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -1820,4 +1820,141 @@ test("a week is still held to a narrower radius than a month", () => {
 	}
 	expect(histogramOf(weekly).weights.filter(w => w > 0.001).length).toBe(1)
 	expect(histogramOf(twoDays).weights.filter(w => w > 0.001).length).toBe(2)
+})
+
+/* =================================================================================================
+   ONE EVENT DOES NOT SPREAD.
+
+   A histogram describes WHEN money moved; normalising it to weights quietly turns that into a claim
+   about HOW MUCH moves each day. For forty grocery transactions those are the same statement. For a
+   $2,400 daycare bill they are not - "a bit on each of these days" against "all of it, on one of
+   them" - and the chart exists to find the trough, which a smeared payment does not have.
+
+   The count is EXTRACTED, never declared: a period is a budgeting choice and says nothing about
+   whether the money leaves in one go.
+   ================================================================================================= */
+//a plain ledger record: groupByStream reads these five fields and nothing else, and building a real
+//GenericTransaction here would drag in the evaluator and a master stream this test has no use for
+const evTxn = (d, amt, stream, acct, id) => ({categorized: true, date: d, amount: amt,
+	streamAllocation: [{streamId: stream, amount: amt}],
+	userInstitutionAccountId: acct || "chk", transactionId: id})
+const evStream = (id, name, amt, period) => ({id: id, name: name,
+	getPreferredPeriod: () => period || "monthly",
+	getExpectedAmountAtDateByPeriod: () => amt})
+
+test("two payments and a declared amount are enough to say it lands in one event", () => {
+	/* Day Care Eleonore: $2,400 a month declared, two payments in the ledger and both older than the
+	   three-month amount window. It was drawn at $77 a day - the flat 1/31 fallback - for a bill that
+	   arrives whole. Two data points and the declaration are enough: if a turn is worth $2,400 and a
+	   payment is $2,400, one payment is one turn. */
+	const st = evStream("elo", "Day Care Eleonore", -2400)
+	const txns = [evTxn(new Date(Date.UTC(2026, 2, 6)), -2400, "elo", "chk", "e1"),
+		evTxn(new Date(Date.UTC(2026, 3, 6)), -2400, "elo", "chk", "e2")]
+	const asOf = new Date(Date.UTC(2026, 7, 1))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: asOf, until: new Date(Date.UTC(2026, 8, 1)),
+		since: new Date(Date.UTC(2026, 4, 1))})       //the payments are OUTSIDE the amount window
+	const h = m.shapes.elo
+	expect(h.any).toBe(true)                          //found by the wider date window
+	expect(m.meta.shapeFrom.elo).toBe("older")
+	expect(Math.round(m.meta.events.elo)).toBe(1)
+	//one live day, holding all of it - not thirty-one holding a thirty-first each
+	expect(h.weights.filter(w => w > 0.0001).length).toBe(1)
+	expect(Math.max.apply(null, h.weights)).toBeCloseTo(1, 6)
+	//and it draws as one step of the whole amount
+	const on6 = shareOfDay(st, new Date(Date.UTC(2026, 7, 6)), m)
+	expect(Math.round(on6)).toBe(-2400)
+})
+
+test("a stream the recent window can describe is not sent to the older one", () => {
+	//fallback, not replacement: nothing that already works may start answering from stale history
+	const st = evStream("rent", "Rent", -1700)
+	const txns = []
+	for(let i = 0; i < 8; i++)
+		txns.push(evTxn(new Date(Date.UTC(2026, i, 1)), -1700, "rent", "chk", "r" + i))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 15)), until: new Date(Date.UTC(2026, 8, 1)),
+		since: new Date(Date.UTC(2026, 4, 15))})
+	expect(m.meta.shapeFrom.rent).toBe("recent")
+})
+
+test("a stream that genuinely trickles is still spread", () => {
+	//groceries: many small movements make up the turn, so a weight per day is the honest description
+	const st = evStream("food", "Groceries", -1200)
+	const txns = []
+	for(let mth = 4; mth < 8; mth++) for(let d = 1; d <= 28; d += 2)
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, d)), -86, "food", "chk", "f" + mth + "-" + d))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 4, 1))})
+	expect(m.meta.events.food).toBeGreaterThan(8)
+	expect(m.shapes.food.weights.filter(w => w > 0.0001).length).toBeGreaterThan(8)
+})
+
+test("a big payment beside small fees is one event, not four", () => {
+	//amount-weighted, so three $4 fees cannot turn a rent into a trickle and spread it
+	const st = evStream("rent", "Rent", -1800)
+	const txns = []
+	for(let mth = 3; mth < 8; mth++){
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, 3)), -1800, "rent", "chk", "m" + mth))
+		for(let f = 0; f < 3; f++)
+			txns.push(evTxn(new Date(Date.UTC(2026, mth, 10 + f*5)), -4, "rent", "chk",
+				"f" + mth + "-" + f))
+	}
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 4, 1))})
+	expect(m.meta.events.rent).toBeLessThan(1.5)
+	expect(m.shapes.rent.weights.filter(w => w > 0.0001).length).toBe(1)
+})
+
+test("a monthly bill that drifts is not read as weekly", () => {
+	/* Day care Emile: $1,800 a month, three payments, drawn as four weekly steps of $406. Three
+	   payments that share a weekday concentrate perfectly in seven bins while the same three drifting
+	   across days of the month do not concentrate in thirty-one - so weekly won on timing alone. A
+	   cycle is also a claim about HOW OFTEN, and three movements cannot be thirteen turns. */
+	const st = evStream("emile", "Day care Emile", -1800)
+	const txns = [evTxn(new Date(Date.UTC(2026, 4, 6)), -1800, "emile", "chk", "a"),
+		evTxn(new Date(Date.UTC(2026, 5, 3)), -1800, "emile", "chk", "b"),
+		evTxn(new Date(Date.UTC(2026, 6, 8)), -1800, "emile", "chk", "c")]
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 3, 1))})
+	expect(m.shapes.emile.cycle.name).toBe("monthly")
+	expect(m.shapes.emile.weights.filter(w => w > 0.0001).length).toBe(1)
+})
+
+test("two payments on different days are one event, on one of them - not half on each", () => {
+	/* The sharp case. Consolidation cannot help here: the 6th and the 20th are two weeks apart, so
+	   they are not one payment that drifted, they are two separate days a single monthly payment
+	   landed on. Left as weights that is "$1,200 on the 6th and $1,200 on the 20th", which is a month
+	   with two shallow dips instead of one real one - and the whole reason to draw this chart is the
+	   real one. Reconciling $2,400 declared against $2,400 observed says one event; the day is
+	   genuinely uncertain, and the honest drawing of an uncertain day is still one lump. */
+	const st = evStream("elo", "Day Care Eleonore", -2400)
+	const txns = [evTxn(new Date(Date.UTC(2026, 2, 6)), -2400, "elo", "chk", "e1"),
+		evTxn(new Date(Date.UTC(2026, 3, 20)), -2400, "elo", "chk", "e2")]
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 8, 1)),
+		since: new Date(Date.UTC(2026, 4, 1))})
+	expect(Math.round(m.meta.events.elo)).toBe(1)
+	expect(m.shapes.elo.weights.filter(w => w > 0.0001).length).toBe(1)
+	//the whole turn lands once in the month, wherever it lands
+	let total = 0
+	for(let d = 1; d <= 31; d++)total += shareOfDay(st, new Date(Date.UTC(2026, 7, d)), m)
+	expect(Math.round(total)).toBe(-2400)
+})
+
+test("eventsPerTurn reads the ledger, never the declared period", () => {
+	//a stream declared "monthly" that in fact moves four times a month is a flow, and saying monthly
+	//louder does not make it an event - the period is a budgeting choice, the count is evidence
+	const four = []
+	for(let mth = 4; mth < 8; mth++) for(let w = 0; w < 4; w++)
+		four.push(evTxn(new Date(Date.UTC(2026, mth, 3 + w*7)), -450, "x", "chk", mth + "-" + w))
+	expect(eventsPerTurn(four, -1800)).toBeGreaterThan(3.5)
+	//and the same declaration against one payment a month is an event
+	const one = []
+	for(let mth = 4; mth < 8; mth++)
+		one.push(evTxn(new Date(Date.UTC(2026, mth, 3)), -1800, "x", "chk", "o" + mth))
+	expect(eventsPerTurn(one, -1800)).toBeLessThan(1.5)
 })

@@ -49,6 +49,63 @@ export function monthlyExpectationAt(stream, when, periodName){
    is one event recorded on several days; left spread, the forecast draws several small steps where one
    large one belongs, and the balance chart is read for its steps. consolidate() collapses only runs
    narrow enough to be one event that moved, so a genuinely diffuse stream is untouched. */
+/* HOW MANY MOVEMENTS MAKE UP ONE TURN'S MONEY.
+
+   Two estimators, because the streams that most need the answer have the least data.
+
+   BY AMOUNT, which is a reconciliation of the declaration against the ledger: if a turn is expected
+   to move $2,400 and the transactions on it are $2,400 each, then one transaction is one turn and the
+   stream arrives in a single event. If they are $600 each, four do. This needs one observation, not
+   one full turn, which is the whole point - a stream with two payments in its history can still be
+   read, and reading it is better than defaulting it to a trickle.
+
+   BY COUNT, the amount-weighted participation ratio within each observed turn: 1/sum of squared
+   shares. Amount-weighted rather than a plain count, so a $1,800 payment accompanied by three $4 fees
+   reads as one event and not four - a plain count would call that a flow and spread the rent.
+
+   BY COUNT is preferred where there is enough of it to mean anything, since it observes the thing
+   directly; BY AMOUNT carries the cases that would otherwise have no answer at all. Where both exist
+   they agree, and disagreement is itself informative - it means the declared amount and the ledger
+   describe different arrangements. */
+export function eventsPerTurn(txns, expectedPerTurn){
+	const list = (txns || []).filter(t => Math.abs(t.amount) > 0.005);
+	if(!list.length)return null;
+
+	//BY COUNT - only where a turn can actually be observed more than once
+	let byCount = null;
+	const turns = {};
+	list.forEach(t => {
+		const d = new Date(t.date);
+		const key = d.getUTCFullYear() + "-" + d.getUTCMonth();
+		(turns[key] = turns[key] || []).push(Math.abs(t.amount));
+	});
+	const keys = Object.keys(turns);
+	if(keys.length >= 2 && list.length >= 3){
+		let sum = 0;
+		keys.forEach(k => {
+			const a = turns[k], total = a.reduce((x, y) => x + y, 0);
+			if(!total)return;
+			let h = 0;
+			a.forEach(v => {const sh = v/total; h += sh*sh});
+			sum += h ? 1/h : 1;
+		});
+		byCount = sum/keys.length;
+	}
+
+	//BY AMOUNT - the declaration reconciled against what a single movement is worth
+	let byAmount = null;
+	if(expectedPerTurn && Math.abs(expectedPerTurn) > 0.005){
+		const sizes = list.map(t => Math.abs(t.amount)).sort((a, b) => a - b);
+		const m = Math.floor(sizes.length/2);
+		const typical = sizes.length % 2 ? sizes[m] : (sizes[m-1] + sizes[m])/2;
+		if(typical > 0.005)byAmount = Math.abs(expectedPerTurn)/typical;
+	}
+
+	const v = byCount !== null ? byCount : byAmount;
+	//clamped: a ratio far above the transaction count is a declaration that does not match the ledger
+	return v === null ? null : Math.min(Math.max(v, 1), Math.max(1, list.length));
+}
+
 export function histogramOf(txnsForStream, opts){
 	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
 	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf,
@@ -76,7 +133,14 @@ export function histogramOf(txnsForStream, opts){
 	const maxSpan = Math.min(6, Math.max(2, Math.floor(cycle.bins/2)));
 	const gap = Math.min(2, Math.max(1, Math.floor(cycle.bins/4)));
 	const out = histogram.asWeights(histogram.consolidate(bins, maxSpan, gap));
+	/* AND THEN IT IS CONCENTRATED TO THE NUMBER OF EVENTS THE STREAM ACTUALLY HAS. Consolidation
+	   merges days that are one payment that MOVED; this collapses clusters that are separate days a
+	   single payment could have landed on. Different questions: the first is about drift within an
+	   occurrence, the second about how many occurrences a turn has at all. */
+	const events = (opts || {}).events;
+	if(events)out.weights = histogram.concentrateTo(out.weights, events);
 	out.cycle = cycle;
+	out.events = events || null;
 	return out;
 }
 
@@ -202,7 +266,7 @@ export function shareOfDayDetail(s, d, opts){
 	const nDays = daysInMonth(d);
 	const h = shapes[s.id];
 	const out = {amount: 0, expected: 0, weight: 0, cycle: h && h.cycle ? h.cycle.name : "flat",
-		liveDays: 0, why: null};
+		liveDays: 0, events: h ? h.events : null, why: null};
 	if(h && h.any && h.weights)
 		h.weights.forEach(w => {if(w > 0.005)out.liveDays++});
 	out.expected = expectedFor(s, d);
@@ -229,7 +293,8 @@ export function contributionsOn(d, opts){
 	(opts.terminals || []).forEach(s => {
 		const det = shareOfDayDetail(s, d, opts);
 		if(Math.abs(det.amount) > 0.005)out.push({name: s.name, id: s.id, amount: det.amount,
-			expected: det.expected, weight: det.weight, cycle: det.cycle, liveDays: det.liveDays});
+			expected: det.expected, weight: det.weight, cycle: det.cycle, liveDays: det.liveDays,
+			events: det.events});
 	});
 	/* EVERY OTHER TERM THE FORECAST ADDS TO A DAY. A breakdown that lists only the streams is not a
 	   breakdown, it is a subset - and a subset reads as an accounting, so the reader trusts it and
@@ -1086,8 +1151,13 @@ export function buildModel(input){
 	});
 	const byStream = groupByStream(past, terminals.map(s => s.id), id => dir[id]);
 
+	/* the long window for DATES. A year, because a stream's day survives a change of price but not a
+	   change of arrangement, and a year is the reporting cycle the declarations themselves are set
+	   against. */
+	const sinceShape = input.sinceShape
+		|| new Date(Date.UTC(asOf.getUTCFullYear() - 1, asOf.getUTCMonth(), asOf.getUTCDate()));
 	const built = buildForecastInputs({terminals: terminals, byStream: byStream,
-		since: since, until: asOf, covered: covered,
+		since: since, sinceShape: sinceShape, until: asOf, covered: covered,
 		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
 
 	const covers = h => covered.indexOf(h || fallback) > -1;
@@ -1175,7 +1245,9 @@ export function buildModel(input){
 	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
 		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
 		settlementDay: input.settlementDay || null, periodName: periodName,
-		meta: {since: since, asOf: asOf, until: until, cycleStart: cycleFrom, inferred: inferred,
+		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
+			events: built.events, shapeFrom: built.shapeFrom,
+			cycleStart: cycleFrom, inferred: inferred,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,
 			settlementEvents: extraFlow}};
@@ -1184,17 +1256,41 @@ export function buildModel(input){
 export function buildForecastInputs(opts){
 	const terminals = opts.terminals || [], byStream = opts.byStream || {};
 	const covered = opts.covered || [], since = opts.since, until = opts.until;
+	/* A SECOND, LONGER WINDOW - FOR DATES ONLY, and used only where the short one is empty.
+
+	   The short lookback exists because AMOUNTS go stale: a rent from two years ago is a different
+	   agreement wearing the same name. Dates do not go stale the same way - a rent that has changed
+	   price still lands on the 1st - so a stream with no recent history was being handed the flat
+	   1/31 fallback and drawn as a trickle when its dates were sitting just outside the window.
+	   Day Care Eleonore at $2,400 a month was drawn as $77 every day of it.
+
+	   FALLBACK, NOT REPLACEMENT. Streams the short window can already describe keep describing
+	   themselves from it, so nothing that currently works can regress; the long window only answers
+	   where the alternative is no answer at all. And it supplies SHAPE only - every amount still comes
+	   from the declaration evaluated at the forecast date, so an old payment cannot bring an old price
+	   back with it. */
+	const wide = opts.sinceShape;
 	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
-	const shapes = {}, sliced = {}, seen = {}, dir = {};
+	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {};
 	terminals.forEach(s => {
 		const all = byStream[s.id] || [];
 		seen[s.id] = all.filter(x => (!until || x.date < until) && (!since || x.date >= since));
 		sliced[s.id] = seen[s.id].filter(x => covered.indexOf(x.accountHash) > -1);
-		shapes[s.id] = histogramOf(sliced[s.id],
-			{prefer: s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"});
+		const period = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly";
+		let use = sliced[s.id];
+		shapeFrom[s.id] = "recent";
+		if(!use.length && wide){
+			use = all.filter(x => (!until || x.date < until) && x.date >= wide
+				&& covered.indexOf(x.accountHash) > -1);
+			if(use.length)shapeFrom[s.id] = "older";
+		}
+		/* HOW MANY MOVEMENTS A TURN TAKES, reconciled against the declaration - see eventsPerTurn.
+		   Measured on the same transactions the shape is drawn from, so the two describe one stream. */
+		events[s.id] = eventsPerTurn(use, expectationAt(s, until || new Date()));
+		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id]});
 		const a = expectationAt(s, until || new Date());
 		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
-	return {shapes: shapes, sliced: sliced, seen: seen,
+	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,
 		routing: accountRoutingOf(seen, id => dir[id])};
 }
