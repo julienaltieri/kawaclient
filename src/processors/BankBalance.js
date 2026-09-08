@@ -304,6 +304,7 @@ export function shareOfDayDetail(s, d, opts){
 	const out = {amount: 0, expected: 0, weight: 0, cycle: h && h.cycle ? h.cycle.name : "flat",
 		liveDays: 0, events: h ? h.events : null,
 		topShare: h ? h.topShare : null, confident: h ? h.confident : null,
+		spreadReason: h ? h.spreadReason : null,
 		observations: h ? h.observations : 0, why: null};
 	if(h && h.any && h.weights)
 		h.weights.forEach(w => {if(w > 0.005)out.liveDays++});
@@ -344,7 +345,7 @@ export function contributionsOn(d, opts){
 		if(Math.abs(det.amount) > 0.005)out.push({name: s.name, id: s.id, amount: det.amount,
 			expected: det.expected, weight: det.weight, cycle: det.cycle, liveDays: det.liveDays,
 			events: det.events, topShare: det.topShare, confident: det.confident,
-			observations: det.observations});
+			spreadReason: det.spreadReason, observations: det.observations});
 	});
 	/* EVERY OTHER TERM THE FORECAST ADDS TO A DAY. A breakdown that lists only the streams is not a
 	   breakdown, it is a subset - and a subset reads as an accounting, so the reader trusts it and
@@ -961,6 +962,10 @@ export function observedSettlement(transactions, coveredHashes, creditHashes){
    all, silently: the audit named one card where there were two, and the second card's spending was
    simply never billed. The stream is the user's own statement about what these transactions are, and
    it survives a missing leg on either side. */
+/* Periods that are BUDGETS rather than rhythms: what is left of them is spread over the months
+   remaining, and they are never given a single day. Declared here, above every caller. */
+const LONG_PERIODS = {yearly: true, biyearly: true, bimonthly: true};
+
 /* declared ABOVE its first use rather than beside the card model it was written for: this file has
    twice shipped a "cannot access before initialization" from a const sitting below a caller */
 const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
@@ -1395,8 +1400,6 @@ export function lookbackFrom(now, startingMonth, startingDay){
 	return three > cycle ? three : cycle;
 }
 
-const LONG_PERIODS = {yearly: true, biyearly: true, bimonthly: true};
-
 export function buildModel(input){
 	const asOf = input.asOf, until = input.until;
 	const periodName = input.periodName || "monthly";
@@ -1559,8 +1562,37 @@ export function buildForecastInputs(opts){
 		   Measured on the same transactions the shape is drawn from, so the two describe one stream. */
 		const a = expectationAt(s, until || new Date());
 		events[s.id] = eventsPerTurn(use, a);
-		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
+		/* A YEARLY EXPENSE SPREADS ITS REMAINDER AND IS NOT GIVEN A DAY.
+
+		   Hobby mdm is $250 a year and arrives whenever the hobby needs something. It landed in one
+		   cluster often enough to be concentrated, so the forecast drew a dated -$240 step on the
+		   16th and called it Tier 1, dated - a claim about a date that nothing in an annual budget
+		   supports. Two or three occurrences a YEAR agreeing on a day-of-month is a coincidence with
+		   very few chances to fail, which is exactly the case where the concentration test is weakest.
+
+		   The amount rule already treats these as budgets rather than events: expectedFor spreads what
+		   is LEFT of the year over the months remaining. Concentrating the shape contradicted that -
+		   a monthly remainder placed entirely on one day. So the two now agree: a long-period outflow
+		   spreads.
+
+		   OUTFLOWS ONLY. A yearly inflow is already held to the stricter test in histogramOf, and a
+		   bonus that genuinely lands on one date should be allowed to say so. */
+		const longOutflow = LONG_PERIODS[period] && a < 0;
+		shapes[s.id] = histogramOf(use, {prefer: period,
+			events: longOutflow ? null : events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
+		shapes[s.id].spreadReason = null;
+		if(longOutflow && shapes[s.id].any){
+			/* AND THE SHAPE IS REPLACED, not merely left unconcentrated. Hobby mdm's three
+			   occurrences all fell on the 16th, so the histogram said "the 16th" without any help
+			   from the concentration step - three draws a year agreeing on a day-of-month is a
+			   coincidence with very few chances to fail. The amount being spread is a monthly
+			   REMAINDER of an annual budget; there is no day for a remainder to land on, and the two
+			   halves of the model have to say the same thing. */
+			shapes[s.id].weights = shapes[s.id].weights.map(() => 1/shapes[s.id].weights.length);
+			shapes[s.id].events = null;
+			shapes[s.id].spreadReason = "long-period expense, spread by budget";
+		}
 		/* WHICH TURNS HAVE ALREADY BEEN PAID.
 
 		   A monthly bill that has already gone out this month is not going out again this month. The

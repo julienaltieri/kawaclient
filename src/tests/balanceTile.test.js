@@ -2311,3 +2311,38 @@ test("a semimonthly stream paid in the first half is still expected in the secon
 	for(let d = 21; d <= 30; d++)rest += shareOfDay(st, new Date(Date.UTC(2026, 8, d)), m)
 	expect(Math.round(rest)).toBe(7837)
 })
+
+test("a yearly expense spreads its remainder instead of being given a day", () => {
+	/* Hobby mdm: $250 a year, arriving whenever the hobby needs something. Two or three occurrences
+	   a YEAR agreeing on a day-of-month is a coincidence with very few chances to fail, so the
+	   concentration test passed and the forecast drew a dated step and called it Tier 1. An annual
+	   budget supports no such claim - and the AMOUNT rule already treats it as a budget, spreading
+	   what is left over the months remaining, so a concentrated shape contradicted it. */
+	const st = evStream("hobby", "Hobby mdm", -3000, "yearly")
+	const txns = [evTxn(new Date(Date.UTC(2026, 1, 16)), -250, "hobby", "chk", "h1"),
+		evTxn(new Date(Date.UTC(2026, 4, 16)), -250, "hobby", "chk", "h2"),
+		evTxn(new Date(Date.UTC(2026, 6, 16)), -250, "hobby", "chk", "h3")]
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 1, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	expect(m.shapes.hobby.weights.filter(w => w > 0.0001).length).toBeGreaterThan(5)
+	expect(m.shapes.hobby.spreadReason).toMatch(/long-period/)
+	//no single day carries the month
+	const each = []
+	for(let d = 1; d <= 31; d++)each.push(Math.abs(shareOfDay(st, new Date(Date.UTC(2026, 7, d)), m)))
+	const total = each.reduce((a, b) => a + b, 0)
+	expect(Math.max.apply(null, each)/total).toBeLessThan(0.35)
+})
+
+test("a monthly expense on a firm date still gets its day", () => {
+	//the guard: spreading is for BUDGETS, and a rent is not a budget
+	const st = evStream("rent", "Rent", -3121)
+	const txns = []
+	for(let mth = 2; mth < 8; mth++)
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, 2)), -3121, "rent", "chk", "r" + mth))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 5, 1))})
+	expect(m.shapes.rent.weights.filter(w => w > 0.0001).length).toBe(1)
+	expect(m.shapes.rent.spreadReason).toBe(null)
+})

@@ -89,6 +89,9 @@ export default class DayAudit extends BaseComponent{
 			? ", date not repeatable (" + Math.round((t.topShare || 0)*100) + "% in one day over "
 				+ t.observations + ")"
 			: ""
+		//a budget has no day, and "monthly x3.2%" of one reads as a failed detection rather than the
+		//deliberate choice it is
+		if(t.spreadReason)return t.spreadReason + ", " + pct + "% of " + money(t.expected) + " today"
 		return t.cycle + " \u00d7" + pct + "% of " + money(t.expected)
 			+ (t.liveDays ? ", on " + t.liveDays + (t.liveDays === 1 ? " day" : " days") : "")
 			+ (ev ? ", " + ev + (ev === 1 ? " event" : " events") + "/turn" : "")

@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b30 - rolling 7d, the next payment, and one stream at a time";
+export const BENCH_VERSION = "b31 - dollar-days per row, and a budget has no day";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -297,11 +297,20 @@ export default class BalanceBench extends BaseComponent{
 		const CARD_ID = "__card__"
 		perStream[CARD_ID] = {}
 		dayKeys.forEach(k => {perStream[CARD_ID][k] = (extraFlow[k] || {}).amount || 0})
+		/* THE CARD'S ACTUAL IS WHAT REALLY LEFT THE ACCOUNT, read from the payment streams.
+
+		   It used to come from the inferred settlement list, which by the as-of law stops before the
+		   window opens - so the largest flow in the portfolio printed "actual $0" and scored 0%
+		   permanently, and its chart had nothing to draw. The payments themselves are in the ledger
+		   the whole time: they are the covered-account legs of the streams the card model excluded,
+		   which is the same $9,800 the "Credit Card Payments" row has been reporting all along. */
 		actualByStream[CARD_ID] = {}
-		settleActual.forEach(x => {
-			if(x.date < open || x.date > close || keep.indexOf(x.accountHash) < 0)return
-			const k = dayKey(x.date)
-			actualByStream[CARD_ID][k] = (actualByStream[CARD_ID][k] || 0) + x.amount
+		Object.keys(excludeIds).forEach(id => {
+			(actualLedger[id] || []).forEach(x => {
+				if(x.date < open || x.date > close || !covers(x.accountHash))return
+				const k = dayKey(x.date)
+				actualByStream[CARD_ID][k] = (actualByStream[CARD_ID][k] || 0) + x.amount
+			})
 		})
 
 
@@ -421,15 +430,28 @@ export default class BalanceBench extends BaseComponent{
 				fe += Math.abs((perStream[t.id][k] || 0) - (actualByStream[t.id][k] || 0))
 				fm += Math.abs(actualByStream[t.id][k] || 0)
 			})
-			let p = 0, a = 0, worst = 0, worstDay = null
+			/* THE SURFACE THIS STREAM IS RESPONSIBLE FOR, in dollar-days.
+
+			   A percentage says how wrong a stream is about itself; it cannot say whether that matters.
+			   Renter's insurance is 100% wrong about $10 and Savings is 40% wrong about $4,000, and
+			   the column ranked them by the wrong one. This is the same integral the headline scores -
+			   the running gap between what this stream was predicted to have moved and what it moved,
+			   summed over every day - so the rows add up to roughly the number at the top and sorting
+			   by it puts the leverage first.
+
+			   Cumulative, not daily: a payment three days late is wrong for three days and then right
+			   again, which is exactly what it costs the balance. */
+			let p = 0, a = 0, worst = 0, worstDay = null, surface = 0
 			dayKeys.forEach((k, i) => {
 				if(i){p += (perStream[t.id][k] || 0); a += (actualByStream[t.id][k] || 0)}
+				surface += Math.abs(p - a)
 				if(Math.abs(p - a) > Math.abs(worst)){worst = p - a; worstDay = k}
 			})
 			let pt = 0, at = 0
 			dayKeys.forEach(k => {pt += (perStream[t.id][k] || 0); at += (actualByStream[t.id][k] || 0)})
 			const days = Object.keys(actualByStream[t.id]).sort()
-			detail[t.id] = {predTotal: pt, actTotal: at, worst: worst, worstDay: worstDay,
+			detail[t.id] = {surface: surface, predTotal: pt, actTotal: at,
+				worst: worst, worstDay: worstDay,
 				flowAccuracy: fm ? 1 - fe/fm : (fe > 0.005 ? 0 : 1),
 				dayKeys: dayKeys, pred: perStream[t.id], act: actualByStream[t.id],
 				actDays: days.map(d => d.slice(5) + " " + money(actualByStream[t.id][d])).join(", "),
@@ -532,12 +554,17 @@ export default class BalanceBench extends BaseComponent{
 		const W = 320, H = 90, PAD = 4
 		const all = s.pred.concat(s.act).concat([0])
 		const lo = Math.min.apply(null, all), hi = Math.max.apply(null, all)
+		/* A FLAT LINE MEANS NOTHING WITHOUT A SCALE. Renter's insurance moves $10 a month and drew
+		   the same picture as a stream moving $4,000, because the frame rescales to whatever it
+		   holds. The extremes are labelled so the reader can tell a stream that is genuinely steady
+		   from one whose whole range is smaller than the ink. */
 		const span = (hi - lo) || 1
 		const x = i => PAD + (i/(Math.max(1, s.days.length - 1)))*(W - 2*PAD)
 		const y = v => PAD + (1 - (v - lo)/span)*(H - 2*PAD)
 		const path = arr => arr.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1)
 			+ " " + y(v).toFixed(1)).join(" ")
-		return {W: W, H: H, zero: y(0), pred: path(s.pred), act: path(s.act), series: s}
+		return {W: W, H: H, zero: y(0), lo: lo, hi: hi, span: hi - lo,
+			yLo: y(lo), yHi: y(hi), pred: path(s.pred), act: path(s.act), series: s}
 	}
 
 	/* THE NEXT PAYMENT, AS OF NOW - not a score of a past window.
@@ -708,7 +735,9 @@ export default class BalanceBench extends BaseComponent{
 		const since = (a && a.since) || this.windows(now)[0][1]
 		//the settlement is forecast like a stream, so it is listed like one - otherwise the single
 		//largest outflow in the portfolio has no row and its accuracy cannot be read
+		const cardDetail = (a && a.detail && a.detail["__card__"]) || null
 		const synthetic = (a && a.settleMonthly) ? [{name: "Card settlement (from card spend)",
+			id: "__card__", surface: (cardDetail && cardDetail.surface) || 0,
 			cycle: "per cycle", expected: a.settleMonthly, tier: 3, day: "posted + rate",
 			amount: a.settleMonthly, spread: 0, gain: (a.gain || {})["__card__"] || 0,
 			sort: Math.abs(a.settleMonthly),
@@ -736,12 +765,14 @@ export default class BalanceBench extends BaseComponent{
 			   never saw. A column that disagrees with the thing it describes is worse than no column,
 			   because it sends the reader to audit a number nobody used. */
 			const used = a && a.expectedFor ? a.expectedFor(s, now) : p.amount
+			const det = (a && a.detail && a.detail[s.id]) || null
 			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
+				surface:(det && det.surface) || 0,
 				tier:p.thin ? 0 : p.tier, day:day,
 				amount:(p.tier === TIERS.spread ? used : p.amount)/(ratio || 1),
 				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth),
 				detail:(a && a.detail && a.detail[s.id]) || null}
-		})).sort((x, y) => (x.gain - y.gain) || (y.sort - x.sort))
+		})).sort((x, y) => (y.surface - x.surface) || (x.gain - y.gain) || (y.sort - x.sort))
 		return this._rows
 	}
 	//grouped, because a list of eighty-seven is audited a tier at a time
@@ -794,16 +825,21 @@ export default class BalanceBench extends BaseComponent{
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
 		}
-		const w = [26, 12, 12, 9, 14, 12, 7]
-		const line = c => c[0].slice(0,w[0]).padEnd(w[0]) + c[1].padEnd(w[1])
-			+ c[2].padStart(w[2]) + c[3].padStart(w[3]) + "  " + c[4].padEnd(w[4])
-			+ c[5].padStart(w[5]) + c[6].padStart(w[6])
+		/* THE SURFACE COLUMN COMES FIRST, and the rows are sorted by it. A percentage says how wrong
+		   a stream is about itself and cannot say whether that matters: renter's insurance is 100%
+		   wrong about $10 and savings is 40% wrong about $4,000. Dollar-days is the same integral the
+		   headline scores, so these rows add up to roughly the number at the top and reading down the
+		   column is reading down the leverage. */
+		const w = [26, 11, 11, 11, 8, 13, 11, 6]
+		const line = c => c[0].slice(0,w[0]).padEnd(w[0]) + c[1].padStart(w[1])
+			+ "  " + c[2].padEnd(w[2]) + c[3].padStart(w[3]) + c[4].padStart(w[4])
+			+ "  " + c[5].padEnd(w[5]) + c[6].padStart(w[6]) + c[7].padStart(w[7])
 		this.groups().forEach(g => {
 			if(!g[2].length)return
 			out.push(g[1])
-			out.push(line(["  stream","cycle","expected","spread","pred day","pred amt","acc"]))
+			out.push(line(["  stream","$-days","cycle","expected","spread","pred day","pred amt","acc"]))
 			g[2].forEach(r => {
-				out.push(line(["  " + r.name, r.cycle, money(r.expected),
+				out.push(line(["  " + r.name, money(r.surface), r.cycle, money(r.expected),
 					(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
 					(r.gain*100).toFixed(0) + "%"]))
 				//the arithmetic behind a surprising score, for the rows where it is worth seeing
@@ -856,6 +892,13 @@ export default class BalanceBench extends BaseComponent{
 				<path d={c.pred} fill="none" stroke={ink} strokeWidth="1.4"
 					strokeDasharray="3,2.5" opacity="0.75"/>
 			</Chart>
+			{/* the scale in words rather than tick marks: at this size a labelled axis is unreadable,
+			    and the only thing the reader needs is how many dollars the frame is worth */}
+			<Key>
+				<span>top {money(c.hi)}</span>
+				<span>bottom {money(c.lo)}</span>
+				<span>full height {money(c.span)}</span>
+			</Key>
 			<Key>
 				<span>—— actual, cumulative</span>
 				<span>- - predicted</span>
@@ -930,7 +973,8 @@ export default class BalanceBench extends BaseComponent{
 						style={{cursor:"pointer"}}>
 					<Name>{r.name}</Name>
 					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
-					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
+					<Line>{money(r.surface)} $·days · {r.cycle} · expects {money(r.expected)}
+						· predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
 					{this.state.open === r.name ? this.drawStream(r.id) : null}
 					{r.detail && this.state.open === r.name ? <Line>
