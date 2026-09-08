@@ -121,7 +121,7 @@ reads it needs to know the map exists. A user whose settings predate the map is 
 
 **Checking and credit are indistinguishable to that question, deliberately.** Money spent on a card
 is spending. Only the balance forecast needs to know it is a card, because only it has to model money
-leaving the current account later and in a lump.
+leaving the checking account later and in a lump.
 
 ---
 

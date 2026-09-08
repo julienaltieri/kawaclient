@@ -1504,11 +1504,12 @@ payments are excluded here and reintroduced in Phase 5, because they are not spe
 discharge of another account's balance, and modelling them twice is exactly the bug this whole
 revision exists to remove.
 
-**3b — The card account.** Forecast every stream routed to it, *except* settlements. This needs a
-detector for "which transactions on this card are settlements", which is rungs 2–4 of
-[`credit-cards.md`](credit-cards.md#identifying-a-payment) applied from the card's side rather than
-the current account's. The output is a forecast of the card's **balance**, which is what a statement
-is a snapshot of.
+**3b — The card account.** Forecast every stream routed to it, *except* repayments. A repayment is
+identified as a **paired transaction with one leg on a checking account and one on a credit
+account** — see [`credit-cards.md`](credit-cards.md). The current implementation derives the link
+from streams instead, which is a budgeting concept standing in for a fact about two accounts;
+moving it onto the pairing already in the data model is part of this phase. The output is a forecast
+of the card's **balance**, which is what a statement is a snapshot of.
 
 **3c — The per-stream sub-problem, documented properly.** Predicting one stream is its own problem
 and is currently described only in scattered sections above. It needs one place, covering:

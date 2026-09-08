@@ -157,7 +157,7 @@ Recorded so far:
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
 | [`authentication.md`](authentication.md) | How you get into Kawa and stay in: the Cognito proxy login, why a session dies after an hour, what the credentials are worth if they leak, and the roadmap for refresh tokens and biometric unlock. |
 | [`account-types.md`](account-types.md) | The two notions of account type — what the aggregator reports and what the user sets in Settings — how the second overrides the first, where each is stored, and which parts of the app read which. |
-| [`credit-cards.md`](credit-cards.md) | The relationship between a credit card account and the current account that pays it: why a card cannot be a stream, how its payments are identified, how a statement is reconstructed, and the ways real portfolios break each of those. |
+| [`credit-cards.md`](credit-cards.md) | How a credit card account behaves and how it is linked to the checking account that funds it: the two situations depending on what is connected, the link through paired transactions, and what can be said about a statement in each. |
 
 ---
 
