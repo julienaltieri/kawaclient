@@ -5,7 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
-	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf}
+	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b31 - dollar-days per row, and a budget has no day";
+export const BENCH_VERSION = "b32 - one row of money, one row per card";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -297,6 +297,50 @@ export default class BalanceBench extends BaseComponent{
 		const CARD_ID = "__card__"
 		perStream[CARD_ID] = {}
 		dayKeys.forEach(k => {perStream[CARD_ID][k] = (extraFlow[k] || {}).amount || 0})
+		/* ONE ROW OF MONEY, NOT TWO.
+
+		   "Card settlement (from card spend)" and "Credit Card Payments" were both being scored, and
+		   both against the same $9,800 - because they ARE the same money seen from two ends. The card
+		   model forecasts the bill; the payment stream is the bill, excluded from the forecast
+		   precisely so it is not counted twice. Excluding it from the FORECAST was right and always
+		   has been; leaving it in the SCORING was not, and it went unnoticed until b31 gave the card
+		   row a real actual - before that the duplicate showed as $0 and looked like an empty row
+		   rather than a second copy of the largest flow in the portfolio.
+
+		   So the excluded streams stop being rows of their own, and the card becomes ONE row PER CARD:
+		   two cards settle on their own cycles for their own amounts and pooling them describes
+		   neither, which is the same reason the model itself is per card.
+
+		   THE ACTUALS ARE ATTRIBUTED FROM THE WHOLE LEDGER, not the model's. The model may not look
+		   inside the window - that is the as-of law - but the report is describing what happened, and
+		   asking which card a payment cleared is a question about the past. Anything that cannot be
+		   attributed is reported as such rather than dropped: an unattributed payment is a mapping
+		   gap, and it is the one number that says so. */
+		const reportSettlements = inferSettlements(this.props.transactions, keep, cards,
+			{zeroSumIds: this.terminals().filter(t => t.isZeroSumStream).map(t => t.id)})
+		const cardName = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
+		const cardIdOf = h => "__card__" + h
+		const cardRows = cards.map(h => ({id: cardIdOf(h), name: "Card · " + (cardName[h] || h)}))
+		cards.forEach(h => {
+			perStream[cardIdOf(h)] = {}
+			actualByStream[cardIdOf(h)] = {}
+		})
+		Object.keys(extraFlow).forEach(k => {
+			;(extraFlow[k].parts || []).forEach(p => {
+				const id = cardIdOf(p.card)
+				if(perStream[id])perStream[id][k] = (perStream[id][k] || 0) + p.amount
+			})
+		})
+		let attributed = 0
+		reportSettlements.forEach(x => {
+			if(x.date < open || x.date > close || !covers(x.accountHash))return
+			const id = cardIdOf(x.card)
+			if(!actualByStream[id])return
+			const k = dayKey(x.date)
+			actualByStream[id][k] = (actualByStream[id][k] || 0) + x.amount
+			attributed += x.amount
+		})
+
 		/* THE CARD'S ACTUAL IS WHAT REALLY LEFT THE ACCOUNT, read from the payment streams.
 
 		   It used to come from the inferred settlement list, which by the as-of law stops before the
@@ -423,7 +467,8 @@ export default class BalanceBench extends BaseComponent{
 		//the arithmetic behind one stream's score, so a surprising number can be audited rather than
 		//taken on trust
 		const detail = {}
-		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).forEach(t => {
+		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).concat(cardRows)
+			.forEach(t => {
 			let fe = 0, fm = 0
 			dayKeys.forEach((k, i) => {
 				if(!i)return
@@ -465,7 +510,10 @@ export default class BalanceBench extends BaseComponent{
 			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
 			settlements:inferred, settleMonthly:settleMonthly, cards:model.meta.cards,
 			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
-			excluded:Object.keys(excludeIds).length}
+			excluded:Object.keys(excludeIds).length, excludeIds:excludeIds,
+			cardRows:cardRows, cardAttributed:attributed,
+			cardTotal:Object.keys(actualByStream[CARD_ID] || {})
+				.reduce((x, k) => x + actualByStream[CARD_ID][k], 0)}
 		return this._cache[key]
 	}
 	/* ROLLING SEVEN DAYS - the horizon a decision is actually taken at.
@@ -733,16 +781,23 @@ export default class BalanceBench extends BaseComponent{
 		const byStream = this.byStream()
 		const a = this.analyse()
 		const since = (a && a.since) || this.windows(now)[0][1]
-		//the settlement is forecast like a stream, so it is listed like one - otherwise the single
-		//largest outflow in the portfolio has no row and its accuracy cannot be read
-		const cardDetail = (a && a.detail && a.detail["__card__"]) || null
-		const synthetic = (a && a.settleMonthly) ? [{name: "Card settlement (from card spend)",
-			id: "__card__", surface: (cardDetail && cardDetail.surface) || 0,
-			cycle: "per cycle", expected: a.settleMonthly, tier: 3, day: "posted + rate",
-			amount: a.settleMonthly, spread: 0, gain: (a.gain || {})["__card__"] || 0,
-			sort: Math.abs(a.settleMonthly),
-			detail: (a.detail || {})["__card__"] || null}] : []
-		this._rows = synthetic.concat(this.terminals().map(s => {
+		/* THE CARD IS ONE ROW PER CARD, and the payment streams it replaces get none.
+
+		   Two cards settle on their own cycles for their own amounts, so a pooled row describes
+		   neither - the same reason the model itself is per card. And the streams those payments are
+		   categorised to are the SAME MONEY: excluded from the forecast so the bill is counted once,
+		   they must be excluded from the scoring for the same reason, or the largest flow in the
+		   portfolio appears twice and the dollar-days column stops adding up. */
+		const cardRows = ((a && a.cardRows) || []).map(c => {
+			const d = (a.detail || {})[c.id] || null
+			const pred = d ? d.predTotal : 0
+			return {name: c.name, id: c.id, surface: (d && d.surface) || 0,
+				cycle: "per cycle", expected: pred, tier: 3, day: "posted + rate",
+				amount: pred, spread: 0, gain: (a.gain || {})[c.id] || 0,
+				sort: Math.abs((d && d.actTotal) || pred), detail: d}
+		})
+		const dropped = (a && a.excludeIds) || {}
+		this._rows = cardRows.concat(this.terminals().filter(s => !dropped[s.id]).map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
 			const perMonth = monthlyExpectationAt(s, now, "monthly")
 			const perCycle = monthlyExpectationAt(s, now, declared)
@@ -812,6 +867,14 @@ export default class BalanceBench extends BaseComponent{
 			out.push("NEXT CARD PAYMENT (as of today, not the scored window)")
 			this.nextPaymentLines().forEach(l => out.push(l))
 			out.push("")
+			if(a.cardTotal){
+				const gap = a.cardTotal - a.cardAttributed
+				out.push("card payments in window " + money(a.cardTotal)
+					+ ", attributed to a card " + money(a.cardAttributed)
+					+ (Math.abs(gap) > 1 ? "   UNATTRIBUTED " + money(gap) : "   all attributed"))
+				out.push("  (the " + a.excluded + " payment stream(s) these belong to are not listed"
+					+ " separately - the card rows ARE that money)")
+			}
 			this.cardLines().forEach(c => {
 				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases
 					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount)"
@@ -933,6 +996,11 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{a && a.horizon ? "one shot, truncated: " + a.horizon.map(h => "+" + h.days + "d "
 					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
 				<Note>{BENCH_VERSION}</Note>
+				<Note>{a && a.cardTotal ? "card payments in window " + money(a.cardTotal)
+					+ " · attributed " + money(a.cardAttributed)
+					+ (Math.abs(a.cardTotal - a.cardAttributed) > 1
+						? " · UNATTRIBUTED " + money(a.cardTotal - a.cardAttributed)
+						: " · all attributed") : ""}</Note>
 				<Note>{a ? "card settlements matched: " + (a.settlements || []).length
 					+ " · excluded: " + (a.excluded || 0)
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>

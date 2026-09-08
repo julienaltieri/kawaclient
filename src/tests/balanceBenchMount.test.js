@@ -170,3 +170,24 @@ test("a stream's cumulative series is the same numbers the score used", async ()
 	expect(s.act[s.act.length-1]).toBeCloseTo(a.detail[id].actTotal, 4)
 	expect(ref.current.streamChart(id).pred).toMatch(/^M/)
 })
+
+test("the card is one row per card, and the payment stream is not a second copy of it", async () => {
+	/* "Card settlement (from card spend)" and "Credit Card Payments" were both scored against the
+	   same $9,800, because they ARE the same money seen from two ends. Excluding the stream from the
+	   FORECAST was always right; leaving it in the SCORING made the largest flow in the portfolio
+	   appear twice, and the dollar-days column stopped adding up. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const rows = ref.current.rows()
+	//every excluded payment stream is absorbed, not listed
+	Object.keys(a.excludeIds).forEach(id => {
+		expect(rows.filter(r => r.id === id).length).toBe(0)
+	})
+	//and there is a row per card, carrying that card's own settlements
+	const cardRows = rows.filter(r => /^__card__./.test(r.id || ""))
+	expect(cardRows.length).toBeGreaterThan(0)
+	expect(cardRows.length).toBe((a.cardRows || []).length)
+	//the actuals attributed to cards account for the payments that really left
+	expect(Math.abs(a.cardTotal)).toBeGreaterThan(0)
+	expect(Math.abs(a.cardAttributed)).toBeGreaterThan(0)
+})
