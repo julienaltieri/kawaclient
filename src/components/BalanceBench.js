@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b32 - one row of money, one row per card";
+export const BENCH_VERSION = "b33 - the statement is the unit, and a closed card stops";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -707,6 +707,9 @@ export default class BalanceBench extends BaseComponent{
 				: 0
 			return {hash: h, name: names[h] || h.slice(0, 18),
 				matched: c.events.length, purchases: c.spend,
+				perStatement: c.perStatement || 1, dormant: !!c.dormant,
+				idle: c.idleDays, interleaved: !!c.interleaved,
+				gapLo: c.gapLo, gapHi: c.gapHi,
 				byReceipt: c.events.filter(e => e.by === "receipt").length,
 				byAmount: c.events.filter(e => e.by === "amount").length,
 				interval: Math.round(c.intervalDays), lag: c.lagDays,
@@ -876,13 +879,20 @@ export default class BalanceBench extends BaseComponent{
 					+ " separately - the card rows ARE that money)")
 			}
 			this.cardLines().forEach(c => {
-				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases
+				out.push("  " + c.name + ": " + c.matched + " statements from " + c.purchases
 					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount)"
+					+ (c.perStatement > 1.2
+						? ", " + c.perStatement.toFixed(1) + " payments per statement" : "")
 					+ ", every " + c.interval + "d, statement closes "
 					+ c.lag + "d before payment, clears "
 					+ Math.round(c.ratio*100) + "% at " + money(-c.rate) + "/day"
 					+ (c.fit === null ? "  (offset not fitted: too few settlements)"
 						: "  (spread " + Math.round(c.fit*100) + "%)"))
+				if(c.dormant)out.push("      DORMANT - nothing settled for " + c.idle
+					+ " days, so no payment is forecast")
+				if(c.interleaved)out.push("      TWO RHYTHMS on this account: gaps alternate "
+					+ c.gapLo.toFixed(1) + "d / " + c.gapHi.toFixed(1)
+					+ "d - two statements that do not share a day")
 			})
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
@@ -1005,8 +1015,11 @@ export default class BalanceBench extends BaseComponent{
 					+ " · excluded: " + (a.excluded || 0)
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
 				{this.cardLines().map(c => <Note key={c.hash}>
-					{c.name}: {c.matched} settlements ({c.byReceipt} by receipt, {c.byAmount} by
-					amount) from {c.purchases} purchases · every
+					{c.dormant ? "DORMANT · " : ""}{c.interleaved ? "TWO RHYTHMS · " : ""}
+					{c.name}: {c.matched} statements ({c.byReceipt} by receipt, {c.byAmount} by
+					amount) from {c.purchases} purchases
+					{c.perStatement > 1.2 ? " · " + c.perStatement.toFixed(1) + " payments each" : ""}
+					· every
 					{" " + c.interval}d · closes {c.lag}d before payment · clears
 					{" " + Math.round(c.ratio*100)}% · {money(-c.rate)}/day
 					{c.fit === null ? " · offset not fitted"

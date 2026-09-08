@@ -1172,10 +1172,44 @@ export function cardCycles(transactions, creditHashes, settlements){
 			t.userInstitutionAccountId === c && t.amount < 0);
 		o.spend = spent.length;
 
+		/* THE UNIT IS THE STATEMENT, NOT THE CARD IN SOMEONE'S POCKET.
+
+		   Two people carrying cards on one account settle it twice on the same day - two outflows
+		   from the current account, two receipts, one statement period. Left as two events the gap
+		   between them is ZERO, and a zero in the middle of a run of sevens drags the median toward
+		   nothing: the rhythm, the closing offset fitted against it and the pass-through ratio are all
+		   computed from windows that are a day long. Same day, same account, same statement - so they
+		   are added together into one event before anything is measured. */
+		const byDay = {};
+		o.events.forEach(e => {
+			const k = dayKey(new Date(e.date));
+			if(!byDay[k])byDay[k] = {date: e.date, amount: 0, card: c, parts: 0, streamIds: []};
+			byDay[k].amount += e.amount;
+			byDay[k].parts++;
+			(e.streamIds || []).forEach(id => {
+				if(byDay[k].streamIds.indexOf(id) < 0)byDay[k].streamIds.push(id);
+			});
+		});
+		o.perStatement = Math.max(1, o.events.length/(Object.keys(byDay).length || 1));
+		o.events = Object.keys(byDay).sort().map(k => byDay[k]);
+
 		const gaps = [];
 		for(let i = 1; i < o.events.length; i++)
 			gaps.push((new Date(o.events[i].date) - new Date(o.events[i-1].date))/DAY);
 		const median = gaps.length ? MED(gaps) : 30.44;
+
+		/* AND IF THERE ARE STILL TWO RHYTHMS, SAY SO RATHER THAN AVERAGE THEM.
+		   Two cards that settle on DIFFERENT days interleave instead of merging, and the gaps then
+		   alternate - three days, four days, three, four - which a median silently reports as three
+		   and a half. That is a different model, not a worse fit of this one, so it is measured and
+		   surfaced rather than guessed at. */
+		if(gaps.length >= 6){
+			const sorted = gaps.slice().sort((x, y) => x - y);
+			const half = Math.floor(sorted.length/2);
+			const lo = MED(sorted.slice(0, half)), hi = MED(sorted.slice(half));
+			o.interleaved = lo > 0 && hi > lo*1.6;
+			o.gapLo = lo; o.gapHi = hi;
+		}
 
 		/* THE SCHEDULE IS LOCKED TO A CALENDAR, not chained off the last payment.
 		   An automated repayment lands on the same weekday, or the same day of the month, and
@@ -1269,6 +1303,19 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 		const last = past.length ? new Date(past[past.length-1].date) : null;
 		if(!last && !rate)return;
 		cy.rate = rate;
+		cy.idleDays = last ? Math.round((from - last)/DAY) : null;
+
+		/* A CLOSED CARD IS NOT A CARD ON A LONG CYCLE.
+
+		   The schedule runs off the last payment, so a card that stopped being used a year ago was
+		   still being handed a payment next week - X1, last settled in October, forecast to pay $270
+		   in September. That is money leaving an account that no longer exists, every cycle, for ever.
+
+		   Three cycles of silence, floored at two months so a monthly card is not written off for
+		   being a few days late. Measured against the forecast date rather than today, so a backtest
+		   asks the question the way it stood then. */
+		const idleLimit = Math.max(60, 3*cy.intervalDays);
+		if(last && (from - last)/DAY > idleLimit){cy.dormant = true; return}
 
 		/* THE NEXT PAYMENT DATES, from the locked schedule. */
 		const nextAfter = d => {

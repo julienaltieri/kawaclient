@@ -2346,3 +2346,90 @@ test("a monthly expense on a firm date still gets its day", () => {
 	expect(m.shapes.rent.weights.filter(w => w > 0.0001).length).toBe(1)
 	expect(m.shapes.rent.spreadReason).toBe(null)
 })
+
+/* =================================================================================================
+   TWO CARDS ON ONE ACCOUNT, AND ONE ACCOUNT THAT IS CLOSED.
+
+   Two people carrying cards on the same account settle it twice on the same day: two outflows, two
+   receipts, one statement period. And a card that has been closed keeps its history, so the schedule
+   runs off its last payment for ever.
+   ================================================================================================= */
+test("two payments on the same day are one statement, not a zero-day cycle", () => {
+	/* Left as two events the gap between them is ZERO, and a zero among a run of sevens drags the
+	   median toward nothing - the rhythm, the closing offset fitted against it and the pass-through
+	   are then all measured over windows a day long. */
+	const txns = [], settles = []
+	for(let w = 0; w < 16; w++){
+		const pay = new Date(Date.UTC(2026, 0, 7 + w*7))
+		const close = new Date(pay.getTime() - 3*86400000)
+		let his = 0, hers = 0
+		for(let d = 0; d < 6; d++){
+			const a = 30 + ((w*7 + d*5) % 40), b = 20 + ((w*11 + d*3) % 30)
+			txns.push(evTxn(new Date(close.getTime() - (5 - d)*86400000), -a, "card", "rh",
+				"h" + w + "-" + d))
+			txns.push(evTxn(new Date(close.getTime() - (5 - d)*86400000), -b, "card", "rh",
+				"f" + w + "-" + d))
+			his += a; hers += b
+		}
+		//two settlements, same day, same account - one per person
+		txns.push(evTxn(pay, -his, "ccpay", "chk", "ph" + w))
+		txns.push(evTxn(pay, his, "ccpay", "rh", "rh" + w))
+		txns.push(evTxn(pay, -hers, "ccpay", "chk", "pf" + w))
+		txns.push(evTxn(pay, hers, "ccpay", "rh", "rf" + w))
+		settles.push({date: pay, amount: his + hers})
+	}
+	const found = inferSettlements(txns, ["chk"], ["rh"])
+	expect(found.length).toBeGreaterThan(25)              //two per week, both matched
+	const cy = cardCycles(txns, ["rh"], found).rh
+	expect(Math.round(cy.perStatement)).toBe(2)           //and it knows there were two
+	expect(cy.intervalDays).toBe(7)                       //not 0, and not 3.5
+	expect(Math.abs(cy.lagDays - 3)).toBeLessThanOrEqual(1)
+	//the statement is the sum of both cards, and it is reproduced
+	const pay = new Date(settles[12].date)
+	const r = cardSettlementForecast(txns, ["rh"], found,
+		new Date(pay.getTime() - 2*86400000), new Date(pay.getTime() + 86400000))
+	expect(Math.abs(r.events[0].amount)/settles[12].amount).toBeGreaterThan(0.95)
+	expect(Math.abs(r.events[0].amount)/settles[12].amount).toBeLessThan(1.05)
+})
+
+test("a closed card is not forecast for ever", () => {
+	/* The schedule runs off the last payment, so a card last settled in October was still being
+	   handed a payment the following September - money leaving an account that no longer exists,
+	   every cycle. */
+	const txns = []
+	for(let w = 0; w < 10; w++){
+		const pay = new Date(Date.UTC(2025, 8, 3 + w*7))
+		for(let d = 0; d < 3; d++)
+			txns.push(evTxn(new Date(pay.getTime() - (4 - d)*86400000), -60, "card", "x1",
+				"p" + w + "-" + d))
+		txns.push(evTxn(pay, -180, "ccpay", "chk", "s" + w))
+		txns.push(evTxn(pay, 180, "ccpay", "x1", "r" + w))
+	}
+	const found = inferSettlements(txns, ["chk"], ["x1"])
+	expect(found.length).toBeGreaterThan(5)               //the history is real
+	//...but a year later there is nothing to pay
+	const from = new Date(Date.UTC(2026, 8, 1))
+	const r = cardSettlementForecast(txns, ["x1"], found, from,
+		new Date(Date.UTC(2026, 9, 1)))
+	expect(r.events.length).toBe(0)
+	expect(r.cycles.x1.dormant).toBe(true)
+	expect(r.cycles.x1.idleDays).toBeGreaterThan(250)
+})
+
+test("a card merely late is not written off", () => {
+	//the guard: three cycles of silence, floored at two months, so a monthly card paid a week late
+	//is still a live card
+	const txns = []
+	for(let m = 0; m < 8; m++){
+		const pay = new Date(Date.UTC(2026, m, 12))
+		for(let d = 0; d < 4; d++)
+			txns.push(evTxn(new Date(Date.UTC(2026, m, 2 + d)), -150, "card", "v", "p" + m + "-" + d))
+		txns.push(evTxn(pay, -600, "ccpay", "chk", "s" + m))
+		txns.push(evTxn(pay, 600, "ccpay", "v", "r" + m))
+	}
+	const found = inferSettlements(txns, ["chk"], ["v"])
+	const from = new Date(Date.UTC(2026, 8, 5))            //three weeks after the last payment
+	const r = cardSettlementForecast(txns, ["v"], found, from, new Date(Date.UTC(2026, 9, 5)))
+	expect(r.cycles.v.dormant).toBeUndefined()
+	expect(r.events.length).toBeGreaterThan(0)
+})
