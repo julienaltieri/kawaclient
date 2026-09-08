@@ -19,7 +19,7 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
-	buildModel, eventsPerTurn, cardPaymentStreams, shareOfDayDetail,
+	buildModel, eventsPerTurn, cardPaymentStreams, shareOfDayDetail, cardSpend,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -2474,4 +2474,63 @@ test("the second card's payment is found even when only one carries a receipt", 
 	expect(cy.intervalDays).toBe(7)
 	expect(Math.round(cy.perStatement)).toBe(2)
 	expect(Math.abs(cy.lagDays - 3)).toBeLessThanOrEqual(1)
+})
+
+test("a refund reduces the statement; a payment receipt does not", () => {
+	/* A credit account carries three kinds of transaction and the model read two of them as one.
+	   Purchases go out; PAYMENTS come in and clear the balance; REFUNDS come in and undo a purchase.
+	   Counting only the negatives made a returned $220 jacket a permanent charge, so the statement
+	   window looked bigger than the payment that settled it - which is why rows in the real export
+	   read 0.85 to 0.89 on a card that is paid in full. */
+	const txns = []
+	for(let w = 0; w < 12; w++){
+		const pay = new Date(Date.UTC(2026, 0, 8 + w*7))
+		const close = new Date(pay.getTime() - 3*86400000)
+		let net = 0
+		for(let d = 0; d < 5; d++){
+			const amt = 100 + ((w*13 + d*7) % 60)
+			txns.push(evTxn(new Date(close.getTime() - (4 - d)*86400000), -amt, "card", "rh",
+				"p" + w + "-" + d))
+			net += amt
+		}
+		//one refund inside the window: money back, not money spent
+		txns.push(evTxn(new Date(close.getTime() - 1*86400000), 90, "card", "rh", "ref" + w))
+		net -= 90
+		txns.push(evTxn(pay, -net, "ccpay", "chk", "s" + w))
+		txns.push(evTxn(pay, net, "ccpay", "rh", "r" + w))
+	}
+	const found = inferSettlements(txns, ["chk"], ["rh"])
+	const spend = cardSpend(txns, "rh", found)
+	//the payment receipts are not spending at all, and the refunds are negative spending
+	expect(spend.filter(x => x.v < 0).length).toBe(12)
+	expect(spend.length).toBe(12*5 + 12)
+	//so the statement reconciles at 1.00 rather than looking overspent
+	const cy = cardCycles(txns, ["rh"], found).rh
+	expect(cy.ratio).toBeGreaterThan(0.97)
+	expect(cy.ratio).toBeLessThan(1.03)
+})
+
+test("the projection rate is the trailing ninety days, not the year", () => {
+	/* Measured, not preferred. Against what the real card was paid over its last eight statements
+	   ($1,543): this cycle $477 (-69%), trailing 90 days $1,594 (+3%), since the year began $1,239
+	   (-20%). The year basis is steadier and wrong - the card's spending grew, so averaging in the
+	   quiet months holds the estimate a fifth low and every projected bill inherits it. */
+	const txns = []
+	//quiet for four months, then triple - the year average sits between, ninety days does not
+	for(let day = 0; day < 240; day++){
+		const d = new Date(Date.UTC(2026, 0, 1 + day))
+		const amt = day < 150 ? 30 : 90
+		txns.push(evTxn(d, -amt, "card", "rh", "p" + day))
+	}
+	for(let w = 0; w < 34; w++){
+		const pay = new Date(Date.UTC(2026, 0, 8 + w*7))
+		txns.push(evTxn(pay, -1, "ccpay", "chk", "s" + w))
+		txns.push(evTxn(pay, 1, "ccpay", "rh", "r" + w))
+	}
+	const from = new Date(Date.UTC(2026, 8, 1))
+	const found = inferSettlements(txns, ["chk"], ["rh"])
+	const r = cardSettlementForecast(txns, ["rh"], found, from, new Date(Date.UTC(2026, 8, 20)))
+	//$90/day is the current regime; the year average would be about $53
+	expect(r.cycles.rh.rate).toBeGreaterThan(80)
+	expect(r.cycles.rh.rate).toBeLessThan(100)
 })

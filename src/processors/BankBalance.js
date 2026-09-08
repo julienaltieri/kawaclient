@@ -1203,6 +1203,32 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
    ================================================================================================== */
 
 
+/* WHAT A CARD WAS ACTUALLY SPENT, once the money coming back is taken off.
+
+   A credit account carries three kinds of transaction and the model was reading two of them as one.
+   Purchases go out. Payments come in and clear the balance. REFUNDS also come in and do not clear
+   anything - they undo a purchase. Counting only the negatives made a returned $220 jacket a
+   permanent charge, so the statement window looked bigger than the payment that settled it, which is
+   why several rows read 0.85 to 0.89 when the card is paid in full.
+
+   A positive transaction is a payment receipt when a settlement of the same amount cleared this card
+   within a few days; everything else positive is a refund and nets off. */
+export function cardSpend(transactions, cardHash, settlements){
+	const mine = (settlements || []).filter(s => s.card === cardHash);
+	const out = [];
+	(transactions || []).forEach(t => {
+		if(t.userInstitutionAccountId !== cardHash)return;
+		const d = new Date(t.date);
+		if(t.amount < 0){out.push({d: d, v: -t.amount}); return}
+		if(t.amount === 0)return;
+		const isReceipt = mine.some(x =>
+			Math.abs(Math.abs(x.amount) - t.amount) < 0.005
+			&& Math.abs(new Date(x.date) - d)/DAY <= 4);
+		if(!isReceipt)out.push({d: d, v: -t.amount});     //a refund: negative spending
+	});
+	return out.sort((a, b) => a.d - b.d);
+}
+
 export function cardCycles(transactions, creditHashes, settlements){
 	const out = {};
 	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0,
@@ -1212,8 +1238,7 @@ export function cardCycles(transactions, creditHashes, settlements){
 	Object.keys(out).forEach(c => {
 		const o = out[c];
 		o.events.sort((a, b) => new Date(a.date) - new Date(b.date));
-		const spent = (transactions || []).filter(t =>
-			t.userInstitutionAccountId === c && t.amount < 0);
+		const spent = cardSpend(transactions, c, settlements);
 		o.spend = spent.length;
 
 		/* THE UNIT IS THE STATEMENT, NOT THE CARD IN SOMEONE'S POCKET.
@@ -1288,8 +1313,7 @@ export function cardCycles(transactions, creditHashes, settlements){
 				const a = new Date(o.events[i-1].date).getTime() - lag*DAY;
 				const b = new Date(o.events[i].date).getTime() - lag*DAY;
 				let spend = 0;
-				spent.forEach(t => {const d = new Date(t.date).getTime();
-					if(d > a && d <= b)spend += -t.amount});
+				spent.forEach(x => {const d = x.d.getTime(); if(d > a && d <= b)spend += x.v});
 				if(spend > 1)pairs.push({paid: Math.abs(o.events[i].amount), spend: spend});
 			}
 			if(pairs.length < 2)continue;
@@ -1318,27 +1342,36 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 
 	Object.keys(cycles).forEach(c => {
 		const cy = cycles[c];
-		const spent = (transactions || []).filter(t =>
-			t.userInstitutionAccountId === c && t.amount < 0 && new Date(t.date) < from);
-		/* THE RATE IS THE AVERAGE SINCE ACTIVITY BEGAN THIS YEAR, not a trailing ninety days.
+		const spent = cardSpend(transactions, c, settlements).filter(x => x.d < from);
+		/* THE RATE IS THE TRAILING NINETY DAYS, and that is a measurement rather than a preference.
 
-		   The unsettled transactions already on the card are a FLOOR for the bill about to arrive;
-		   only the days left before the statement closes have to be guessed, and the honest guess is
-		   how this card has actually been used across the year rather than across an arbitrary recent
-		   slice. A ninety-day window is itself a small sample of a variable thing, and it moves
-		   whenever the window moves, which put the same card at different rates in different views.
+		   Three bases were printed side by side against what the card was actually paid over its last
+		   eight statements ($1,543):
+
+		     this cycle, since the last payment    $477   -69%   a handful of days, mostly noise
+		     trailing 90 days                    $1,594    +3%
+		     since the reporting year began      $1,239   -20%
+
+		   The year basis was chosen on the argument that a longer window is a steadier estimate. It is
+		   steadier and it is wrong, because this card's spending GREW through the year: averaging in
+		   the quiet months holds the estimate a fifth below the level the card is actually running at,
+		   and every projected bill inherits that. Ninety days is long enough to survive one lumpy week
+		   and short enough to describe the current regime.
 
 		   Divided by the days actually observed, never by the length of the window asked for: a card
-		   with two months of history divided by a year reports a sixth of its real rate, and the bill
-		   comes out short for a reason that has nothing to do with the card. */
-		const rateFrom = o.rateFrom
-			|| new Date(Date.UTC(from.getUTCFullYear() - 1, from.getUTCMonth(), from.getUTCDate()));
+		   with two months of history divided by ninety days reports two thirds of its real rate.
+
+		   Note what this does NOT fix. These statements ran from $537 to $3,629 - nearly sevenfold -
+		   because single charges like a $2,626 supplier bill or a $2,413 flight land whole inside one
+		   week. No daily rate predicts those. The rate carries the grocery baseline; the lumps are
+		   only ever known once they have posted, which is why the seven-day horizon is worth so much
+		   more than the thirty-day one. */
+		const rateFrom = o.rateFrom || new Date(from.getTime() - 90*DAY);
 		let recent = 0, earliest = null;
-		spent.forEach(t => {
-			const d = new Date(t.date);
-			if(d < rateFrom)return;
-			recent += -t.amount;
-			if(!earliest || d < earliest)earliest = d;
+		spent.forEach(x => {
+			if(x.d < rateFrom)return;
+			recent += x.v;
+			if(!earliest || x.d < earliest)earliest = x.d;
 		});
 		const observedDays = earliest ? Math.max(1, (from - earliest)/DAY) : 1;
 		const rate = recent/observedDays;
@@ -1388,9 +1421,9 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 			const close = new Date(when.getTime() - cy.lagDays*DAY);
 			if(close > prevClose){
 				let posted = 0;
-				spent.forEach(t => {
-					const d = new Date(t.date).getTime();
-					if(d > prevClose.getTime() && d <= close.getTime())posted += -t.amount;
+				spent.forEach(x => {
+					const d = x.d.getTime();
+					if(d > prevClose.getTime() && d <= close.getTime())posted += x.v;
 				});
 				const openAt = Math.max(from.getTime(), prevClose.getTime());
 				const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
@@ -1541,8 +1574,7 @@ export function buildModel(input){
 	   fraction of the bill on each card's day instead of the whole bill on the right one. */
 	let extraFlow = null, cardModel = null;
 	if(!input.netted && inferred.length && until > asOf){
-		const m = cardSettlementForecast(past, cards, inferred, asOf, until,
-			{rateFrom: cycleFrom});
+		const m = cardSettlementForecast(past, cards, inferred, asOf, until);
 		cardModel = m.cycles;
 		if(m.events.length){
 			extraFlow = {};

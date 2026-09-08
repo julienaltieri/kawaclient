@@ -5,7 +5,8 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
-	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles}
+	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles,
+	cardSpend}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -34,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b35 - the card export: evidence, not conclusions";
+export const BENCH_VERSION = "b36 - trailing 90 days, and refunds are not purchases";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -566,11 +567,11 @@ export default class BalanceBench extends BaseComponent{
 				const close = new Date(pay.getTime() - c.lagDays*DAY)
 				const prev = i ? new Date(new Date(evs[i-1].date).getTime() - c.lagDays*DAY)
 					: new Date(close.getTime() - c.intervalDays*DAY)
+				//the same netted list the model reads, so the export cannot flatter or accuse it
 				let sum = 0, n = 0
-				;(this.props.transactions || []).forEach(t => {
-					if(t.userInstitutionAccountId !== h || t.amount >= 0)return
-					const d = new Date(t.date).getTime()
-					if(d > prev.getTime() && d <= close.getTime()){sum += -t.amount; n++}
+				cardSpend(this.props.transactions, h, found).forEach(x => {
+					const d = x.d.getTime()
+					if(d > prev.getTime() && d <= close.getTime()){sum += x.v; n++}
 				})
 				out.push("  " + dayKey(close) + "   " + dayKey(pay)
 					+ "   " + money(e.amount).padStart(9)
@@ -584,14 +585,13 @@ export default class BalanceBench extends BaseComponent{
 			   the choice between them was made by preference rather than measurement - which is how
 			   the projected half of every bill came to be built on the slowest of the three. */
 			const now = this.today()
-			const spent = (this.props.transactions || []).filter(t =>
-				t.userInstitutionAccountId === h && t.amount < 0)
+			const spent = cardSpend(this.props.transactions, h, found)
 			const rateOver = from => {
 				let sum = 0, earliest = null
-				spent.forEach(t => {
-					const d = new Date(t.date)
+				spent.forEach(x => {
+					const d = x.d
 					if(d < from || d >= now)return
-					sum += -t.amount
+					sum += x.v
 					if(!earliest || d < earliest)earliest = d
 				})
 				const days = earliest ? Math.max(1, (now - earliest)/DAY) : 1
@@ -604,6 +604,7 @@ export default class BalanceBench extends BaseComponent{
 				["since the reporting year began", rateOver(this.cycleStart(now))]
 			]
 			out.push("  rate basis                        $/day    implies per statement")
+			out.push("  (the model uses TRAILING 90 DAYS - measured, see the commit for b36)")
 			bases.forEach(b => out.push("  " + b[0].padEnd(34) + money(-b[1]).padStart(8)
 				+ "   " + money(-b[1]*c.intervalDays*c.ratio).padStart(10)))
 			const recent = c.events.slice(-8)
