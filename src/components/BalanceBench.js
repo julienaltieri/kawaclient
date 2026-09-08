@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b37 - the table reads the forecast";
+export const BENCH_VERSION = "b38 - name the day by its phase";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -960,7 +960,13 @@ export default class BalanceBench extends BaseComponent{
 			//a day counts as "live" when it carries a real share, not a rounding crumb
 			const live = days.filter(v => Math.abs(v) > Math.abs(total)*0.02).length
 			const h = mdl.shapes[s.id]
-			return {total: total, big: big, bigDay: bigDay, live: live,
+			/* dayLabel takes the cycle's PHASE, not the day of the month, and they only coincide for
+			   a monthly cycle. Passing the calendar day named a weekly stream after a day number and
+			   a semimonthly one after a phase it does not have; it read correctly on the 14th purely
+			   because 14 is in the first half of the month. */
+			const at = new Date(Date.UTC(y, m, bigDay || 1))
+			const phase = h && h.cycle && h.cycle.phaseOf ? h.cycle.phaseOf(at) : (bigDay - 1)
+			return {total: total, big: big, bigDay: bigDay, phase: phase, live: live,
 				cycle: h && h.cycle ? h.cycle.name : "monthly",
 				spreadReason: h ? h.spreadReason : null,
 				confident: h ? h.confident : null,
@@ -979,7 +985,7 @@ export default class BalanceBench extends BaseComponent{
 					: (p.live === 1 ? 1 : (p.live <= 4 ? 2 : TIERS.spread)))
 			const day = !p || !p.live ? "-"
 				: (p.spreadReason ? "spread by budget"
-					: (tier === TIERS.spread ? "spread" : dayLabel(p.cycle, p.bigDay - 1)))
+					: (tier === TIERS.spread ? "spread" : dayLabel(p.cycle, p.phase)))
 			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
 				surface:(det && det.surface) || 0,
 				tier:tier, day:day,
@@ -1069,7 +1075,7 @@ export default class BalanceBench extends BaseComponent{
 		this.groups().forEach(g => {
 			if(!g[2].length)return
 			out.push(g[1])
-			out.push(line(["  stream","$-days","cycle","expected","spread","pred day","pred amt","acc"]))
+			out.push(line(["  stream","$-days","cycle","expected","top day","pred day","pred amt","acc"]))
 			g[2].forEach(r => {
 				out.push(line(["  " + r.name, money(r.surface), r.cycle, money(r.expected),
 					(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
@@ -1218,7 +1224,8 @@ export default class BalanceBench extends BaseComponent{
 					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
 					<Line>{money(r.surface)} $·days · {r.cycle} · expects {money(r.expected)}
 						· predicts {money(r.amount)} on {r.day}
-						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
+						{r.tier && r.tier < 3
+							? " · top day carries " + (r.spread*100).toFixed(0) + "%" : ""}</Line>
 					{this.state.open === r.name ? this.drawStream(r.id) : null}
 					{r.detail && this.state.open === r.name ? <Line>
 						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}

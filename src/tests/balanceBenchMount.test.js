@@ -247,3 +247,17 @@ test("a stream the forecast spreads is not listed as dated", async () => {
 		expect(r.day).toBe("spread by budget")
 	})
 })
+
+test("the predicted day is named by the cycle's phase, not the day of the month", async () => {
+	/* dayLabel takes a PHASE and they coincide only for a monthly cycle. A weekly stream was being
+	   named after a day number and a semimonthly one after a phase it does not have - it read
+	   correctly on the 14th only because 14 falls in the first half of the month. */
+	const ref = await mount()
+	const rows = ref.current.rows().filter(r => r.tier && r.tier < 3 && r.day !== "-")
+	rows.forEach(r => {
+		//a weekday name, or "day N" / "day N & M" with N inside a month
+		expect(r.day).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)( A| B)?$|^day \d+( & \d+)?$/)
+		const nums = (r.day.match(/\d+/g) || []).map(Number)
+		nums.forEach(n => expect(n).toBeLessThanOrEqual(31))
+	})
+})
