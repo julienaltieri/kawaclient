@@ -1432,26 +1432,50 @@ Still open, in the order they are worth doing:
 
 ### Why the current shape is wrong
 
-Everything above forecasts **one flat set of streams** and then patches the credit card in as a
-special case — a synthetic pseudo-stream, an `extraFlow` of explicit events, an exclusion list so the
-real payment stream is not counted twice. Every one of those patches is compensating for the same
-category error: **a card is an account, and it was being modelled as a stream.**
+Everything above forecasts **one flat set of streams** and patches the credit card in as a special
+case — a synthetic pseudo-stream, an `extraFlow` of explicit events, an exclusion list so the
+repayment is not counted twice. Those patches all compensate for the same thing: a card is an
+account, and it is being modelled as a stream.
 
-The cost shows up as a class of bug that keeps recurring rather than as one wrong number. A stream's
-money leaves an account; a card's money leaves *two* accounts, at two different times, and one of
-those movements is a batch of the other. No amount of care inside a stream model expresses that.
+A stream's money leaves an account. A card's money leaves **two** accounts, at two different times,
+and one of those movements is a batch of the other. No amount of care inside a stream model expresses
+that.
 
-So the revision inverts the structure: **predict each account on its own terms, then connect them.**
+So the revision inverts the structure: **describe each account on its own terms, then connect them.**
+
+---
+
+### Phase 0 — Establish the link, and branch on it
+
+Everything else depends on this, and it is cheap.
+
+For each account typed `credit` (which is declared in Settings and inferred nowhere — see
+[`account-types.md`](account-types.md)), look for **paired transactions with one leg on that account
+and the other on a checking account**. The data model already carries the pairing.
+
+- **A pair is found** → the card is linked to that checking account, and both sides are visible.
+- **No pair is found** → the card is unlinked as far as this forecast is concerned.
+
+**An unlinked card is an ordinary expected outflow.** Its repayment is a transaction on the checking
+account like any other: predict an amount and a timing, and stop. There is no statement to
+reconstruct because the charges are not visible, and nothing downstream of this phase applies to it.
+This is not a degraded path, it is the correct description of that situation — and it is probably the
+common one.
+
+**Only a linked card continues into Phases 2, 4 and 5.**
+
+Two constraints that fall out of the link being between accounts rather than institutions: a card and
+its funding account may be at **different institutions**, so nothing may group by institution; and a
+checking account with no linked card must never be given a synthetic repayment.
 
 ---
 
 ### Phase 1 — Classify every stream, and say which account it lives on
 
-Today classification answers "how does this stream behave in time" (dated, drifting, spread). It has
-to answer two more questions, and the second is new.
+Today classification answers "how does this stream behave in time". It has to answer two more.
 
-**1a — Behaviour, revised.** The current three tiers were derived before the event rules existed and
-no longer describe what the forecast does. The classes to settle on, for review:
+**1a — Behaviour, revised.** The current three tiers predate the event rules and no longer describe
+what the forecast does. The classes to settle on, for review:
 
 | Class | Meaning | Evidence |
 |---|---|---|
@@ -1461,95 +1485,102 @@ no longer describe what the forecast does. The classes to settle on, for review:
 | **Flow** | Many movements per turn; an average is the honest description | more than four live days, or several movements per turn |
 | **Budget** | A long-period amount with no rhythm; the remainder is spread | long period, no instalment evidence |
 | **Not forecast** | Declared but unpredictable in the dangerous direction | long-period **income** — no date, no obligation, no rhythm |
-| **Dormant** | Declared, but nothing has moved for long enough that the arrangement has ended | to be defined; currently only cards have this concept |
+| **Dormant** | Declared, but nothing has moved for long enough that the arrangement has ended | to be defined |
 
-Two of these are new and both came out of real failures: **Instalment** exists because a yearly
-budget can stop being a budget once two equal charges land a cycle apart, and **Not forecast** exists
-because predicting income you cannot time is the same optimism as putting it on a specific day.
+Two are new and both came from failures rather than theory: **Instalment**, because a long-period
+budget stops being a budget once two equal charges land a cycle apart; and **Not forecast**, because
+predicting income you cannot time is the same optimism as putting it on a specific day.
 
-**1b — Direction.** Already in the model and to be made explicit in the classification: an inflow
-must clear a higher bar than an outflow before it is drawn as a step, because over-predicting income
-and under-predicting spending are the same error and both are the expensive one.
+**1b — Direction.** An inflow clears a higher bar than an outflow before it is drawn as a step,
+because over-predicting income and under-predicting spending are the same error and both are the
+expensive one.
 
-**1c — Which account.** Routing exists but is treated as a filter (`covers`) rather than as a
-property of the stream. It becomes a first-class output of classification: every stream is assigned
-to the account its money actually leaves. This is what makes Phase 3 possible, and it is the
-dimension the card lives on.
+**1c — Which account.** Routing is treated as a filter today. It becomes a first-class output of
+classification: every stream is assigned to the account its money actually leaves, read from the
+declared account type.
 
-**Open question for review:** whether `Dormant` should apply to streams as well as cards, and what
-"long enough" is for a stream whose cycle is a year.
+**Open question:** whether `Dormant` applies to streams as well as cards, and what "long enough" is
+for a stream whose cycle is a year.
 
 ---
 
 ### Phase 2 — A credit card is an account, not a stream
 
-The largest change, and the one the rest depends on.
+The largest change, and the one that removes the most code rather than adding it.
 
-Delete the synthetic settlement pseudo-stream, the `extraFlow` mechanism and the exclusion list. In
-their place: a card account is forecast in its own right, and its payment appears in the current
-account's forecast as a *connection between two accounts* rather than as a stream that happens to
-have odd rules.
+Delete the synthetic settlement pseudo-stream, the `extraFlow` mechanism and the stream exclusion
+list. A card account is described in its own right, and its repayment appears in the checking
+account's forecast as a **connection between two accounts**.
 
-The card mechanism itself — identification, statement, offset, pass-through, rate — is already
-described in [`credit-cards.md`](credit-cards.md) and does not change here. What changes is where it
-sits: it stops being a special case inside the stream forecast and becomes the forecast of an
-account.
+**Repayment identification collapses into the pairing.** The present implementation reconstructs the
+link with four rungs of inference — a stream whose legs straddle the two accounts, exact-amount
+receipt matching, same-day attachment, and an amount-window search gated by an established rhythm.
+All four exist to rediscover a relationship the data model already records. Phase 0 replaces the lot.
+
+What that removes, and it is the point of the phase: every failure mode of that inference —
+a card whose issuer returns no receipt, two cards indistinguishable by amount, an outflow that merely
+resembles a repayment, a stream that touches both accounts without being a card payment at all.
 
 ---
 
-### Phase 3 — Predict each account independently
+### Phase 3 — Describe each account independently
 
-**3a — The current account.** Forecast every stream routed to it, *except* card payments. Card
-payments are excluded here and reintroduced in Phase 5, because they are not spending — they are the
-discharge of another account's balance, and modelling them twice is exactly the bug this whole
-revision exists to remove.
+**3a — The checking account.** Every stream routed to it, **minus the checking-side legs of
+checking↔credit pairs**. Those are not spending; they are the discharge of another account's balance,
+and they are reintroduced in Phase 5.
 
-**3b — The card account.** Forecast every stream routed to it, *except* repayments. A repayment is
-identified as a **paired transaction with one leg on a checking account and one on a credit
-account** — see [`credit-cards.md`](credit-cards.md). The current implementation derives the link
-from streams instead, which is a budgeting concept standing in for a fact about two accounts;
-moving it onto the pairing already in the data model is part of this phase. The output is a forecast
-of the card's **balance**, which is what a statement is a snapshot of.
+**3b — The card account.** Every stream routed to it, **minus the credit-side legs of the same
+pairs**. The output is the card's **balance**, which is what a statement is a snapshot of.
+
+The same pair, excluded from both sides, and read back with the sign it has on each — see
+[`credit-cards.md`](credit-cards.md).
 
 **3c — The per-stream sub-problem, documented properly.** Predicting one stream is its own problem
-and is currently described only in scattered sections above. It needs one place, covering:
+and is described only in scattered sections above. It needs one place, covering:
 
 - **Clustering and outliers.** A drifting payment is one event recorded on several days; a genuinely
   diffuse stream is not. The current rule collapses runs within a fixed radius in days, which is a
   constant standing in for a cluster. What replaces it, and how an outlier — a payment moved by a
   holiday, a double month — is excluded rather than averaged in.
-- **Expected versus actual, and how actuals inform expected.** The declared amount is a statement of
-  intent; the ledger is what happened. Today they interact in three ad-hoc places: the zero-sum
-  override (ledger wins where the declaration is silent), the remaining-budget rule (declaration
-  wins, ledger subtracts), and instalment promotion (ledger overrides the period). Those three should
-  be one rule with a stated principle, not three exceptions.
-- **What a stream's own transactions are.** Which account, which leg of a pair, which window — partly
-  covered above and to be consolidated here.
+- **Expected versus actual, and how actuals inform expected.** The declaration is intent; the ledger
+  is what happened. They interact today in three ad-hoc places: the zero-sum override (ledger wins
+  where the declaration is silent), the remaining-budget rule (declaration wins, ledger subtracts),
+  and instalment promotion (ledger overrides the period). Those should be one rule with a stated
+  principle, not three exceptions.
+- **What a stream's own transactions are.** Which account, which leg of a pair, which window.
 
 ---
 
-### Phase 4 — Schedule and offset, per card account
+### Phase 4 — Schedule and behaviour, per linked card
 
-Per card, not per portfolio: interval, offset, pass-through, rate. Multiple cards must be supported
-even though one portfolio has one live card, because the failure mode of assuming one is silent —
-parameters from the busiest card get applied to all of them.
+Per card account, and the two kinds of quantity stay separate because they are read differently.
 
-The interleaved case from [`credit-cards.md`](credit-cards.md#edge-cases) — two cards on one account
-paid on different days — is detected today and not modelled. Phase 4 is where it is either modelled
-or explicitly declared out of scope.
+**Parameters of the account** — interval and offset. Fitted from history.
+
+**Derived from behaviour** — pass-through and rate. Empirical summaries, applying only to the part of
+a statement that has not been observed yet.
+
+**Neither is fixed for the life of the account.** Repayment schedules are usually held steady by
+autopay, but the holder can change them — weekly to monthly to smooth a cash-flow mismatch is a
+normal thing to do. So the schedule is re-derived from recent history rather than fitted once and
+held, and a change in it has to be detectable rather than averaged away.
+
+Multiple cards must be supported even where a portfolio has one, because the failure of assuming one
+is silent: parameters from the busiest card get applied to all of them. The interleaved case from
+[`credit-cards.md`](credit-cards.md) — several cards on one account repaid on different days — is
+where a single interval and offset describe neither, and Phase 4 is where it is either modelled or
+declared out of scope.
 
 ---
 
-### Phase 5 — Re-add the settlement to the current account, only where the accounts are connected
+### Phase 5 — Reconnect, for linked cards only
 
-The card's forecast balance becomes a scheduled outflow on the current account, on the card's payment
-schedule.
+The card's forecast balance becomes a scheduled outflow on the checking account, on the card's
+repayment schedule.
 
-**The connection must be established, not assumed.** A card is connected to a current account when
-payments from that account have actually been observed clearing it. Where no such link exists — a
-card paid from an account Kawa cannot see, or a current account with no card at all — **the current
-account must not be given synthetic settlements**. That is the failure this phase has to be careful
-about: inventing an outflow that never happens is the same class of error as missing one that does.
+The connection is not assumed here — Phase 0 established it, or established its absence. A checking
+account with no linked card gets no synthetic repayment, because inventing an outflow that never
+happens is the same class of error as missing one that does.
 
 ---
 
@@ -1557,8 +1588,11 @@ about: inventing an outflow that never happens is the same class of error as mis
 
 - The recurring class of bug disappears by construction: there is no second place for the card to be
   counted, because it is not a stream anywhere.
+- Four rungs of inference are replaced by one fact the data model already carries.
+- The unlinked case gets the simple, correct treatment instead of a statement model with nothing to
+  reconstruct from.
 - Each account can be scored on its own, so a card error and a checking error stop being one number.
 - The seven-day rolling accuracy is the measure that matters, because that is the horizon at which a
   correction can still be made.
-- Every phase lands with the ablation already used throughout: disable the mechanism, and a test must
-  go red. A phase whose removal changes nothing did not need building.
+- Every phase lands with the ablation used throughout: disable the mechanism, and a test must go red.
+  A phase whose removal changes nothing did not need building.
