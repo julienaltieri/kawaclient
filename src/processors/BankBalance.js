@@ -309,7 +309,10 @@ export function shareOfDayDetail(s, d, opts){
 	if(h && h.any && h.weights)
 		h.weights.forEach(w => {if(w > 0.005)out.liveDays++});
 	out.expected = expectedFor(s, d);
-	if(!out.expected){out.why = "no expected amount"; return out}
+	if(!out.expected){
+		out.why = (h && h.notForecast) || "no expected amount";
+		return out;
+	}
 	if(opts.excludeIds && opts.excludeIds[s.id]){out.why = "inside a card settlement"; return out}
 	if(!covers(routing[s.id])){out.why = "another account"; return out}
 	/* ALREADY PAID THIS CYCLE. An event stream gets as many occurrences per turn as it has been
@@ -1631,6 +1634,19 @@ export function buildModel(input){
 		if(!LONG_PERIODS[p])return declared;
 		const budget = monthlyExpectationAt(t, when, p);
 		if(!budget)return 0;
+		/* A YEARLY INCOME IS A HOPE, NOT A SCHEDULE, and it is not forecast at all.
+
+		   Spending a yearly EXPENSE budget down is defensible: the money is committed, and the only
+		   open question is when it leaves. A yearly INCOME budget is the opposite - it is a figure
+		   somebody hopes to earn, with no date, no counterparty obligation and no rhythm to detect.
+		   Side gig income sat at $9,000 a year and the forecast dutifully spent $1,335 a month of it
+		   into the balance, $24,258 of dollar-day error on money that never arrived.
+
+		   This is the direction asymmetry the model already runs on, taken to its end. An inflow has
+		   to earn its date before it is drawn as a step; an inflow with no rhythm at all - which is
+		   what a yearly declaration means - has earned nothing, and drawing it says the reader has
+		   money they do not have. Predicting nothing is the conservative error and the honest one. */
+		if(budget > 0)return 0;
 		const left = budget - (spentSince[t.id] || 0);
 		if(budget < 0 && left > 0)return 0;
 		if(budget > 0 && left < 0)return 0;
@@ -1701,10 +1717,13 @@ export function buildForecastInputs(opts){
 		   OUTFLOWS ONLY. A yearly inflow is already held to the stricter test in histogramOf, and a
 		   bonus that genuinely lands on one date should be allowed to say so. */
 		const longOutflow = LONG_PERIODS[period] && a < 0;
+		const longInflow = LONG_PERIODS[period] && a > 0;
 		shapes[s.id] = histogramOf(use, {prefer: period,
 			events: longOutflow ? null : events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
 		shapes[s.id].spreadReason = null;
+		shapes[s.id].notForecast = longInflow
+			? "yearly income - no date and no rhythm, so not forecast" : null;
 		if(longOutflow && shapes[s.id].any){
 			/* AND THE SHAPE IS REPLACED, not merely left unconcentrated. Hobby mdm's three
 			   occurrences all fell on the 16th, so the histogram said "the 16th" without any help

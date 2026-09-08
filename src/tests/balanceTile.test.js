@@ -2534,3 +2534,47 @@ test("the projection rate is the trailing ninety days, not the year", () => {
 	expect(r.cycles.rh.rate).toBeGreaterThan(80)
 	expect(r.cycles.rh.rate).toBeLessThan(100)
 })
+
+test("a yearly income is not forecast at all", () => {
+	/* Spending a yearly EXPENSE budget down is defensible - the money is committed and only the
+	   timing is open. A yearly INCOME budget is a figure somebody hopes to earn: no date, no
+	   counterparty obligation, no rhythm to detect. Side gig sat at $9,000 a year and the forecast
+	   spent $1,335 a month of it into the balance - $24,258 of dollar-day error on money that never
+	   arrived. Drawing it tells the reader they have money they do not have. */
+	const st = evStream("gig", "Side Gig Julien", 9000, "yearly")
+	const txns = [evTxn(new Date(Date.UTC(2026, 2, 9)), 2200, "gig", "chk", "g1"),
+		evTxn(new Date(Date.UTC(2026, 5, 21)), 1800, "gig", "chk", "g2")]
+	const at = new Date(Date.UTC(2026, 7, 1))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: at, until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 4, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	expect(m.expectedFor(st, at)).toBe(0)
+	let total = 0
+	for(let d = 1; d <= 31; d++)total += shareOfDay(st, new Date(Date.UTC(2026, 7, d)), m)
+	expect(total).toBe(0)
+	//and it says why, rather than reporting a blank
+	expect(shareOfDayDetail(st, at, m).why).toMatch(/yearly income/)
+})
+
+test("a yearly EXPENSE is still spent down", () => {
+	//the guard: the rule is about direction, not about the period
+	const st = evStream("trip", "Voyages", -12000, "yearly")
+	const spend = evTxn(new Date(Date.UTC(2026, 2, 3)), -3000, "trip", "chk", "t1")
+	const at = new Date(Date.UTC(2026, 5, 1))
+	const m = buildModel({transactions: [spend], terminals: [st], covered: ["chk"], cards: [],
+		asOf: at, until: new Date(Date.UTC(2026, 6, 1)),
+		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	expect(m.expectedFor(st, at)).toBeLessThan(0)
+})
+
+test("a MONTHLY income is untouched - the rule is yearly only", () => {
+	//wages are income and are the most predictable thing in the portfolio
+	const st = evStream("wage", "Wages", 7837)
+	const txns = []
+	for(let i = 0; i < 6; i++)
+		txns.push(evTxn(new Date(Date.UTC(2026, 1 + i, 14)), 7837, "wage", "chk", "w" + i))
+	const at = new Date(Date.UTC(2026, 7, 1))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: at, until: new Date(Date.UTC(2026, 7, 31)), since: new Date(Date.UTC(2026, 1, 1))})
+	expect(m.expectedFor(st, at)).toBeGreaterThan(7000)
+})
