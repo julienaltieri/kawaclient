@@ -2578,3 +2578,62 @@ test("a MONTHLY income is untouched - the rule is yearly only", () => {
 		asOf: at, until: new Date(Date.UTC(2026, 7, 31)), since: new Date(Date.UTC(2026, 1, 1))})
 	expect(m.expectedFor(st, at)).toBeGreaterThan(7000)
 })
+
+test("a lump on a card is forecast by name, and leaves the average behind it", () => {
+	/* The card's unposted remainder was a blind daily rate: an average that knows how much a card is
+	   usually spent on and nothing about what is coming. A rate cannot represent a single large
+	   charge at all - and on the real portfolio three charges over $500 in twelve weeks were $7,665
+	   of $12,345 paid. The lumps are the error, and the lumps have names.
+
+	   The two halves must PARTITION the card. Naming a stream while leaving its history in the
+	   average bills it twice, which is what the first version of this did. */
+	const DAYMS = 86400000
+	const buys = []
+	//a diffuse trickle: groceries, several a week, which an average describes well
+	for(let d = 0; d < 150; d++){
+		const at = new Date(Date.UTC(2026, 0, 2 + d))
+		if(d % 7 === 3 || d % 7 === 5 || d % 7 === 6)continue
+		buys.push({at: at, amt: 40 + ((d*13) % 30), stream: "food", id: "f" + d})
+	}
+	//and a supplier bill on the 26th of each month - a real lump lands on a DATE, which is what
+	//lets a stream forecast name it at all
+	for(let mth = 0; mth < 5; mth++)
+		buys.push({at: new Date(Date.UTC(2026, mth, 26)), amt: 2600, stream: "supp", id: "g" + mth})
+	const txns = buys.map(b => evTxn(b.at, -b.amt, b.stream, "rh", b.id))
+	//statements: everything in the window, paid three days after it closes
+	for(let w = 0; w < 21; w++){
+		const pay = new Date(Date.UTC(2026, 0, 8 + w*7))
+		const close = new Date(pay.getTime() - 3*DAYMS), prev = new Date(close.getTime() - 7*DAYMS)
+		let stmt = 0
+		buys.forEach(b => {
+			if(b.at.getTime() > prev.getTime() && b.at.getTime() <= close.getTime())stmt += b.amt
+		})
+		if(stmt < 1)continue
+		txns.push(evTxn(pay, -stmt, "ccpay", "chk", "s" + w))
+		txns.push(evTxn(pay, stmt, "ccpay", "rh", "r" + w))
+	}
+	const food = evStream("food", "Groceries", -1100)
+	const supp = evStream("supp", "Supplier", -2600)
+	const payStream = evStream("ccpay", "Credit Card Payments", 0)
+	const asOf = new Date(Date.UTC(2026, 3, 20))
+	const m = buildModel({transactions: txns, terminals: [food, supp, payStream],
+		covered: ["chk"], cards: ["rh"], asOf: asOf, until: new Date(Date.UTC(2026, 4, 20)),
+		since: new Date(Date.UTC(2026, 0, 1))})
+
+	//the lump is named; the trickle is not, and stays in the average
+	expect(m.meta.cardNamed.supp).toBe("rh")
+	expect(m.meta.cardNamed.food).toBeUndefined()
+
+	//and the whole month of bills still adds up to about what a month of this card costs
+	const flow = m.extraFlow || {}
+	const total = Object.keys(flow).reduce((x, k) => x + Math.abs(flow[k].amount), 0)
+	//four weekly statements of ~$250 of groceries plus one $2,600 supplier bill
+	expect(total).toBeGreaterThan(3000)
+	expect(total).toBeLessThan(5200)
+	//the parts of every bill add to the whole - no half counted twice, none dropped
+	Object.keys(flow).forEach(k => {
+		(flow[k].parts || []).forEach(p => {
+			expect(p.posted + (p.planned || 0) + p.projected).toBeCloseTo(p.amount, 4)
+		})
+	})
+})

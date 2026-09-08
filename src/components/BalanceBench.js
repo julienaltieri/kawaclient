@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b39 - a yearly income is a hope, not a schedule";
+export const BENCH_VERSION = "b40 - the lumps have names";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -624,6 +624,16 @@ export default class BalanceBench extends BaseComponent{
 				["recency-weighted, 28d half-life", ewma(28)],
 				["recency-weighted, 14d half-life", ewma(14)]
 			]
+			/* WHICH STREAMS WERE PROMOTED, named. The whole idea is that a lump has a name and an
+			   average does not; if nothing qualifies, this line says so rather than leaving the
+			   reader to infer it from a number that did not move. */
+			const nm = (this.analyse() && this.analyse().model && this.analyse().model.meta
+				&& this.analyse().model.meta.cardNamed) || {}
+			const named = Object.keys(nm).filter(id => nm[id] === h)
+				.map(id => (this.terminals().filter(t => t.id === id)[0] || {}).name).filter(Boolean)
+			out.push("  named streams folded into this card: "
+				+ (named.length ? named.join(", ") : "none - the whole card is the average"))
+			out.push("")
 			out.push("  rate basis                        $/day    implies per statement")
 
 			bases.forEach(b => out.push("  " + b[0].padEnd(34) + money(-b[1]).padStart(8)
@@ -778,7 +788,7 @@ export default class BalanceBench extends BaseComponent{
 			(flow[k].parts || []).forEach(p => {
 				if(!soonest[p.card] || k < soonest[p.card].day)
 					soonest[p.card] = {day: k, amount: p.amount, posted: p.posted,
-						projected: p.projected}
+						planned: p.planned || 0, projected: p.projected}
 			})
 		})
 		return cards.map(h => {
@@ -795,7 +805,8 @@ export default class BalanceBench extends BaseComponent{
 				purchases: c.spend || 0, settlements: (c.events || []).length,
 				when: n ? n.day : null, close: close ? dayKey(close) : null,
 				daysToClose: close ? Math.max(0, Math.round((close - now)/DAY)) : null,
-				posted: n ? n.posted : 0, projected: n ? n.projected : 0,
+				posted: n ? n.posted : 0, planned: n ? n.planned : 0,
+				projected: n ? n.projected : 0,
 				amount: n ? n.amount : 0,
 				known: n && Math.abs(n.amount) > 0.005
 					? Math.abs(n.posted)/Math.abs(n.amount) : null}
@@ -810,6 +821,7 @@ export default class BalanceBench extends BaseComponent{
 				+ "\n      statement closed " + c.close + " (" + c.lag + "d before payment)"
 				+ (c.daysToClose ? ", " + c.daysToClose + "d still open" : ", already shut")
 				+ "\n      " + money(c.posted) + " already posted"
+				+ (c.planned ? " + " + money(c.planned) + " from named streams" : "")
 				+ " + " + money(c.projected) + " projected at " + money(-c.rate) + "/day"
 				+ (c.ratio !== 1 ? " x " + Math.round(c.ratio*100) + "% pass-through" : "")
 				+ "\n      " + Math.round((c.known || 0)*100) + "% of it is already fact"

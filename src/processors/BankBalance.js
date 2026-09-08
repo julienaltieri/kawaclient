@@ -339,6 +339,35 @@ export function shareOfDay(s, d, opts){
 	return shareOfDayDetail(s, d, opts).amount;
 }
 
+/* WHAT THE CARD IS ABOUT TO BE SPENT ON, according to the streams themselves.
+
+   The card's unposted remainder has always been a blind daily rate: an average that knows how much a
+   card is usually spent on and nothing about what is coming. But the streams that run through the
+   card are already forecast by name - Gembah at $2,626, childcare, travel - and a rate cannot
+   represent a single large charge at all. Backtested on this portfolio, three charges over $500 in
+   twelve weeks were $7,665 of $12,345 paid, and no rate method got within $160 of the best possible
+   constant. The lumps are the error, and the lumps have names.
+
+   So the remainder is composed instead: what the card-routed streams predict for those days, plus a
+   RESIDUAL rate for spending no stream accounts for. `covers` is deliberately overridden - these
+   streams are excluded from the current-account reading precisely because their money arrives via
+   the card, which is the reading we are now building. */
+export function plannedCardSpend(d, cardHash, opts){
+	const routing = opts.routing || {};
+	let sum = 0;
+	(opts.terminals || []).forEach(s => {
+		if(routing[s.id] !== cardHash)return;
+		if(opts.excludeIds && opts.excludeIds[s.id])return;
+		/* ONLY the streams whose history was taken OUT of the rate. Adding every card stream here
+		   while removing only the named ones from the average bills the diffuse majority twice - the
+		   two halves have to partition the card, and `only` is what makes them partition it. */
+		if(opts.only && !opts.only[s.id])return;
+		const v = shareOfDay(s, d, opts);
+		if(v < 0)sum += -v;                       //spending only: a refund is not a purchase
+	});
+	return sum;
+}
+
 /* Every stream's share of one day, biggest first, with the explicit events alongside. This is what an
    audit reads: not "the forecast said -$400" but which streams that -$400 is made of. */
 export function contributionsOn(d, opts){
@@ -1222,12 +1251,15 @@ export function cardSpend(transactions, cardHash, settlements){
 	(transactions || []).forEach(t => {
 		if(t.userInstitutionAccountId !== cardHash)return;
 		const d = new Date(t.date);
-		if(t.amount < 0){out.push({d: d, v: -t.amount}); return}
+		//which streams this purchase belongs to, so spending already forecast by name can be told
+		//apart from spending only an average knows about
+		const ids = (t.streamAllocation || []).map(al => al.streamId);
+		if(t.amount < 0){out.push({d: d, v: -t.amount, streamIds: ids}); return}
 		if(t.amount === 0)return;
 		const isReceipt = mine.some(x =>
 			Math.abs(Math.abs(x.amount) - t.amount) < 0.005
 			&& Math.abs(new Date(x.date) - d)/DAY <= 4);
-		if(!isReceipt)out.push({d: d, v: -t.amount});     //a refund: negative spending
+		if(!isReceipt)out.push({d: d, v: -t.amount, streamIds: ids});   //a refund: negative spending
 	});
 	return out.sort((a, b) => a.d - b.d);
 }
@@ -1370,9 +1402,18 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 		   only ever known once they have posted, which is why the seven-day horizon is worth so much
 		   more than the thirty-day one. */
 		const rateFrom = o.rateFrom || new Date(from.getTime() - 90*DAY);
+		/* THE RATE IS NOW A RESIDUAL, or it would count the same money twice.
+
+		   Where a stream forecasts a purchase by name, that purchase must leave the average - its
+		   history is what made the average large in the first place. Gembah added about $58 a day to
+		   this card's rate; adding its $2,626 back on top would bill it twice. So the rate is measured
+		   only over spending that no forecast stream accounts for, and the two halves partition the
+		   card rather than overlapping it. */
+		const modelled = o.modelled || null;
 		let recent = 0, earliest = null;
 		spent.forEach(x => {
 			if(x.d < rateFrom)return;
+			if(modelled && (x.streamIds || []).some(id => modelled[id]))return;
 			recent += x.v;
 			if(!earliest || x.d < earliest)earliest = x.d;
 		});
@@ -1430,12 +1471,16 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 				});
 				const openAt = Math.max(from.getTime(), prevClose.getTime());
 				const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
-				const spend = posted + rate*ahead;
-				//the parts carry the sign of the whole: posted + projected === amount, so a reader
-				//can add them up and a test can assert it
+				//what the streams say is coming in those same days, named rather than averaged
+				let planned = 0;
+				if(o.plannedOn && ahead > 0){
+					for(let t = openAt + DAY; t <= close.getTime(); t += DAY)
+						planned += o.plannedOn(c, new Date(t));
+				}
+				const spend = posted + planned + rate*ahead;
 				if(spend > 1)events.push({date: new Date(when), card: c, close: close,
 					amount: -spend*cy.ratio, posted: -posted*cy.ratio,
-					projected: -rate*ahead*cy.ratio});
+					planned: -planned*cy.ratio, projected: -rate*ahead*cy.ratio});
 			}
 			prevClose = close;
 			when = nextAfter(when);
@@ -1570,31 +1615,6 @@ export function buildModel(input){
 	const cardName = {};
 	(input.accounts || []).forEach(a => {cardName[a.hash] = a.name});
 
-	/* THE BILL IS ARITHMETIC ON TRANSACTIONS ALREADY HELD, not a draw from a distribution. What has
-	   posted on a card since its last settlement is known exactly; only the days still to come are
-	   estimated, at that card's own rate - so the figure sharpens as the settlement approaches, which
-	   a mean never does. PER CARD, because two cards on their own cycles pooled into one rhythm put a
-	   fraction of the bill on each card's day instead of the whole bill on the right one. */
-	let extraFlow = null, cardModel = null;
-	if(!input.netted && inferred.length && until > asOf){
-		const m = cardSettlementForecast(past, cards, inferred, asOf, until);
-		cardModel = m.cycles;
-		if(m.events.length){
-			extraFlow = {};
-			m.events.forEach(e => {
-				const k = dayKey(e.date);
-				if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card settlement", parts: []};
-				extraFlow[k].amount += e.amount;
-				extraFlow[k].parts.push({card: e.card, amount: e.amount, posted: e.posted,
-					projected: e.projected,
-					name: "Card settlement"
-						+ (cards.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
-			});
-		}
-	}
-	/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
-	   inferred at all. With the causal events in hand it would pay the card twice. */
-	const settles = (input.netted || extraFlow) ? null : (h => cards.indexOf(h) > -1);
 
 	/* WHAT A STREAM IS EXPECTED TO MOVE IN A MONTH, which is three rules and not one.
 
@@ -1653,6 +1673,65 @@ export function buildModel(input){
 		return left/monthsLeft;
 	};
 
+	/* MOVED BELOW expectedFor DELIBERATELY. The card block reads it when it builds the options it
+	   hands to the settlement forecast, and a const arrow does not exist until its line runs - so
+	   sitting above it threw "cannot access before initialization" the moment the card model started
+	   asking the streams what they were about to be spent on. This file has shipped that crash twice
+	   already; the dependency is real, so the order follows it rather than being worked around. */
+	/* THE BILL IS ARITHMETIC ON TRANSACTIONS ALREADY HELD, not a draw from a distribution. What has
+	   posted on a card since its last settlement is known exactly; only the days still to come are
+	   estimated, at that card's own rate - so the figure sharpens as the settlement approaches, which
+	   a mean never does. PER CARD, because two cards on their own cycles pooled into one rhythm put a
+	   fraction of the bill on each card's day instead of the whole bill on the right one. */
+	let extraFlow = null, cardModel = null, cardNamed = null;
+	if(!input.netted && inferred.length && until > asOf){
+		/* ONLY THE LUMPS ARE NAMED, and everything else stays in the average.
+
+		   Composing the WHOLE card from its streams was the obvious version and it is wrong: a stream
+		   whose budget is set below what it actually charges then drags the card down with it, and the
+		   rate - which measured real spending regardless of what was declared - was protecting against
+		   exactly that. A test caught it at half the true bill.
+
+		   So the two are split by what each is good at. A rate describes a trickle well and cannot
+		   represent a single large charge at all; a stream forecast that has resolved to a DATE can.
+		   Only card-routed streams the model already treats as events are named into the card, their
+		   history leaves the average so nothing is counted twice, and the diffuse majority - groceries,
+		   fuel, subscriptions - stays exactly where it was. */
+		const modelled = {};
+		terminals.forEach(t => {
+			if(cards.indexOf(built.routing[t.id]) < 0)return;
+			const h = built.shapes[t.id];
+			if(!h || !h.any || h.spreadReason)return;
+			const live = h.weights.filter(w => w > 0.0001).length;
+			if(live > 2)return;                     //diffuse: an average already describes it
+			if(!h.events || h.events > 1.5)return;  //more than one movement a turn is not a lump
+			modelled[t.id] = true;
+		});
+		const cardOpts = {terminals: terminals, shapes: built.shapes, routing: built.routing,
+			covers: () => true, expectedFor: expectedFor, excludeIds: excludeIds,
+			only: modelled, periodName: periodName, settled: built.settled};
+		const m = cardSettlementForecast(past, cards, inferred, asOf, until,
+			{modelled: modelled, plannedOn: (h, d) => plannedCardSpend(d, h, cardOpts)});
+		cardNamed = {};
+		Object.keys(modelled).forEach(id => {cardNamed[id] = built.routing[id]});
+		cardModel = m.cycles;
+		if(m.events.length){
+			extraFlow = {};
+			m.events.forEach(e => {
+				const k = dayKey(e.date);
+				if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card settlement", parts: []};
+				extraFlow[k].amount += e.amount;
+				extraFlow[k].parts.push({card: e.card, amount: e.amount, posted: e.posted,
+					planned: e.planned, projected: e.projected,
+					name: "Card settlement"
+						+ (cards.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
+			});
+		}
+	}
+	/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
+	   inferred at all. With the causal events in hand it would pay the card twice. */
+	const settles = (input.netted || extraFlow) ? null : (h => cards.indexOf(h) > -1);
+
 	/* Everything forecast() and contributionsOn() read, and nothing either of them has to assemble. */
 	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
 		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
@@ -1660,6 +1739,7 @@ export function buildModel(input){
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
 			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
+			cardNamed: cardNamed,
 			cycleStart: cycleFrom, inferred: inferred,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,
@@ -1696,6 +1776,17 @@ export function buildForecastInputs(opts){
 			use = all.filter(x => (!until || x.date < until) && x.date >= wide
 				&& covered.indexOf(x.accountHash) > -1);
 			if(use.length)shapeFrom[s.id] = "older";
+		}
+		/* AND FINALLY, WHEREVER ELSE IT LIVES. A stream that runs entirely through a credit card has
+		   nothing on a covered account and so had no shape at all - not a flat one, none - which is
+		   why the card model could never be told that a supplier bill lands on the 26th.
+
+		   Harmless to the current-account reading: shareOfDay still refuses any stream whose money
+		   does not leave a covered account, so a shape built from card transactions changes nothing
+		   there. It exists for the one reader that needs it, which is the card itself. */
+		if(!use.length && wide){
+			use = all.filter(x => (!until || x.date < until) && x.date >= wide);
+			if(use.length)shapeFrom[s.id] = "another account";
 		}
 		/* HOW MANY MOVEMENTS A TURN TAKES, reconciled against the declaration - see eventsPerTurn.
 		   Measured on the same transactions the shape is drawn from, so the two describe one stream. */
