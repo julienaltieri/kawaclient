@@ -5,8 +5,8 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
-	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles,
-	cardSpend}
+	groupByStream, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles,
+	cardSpend, shareOfDay}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b36 - trailing 90 days, and refunds are not purchases";
+export const BENCH_VERSION = "b37 - the table reads the forecast";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -510,6 +510,7 @@ export default class BalanceBench extends BaseComponent{
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
 			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
 			settlements:inferred, settleMonthly:settleMonthly, cards:model.meta.cards,
+			model:model,
 			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
 			excluded:Object.keys(excludeIds).length, excludeIds:excludeIds,
 			cardRows:cardRows, cardAttributed:attributed,
@@ -598,13 +599,33 @@ export default class BalanceBench extends BaseComponent{
 				return sum/days
 			}
 			const lastPay = new Date(c.events[c.events.length-1].date)
+			/* A BACKWARD MEAN OF A RISING SERIES IS LOW, and that is arithmetic rather than bad luck.
+			   Every basis above averages the past flat, so if the card is being used more each month
+			   the estimate sits below the level it is predicting for - which is what a predicted line
+			   running consistently ABOVE the actual one looks like. A recency-weighted mean is the
+			   candidate: same window, but a day a fortnight ago counts more than a day three months
+			   ago. Printed, not adopted - it becomes the model's rate when it measures better here,
+			   and not before. */
+			const ewma = halfLife => {
+				let num = 0, den = 0
+				for(let d = 0; d < 120; d++){
+					const day = new Date(now.getTime() - d*DAY)
+					let v = 0
+					spent.forEach(x => {if(dayKey(x.d) === dayKey(day))v += x.v})
+					const w = Math.pow(0.5, d/halfLife)
+					num += w*v; den += w
+				}
+				return den ? num/den : 0
+			}
 			const bases = [
 				["this cycle (since last payment)", rateOver(lastPay)],
-				["trailing 90 days", rateOver(new Date(now.getTime() - 90*DAY))],
-				["since the reporting year began", rateOver(this.cycleStart(now))]
+				["trailing 90 days  <- in use", rateOver(new Date(now.getTime() - 90*DAY))],
+				["since the reporting year began", rateOver(this.cycleStart(now))],
+				["recency-weighted, 28d half-life", ewma(28)],
+				["recency-weighted, 14d half-life", ewma(14)]
 			]
 			out.push("  rate basis                        $/day    implies per statement")
-			out.push("  (the model uses TRAILING 90 DAYS - measured, see the commit for b36)")
+
 			bases.forEach(b => out.push("  " + b[0].padEnd(34) + money(-b[1]).padStart(8)
 				+ "   " + money(-b[1]*c.intervalDays*c.ratio).padStart(10)))
 			const recent = c.events.slice(-8)
@@ -912,36 +933,61 @@ export default class BalanceBench extends BaseComponent{
 				sort: Math.abs((d && d.actTotal) || pred), detail: d}
 		})
 		const dropped = (a && a.excludeIds) || {}
+		/* THE TABLE ASKS THE MODEL, and until now it asked a second opinion.
+
+		   Tier, predicted day and confidence all came from pointPrediction - a classifier written
+		   before any of the shape rules and never told about them. So a yearly expense the forecast
+		   now spreads across the month was still listed as "Tier 2, drifting, day 9", and a stream
+		   the event rule collapses onto one date was still described by whatever the classifier made
+		   of its raw history. The reader was auditing a description of a forecast that no longer
+		   exists - the same two-models fault as b19 and b23, moved into the reporting layer.
+
+		   These are now read off the forecast itself, by asking it what it puts on each day of a
+		   month. That cannot disagree with the picture, because it IS the picture. */
+		const mdl = a && a.model
+		const probe = s => {
+			if(!mdl)return null
+			const y = now.getUTCFullYear(), m = now.getUTCMonth()
+			const days = []
+			let total = 0, big = 0, bigDay = 0
+			for(let d = 1; d <= 31; d++){
+				const at = new Date(Date.UTC(y, m, d))
+				if(at.getUTCMonth() !== m)break
+				const v = shareOfDay(s, at, mdl)
+				days.push(v); total += v
+				if(Math.abs(v) > Math.abs(big)){big = v; bigDay = d}
+			}
+			//a day counts as "live" when it carries a real share, not a rounding crumb
+			const live = days.filter(v => Math.abs(v) > Math.abs(total)*0.02).length
+			const h = mdl.shapes[s.id]
+			return {total: total, big: big, bigDay: bigDay, live: live,
+				cycle: h && h.cycle ? h.cycle.name : "monthly",
+				spreadReason: h ? h.spreadReason : null,
+				confident: h ? h.confident : null,
+				share: total ? Math.abs(big/total) : 0}
+		}
 		this._rows = cardRows.concat(this.terminals().filter(s => !dropped[s.id]).map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
-			const perMonth = monthlyExpectationAt(s, now, "monthly")
 			const perCycle = monthlyExpectationAt(s, now, declared)
-			const ratio = (perCycle && perMonth) ? perMonth/perCycle : 1
-			const declaredCycle = ["monthly","semimonthly","weekly","biweekly"]
-				.indexOf(declared) > -1 ? declared : "monthly"
-			const p = pointPrediction((byStream[s.id] || []).filter(x => x.date >= since), perMonth,
-				{prefer: declaredCycle, regimeFrom: this.regimeStart(s),
-					//what the stream ITSELF expected at that moment - a turn it was budgeted at
-					//nothing for is not a turn it failed to fill
-					expectedAt: d => Math.abs(monthlyExpectationAt(s, d, "monthly")) > 0.005})
-			let day = dayLabel(p.cycle, p.day)
-			//a stream that fires twice a turn has two answers, and one of them is not the prediction
-			if(p.day !== null && p.second !== null && Math.abs(ratio) > 1.5){
-				day += " + " + dayLabel(p.cycle, p.second)
-			}
-			/* THE AMOUNT THE FORECAST ACTUALLY USES, not the one the classifier would like to.
-			   A yearly budget spreads its REMAINDER over the months that are left, and a zero-sum
-			   stream is predicted from the ledger - so the table was reporting a figure the forecast
-			   never saw. A column that disagrees with the thing it describes is worse than no column,
-			   because it sends the reader to audit a number nobody used. */
-			const used = a && a.expectedFor ? a.expectedFor(s, now) : p.amount
+			const p = probe(s)
 			const det = (a && a.detail && a.detail[s.id]) || null
+			/* ONE EVENT, A FEW, OR A TRICKLE - counted off the forecast rather than classified.
+			   One live day is a dated stream; two to four is one that moves; more than that is not
+			   an event at all, whatever it is called. */
+			const tier = !p || !p.live ? 0
+				: (p.spreadReason ? TIERS.spread
+					: (p.live === 1 ? 1 : (p.live <= 4 ? 2 : TIERS.spread)))
+			const day = !p || !p.live ? "-"
+				: (p.spreadReason ? "spread by budget"
+					: (tier === TIERS.spread ? "spread" : dayLabel(p.cycle, p.bigDay - 1)))
 			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
 				surface:(det && det.surface) || 0,
-				tier:p.thin ? 0 : p.tier, day:day,
-				amount:(p.tier === TIERS.spread ? used : p.amount)/(ratio || 1),
-				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth),
-				detail:(a && a.detail && a.detail[s.id]) || null}
+				tier:tier, day:day,
+				amount:(p ? (tier === TIERS.spread ? p.total : p.big) : 0),
+				spread:(p ? p.share : 0),
+				confident:(p ? p.confident : null),
+				gain:(a && a.gain[s.id]) || 0, sort:Math.abs(p ? p.total : 0),
+				detail:det}
 		})).sort((x, y) => (y.surface - x.surface) || (x.gain - y.gain) || (y.sort - x.sort))
 		return this._rows
 	}

@@ -18,6 +18,7 @@ import {render, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceBench from '../components/BalanceBench'
+import {shareOfDay} from '../processors/BankBalance'
 
 const HIST = (amount) => [{startDate: new Date("2000-01-01"), amount: amount}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -208,4 +209,41 @@ test("the card export prints the evidence, not the conclusions", async () => {
 	//the raw purchases, so the numbers above can be checked rather than believed
 	expect(text).toMatch(/RAW PURCHASES/)
 	expect(text.split("\n").length).toBeGreaterThan(20)
+})
+
+test("the table describes the forecast, not a second opinion of it", async () => {
+	/* Tier, predicted day and confidence came from pointPrediction - a classifier written before any
+	   of the shape rules and never told about them. A yearly expense the forecast now spreads was
+	   still listed "Tier 2, drifting, day 9". The reader was auditing a description of a forecast
+	   that no longer exists. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const rows = ref.current.rows().filter(r => !/^__card__/.test(r.id || ""))
+	expect(rows.length).toBeGreaterThan(2)
+	const now = ref.current.today()
+	rows.forEach(r => {
+		const st = ref.current.terminals().filter(x => x.id === r.id)[0]
+		if(!st)return
+		//whatever the row claims the forecast puts on a day, the forecast must actually put there
+		let total = 0, big = 0
+		for(let d = 1; d <= 31; d++){
+			const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d))
+			if(at.getUTCMonth() !== now.getUTCMonth())break
+			const v = shareOfDay(st, at, a.model)
+			total += v
+			if(Math.abs(v) > Math.abs(big))big = v
+		}
+		if(r.tier === 3)expect(r.amount).toBeCloseTo(total, 4)
+		else expect(r.amount).toBeCloseTo(big, 4)
+	})
+})
+
+test("a stream the forecast spreads is not listed as dated", async () => {
+	const ref = await mount()
+	const a = ref.current.analyse()
+	ref.current.rows().filter(r => r.id && a.model.shapes[r.id]
+		&& a.model.shapes[r.id].spreadReason).forEach(r => {
+		expect(r.tier).toBe(3)
+		expect(r.day).toBe("spread by budget")
+	})
 })
