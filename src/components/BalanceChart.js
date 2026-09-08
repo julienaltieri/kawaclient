@@ -5,9 +5,10 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
-import {histogramOf, accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
-	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, observedSettlement,
-	settlementInReading, inferSettlements, contributionsOn, buildForecastInputs}
+import {accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
+	cardSettlementForecast,
+	monthlyExpectationAt, classifyAll, CLASSES, groupByStream,
+	inferSettlements, contributionsOn, buildForecastInputs}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -551,57 +552,62 @@ export default class BalanceChart extends BaseComponent{
 		//the settlement is added only where the card sits OUTSIDE the reading: inside it, the
 		//spending is already counted on its own dates and the payment moves nothing
 		const netted = this.source() === NETTED
-		/* and NOT when the reading already carries the payment. A stream on this account budgeted at
-		   nothing that still moves money IS the settlement, named or not, and synthesising a second
-		   one on top pays the card twice - see settlementInReading. */
-		const observedMonthly = {}
-		this.terminals().forEach(t => {
-			let v = 0
-			;(this.streamTxns()[t.id] || []).forEach(x => {
-				if(keep.indexOf(x.accountHash) > -1)v += x.amount})
-			observedMonthly[t.id] = v/12
-		})
-		/* THE SETTLEMENT IS MODELLED FROM THE SETTLEMENTS THEMSELVES - see BalanceBench for the three
-		   configurations measured before this one. Neither the card streams' expectations (what was
-		   budgeted) nor the payment stream's mean (a noisy read of a variable bill) is the settlement;
-		   the settlements are observable, and they have their own timing - weekly here, which no
-		   single monthly due-day can represent. So they are forecast like any other stream, and both
-		   the card streams and the real payment stream stay out of the daily flows. */
+		/* and NOT where the reading already carries the payment: the streams that the inferred
+		   settlements are categorised to go into excludeIds below, so the bill is counted once. */
+		/* THE CARD BILL IS ARITHMETIC ON TRANSACTIONS WE ALREADY HOLD, not a draw from a
+		   distribution. The tile was predicting it as a six-month mean spread over a weekly histogram,
+		   which is a constant: the same figure on every settlement day regardless of what was actually
+		   charged. Against two real consecutive settlements of $3,498 and $2,075 it said $950 twice.
+
+		   The causal model has existed since b16 and the bench has been scoring with it ever since -
+		   the tile simply never got it, and `extraFlow` sat hardcoded to null. What has already POSTED
+		   on the card since its last settlement is known exactly; only the days still to come are
+		   estimated, at that card's own rate. So the number sharpens as the settlement approaches,
+		   which a mean never does.
+
+		   AND IT IS PER CARD. Pooling two cards into one weekly histogram puts a fraction of the bill
+		   on each card's weekday every week instead of the whole bill on the right one - a timing error
+		   as well as an amount error, and invisible in an audit that only ever says "Card settlement".
+		   Each card keeps its own interval, its own phase, its own rate and its own pass-through ratio,
+		   and each names itself in the breakdown. */
 		const inferred = inferSettlements(this.props.transactions, keep, cards)
 		const excludeIds = {}
 		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-		const extraFlow = null
-		/* SIX MONTHS, because a card bill varies about 50% week to week and a short sample of it is
-		   noise rather than a forecast - see BalanceBench. A scheduled bill needs three observations;
-		   a variable one needs many, and a stream from six months ago is a different agreement while a
-		   card bill from six months ago is another draw from the same distribution. */
-		const SETTLE_MONTHS = 6
-		const settleFrom = new Date(now.getTime() - SETTLE_MONTHS*30.44*DAY)
-		const recent = inferred.filter(x => x.date >= settleFrom)
-		const monthsOfSettle = recent.length
-			? Math.max(1, (now - Math.min.apply(null, recent.map(x => +x.date)))/(30.44*DAY)) : 1
-		const settleMonthly = recent.reduce((a, b) => a + b.amount, 0)/monthsOfSettle
-		const useSettle = !netted && Math.abs(settleMonthly) > 1 && recent.length > 1
-		const settles = (netted || useSettle) ? null : (h => cards.indexOf(h) > -1)
+		const cardName = {}
+		;(this.state.accounts || []).forEach(a => {cardName[a.hash] = a.name})
+		/* Strictly out of sample by construction: cardSettlementForecast reads only transactions dated
+		   before `from`, so the same call serves the live forecast and the backtest. */
+		const flowsFrom = (from, to) => {
+			if(netted || !inferred.length || !(to > from))return null
+			const m = cardSettlementForecast(this.props.transactions, cards, inferred, from, to)
+			if(!m.events.length)return null
+			const out = {}
+			m.events.forEach(e => {
+				const k = dayKey(e.date)
+				if(!out[k])out[k] = {amount:0, name:"Card settlement", parts:[]}
+				out[k].amount += e.amount
+				out[k].parts.push({card:e.card, amount:e.amount, posted:e.posted,
+					projected:e.projected,
+					name:"Card settlement" + (cards.length > 1
+						? " · " + (cardName[e.card] || "card") : "")})
+			})
+			return out
+		}
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
 		   the one balance that is actually known (see the drift note), so a past window is a slice of
 		   that walk rather than a separate calculation from a guessed opening figure. */
 		let past = reconstruct(txns, now, bal, win.from)
 		if(win.to)past = past.filter(p => p.date <= win.to)
-		let use = this.terminalsFor(this.state.basis)
+		const use = this.terminalsFor(this.state.basis)
 		const shapes = this.shapes()
-		if(useSettle){
-			const settleStream = {id:"__settlement__", name:"Card settlement",
-				getPreferredPeriod: () => "monthly",
-				getExpectedAmountAtDateByPeriod: () => settleMonthly}
-			shapes[settleStream.id] = histogramOf(recent.map(x => ({date:x.date, amount:x.amount})),
-				{prefer:"weekly"})
-			this.routing()[settleStream.id] = keep[0]
-			use = use.concat([settleStream])
-		}
+		const extraFlow = win.fwd
+			? flowsFrom(now, new Date(now.getTime() + win.fwd*DAY)) : null
+		/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
+		   inferred at all. With the causal events in hand it would pay the card twice. */
+		const settles = (netted || extraFlow) ? null : (h => cards.indexOf(h) > -1)
 		const future = win.fwd ? forecast({terminals:use, shapes:shapes, excludeIds:excludeIds,
 			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
-			covers:covers, settles:settles,
+			covers:covers, settles:settles, extraFlow:extraFlow,
 			periodName:"monthly", settlementDay:this.settlementDay()}) : []
 		/* THE BENCHMARK: the same forecast, run forward from the START of what is on screen, over the
 		   days that have since actually happened. Where it parts company with the reconstruction is a
@@ -619,29 +625,13 @@ export default class BalanceChart extends BaseComponent{
 		if(past.length > 1){
 			const opened = past[0].date
 			const asOf = this.shapesAsOf(opened)
-			let benchUse = this.terminalsFor(this.state.basis)
-			/* THE SETTLEMENT IS OUT OF SAMPLE HERE TOO. It was being modelled from the six months
-			   ending TODAY and then handed to a forecast that starts a month ago, which leaks the
-			   answer into the benchmark; worse, the shape was written onto the live inputs object and
-			   never onto this one, so the backtest carried the settlement stream with no histogram and
-			   spread the single largest outflow in the portfolio flat across the month. */
-			const benchSeen = inferred.filter(x => x.date < opened
-				&& x.date >= new Date(opened.getTime() - SETTLE_MONTHS*30.44*DAY))
-			const benchMonths = benchSeen.length ? Math.max(1,
-				(opened - Math.min.apply(null, benchSeen.map(x => +x.date)))/(30.44*DAY)) : 1
-			const benchMonthly = benchSeen.reduce((a, b) => a + b.amount, 0)/benchMonths
-			const benchSettle = !netted && Math.abs(benchMonthly) > 1 && benchSeen.length > 1
-			if(benchSettle){
-				const st = {id:"__settlement__", name:"Card settlement",
-					getPreferredPeriod: () => "monthly",
-					getExpectedAmountAtDateByPeriod: () => benchMonthly}
-				asOf.shapes[st.id] = histogramOf(benchSeen.map(x => ({date:x.date, amount:x.amount})),
-					{prefer:"weekly"})
-				asOf.routing[st.id] = keep[0]
-				benchUse = benchUse.concat([st])
-			}
-			benchOpts = {terminals:benchUse, shapes:asOf.shapes, routing:asOf.routing, covers:covers,
-				settles:(netted || benchSettle) ? null : (h => cards.indexOf(h) > -1),
+			/* the settlement model needs no separate out-of-sample handling: it reads only what was
+			   posted before the date it is asked to forecast from, so asking it from the window's
+			   opening day IS the honest question */
+			const benchFlow = flowsFrom(opened, past[past.length-1].date)
+			benchOpts = {terminals:this.terminalsFor(this.state.basis), shapes:asOf.shapes,
+				routing:asOf.routing, covers:covers, extraFlow:benchFlow,
+				settles:(netted || benchFlow) ? null : (h => cards.indexOf(h) > -1),
 				periodName:"monthly", excludeIds:excludeIds,
 				settlementDay:this.settlementDay()}
 			backtest = forecast(Object.assign({now:opened, balanceNow:past[0].value,

@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b21 - the day table explains the line that drew it";
+export const BENCH_VERSION = "b22 - the tile predicts the card bill causally, per card";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();

@@ -39,10 +39,30 @@ const MASTER_JSON = {id: "master", name: "Master", period: "monthly", isRoot: tr
 
 const CHECKING = "ins::1111::depository"
 const CARD = "ins::2222::credit"
+const CARD2 = "ins::3333::credit"
 const DAY = 24*3600*1000
 const d = n => new Date(Date.now() - n*DAY)
 
-let txns
+let txns, accounts
+
+//a second card, settling on its OWN weekday - the case a pooled weekly histogram cannot represent
+const addSecondCard = () => {
+	accounts.push({hash: CARD2, name: "Amex", type: "credit", subtype: "credit card", current: 400})
+	for(let w = 0; w < 26; w++){
+		const settleDay = d(187 - w*7)
+		for(let i = 0; i < 2; i++){
+			const buy = new Date(settleDay.getTime() - (4 - i)*DAY)
+			txns.push(new GenericTransaction(buy.toISOString(), -50, "purchase",
+				[{streamId: "food", amount: -50}], CARD2, undefined, undefined,
+				"B" + w + "-" + i, "B" + w + "-" + i))
+		}
+		txns.push(new GenericTransaction(settleDay.toISOString(), -100, "amex bill",
+			[{streamId: "ccpay", amount: -100}], CHECKING, undefined, undefined, "S" + w, "S" + w))
+		const back = new Date(settleDay.getTime() + DAY)
+		txns.push(new GenericTransaction(back.toISOString(), 100, "payment received",
+			[{streamId: "ccpay", amount: 100}], CARD2, undefined, undefined, "R" + w, "R" + w))
+	}
+}
 
 beforeEach(() => {
 	const master = new CompoundStream(MASTER_JSON)
@@ -53,29 +73,34 @@ beforeEach(() => {
 			savingAccounts: [], preferredCurrency: "USD", userPreferences: {}
 		}
 	})
-	Core.getAccountsWithBalances = () => Promise.resolve([
+	accounts = [
 		{hash: CHECKING, name: "Checking", type: "depository", subtype: "checking", current: 8000},
 		{hash: CARD, name: "Visa", type: "credit", subtype: "credit card", current: 900}
-	])
+	]
+	Core.getAccountsWithBalances = () => Promise.resolve(accounts)
 
 	txns = []
-	//a card that is genuinely settled from checking, so the settlement model has something to find -
-	//it is the term most likely to be present in one half of the pair and missing from the other
+	/* a card genuinely settled from checking, so the settlement model has something to find. The
+	   weekly spend STEPS UP: a fixture with a flat card cannot tell a causal model apart from the
+	   mean that was shipped in its place. The step is placed early enough that the 90-day rate window
+	   sits entirely inside the new regime, so the test measures the model and not the smoother. */
 	for(let w = 0; w < 26; w++){
 		const settleDay = d(190 - w*7)
+		const each = w < 9 ? 60 : 160
 		for(let i = 0; i < 3; i++){
 			const buy = new Date(settleDay.getTime() - (5 - i)*DAY)
-			txns.push(new GenericTransaction(buy.toISOString(), -87, "purchase",
-				[{streamId: "food", amount: -87}], CARD, undefined, undefined,
+			txns.push(new GenericTransaction(buy.toISOString(), -each, "purchase",
+				[{streamId: "food", amount: -each}], CARD, undefined, undefined,
 				"b" + w + "-" + i, "b" + w + "-" + i))
 		}
-		txns.push(new GenericTransaction(settleDay.toISOString(), -261, "card bill",
-			[{streamId: "ccpay", amount: -261}], CHECKING, undefined, undefined, "s" + w, "s" + w))
+		const bill = each*3
+		txns.push(new GenericTransaction(settleDay.toISOString(), -bill, "card bill",
+			[{streamId: "ccpay", amount: -bill}], CHECKING, undefined, undefined, "s" + w, "s" + w))
 		//the card-side leg of the same payment: the settlement is INFERRED from the pair, so a
 		//fixture with only the checking half contains no settlement to find
 		const back = new Date(settleDay.getTime() + DAY)
-		txns.push(new GenericTransaction(back.toISOString(), 261, "payment received",
-			[{streamId: "ccpay", amount: 261}], CARD, undefined, undefined, "r" + w, "r" + w))
+		txns.push(new GenericTransaction(back.toISOString(), bill, "payment received",
+			[{streamId: "ccpay", amount: bill}], CARD, undefined, undefined, "r" + w, "r" + w))
 	}
 	for(let m = 0; m < 7; m++){
 		txns.push(new GenericTransaction(d(200 - m*30).toISOString(), 5100, "pay",
@@ -85,7 +110,8 @@ beforeEach(() => {
 	}
 })
 
-const mount = async when => {
+const mount = async (when, twoCards) => {
+	if(twoCards)addSecondCard()
 	const ref = React.createRef()
 	await act(async () => {render(<BalanceChart ref={ref} defaultWhen={when} transactions={txns}/>)})
 	return ref.current
@@ -140,13 +166,66 @@ test("the audit follows the displayed month, not whichever was computed last", a
 	expect(last.live).not.toBe(thisM.live)
 })
 
-test("the settlement the backtest draws is the settlement the table names", async () => {
-	//the shape was being written onto the live inputs and never onto the out-of-sample ones, so the
-	//biggest outflow in the portfolio was drawn flat while the table called it a weekly lump
+test("the backtest carries a settlement, as an extraFlow rather than a mean stream", async () => {
 	const chart = await mount("last")
 	const a = chart.series()
-	const ids = a.bench.terminals.map(s => s.id)
-	expect(ids).toContain("__settlement__")
-	expect(a.bench.shapes["__settlement__"]).toBeTruthy()
-	expect(a.bench.shapes["__settlement__"].any).toBe(true)
+	expect(a.bench.extraFlow).toBeTruthy()
+	expect(Object.keys(a.bench.extraFlow).length).toBeGreaterThan(1)
+	//the six-month mean spread over a weekly histogram is gone; nothing may reintroduce it
+	expect(a.bench.terminals.map(s => s.id)).not.toContain("__settlement__")
+	expect(a.live.terminals.map(s => s.id)).not.toContain("__settlement__")
+	//and the synthesised due-day bill must stay off, or the card is paid twice
+	expect(a.bench.settles).toBe(null)
+})
+
+/* =================================================================================================
+   THE BILL TRACKS THE SPENDING. Two real consecutive settlements of $3,498 and $2,075 were both
+   predicted at $950, because the tile modelled the card as a six-month mean spread over a weekly
+   histogram - a constant by construction. The causal model had existed since b16 and the bench had
+   been scoring with it the whole time; the tile's extraFlow was hardcoded to null.
+
+   A constant satisfies any test that only asks whether a settlement EXISTS. These ask whether it
+   MOVES with the spending that produces it, which is the property a mean cannot have.
+   ================================================================================================= */
+test("the modelled bill reproduces the settlements that actually posted", async () => {
+	/* The fixture spends $180 a week on the card for two months and then $480 a week. A six-month
+	   mean says ~$377 a settlement forever, which is the shape of the failure that was shipped: two
+	   real consecutive bills of $3,498 and $2,075 both predicted at $950.
+
+	   The causal model reads what has already posted on that card since its last settlement, so over
+	   a window it must reproduce what the window actually paid - not approach it on average. */
+	const chart = await mount("last")
+	const a = chart.series()
+	const flow = a.bench.extraFlow
+	const days = Object.keys(flow)
+	expect(days.length).toBeGreaterThan(2)
+
+	const from = a.backtest[0].date, to = a.backtest[a.backtest.length - 1].date
+	const actual = txns.filter(t => t.userInstitutionAccountId === CHECKING
+			&& /card bill/.test(t.description)
+			&& new Date(t.date) >= from && new Date(t.date) <= to)
+		.reduce((x, t) => x + Math.abs(t.amount), 0)
+	const modelled = days.reduce((x, k) => x + Math.abs(flow[k].amount), 0)
+
+	expect(actual).toBeGreaterThan(0)
+	expect(modelled/actual).toBeGreaterThan(0.9)
+	expect(modelled/actual).toBeLessThan(1.1)
+})
+
+test("each card names itself in the breakdown", async () => {
+	//"Card settlement -$950" cannot say whether the amount, the day or the CARD is wrong, and with
+	//two cards on their own weekly cycles all three are live at once
+	const chart = await mount("last", true)
+	const a = chart.series()
+	const days = Object.keys(a.bench.extraFlow)
+	let named = []
+	days.forEach(k => {
+		const point = a.backtest.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
+		if(!point)return
+		const rows = chart.dayAudit({date: point.date, value: point.value, actual: true}).predicted
+		named = named.concat(rows.filter(r => /Card settlement/.test(r.name)))
+	})
+	expect(named.length).toBeGreaterThan(0)
+	expect(named.some(r => /Visa/.test(r.name))).toBe(true)
+	expect(named.some(r => /Amex/.test(r.name))).toBe(true)
 })

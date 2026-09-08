@@ -223,7 +223,16 @@ export function contributionsOn(d, opts){
 	}
 	const ex = opts.extraFlow ? opts.extraFlow[dayKey(d)] : null;
 	if(ex && Math.abs(ex.amount) > 0.005){
-		out.push({name: ex.name || "Card settlement", id: "__card__", amount: ex.amount});
+		/* ONE ROW PER CARD where the caller distinguished them. "Card settlement -$950" against a real
+		   -$3,498 does not say whether the model has the wrong amount, the wrong day, or the right
+		   answer for the wrong card - and with two cards on different weekly cycles all three are
+		   live. Naming the card, and splitting posted from projected, makes the next audit decide it. */
+		if(ex.parts && ex.parts.length)ex.parts.forEach(p => {
+			if(Math.abs(p.amount) > 0.005)out.push({name: p.name || "Card settlement",
+				id: "__card__" + (p.card || ""), amount: p.amount,
+				posted: p.posted, projected: p.projected});
+		});
+		else out.push({name: ex.name || "Card settlement", id: "__card__", amount: ex.amount});
 	}
 	if(opts.leakPerMonth){
 		out.push({name: "Unmodelled drift", id: "__leak__",
