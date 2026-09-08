@@ -191,3 +191,21 @@ test("the card is one row per card, and the payment stream is not a second copy 
 	expect(Math.abs(a.cardTotal)).toBeGreaterThan(0)
 	expect(Math.abs(a.cardAttributed)).toBeGreaterThan(0)
 })
+
+test("the card export prints the evidence, not the conclusions", async () => {
+	/* Everything about a card is inferred - which payments are its, where the statement closes, what
+	   fraction it clears, how fast it is spent on - and the report printed only the conclusions. When
+	   they disagreed with reality there was no way to say which of the four inferences was wrong. */
+	const ref = await mount()
+	const text = ref.current.cardExport()
+	//statement by statement, with the purchases that made each one up beside the payment
+	expect(text).toMatch(/close\s+paid on\s+payment\s+n\s+purchases/)
+	//and the three rate bases side by side, so the choice is measured rather than preferred
+	expect(text).toMatch(/this cycle \(since last payment\)/)
+	expect(text).toMatch(/trailing 90 days/)
+	expect(text).toMatch(/since the reporting year began/)
+	expect(text).toMatch(/what the last 8 statements ACTUALLY paid/)
+	//the raw purchases, so the numbers above can be checked rather than believed
+	expect(text).toMatch(/RAW PURCHASES/)
+	expect(text.split("\n").length).toBeGreaterThan(20)
+})

@@ -5,7 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
-	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements}
+	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b34 - the other card on the same statement";
+export const BENCH_VERSION = "b35 - the card export: evidence, not conclusions";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -516,6 +516,116 @@ export default class BalanceBench extends BaseComponent{
 				.reduce((x, k) => x + actualByStream[CARD_ID][k], 0)}
 		return this._cache[key]
 	}
+	/* THE CARD EXPORT - statement by statement, with the purchases that produced each one.
+
+	   Everything about this card is inferred: which payments belong to it, where its statement closes,
+	   what fraction it clears, how fast it is spent on. Four inferences compounding, and the report so
+	   far has printed the CONCLUSIONS. When the conclusions disagreed with reality there was no way to
+	   tell which of the four was wrong, and I have twice guessed and been wrong.
+
+	   This prints the evidence instead: for each statement, the payments that cleared it and the
+	   purchases that made it up, side by side. Two columns answer the question that matters -
+
+	     purchases ~= payment, every statement  -> the feed is complete and the model's arithmetic is
+	                                               sound; any remaining error is in the RATE, which is
+	                                               only used for days that have not happened yet
+	     purchases ~= half the payment          -> spending is missing from the data, and no amount of
+	                                               modelling recovers money the ledger never saw
+
+	   RATE AND PASS-THROUGH ARE NOT INDEPENDENT, which is worth stating because it looks like double
+	   counting and is not, quite. Pass-through is fitted as payment divided by the purchases the model
+	   can see; if it can see only half of them, pass-through comes out twice as large and the product
+	   of the two is unchanged. It is self-correcting - up to the clamp at 1.5, beyond which the
+	   correction is silently truncated and the bill comes out short. So a pass-through sitting AT 1.5
+	   is not a revolver, it is a purchase feed with a hole in it, and that is the number to read
+	   before anything else. */
+	cardExport(statements){
+		const cards = this.credit(), keep = this.spending()
+		if(!cards.length)return "no credit accounts"
+		const names = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
+		const want = statements || 12
+		const found = inferSettlements(this.props.transactions, keep, cards,
+			{zeroSumIds: this.terminals().filter(t => t.isZeroSumStream).map(t => t.id)})
+		const cy = cardCycles(this.props.transactions, cards, found)
+		const out = ["CARD EXPORT  " + BENCH_VERSION, ""]
+
+		cards.forEach(h => {
+			const c = cy[h]
+			if(!c || !c.events.length)return
+			out.push(names[h] || h)
+			out.push("  interval " + Math.round(c.intervalDays) + "d   offset " + c.lagDays
+				+ "d   pass-through " + Math.round(c.ratio*100) + "%"
+				+ (c.ratio >= 1.49 ? "  <-- AT THE CLAMP: purchases are probably missing" : "")
+				+ "   payments per statement " + (c.perStatement || 1).toFixed(1)
+				+ (c.dormant ? "   DORMANT" : ""))
+			out.push("")
+			out.push("  close        paid on      payment      n   purchases    n   pay/purch")
+			const evs = c.events.slice(-want)
+			evs.forEach((e, i) => {
+				const pay = new Date(e.date)
+				const close = new Date(pay.getTime() - c.lagDays*DAY)
+				const prev = i ? new Date(new Date(evs[i-1].date).getTime() - c.lagDays*DAY)
+					: new Date(close.getTime() - c.intervalDays*DAY)
+				let sum = 0, n = 0
+				;(this.props.transactions || []).forEach(t => {
+					if(t.userInstitutionAccountId !== h || t.amount >= 0)return
+					const d = new Date(t.date).getTime()
+					if(d > prev.getTime() && d <= close.getTime()){sum += -t.amount; n++}
+				})
+				out.push("  " + dayKey(close) + "   " + dayKey(pay)
+					+ "   " + money(e.amount).padStart(9)
+					+ "  " + String(e.parts || 1).padStart(2)
+					+ "   " + money(sum).padStart(9)
+					+ "  " + String(n).padStart(3)
+					+ "   " + (sum ? (Math.abs(e.amount)/sum).toFixed(2) : "-").padStart(6))
+			})
+			out.push("")
+			/* THE RATE UNDER EACH BASIS, side by side. Three ways to average the same purchases, and
+			   the choice between them was made by preference rather than measurement - which is how
+			   the projected half of every bill came to be built on the slowest of the three. */
+			const now = this.today()
+			const spent = (this.props.transactions || []).filter(t =>
+				t.userInstitutionAccountId === h && t.amount < 0)
+			const rateOver = from => {
+				let sum = 0, earliest = null
+				spent.forEach(t => {
+					const d = new Date(t.date)
+					if(d < from || d >= now)return
+					sum += -t.amount
+					if(!earliest || d < earliest)earliest = d
+				})
+				const days = earliest ? Math.max(1, (now - earliest)/DAY) : 1
+				return sum/days
+			}
+			const lastPay = new Date(c.events[c.events.length-1].date)
+			const bases = [
+				["this cycle (since last payment)", rateOver(lastPay)],
+				["trailing 90 days", rateOver(new Date(now.getTime() - 90*DAY))],
+				["since the reporting year began", rateOver(this.cycleStart(now))]
+			]
+			out.push("  rate basis                        $/day    implies per statement")
+			bases.forEach(b => out.push("  " + b[0].padEnd(34) + money(-b[1]).padStart(8)
+				+ "   " + money(-b[1]*c.intervalDays*c.ratio).padStart(10)))
+			const recent = c.events.slice(-8)
+			const avg = recent.reduce((x, y) => x + Math.abs(y.amount), 0)/(recent.length || 1)
+			out.push("  " + "what the last 8 statements ACTUALLY paid".padEnd(34)
+				+ "".padStart(8) + "   " + money(-avg).padStart(10))
+			out.push("")
+		})
+
+		out.push("RAW PURCHASES (the window above, newest first)")
+		const from = new Date(this.today().getTime() - want*7*DAY)
+		const rows = (this.props.transactions || []).filter(t =>
+			cards.indexOf(t.userInstitutionAccountId) > -1 && new Date(t.date) >= from)
+			.sort((a, b) => new Date(b.date) - new Date(a.date))
+		rows.forEach(t => out.push("  " + dayKey(new Date(t.date))
+			+ "  " + money(t.amount).padStart(9)
+			+ "  " + (names[t.userInstitutionAccountId] || "").slice(0, 16).padEnd(16)
+			+ "  " + String(t.description || "").slice(0, 40)))
+		out.push("  (" + rows.length + " purchases)")
+		return out.join("\n")
+	}
+
 	/* ROLLING SEVEN DAYS - the horizon a decision is actually taken at.
 
 	   The headline is a single forecast made on one day and marked over the following month. That is
@@ -935,8 +1045,9 @@ export default class BalanceBench extends BaseComponent{
 		return out.join("\n")
 	}
 
-	copy(){
-		const text = this.report()
+	//takes the text to copy, so one button can hand over the report and another the card export
+	copy(what){
+		const text = typeof what === "string" ? what : this.report()
 		const done = ok => this.updateState({copied: ok ? "Copied" : "Copy failed"},
 			() => setTimeout(() => this.updateState({copied:null}), 1600))
 		try{
@@ -1048,6 +1159,8 @@ export default class BalanceBench extends BaseComponent{
 			</Score>
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
+				<Btn type="button" onClick={() => this.copy(this.cardExport())}>
+					{this.state.copied === "cards" ? "Copied" : "Copy card export"}</Btn>
 			</Bar>
 			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
 				<Head>{g[1]}</Head>
