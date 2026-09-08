@@ -5,10 +5,8 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
-import {accountRoutingOf, reconstruct, forecast, trough, peak, eventsIn, dayKey,
-	cardSettlementForecast,
-	monthlyExpectationAt, classifyAll, CLASSES, groupByStream,
-	inferSettlements, contributionsOn, buildForecastInputs}
+import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
+	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, contributionsOn}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -396,40 +394,28 @@ export default class BalanceChart extends BaseComponent{
 	/* THE SHAPES AS THEY WOULD HAVE LOOKED ON A GIVEN DAY - nothing after `cutoff` is allowed in.
 	   This is what makes the backtest worth drawing: a forecast fitted to the period it is predicting
 	   has already seen the answer, and the agreement it then shows is its own reflection. */
-	/* HOW FAR BACK THE TILE LOOKS, which until now was "everything ever recorded".
-	   The floor is the start of the current reporting year, the ceiling three months, whichever is
-	   shorter - the same rule the bench measures with. History older than that is a stream under a
-	   previous agreement: a rent that has moved, a childcare bill from another provider. */
-	lookbackFrom(now){
+	/* THE ONE MODEL. Every forecast this component draws comes from here and nothing here is
+	   assembled locally - see buildModel. The only thing that separates the live forecast from the
+	   backtest is the as-of date, which is the point: there is no second configuration to drift. */
+	model(asOf, until){
 		const prefs = (Core.getUserData() || {}).userPreferences || {}
-		const day = prefs.reportingStartingDay || reportingConfig.startingDay
-		const m = reportingConfig.startingMonth - 1
-		let cycle = new Date(Date.UTC(now.getUTCFullYear(), m, day))
-		if(cycle > now)cycle = new Date(Date.UTC(now.getUTCFullYear() - 1, m, day))
-		const threeMonths = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3,
-			now.getUTCDate()))
-		return threeMonths > cycle ? threeMonths : cycle
+		const key = this.source() + "|" + this.state.basis + "|"
+			+ asOf.getTime() + "|" + until.getTime()
+		this._models = this._models || {}
+		if(this._models[key])return this._models[key]
+		this._models[key] = buildModel({
+			transactions: this.props.transactions,
+			terminals: this.terminalsFor(this.state.basis),
+			accounts: this.state.accounts || [],
+			covered: this.covered(), cards: this.creditHashes(),
+			fallback: this.spendingHashes()[0],
+			netted: this.source() === NETTED,
+			asOf: asOf, until: until,
+			settlementDay: this.settlementDay(),
+			startingMonth: reportingConfig.startingMonth,
+			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
+		return this._models[key]
 	}
-
-	/* THE SAME INPUTS THE BENCH SCORES. This method and the bench's had drifted into two different
-	   models: the bench windowed its history, filtered to the account being predicted and passed the
-	   declared period as the detector's hypothesis, and this one did none of the three. So the bench
-	   measured one forecast for six rounds while the app shipped another, and a savings transfer the
-	   bench placed as a single $4,000 step appeared here as $1,929 smeared over several days.
-	   buildForecastInputs is now the only place that answers this, for both. */
-	inputs(until){
-		const now = this.ledgerToday()
-		const at = until || now
-		const key = this.source() + "|" + at.getTime()
-		this._inputs = this._inputs || {}
-		if(this._inputs[key])return this._inputs[key]
-		this._inputs[key] = buildForecastInputs({
-			terminals: this.terminals(), byStream: this.streamTxns(),
-			since: this.lookbackFrom(at), until: at, covered: this.covered(),
-			expectationAt: (st, d) => monthlyExpectationAt(st, d, "monthly")})
-		return this._inputs[key]
-	}
-	shapesAsOf(cutoff){return this.inputs(cutoff)}
 
 	/* every terminal, scored. Memoised with the grouped ledger it is derived from. */
 	classification(){
@@ -447,9 +433,6 @@ export default class BalanceChart extends BaseComponent{
 		return this.terminals().filter(s => ok[s.id])
 	}
 
-	//one histogram per terminal, from that terminal's own categorised transactions
-	shapes(){return this.inputs().shapes}
-	routing(){return this.inputs().routing}
 	terminals(){
 		const master = this.props.stream || Core.getMasterStream()
 		return master ? master.getAllTerminalStreams() : []
@@ -543,114 +526,35 @@ export default class BalanceChart extends BaseComponent{
 		const win = this.window(now, when)
 		const txns = this.ledger()
 		const bal = this.anchor()
-		const keep = this.covered(), cards = this.creditHashes()
-		const fallback = this.spendingHashes()[0]
-		/* a stream with no history has no home account. It is treated as landing on the DEFAULT
-		   account - the safer error, since it then arrives on its own day rather than a fortnight
-		   later inside a settlement lump. */
-		const covers = h => keep.indexOf(h || fallback) > -1
-		//the settlement is added only where the card sits OUTSIDE the reading: inside it, the
-		//spending is already counted on its own dates and the payment moves nothing
-		const netted = this.source() === NETTED
-		/* and NOT where the reading already carries the payment: the streams that the inferred
-		   settlements are categorised to go into excludeIds below, so the bill is counted once. */
-		/* THE CARD BILL IS ARITHMETIC ON TRANSACTIONS WE ALREADY HOLD, not a draw from a
-		   distribution. The tile was predicting it as a six-month mean spread over a weekly histogram,
-		   which is a constant: the same figure on every settlement day regardless of what was actually
-		   charged. Against two real consecutive settlements of $3,498 and $2,075 it said $950 twice.
-
-		   The causal model has existed since b16 and the bench has been scoring with it ever since -
-		   the tile simply never got it, and `extraFlow` sat hardcoded to null. What has already POSTED
-		   on the card since its last settlement is known exactly; only the days still to come are
-		   estimated, at that card's own rate. So the number sharpens as the settlement approaches,
-		   which a mean never does.
-
-		   AND IT IS PER CARD. Pooling two cards into one weekly histogram puts a fraction of the bill
-		   on each card's weekday every week instead of the whole bill on the right one - a timing error
-		   as well as an amount error, and invisible in an audit that only ever says "Card settlement".
-		   Each card keeps its own interval, its own phase, its own rate and its own pass-through ratio,
-		   and each names itself in the breakdown. */
-		const inferred = inferSettlements(this.props.transactions, keep, cards)
-		const excludeIds = {}
-		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-		const cardName = {}
-		;(this.state.accounts || []).forEach(a => {cardName[a.hash] = a.name})
-		/* Strictly out of sample by construction: cardSettlementForecast reads only transactions dated
-		   before `from`, so the same call serves the live forecast and the backtest. */
-		const flowsFrom = (from, to) => {
-			if(netted || !inferred.length || !(to > from))return null
-			const m = cardSettlementForecast(this.props.transactions, cards, inferred, from, to)
-			if(!m.events.length)return null
-			const out = {}
-			m.events.forEach(e => {
-				const k = dayKey(e.date)
-				if(!out[k])out[k] = {amount:0, name:"Card settlement", parts:[]}
-				out[k].amount += e.amount
-				out[k].parts.push({card:e.card, amount:e.amount, posted:e.posted,
-					projected:e.projected,
-					name:"Card settlement" + (cards.length > 1
-						? " · " + (cardName[e.card] || "card") : "")})
-			})
-			return out
-		}
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
-		   the one balance that is actually known (see the drift note), so a past window is a slice of
-		   that walk rather than a separate calculation from a guessed opening figure. */
+		   the one balance that is actually known, so a past window is a slice of that walk rather
+		   than a separate calculation from a guessed opening figure. */
 		let past = reconstruct(txns, now, bal, win.from)
 		if(win.to)past = past.filter(p => p.date <= win.to)
-		const use = this.terminalsFor(this.state.basis)
-		const shapes = this.shapes()
-		const extraFlow = win.fwd
-			? flowsFrom(now, new Date(now.getTime() + win.fwd*DAY)) : null
-		/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
-		   inferred at all. With the causal events in hand it would pay the card twice. */
-		const settles = (netted || extraFlow) ? null : (h => cards.indexOf(h) > -1)
-		const future = win.fwd ? forecast({terminals:use, shapes:shapes, excludeIds:excludeIds,
-			routing:this.routing(), now:now, balanceNow:bal, days:win.fwd,
-			covers:covers, settles:settles, extraFlow:extraFlow,
-			periodName:"monthly", settlementDay:this.settlementDay()}) : []
-		/* THE BENCHMARK: the same forecast, run forward from the START of what is on screen, over the
-		   days that have since actually happened. Where it parts company with the reconstruction is a
+
+		const live = win.fwd ? this.model(now, new Date(now.getTime() + win.fwd*DAY)) : null
+		const future = live
+			? forecast(Object.assign({now: now, balanceNow: bal, days: win.fwd}, live)) : []
+
+		/* THE BENCHMARK: the same model, asked from the START of what is on screen, over days that
+		   have since actually happened. Where it parts company with the reconstruction is a
 		   discrepancy worth chasing - a stream mis-timed, an amount out of date, or money moving that
-		   the master does not know about.
-
-		   It must be run OUT OF SAMPLE or it is not a benchmark. The shapes and the routing are built
-		   only from transactions before the window opens, so the forecast is making the prediction it
-		   would have made on the day, with what it knew on the day. Fitted to the period it predicts,
-		   it would reproduce that period rather than test it.
-
-		   The expected AMOUNTS still come from the master's own step function evaluated at each date,
-		   which is right: that is the plan as it stood then, not the outcome. */
-		let backtest = [], benchOpts = null
+		   the master does not know about. It is out of sample because buildModel reads nothing dated
+		   on or after its as-of date, not because anything here arranges for that. */
+		let backtest = [], bench = null
 		if(past.length > 1){
-			const opened = past[0].date
-			const asOf = this.shapesAsOf(opened)
-			/* the settlement model needs no separate out-of-sample handling: it reads only what was
-			   posted before the date it is asked to forecast from, so asking it from the window's
-			   opening day IS the honest question */
-			const benchFlow = flowsFrom(opened, past[past.length-1].date)
-			benchOpts = {terminals:this.terminalsFor(this.state.basis), shapes:asOf.shapes,
-				routing:asOf.routing, covers:covers, extraFlow:benchFlow,
-				settles:(netted || benchFlow) ? null : (h => cards.indexOf(h) > -1),
-				periodName:"monthly", excludeIds:excludeIds,
-				settlementDay:this.settlementDay()}
-			backtest = forecast(Object.assign({now:opened, balanceNow:past[0].value,
-				days:Math.round((past[past.length-1].date - opened)/DAY)}, benchOpts))
-			backtest = [{date:opened, value:past[0].value, bench:true}]
-				.concat(backtest.map(p => ({date:p.date, value:p.value, bench:true})))
+			const opened = past[0].date, closed = past[past.length - 1].date
+			bench = this.model(opened, closed)
+			backtest = forecast(Object.assign({now: opened, balanceNow: past[0].value,
+				days: Math.round((closed - opened)/DAY)}, bench))
+			backtest = [{date: opened, value: past[0].value, bench: true}]
+				.concat(backtest.map(p => ({date: p.date, value: p.value, bench: true})))
 		}
-		/* THE INPUTS BEHIND EACH DRAWN LINE, carried on the series they drew rather than on the
-		   component. Two reasons, and the audit was wrong for both. An instance field was overwritten
-		   by whichever month allSeries() happened to compute LAST, so a hovered day could be explained
-		   with the other month's model; and the past is drawn by the BACKTEST, which runs on
-		   out-of-sample shapes, while the field only ever held the live ones. So the dotted line put a
-		   large step on a day the table then said was worth $16. A breakdown is only worth having if it
-		   is the arithmetic of the line above it. */
-		const liveOpts = {terminals:use, shapes:shapes, routing:this.routing(), covers:covers,
-			settles:settles, periodName:"monthly", excludeIds:excludeIds, extraFlow:extraFlow,
-			settlementDay:this.settlementDay()}
-		return {past:past, future:future, backtest:backtest, txns:txns, now:now,
-			live:liveOpts, bench:benchOpts}
+		/* the model behind each drawn line travels ON the series it drew. An instance field was
+		   overwritten by whichever window allSeries() computed last, and a hovered day was then
+		   explained with another month's model. */
+		return {past: past, future: future, backtest: backtest, txns: txns, now: now,
+			live: live || bench, bench: bench}
 	}
 
 	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts
@@ -1155,7 +1059,7 @@ export default class BalanceChart extends BaseComponent{
 	render(){
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
-			this._txns = this.props.transactions; this._inputs = null
+			this._txns = this.props.transactions; this._models = null
 			this._names = null; this._byStream = null; this._classes = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",

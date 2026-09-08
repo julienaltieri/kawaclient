@@ -960,6 +960,183 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
    Routing sees the UNFILTERED set on purpose: deciding which account a stream lives on is the one
    question a single account's ledger cannot answer.
    ================================================================================================== */
+/* ==================================================================================================
+   THE MODEL. One function, one answer, three callers.
+
+   WHY THIS EXISTS, and why it is a single function rather than a set of helpers.
+
+   The tile, the bench and the day-audit table each assembled their own forecast inputs. Five separate
+   sessions were spent on the consequences, every one the same fault wearing different clothes:
+
+     b19  the tile used all history, all accounts and no declared period; the bench windowed,
+          filtered and declared. Two different forecasts, one of them measured and the other shipped.
+     b21  the audit explained the past with LIVE shapes while the past was drawn by the backtest,
+          which runs on out-of-sample ones. The table said $16 under a line that stepped down.
+     b21  the settlement histogram was written onto the live inputs and never onto the out-of-sample
+          ones, so the benchmark spread the largest outflow in the portfolio flat.
+     b21  contributionsOn listed only streams, while forecast() adds three more terms to a day.
+     b22  the tile predicted the card bill as a six-month mean - a constant - while the bench had been
+          scoring the causal model since b16. $950 against real bills of $3,498 and $2,075.
+
+   And two more that had never surfaced, found while writing this: the tile had neither the
+   remaining-budget rule for long-period streams (a yearly budget divided by twelve forecasts money
+   already spent) nor the zero-sum override (a stream budgeted at nothing that empties the account
+   every week predicted nothing). Both had lived in the bench alone since b15.
+
+   None of these were errors of arithmetic. Every one was a second assembly of the same idea drifting
+   from the first, which is what happens to duplicated assembly and not what happens to a shared
+   function. So there is now exactly one place a forecast can come from, and the components hold no
+   modelling logic at all - they choose a question and draw the answer.
+
+   THE LAW OF THE AS-OF DATE. The model is a pure function of one instant. Every quantity it derives -
+   shapes, routing, rates, settlement events, observed means, budget remainders - reads only
+   transactions dated strictly before `asOf`. That is enforced in one line, by slicing the ledger once
+   at the top and never touching the original again, which is why `asOf` is the only thing that
+   separates the live forecast from the backtest. There is no "live" variant to fall out of step with
+   a "bench" variant, because there is no variant: today's forecast is this function at asOf = today
+   and the backtest is the same function at asOf = the day the window opened.
+
+   It also makes the leak testable rather than reviewable. Build the model twice, once from the whole
+   ledger and once from a ledger truncated at asOf, and the two must forecast identically - if any
+   input peeks past asOf, that test goes red. Reviewing for out-of-sample purity by reading the code
+   is what failed three times above.
+   ================================================================================================== */
+
+/* The reporting year containing `now`. Both components had their own copy of this. */
+export function cycleStartOf(now, startingMonth, startingDay){
+	const m = (startingMonth || 1) - 1, d = startingDay || 1;
+	let start = new Date(Date.UTC(now.getUTCFullYear(), m, d));
+	if(start > now)start = new Date(Date.UTC(now.getUTCFullYear() - 1, m, d));
+	return start;
+}
+
+/* HOW FAR BACK THE MODEL LOOKS: three months, or the start of the reporting year, whichever is
+   shorter. History older than that is a stream under a previous agreement - a rent that has moved, a
+   childcare bill from another provider - and averaging it in describes an arrangement that ended. */
+export function lookbackFrom(now, startingMonth, startingDay){
+	const cycle = cycleStartOf(now, startingMonth, startingDay);
+	const three = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, now.getUTCDate()));
+	return three > cycle ? three : cycle;
+}
+
+const LONG_PERIODS = {yearly: true, biyearly: true, bimonthly: true};
+
+export function buildModel(input){
+	const asOf = input.asOf, until = input.until;
+	const periodName = input.periodName || "monthly";
+	const covered = input.covered || [], cards = input.cards || [];
+	const fallback = input.fallback === undefined ? covered[0] : input.fallback;
+	const terminals = input.terminals || [];
+
+	/* THE LAW, IN ONE LINE. Everything below reads `past`, never `input.transactions`. */
+	const past = (input.transactions || []).filter(t => new Date(t.date) < asOf);
+
+	const since = input.since || lookbackFrom(asOf, input.startingMonth, input.startingDay);
+	const cycleFrom = input.cycleStart || cycleStartOf(asOf, input.startingMonth, input.startingDay);
+
+	//the direction each stream moves money, so a transfer routes by the leg that LEAVES
+	const dir = {};
+	terminals.forEach(s => {
+		const a = monthlyExpectationAt(s, asOf, periodName);
+		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
+	});
+	const byStream = groupByStream(past, terminals.map(s => s.id), id => dir[id]);
+
+	const built = buildForecastInputs({terminals: terminals, byStream: byStream,
+		since: since, until: asOf, covered: covered,
+		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
+
+	const covers = h => covered.indexOf(h || fallback) > -1;
+
+	/* THE CARD. Settlements are inferred from the pair - the outflow on the covered account and the
+	   receipt on the credit account - and the streams they are categorised to are then excluded, so
+	   the bill is counted once. */
+	const inferred = inferSettlements(past, covered, cards);
+	const excludeIds = {};
+	inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}));
+
+	const cardName = {};
+	(input.accounts || []).forEach(a => {cardName[a.hash] = a.name});
+
+	/* THE BILL IS ARITHMETIC ON TRANSACTIONS ALREADY HELD, not a draw from a distribution. What has
+	   posted on a card since its last settlement is known exactly; only the days still to come are
+	   estimated, at that card's own rate - so the figure sharpens as the settlement approaches, which
+	   a mean never does. PER CARD, because two cards on their own cycles pooled into one rhythm put a
+	   fraction of the bill on each card's day instead of the whole bill on the right one. */
+	let extraFlow = null;
+	if(!input.netted && inferred.length && until > asOf){
+		const m = cardSettlementForecast(past, cards, inferred, asOf, until);
+		if(m.events.length){
+			extraFlow = {};
+			m.events.forEach(e => {
+				const k = dayKey(e.date);
+				if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card settlement", parts: []};
+				extraFlow[k].amount += e.amount;
+				extraFlow[k].parts.push({card: e.card, amount: e.amount, posted: e.posted,
+					projected: e.projected,
+					name: "Card settlement"
+						+ (cards.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
+			});
+		}
+	}
+	/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
+	   inferred at all. With the causal events in hand it would pay the card twice. */
+	const settles = (input.netted || extraFlow) ? null : (h => cards.indexOf(h) > -1);
+
+	/* WHAT A STREAM IS EXPECTED TO MOVE IN A MONTH, which is three rules and not one.
+
+	   A ZERO-SUM STREAM STILL MOVES THIS ACCOUNT. "Zero sum" means the money comes back, which is
+	   true of a refund into the same account and false of a transfer between two. A savings transfer
+	   or a card payment nets to nothing across the pair and takes thousands out of checking, so a
+	   declared budget of $0 predicts $0 and the largest recurring outflow is simply missing. Where
+	   the declaration says nothing and the ledger says otherwise, the ledger wins - the MEAN of what
+	   actually left this account, because these amounts are genuinely variable and the median of a
+	   variable series under-predicts its own total.
+
+	   A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth. $10,000 a year with $6,000 gone
+	   has $4,000 left; dividing the whole budget by twelve forecasts money already spent, twice over
+	   by December. Clamped in the direction of spending: an exhausted budget is done, not reversed. */
+	const monthsSeen = Math.max(1, (asOf - since)/(30.44*DAY));
+	const monthsLeft = Math.max(1, 12 - Math.round((asOf - cycleFrom)/(30.44*DAY)));
+	const observed = {}, spentSince = {};
+	terminals.forEach(t => {
+		let v = 0;
+		(built.sliced[t.id] || []).forEach(x => {v += x.amount});
+		observed[t.id] = v/monthsSeen;
+		let w = 0;
+		/* `x.date < asOf` is redundant given `past`, and stays anyway: this is the one quantity here
+		   with no upper bound of its own (shapes and observed both get theirs from
+		   buildForecastInputs' `until`), so without it the law would rest on a single slice thirty
+		   lines above rather than on each derivation being independently safe. */
+		(byStream[t.id] || []).forEach(x => {
+			if(x.date >= cycleFrom && x.date < asOf
+				&& covered.indexOf(x.accountHash) > -1)w += x.amount;
+		});
+		spentSince[t.id] = w;
+	});
+	const expectedFor = (t, when) => {
+		const declared = monthlyExpectationAt(t, when, periodName);
+		if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id];
+		const p = t.getPreferredPeriod ? t.getPreferredPeriod() : "monthly";
+		if(!LONG_PERIODS[p])return declared;
+		const budget = monthlyExpectationAt(t, when, p);
+		if(!budget)return 0;
+		const left = budget - (spentSince[t.id] || 0);
+		if(budget < 0 && left > 0)return 0;
+		if(budget > 0 && left < 0)return 0;
+		return left/monthsLeft;
+	};
+
+	/* Everything forecast() and contributionsOn() read, and nothing either of them has to assemble. */
+	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
+		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
+		settlementDay: input.settlementDay || null, periodName: periodName,
+		meta: {since: since, asOf: asOf, until: until, cycleStart: cycleFrom, inferred: inferred,
+			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
+			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,
+			settlementEvents: extraFlow}};
+}
+
 export function buildForecastInputs(opts){
 	const terminals = opts.terminals || [], byStream = opts.byStream || {};
 	const covered = opts.covered || [], since = opts.since, until = opts.until;

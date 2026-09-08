@@ -4,9 +4,8 @@ import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
-import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExpectationAt,
-	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
-	inferSettlements, cardSettlementForecast, buildForecastInputs}
+import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
+	groupByStream, pointPrediction, dayLabel, TIERS, cycleStartOf}
 	from '../processors/BankBalance.js';
 
 /* ==================================================================================================
@@ -35,7 +34,7 @@ import {reconstruct, forecast, histogramOf, accountRoutingOf, dayKey, monthlyExp
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b22 - the tile predicts the card bill causally, per card";
+export const BENCH_VERSION = "b23 - one model: the tile, the bench and the audit share it";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -127,14 +126,11 @@ export default class BalanceBench extends BaseComponent{
 
 	   The alternatives are offered beside it rather than argued about: the bench scores every window,
 	   so "does a longer lookback help" is answered by the number rather than by me. */
+	//the reporting year, from the one definition - see cycleStartOf
 	cycleStart(now){
-		const day = (Core.getUserData() || {}).userPreferences
-			? ((Core.getUserData().userPreferences || {}).reportingStartingDay
-				|| reportingConfig.startingDay) : reportingConfig.startingDay
-		const m = reportingConfig.startingMonth - 1
-		let start = new Date(Date.UTC(now.getUTCFullYear(), m, day))
-		if(start > now)start = new Date(Date.UTC(now.getUTCFullYear() - 1, m, day))
-		return start
+		const prefs = (Core.getUserData() || {}).userPreferences || {}
+		return cycleStartOf(now, reportingConfig.startingMonth,
+			prefs.reportingStartingDay || reportingConfig.startingDay)
 	}
 	windows(now){
 		const threeMonths = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3,
@@ -203,154 +199,47 @@ export default class BalanceBench extends BaseComponent{
 			.filter(p => p.date <= close)
 		if(record.length < 2)return null
 
-		const byStream = this.byStream()
 		const keep = this.spending(), cards = this.credit(), fallback = keep[0]
-		/* ONE BUILDER, shared with the tile. These were two implementations of the same idea and
-		   they had drifted into two different models - see buildForecastInputs. */
-		const built = buildForecastInputs({terminals: this.terminals(), byStream: byStream,
-			since: since, until: open, covered: keep,
-			expectationAt: (st, d) => monthlyExpectationAt(st, d, "monthly")})
-		const shapes = built.shapes, sliced = built.sliced, routed = built.routing
+		/* ONE MODEL, and the bench does not build one. Everything that used to be assembled here -
+		   shapes, routing, the account filter, the settlement, the exclusions, the zero-sum override
+		   and the remaining-budget rule - is buildModel, which the tile calls with the same arguments.
+		   Five sessions were spent on the consequences of these having been two assemblies; the point
+		   of the bench is to measure what ships, and it could not while it modelled something else. */
+		const prefs = (Core.getUserData() || {}).userPreferences || {}
+		const model = buildModel({
+			transactions: this.props.transactions,
+			terminals: this.terminals(),
+			accounts: this.state.accounts || [],
+			covered: keep, cards: cards, fallback: fallback,
+			netted: false,
+			asOf: open, until: new Date(record[record.length - 1].date),
+			since: since,
+			settlementDay: this.settlementDay(),
+			startingMonth: reportingConfig.startingMonth,
+			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
+
+		const forecastTerminals = model.terminals
+		const excludeIds = model.excludeIds
+		const shapes = model.shapes, routed = model.routing
+		const sliced = model.meta.sliced, byStream = model.meta.byStream
+		const inferred = model.meta.inferred
+		const extraFlow = model.extraFlow || {}
+		const observed = model.meta.observed
+		const expectedFor = model.expectedFor
 		const days = Math.round((record[record.length-1].date - open)/DAY)
-		const covers = h => keep.indexOf(h || fallback) > -1
-
-		/* THE SETTLEMENT IS MODELLED FROM THE SETTLEMENTS THEMSELVES.
-
-		   Three configurations have now been measured and all three were wrong in a different way:
-
-		     stream in, synthesis out   43.9%  the payment predicted from a six-week mean, which
-		                                       under-samples a variable card bill
-		     stream out, synthesis in   71.3%  right total BY ACCIDENT - the payment stream happened
-		                                       to route to the card, so its observed amount was added
-		                                       to the card streams' expectations and the two summed to
-		                                       about the real bill
-		     stream out, synthesis out  39.4%  the card paid not at all, once routing was fixed and the
-		                                       accident stopped happening
-
-		   The 71.3% was a coincidence and would not survive the next month. What all three were
-		   working around is that neither source is the settlement: the card streams' expectations are
-		   what was BUDGETED, and the payment stream's mean is a noisy read of a variable bill.
-
-		   The settlements are observable. They have their own amounts and their own timing - weekly
-		   here, which no single monthly due-day could ever represent, and the synthesis was putting a
-		   month of card money on one day. So they are forecast like any other stream: their own
-		   histogram for when, their own observed total for how much. Card-routed streams stay out of
-		   the daily flows, the real payment stream stays out too, and this one series carries the
-		   card. One model, from the best available evidence. */
-		/* PER-ANALYSIS, NOT PER-INSTANCE. These were fields on the component, and scoreboard() re-runs
-		   analyse() once per lookback window - so the figure the report printed came from whichever
-		   window happened to run LAST (the "all" window, dividing by fifty-six years of months) rather
-		   than from the one on screen. A number that describes a different calculation than the one it
-		   sits beside is worse than no number. */
-		const inferred = inferSettlements(this.props.transactions, keep, cards)
-		const excludeIds = {}
-		inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}))
-
-		/* THE BILL IS ARITHMETIC ON TRANSACTIONS WE ALREADY HOLD, not a draw from a distribution.
-
-		   A six-month mean predicts the AVERAGE card month and no sample size makes it predict THIS
-		   one. But the next settlement is: what has already POSTED on that card since its last
-		   settlement, plus what is still to be spent before the next. The first half is known exactly,
-		   and only the remainder is estimated - so the forecast sharpens every day as more of the
-		   estimate turns into fact, which a mean never does.
-
-		   Strictly out of sample: only transactions dated before the window opens are read. */
-		const settleModel = cardSettlementForecast(this.props.transactions, cards, inferred,
-			open, new Date(record[record.length-1].date))
-		const extraFlow = {}
-		settleModel.events.forEach(e => {
-			const k2 = dayKey(e.date)
-			extraFlow[k2] = {amount: ((extraFlow[k2] || {}).amount || 0) + e.amount,
-				name: "Card settlement"}
-		})
-		const settleMonthly = settleModel.events.reduce((a, b) => a + b.amount, 0)
+		const covers = model.covers
+		const settleMonthly = Object.keys(extraFlow).reduce((a, k) => a + extraFlow[k].amount, 0)
 			/ Math.max(1, (record[record.length-1].date - open)/(30.44*DAY))
-		const useSettle = settleModel.events.length > 0
+		const useSettle = Object.keys(extraFlow).length > 0
 
-		/* WIRED HERE, not beside `routed`, because every name it needs is only in scope now.
-		   The first version of this reached forward to consts declared eighty lines below it, which a
-		   bundler is entitled to turn into "Cannot access before initialization" - and did, in
-		   production, on a page that had passed every test. The tests never caught it because they
-		   exercise the processor, not this method. */
-		//the settlement arrives as explicit events, so nothing is synthesised on top of it
-		const forecastTerminals = this.terminals()
-		const settles = useSettle ? null : (h => cards.indexOf(h) > -1)
-
-
-		/* A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth.
-		   A $10,000 yearly stream with $6,000 already gone has $4,000 left, and dividing the whole
-		   budget by twelve forecasts money that has already been spent - twice over by December. The
-		   reporting side of the app has always done this (getProjectedPeriodicAmountForStream: "if
-		   there is $600 left to spend over 4 months, this should return $150"), and the balance view
-		   was the only place still dividing by twelve.
-
-		   It reads the stream's own budget for its own period, subtracts what the ledger says has gone
-		   since that period began, and spreads the rest over the months remaining. Clamped at zero in
-		   the direction of spending: a budget already overspent predicts nothing further rather than
-		   predicting money coming back. */
-		const cycleFrom = this.cycleStart(now)
-		const monthsLeft = Math.max(1, 12 - Math.round((open - cycleFrom)/(30.44*DAY)))
-		const spentSince = {}
-		this.terminals().forEach(t => {
-			let v = 0
-			byStream[t.id].forEach(x => {if(x.date >= cycleFrom && x.date < open
-				&& keep.indexOf(x.accountHash) > -1)v += x.amount})
-			spentSince[t.id] = v
-		})
-		const longPeriod = t => {
-			const p = t.getPreferredPeriod ? t.getPreferredPeriod() : "monthly"
-			return p === "yearly" || p === "biyearly" || p === "bimonthly"
-		}
-		/* A ZERO-SUM STREAM STILL MOVES THIS ACCOUNT.
-		   "Zero sum" means the money comes back eventually, and that is true of a refund landing in
-		   the same account and false of a transfer between two. A credit-card payment nets to nothing
-		   across the pair and takes several thousand dollars out of checking every week, so a budget
-		   of $0 predicts $0 and the largest recurring outflow in the portfolio is simply missing.
-
-		   Where the declared budget is nothing and the ledger says otherwise, the ledger wins: the
-		   mean of what actually left this account over the lookback, per month. The MEAN rather than a
-		   median because these amounts are genuinely variable - a card bill is whatever was spent -
-		   and the median of a variable series systematically under-predicts its own total. */
-		const monthsSeen = Math.max(1, (open - since)/(30.44*DAY))
-		const observed = {}
-		this.terminals().forEach(t => {
-			let v = 0
-			sliced[t.id].forEach(x => {v += x.amount})
-			observed[t.id] = v/monthsSeen
-		})
-		/* WHICH SIDE OF THE CARD IS THE DUPLICATE - and I had it backwards.
-
-		   The settlement is a RE-TIMING of the card's own streams: they are excluded from the daily
-		   flows and their total is added back on the due day. That synthesis uses the streams'
-		   expectations, which is the best information available about what a month of card spending
-		   costs.
-
-		   The payment STREAM is the same money seen from the other end, and predicting it from a
-		   six-week observed mean is strictly worse: a card bill is whatever was spent, so the mean of
-		   a short window under-predicts a heavy month. Measured -$5,613 against -$9,800 actual.
-
-		   Suppressing the synthesis and keeping the stream cost 27 points of accuracy in one step. So
-		   the stream is what gets dropped, the synthesis stays, and the card is paid exactly once from
-		   the better estimate. */
-		const expectedFor = (t, when) => {
-			const declared = monthlyExpectationAt(t, when, "monthly")
-			if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id]
-			if(!longPeriod(t))return declared
-			const budget = monthlyExpectationAt(t, when, t.getPreferredPeriod())
-			if(!budget)return 0
-			const left = budget - (spentSince[t.id] || 0)
-			//never predict the opposite direction: an exhausted budget is done, not reversed
-			if(budget < 0 && left > 0)return 0
-			if(budget > 0 && left < 0)return 0
-			return left/monthsLeft
-		}
-
-		const run = (terms, withSettlement, withCard) => forecast({terminals:terms, shapes:shapes,
-			expectedFor:expectedFor, excludeIds:excludeIds,
-			extraFlow: withCard === false ? null : extraFlow,
-			routing:routed, now:open, balanceNow:0, days:days, covers:covers,
-			settles: withSettlement ? settles : null, periodName:"monthly",
-			settlementDay: withSettlement ? this.settlementDay() : null})
+		/* THE ABLATIONS ARE OVERRIDES ON THE ONE MODEL, never a second assembly. Each variant differs
+		   from what ships by exactly the term named in its arguments, which is the only way the
+		   difference in score can be attributed to that term. */
+		const run = (terms, withSettlement, withCard) => forecast(Object.assign({}, model, {
+			terminals: terms, now: open, balanceNow: 0, days: days,
+			extraFlow: withCard === false ? null : model.extraFlow,
+			settles: withSettlement ? (h => cards.indexOf(h) > -1) : null,
+			settlementDay: withSettlement ? this.settlementDay() : null}))
 		const flowsOf = series => {
 			const d = {}
 			for(let k = 1; k < series.length; k++){

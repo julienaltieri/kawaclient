@@ -19,6 +19,7 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
+	buildModel,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -252,7 +253,8 @@ test("at rest the subtitle reports the low point and nothing else", async () => 
 
 test("a stream is routed to the account its money actually landed on", async () => {
 	const ref = await mount()
-	const routing = ref.current.routing()
+	const c = ref.current
+	const routing = c.model(c.ledgerToday(), new Date(c.ledgerToday().getTime() + 30*86400000)).routing
 	expect(routing.food).toBe(CARD)
 	expect(routing.rent).toBe(CHECKING)
 	expect(routing.base).toBe(CHECKING)
@@ -662,41 +664,52 @@ test("the benchmark starts where the window starts, on the actual balance", asyn
 		.toBe(a.past[a.past.length-1].date.getTime())
 })
 
-test("the benchmark is OUT OF SAMPLE - it cannot see the period it predicts", async () => {
-	const ref = await mount()
-	const c = ref.current
-	const opened = c.series().past[0].date
-	const asOf = c.shapesAsOf(opened)
-	const all = c.streamTxns()
-	//every transaction the shapes were built from predates the window
-	Object.keys(all).forEach(id => {
-		const used = all[id].filter(t => t.date < opened)
-		const total = all[id].reduce((x, t) => x + Math.abs(t.amount), 0)
-		const usedTotal = used.reduce((x, t) => x + Math.abs(t.amount), 0)
-		if(total > usedTotal){
-			//this stream HAS transactions inside the window, and they must not be in the shape
-			const shapeOfAll = histogramOf(all[id])
-			const shapeAsOf = asOf.shapes[id]
-			expect(shapeAsOf.weights).not.toEqual(shapeOfAll.weights)
-		}
-	})
-})
+/* =================================================================================================
+   THE LAW OF THE AS-OF DATE, tested rather than reviewed.
 
-test("the benchmark uses the same algorithm as the forward forecast", async () => {
+   The model may read nothing dated on or after the instant it is asked about. Three separate faults
+   were violations of exactly this - the backtest drawn from live shapes, the settlement averaged over
+   the six months ending today and then used in a forecast starting a month ago, the audit explaining
+   the past with the present's model - and each was found by eye, months apart, in production.
+
+   Reading the code for out-of-sample purity is what failed. So this asks the model itself: build it
+   from the whole ledger, build it again from a ledger physically truncated at the as-of date, and
+   forecast with both. If any input peeks past asOf the two must differ, and if none does they are
+   identical. No new leak can pass this, including ones nobody has thought of yet.
+   ================================================================================================= */
+test("the model reads nothing dated on or after its as-of date", async () => {
 	const ref = await mount()
 	const c = ref.current
 	const a = c.series()
-	//run the forecast by hand with the same out-of-sample inputs and expect the same numbers
-	const opened = a.past[0].date
-	const asOf = c.shapesAsOf(opened)
-	const days = Math.round((a.past[a.past.length-1].date - opened)/86400000)
-	const mine = forecast({terminals: c.terminals(), shapes: asOf.shapes, routing: asOf.routing,
-		now: opened, balanceNow: a.past[0].value, days: days,
-		covers: h => c.covered().indexOf(h || c.spendingHashes()[0]) > -1,
-		settles: h => c.creditHashes().indexOf(h) > -1,
-		periodName: "monthly", settlementDay: c.settlementDay()})
+	const opened = a.past[0].date, closed = a.past[a.past.length-1].date
+	const days = Math.round((closed - opened)/86400000)
+
+	const common = {terminals: c.terminals(), accounts: c.state.accounts || [],
+		covered: c.covered(), cards: c.creditHashes(), fallback: c.spendingHashes()[0],
+		asOf: opened, until: closed, settlementDay: c.settlementDay()}
+	const full = buildModel(Object.assign({transactions: c.props.transactions}, common))
+	//a ledger that PHYSICALLY cannot contain the answer
+	const blind = buildModel(Object.assign({transactions:
+		c.props.transactions.filter(t => new Date(t.date) < opened)}, common))
+
+	const run = m => forecast(Object.assign({now: opened, balanceNow: 0, days: days}, m))
+		.map(p => Math.round(p.value*100))
+	expect(run(full)).toEqual(run(blind))
+	//and the window genuinely contains transactions, or the test proves nothing
+	expect(c.props.transactions.filter(t => new Date(t.date) >= opened
+		&& new Date(t.date) <= closed).length).toBeGreaterThan(3)
+})
+
+test("the drawn benchmark is exactly that model, run by hand", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series()
+	const opened = a.past[0].date, closed = a.past[a.past.length-1].date
+	const mine = forecast(Object.assign({now: opened, balanceNow: a.past[0].value,
+		days: Math.round((closed - opened)/86400000)}, c.model(opened, closed)))
 	expect(a.backtest.length).toBe(mine.length + 1)
-	expect(Math.round(a.backtest[a.backtest.length-1].value)).toBe(Math.round(mine[mine.length-1].value))
+	expect(a.backtest.slice(1).map(p => Math.round(p.value*100)))
+		.toEqual(mine.map(p => Math.round(p.value*100)))
 })
 
 test("the benchmark is drawn dotted, and under the record", async () => {
@@ -1674,17 +1687,80 @@ test("without the filters the same stream smears - which is what the app was doi
 	expect(loose.shapes.sav.weights[14]).toBeLessThan(0.75)
 })
 
-test("the tile uses the shared builder, so its shapes match the bench's", async () => {
+/* =================================================================================================
+   ONE MODEL. The tile drew one forecast, the bench scored another, and the audit table explained a
+   third. Five sessions went on the consequences. The components now choose a question and draw the
+   answer; buildModel is the only thing that decides what a forecast is.
+
+   This asks for that structurally rather than by comparing outputs: given the same question, the
+   model the tile holds must be the model, term for term - and neither component may hold a second
+   assembly of it.
+   ================================================================================================= */
+test("the tile holds no model of its own - it asks buildModel", async () => {
 	const ref = await mount()
-	const built = buildForecastInputs({
-		terminals: ref.current.terminals(), byStream: ref.current.streamTxns(),
-		since: ref.current.lookbackFrom(ref.current.ledgerToday()),
-		until: ref.current.ledgerToday(), covered: ref.current.covered()})
-	const mine = ref.current.shapes()
-	ref.current.terminals().forEach(s => {
-		expect(mine[s.id].weights).toEqual(built.shapes[s.id].weights)
+	const c = ref.current
+	const asOf = c.ledgerToday(), until = new Date(asOf.getTime() + 30*86400000)
+	const theirs = c.model(asOf, until)
+	const mine = buildModel({transactions: c.props.transactions, terminals: c.terminals(),
+		accounts: c.state.accounts || [], covered: c.covered(), cards: c.creditHashes(),
+		fallback: c.spendingHashes()[0], asOf: asOf, until: until,
+		settlementDay: c.settlementDay()})
+	c.terminals().forEach(st => {
+		expect(theirs.shapes[st.id].weights).toEqual(mine.shapes[st.id].weights)
+		//the expectation rule too, which is where the zero-sum and remaining-budget rules live and
+		//which the tile did without entirely until this landed
+		expect(theirs.expectedFor(st, asOf)).toBeCloseTo(mine.expectedFor(st, asOf), 6)
 	})
-	expect(ref.current.routing()).toEqual(built.routing)
+	expect(theirs.routing).toEqual(mine.routing)
+	expect(theirs.excludeIds).toEqual(mine.excludeIds)
+	expect(theirs.meta.since.getTime()).toBe(mine.meta.since.getTime())
+})
+
+test("a zero-sum stream that empties the account is still forecast", () => {
+	/* "Zero sum" means the money comes back, which is true of a refund and false of a transfer
+	   between two accounts. A savings transfer declared at $0 predicted $0, and the tile had no rule
+	   for it at all - only the bench did, since b15. */
+	const st = {id: "sav", name: "To savings", getPreferredPeriod: () => "monthly",
+		getExpectedAmountAtDateByPeriod: () => 0}
+	const txns = []
+	for(let m = 0; m < 5; m++){
+		const d = new Date(Date.UTC(2026, 3 + m, 14))
+		txns.push(new GenericTransaction(d.toISOString(), -4000, "transfer",
+			[{streamId: "sav", amount: -4000}], "chk", undefined, undefined, "z"+m, "z"+m))
+	}
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 3, 1))})
+	//the ledger says $4,000 a month leaves; the declaration says nothing, and the ledger wins
+	expect(m.expectedFor(st, new Date(Date.UTC(2026, 8, 1)))).toBeLessThan(-3000)
+})
+
+test("a yearly budget spreads what is LEFT, not a twelfth of the whole", () => {
+	/* $10,000 a year with $6,000 already gone has $4,000 left. Dividing the budget by twelve
+	   forecasts money that has been spent - twice over by December. The tile divided by twelve. */
+	const st = {id: "trip", name: "Voyages", getPreferredPeriod: () => "yearly",
+		getExpectedAmountAtDateByPeriod: (when, p) => p === "yearly" ? -12000 : -1000}
+	const spend = new GenericTransaction(new Date(Date.UTC(2026, 2, 3)).toISOString(), -9000, "trip",
+		[{streamId: "trip", amount: -9000}], "chk", undefined, undefined, "t1", "t1")
+	const at = new Date(Date.UTC(2026, 5, 1))
+	const m = buildModel({transactions: [spend], terminals: [st], covered: ["chk"], cards: [],
+		asOf: at, until: new Date(Date.UTC(2026, 6, 1)),
+		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	const v = m.expectedFor(st, at)
+	expect(Math.abs(v)).toBeLessThan(1000)          //a twelfth would be exactly 1000
+	expect(Math.abs(v)).toBeGreaterThan(0)          //and there IS budget left
+})
+
+test("an exhausted budget predicts nothing further, not money coming back", () => {
+	const st = {id: "trip", name: "Voyages", getPreferredPeriod: () => "yearly",
+		getExpectedAmountAtDateByPeriod: (when, p) => p === "yearly" ? -12000 : -1000}
+	const spend = new GenericTransaction(new Date(Date.UTC(2026, 2, 3)).toISOString(), -15000, "trip",
+		[{streamId: "trip", amount: -15000}], "chk", undefined, undefined, "t1", "t1")
+	const at = new Date(Date.UTC(2026, 5, 1))
+	const m = buildModel({transactions: [spend], terminals: [st], covered: ["chk"], cards: [],
+		asOf: at, until: new Date(Date.UTC(2026, 6, 1)),
+		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
+	expect(m.expectedFor(st, at)).toBe(0)
 })
 
 /* ---- drift is measured in DAYS, not in fractions of a cycle ----------------------------------- */

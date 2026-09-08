@@ -24,6 +24,7 @@ import {render, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
+import {buildModel, forecast} from '../processors/BankBalance'
 
 const HIST = a => [{startDate: new Date("2000-01-01"), amount: a}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -228,4 +229,43 @@ test("each card names itself in the breakdown", async () => {
 	expect(named.length).toBeGreaterThan(0)
 	expect(named.some(r => /Visa/.test(r.name))).toBe(true)
 	expect(named.some(r => /Amex/.test(r.name))).toBe(true)
+})
+
+/* =================================================================================================
+   THE LAW OF THE AS-OF DATE, on a fixture that can actually break it.
+
+   The model may read nothing dated on or after the instant it is asked about. Three separate faults
+   were violations of exactly this - the backtest drawn from live shapes, the settlement averaged over
+   the six months ending today then used in a forecast starting a month ago, the audit explaining the
+   past with the present's model - and each was caught by eye, months apart, in production.
+
+   Reading the code for out-of-sample purity is what failed. So this asks the model: build it from the
+   whole ledger, build it again from a ledger physically truncated at the as-of date, and forecast
+   with both. Any input that peeks past asOf makes the two differ. The fixture is the card one on
+   purpose - it settles every week, so the window is dense with exactly the transactions a leak would
+   reach, and a leak anywhere in the settlement chain moves the answer.
+   ================================================================================================= */
+test("the model reads nothing dated on or after its as-of date", async () => {
+	const chart = await mount("last", true)
+	const a = chart.series()
+	const opened = a.past[0].date, closed = a.past[a.past.length - 1].date
+	const days = Math.round((closed - opened)/DAY)
+
+	const common = {terminals: chart.terminals(), accounts: chart.state.accounts || [],
+		covered: chart.covered(), cards: chart.creditHashes(),
+		fallback: chart.spendingHashes()[0], asOf: opened, until: closed,
+		settlementDay: chart.settlementDay()}
+	const full = buildModel(Object.assign({transactions: txns}, common))
+	//a ledger that PHYSICALLY cannot contain the answer
+	const blind = buildModel(Object.assign({transactions:
+		txns.filter(t => new Date(t.date) < opened)}, common))
+
+	const run = m => forecast(Object.assign({now: opened, balanceNow: 0, days: days}, m))
+		.map(p => Math.round(p.value*100))
+	expect(run(full)).toEqual(run(blind))
+
+	//the window must be dense, or this proves nothing
+	const inside = txns.filter(t => new Date(t.date) >= opened && new Date(t.date) <= closed)
+	expect(inside.length).toBeGreaterThan(10)
+	expect(inside.filter(t => /bill/.test(t.description)).length).toBeGreaterThan(2)
 })
