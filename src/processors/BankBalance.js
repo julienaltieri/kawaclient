@@ -106,6 +106,12 @@ export function eventsPerTurn(txns, expectedPerTurn){
 	return v === null ? null : Math.min(Math.max(v, 1), Math.max(1, list.length));
 }
 
+/* An inflow has to have been watched this many times before its date is treated as a fact, and hold
+   this much of its money in one cluster. Three because two occurrences on the same day is a
+   coincidence and three is a habit; 0.6 because a stream that puts most of its money in one place has
+   demonstrated a date, while one that splits it evenly has demonstrated the opposite. */
+const MIN_TURNS_FOR_A_DATE = 3, DATE_REPEATS_AT = 0.6;
+
 export function histogramOf(txnsForStream, opts){
 	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
 	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf,
@@ -133,12 +139,42 @@ export function histogramOf(txnsForStream, opts){
 	const maxSpan = Math.min(6, Math.max(2, Math.floor(cycle.bins/2)));
 	const gap = Math.min(2, Math.max(1, Math.floor(cycle.bins/4)));
 	const out = histogram.asWeights(histogram.consolidate(bins, maxSpan, gap));
+
+	/* HOW MUCH OF THE MONEY LANDS IN ONE CLUSTER, measured BEFORE concentration, because afterwards
+	   the answer is always 1 and the question has been destroyed. This is date repeatability: a
+	   payroll that always lands on the 14th puts everything in one cluster; a side gig paid whenever
+	   the client gets round to it does not. */
+	out.topShare = out.any ? Math.max.apply(null, out.weights) : 0;
+	out.observations = (txnsForStream || []).length;
+
 	/* AND THEN IT IS CONCENTRATED TO THE NUMBER OF EVENTS THE STREAM ACTUALLY HAS. Consolidation
 	   merges days that are one payment that MOVED; this collapses clusters that are separate days a
 	   single payment could have landed on. Different questions: the first is about drift within an
-	   occurrence, the second about how many occurrences a turn has at all. */
+	   occurrence, the second about how many occurrences a turn has at all.
+
+	   BUT CONCENTRATING CLAIMS A DATE, and that claim is not equally safe in both directions.
+
+	   Money LEAVING: putting a $2,400 bill on the wrong day still shows a dip of the right depth, and
+	   depth is what this chart is read for. A week early or late is survivable; a dip that was never
+	   drawn is the overdraft nobody was warned about. So an outflow concentrates on the evidence it
+	   has, even if that evidence is thin.
+
+	   Money ARRIVING: the same move draws a bump. Predicting $1,669 of side-gig income on the 31st
+	   when the client pays whenever they pay tells the reader they have money they do not have - the
+	   same failure as the missing dip, arrived at from the other side, and this time CAUSED by
+	   concentrating rather than cured by it.
+
+	   So an inflow must first demonstrate that its date repeats: most of its money in one cluster,
+	   over enough occurrences for that to mean something. Payroll passes this easily and stays a
+	   clean step. Erratic income stays spread, which is the honest drawing of "it will arrive, and I
+	   cannot tell you when". This is a direction rule, not an income rule - it follows from which way
+	   the error hurts, and it is the same principle as never predicting an exhausted budget in
+	   reverse. */
 	const events = (opts || {}).events;
-	if(events)out.weights = histogram.concentrateTo(out.weights, events);
+	const inflow = (opts || {}).direction > 0;
+	out.confident = !inflow || (out.observations >= MIN_TURNS_FOR_A_DATE
+		&& out.topShare >= DATE_REPEATS_AT);
+	if(events && out.confident)out.weights = histogram.concentrateTo(out.weights, events);
 	out.cycle = cycle;
 	out.events = events || null;
 	return out;
@@ -266,7 +302,9 @@ export function shareOfDayDetail(s, d, opts){
 	const nDays = daysInMonth(d);
 	const h = shapes[s.id];
 	const out = {amount: 0, expected: 0, weight: 0, cycle: h && h.cycle ? h.cycle.name : "flat",
-		liveDays: 0, events: h ? h.events : null, why: null};
+		liveDays: 0, events: h ? h.events : null,
+		topShare: h ? h.topShare : null, confident: h ? h.confident : null,
+		observations: h ? h.observations : 0, why: null};
 	if(h && h.any && h.weights)
 		h.weights.forEach(w => {if(w > 0.005)out.liveDays++});
 	out.expected = expectedFor(s, d);
@@ -294,7 +332,8 @@ export function contributionsOn(d, opts){
 		const det = shareOfDayDetail(s, d, opts);
 		if(Math.abs(det.amount) > 0.005)out.push({name: s.name, id: s.id, amount: det.amount,
 			expected: det.expected, weight: det.weight, cycle: det.cycle, liveDays: det.liveDays,
-			events: det.events});
+			events: det.events, topShare: det.topShare, confident: det.confident,
+			observations: det.observations});
 	});
 	/* EVERY OTHER TERM THE FORECAST ADDS TO A DAY. A breakdown that lists only the streams is not a
 	   breakdown, it is a subset - and a subset reads as an accounting, so the reader trusts it and
@@ -1286,9 +1325,10 @@ export function buildForecastInputs(opts){
 		}
 		/* HOW MANY MOVEMENTS A TURN TAKES, reconciled against the declaration - see eventsPerTurn.
 		   Measured on the same transactions the shape is drawn from, so the two describe one stream. */
-		events[s.id] = eventsPerTurn(use, expectationAt(s, until || new Date()));
-		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id]});
 		const a = expectationAt(s, until || new Date());
+		events[s.id] = eventsPerTurn(use, a);
+		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
+			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
 		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
 	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,

@@ -84,9 +84,15 @@ export default class DayAudit extends BaseComponent{
 		if(t.expected === undefined)return null
 		const pct = Math.round((t.weight || 0)*1000)/10
 		const ev = t.events ? Math.round(t.events*10)/10 : null
+		//when an inflow was left spread on purpose, say so and show the evidence that decided it
+		const shaky = t.confident === false
+			? ", date not repeatable (" + Math.round((t.topShare || 0)*100) + "% in one day over "
+				+ t.observations + ")"
+			: ""
 		return t.cycle + " \u00d7" + pct + "% of " + money(t.expected)
 			+ (t.liveDays ? ", on " + t.liveDays + (t.liveDays === 1 ? " day" : " days") : "")
 			+ (ev ? ", " + ev + (ev === 1 ? " event" : " events") + "/turn" : "")
+			+ shaky
 	}
 
 	text(){

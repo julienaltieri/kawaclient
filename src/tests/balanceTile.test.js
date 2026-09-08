@@ -1958,3 +1958,71 @@ test("eventsPerTurn reads the ledger, never the declared period", () => {
 		one.push(evTxn(new Date(Date.UTC(2026, mth, 3)), -1800, "x", "chk", "o" + mth))
 	expect(eventsPerTurn(one, -1800)).toBeLessThan(1.5)
 })
+
+/* =================================================================================================
+   CONCENTRATING CLAIMS A DATE, and the claim is not equally safe in both directions.
+
+   An outflow put on the wrong day still draws a dip of the right depth, and depth is what this chart
+   is read for. An inflow put on the wrong day draws a bump - it tells the reader they have money they
+   do not have, which is the same overdraft the missing dip causes, arrived at from the other side and
+   this time CAUSED by concentrating rather than cured by it.
+
+   So an inflow must demonstrate its date repeats before it is allowed to be a step. This is a
+   direction rule, not an income rule: it follows from which way the error hurts.
+   ================================================================================================= */
+test("erratic income stays spread, however few events per turn it has", () => {
+	//Side Gig Julien: about one payment a month, whenever the client gets round to it. Concentrated,
+	//it drew $1,669 arriving on the 31st - money the reader would count on and might not have
+	const st = evStream("gig", "Side Gig Julien", 1669)
+	const days = [4, 19, 27, 9, 22, 2]
+	const txns = days.map((d, i) =>
+		evTxn(new Date(Date.UTC(2026, 1 + i, d)), 1669, "gig", "chk", "g" + i))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 1, 1))})
+	expect(m.shapes.gig.confident).toBe(false)
+	expect(m.shapes.gig.weights.filter(w => w > 0.0001).length).toBeGreaterThan(3)
+	//it still arrives - the month's total is unchanged, only the claim about WHEN is withdrawn
+	let total = 0
+	for(let d = 1; d <= 31; d++)total += shareOfDay(st, new Date(Date.UTC(2026, 7, d)), m)
+	expect(Math.round(total)).toBe(1669)
+})
+
+test("payroll is income too, and it concentrates - because its date repeats", () => {
+	//the rule must not become "income is unpredictable": wages are the most predictable thing here
+	const st = evStream("wage", "Wages Julien", 7837)
+	const txns = []
+	for(let i = 0; i < 6; i++)
+		txns.push(evTxn(new Date(Date.UTC(2026, 1 + i, 14)), 7837, "wage", "chk", "w" + i))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 1, 1))})
+	expect(m.shapes.wage.confident).toBe(true)
+	expect(m.shapes.wage.weights.filter(w => w > 0.0001).length).toBe(1)
+	expect(Math.round(shareOfDay(st, new Date(Date.UTC(2026, 7, 14)), m))).toBe(7837)
+})
+
+test("an outflow on a wandering date still concentrates - depth beats the day", () => {
+	//the asymmetry itself: the same scatter that leaves income spread still lumps an expense, because
+	//a dip drawn on the wrong day is a far better error than a dip never drawn
+	const st = evStream("bill", "A wandering bill", -1669)
+	const days = [4, 19, 27, 9, 22, 2]
+	const txns = days.map((d, i) =>
+		evTxn(new Date(Date.UTC(2026, 1 + i, d)), -1669, "bill", "chk", "b" + i))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 1, 1))})
+	expect(m.shapes.bill.confident).toBe(true)
+	expect(m.shapes.bill.weights.filter(w => w > 0.0001).length).toBe(1)
+})
+
+test("income seen only twice is not yet a date", () => {
+	//two occurrences on the same day is a coincidence; three is a habit
+	const st = evStream("new", "New client", 900)
+	const txns = [evTxn(new Date(Date.UTC(2026, 5, 12)), 900, "new", "chk", "n1"),
+		evTxn(new Date(Date.UTC(2026, 6, 12)), 900, "new", "chk", "n2")]
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 31)),
+		since: new Date(Date.UTC(2026, 4, 1))})
+	expect(m.shapes.new.confident).toBe(false)
+})
