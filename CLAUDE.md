@@ -19,5 +19,12 @@ describes.
   reaches a deploy. If you add a file at this level, check `git status` actually sees it.
 - **Local dev toggles live in the working tree.** `src/AppConfig.js` (`staging`) and `package.json`
   (`proxy`) are routinely modified and must not be committed. Stage files explicitly; never
-  `git add -A`.
+  `git add -A`. Committing `staging = true` sets `serverURL` to `""`, every API call goes to a
+  relative path, and `public/_redirects` (`/* / 200`) answers `/refreshSession` with index.html and
+  a 200 — session refresh gets HTML where it expects a token and the app will not load. This rule
+  has been broken twice, so `.git/hooks/pre-commit` now enforces it: it reads the STAGED content and
+  refuses the commit. Do not `--no-verify` past it. The hook is not version-controlled; on a fresh
+  clone, write it again.
+- **Check the bundle before shipping.** `grep -c 8nwhu27f2l build/static/js/main.*.js` — `1` means
+  the production API host is compiled in, `0` means staging leaked through.
 - **Netlify builds `master`.** A branch is not deployed.
