@@ -5,6 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
+import {AccountTypes} from '../Bank';
 import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
@@ -304,19 +305,42 @@ export default class BalanceChart extends BaseComponent{
 	}
 
 	/* ---- the data ------------------------------------------------------------------------------- */
-	creditHashes(){return (this.state.accounts||[]).filter(a => a.type === "credit").map(a => a.hash)}
-	depositoryHashes(){return (this.state.accounts||[]).filter(a => a.type === "depository").map(a => a.hash)}
-	spendable(){return (this.state.accounts||[]).filter(a => a.type === "depository"
-		&& a.current !== undefined)}
+	/* THE USER'S ANSWER, NOT THE BANK'S. These three read the effective type - what the aggregator
+	   reported unless the user has said otherwise - so a card someone parks savings in is excluded
+	   from the runway like any other savings account, and a depository account someone treats as a
+	   card is modelled as one. See effectiveAccountType in Bank.js.
 
-	/* THE SPENDING ACCOUNT: the depository accounts whose subtype says they are for spending. Savings
-	   is excluded on purpose - it is not a runway, and sitting behind a checking balance it hides the
-	   trough. Where no subtype names one, every depository account counts, so a reader with a single
-	   account never gets an empty chart over a taxonomy detail. */
+	   This is the only feature that needs the third value. Everywhere else a card behaves as a
+	   current account, because the only question the rest of the app asks of a type is whether money
+	   went into savings. */
+	typeOf(a){return Core.accountTypeOf(a)}
+	creditHashes(){
+		return (this.state.accounts||[]).filter(a => this.typeOf(a) === AccountTypes.credit)
+			.map(a => a.hash)
+	}
+	depositoryHashes(){return (this.state.accounts||[]).filter(a => a.type === "depository").map(a => a.hash)}
+	spendable(){
+		return (this.state.accounts||[]).filter(a => this.typeOf(a) !== AccountTypes.credit
+			&& a.current !== undefined)
+	}
+
+	/* THE SPENDING ACCOUNT: the ones the user calls checking. Savings is excluded on purpose - it is
+	   not a runway, and sitting behind a checking balance it hides the trough.
+
+	   This used to be a substring match on the aggregator's subtype - nullable, worded differently by
+	   every institution, and impossible for the user to correct. It is now their own answer,
+	   defaulted from the bank's.
+
+	   AND THERE IS NO LONGER A FALLBACK, because there is nothing left for one to protect against.
+	   The old one existed because the old rule needed the subtype to CONTAIN "check", so an account
+	   with no subtype matched nothing and the chart came out empty; inferAccountType now defaults
+	   anything that is not credit and not savings to checking, so that case cannot arise. Keeping the
+	   fallback would have made it overrule the user instead: someone who marks their only current
+	   account as savings was handed it back as the runway anyway, which is worse than an empty chart
+	   because it contradicts what they just said. */
 	spendingHashes(){
-		const dep = this.spendable()
-		const chk = dep.filter(a => (a.subtype || "").toLowerCase().indexOf("check") > -1)
-		return (chk.length ? chk : dep).map(a => a.hash)
+		return this.spendable().filter(a => this.typeOf(a) === AccountTypes.checking)
+			.map(a => a.hash)
 	}
 	//one control, one question, two answers. The second appears only where there is a card to
 	//actualise - a reader with no credit account is not offered a reading that cannot differ.
@@ -343,7 +367,8 @@ export default class BalanceChart extends BaseComponent{
 		const spend = this.spendingHashes()
 		const base = accts.filter(a => spend.indexOf(a.hash) > -1).reduce((s,a) => s + a.current, 0)
 		if(this.source() !== NETTED)return base
-		return base - accts.filter(a => a.type === "credit").reduce((s,a) => s + a.current, 0)
+		return base - accts.filter(a => this.typeOf(a) === AccountTypes.credit)
+			.reduce((s,a) => s + a.current, 0)
 	}
 	hasAnchor(){return (this.state.accounts||[]).some(a => a.current !== undefined)}
 

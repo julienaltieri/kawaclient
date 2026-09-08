@@ -377,10 +377,12 @@ class ApiCaller{
 	}
 
 
-	saveBankAccountSettings(savingAccounts){
+	//the body is either the map of account hash to chosen type, or the original array of savings
+	//hashes - the route takes both, so a client and a server can be deployed in either order
+	saveBankAccountSettings(settings){
 		const request = new Request(API.saveBankAccountSettings,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify(savingAccounts)
+			body:JSON.stringify(settings)
 		})
 		return this.sendRequest(request)
 	}

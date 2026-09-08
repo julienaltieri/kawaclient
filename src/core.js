@@ -6,6 +6,7 @@ import ModalManager, {ModalController, ModalTemplates, ModalWorkflowController} 
 import Navigation, {NavRoutes} from './components/Navigation'
 import AppConfig from './AppConfig'
 import HistoryManager, {ActionTypes} from './HistoryManager.js'
+import {effectiveAccountType, isSavingsType} from './Bank'
 import DesignSystem from './DesignSystem.js'
 import {Period,timeIntervals,relativeDates} from './Time.js'
 import dateformat from 'dateformat'
@@ -146,11 +147,38 @@ class Core{
 		return this.getUserData().getAllStreams().filter(s => s.name == name)[0]
 	}
 	getUserData(){return this.globalState.userData}
-	saveBankAccountSettings(){return this.getUserData().savingAccounts?ApiCaller.saveBankAccountSettings(this.getUserData().savingAccounts):Promise.resolve()}
+	/* SENT AS THE MAP, with the original array as a fallback.
+
+	   The route accepts both shapes, but a server that has not been deployed yet accepts only the
+	   array - so a rejected map is retried as savings-only rather than losing the whole setting. The
+	   fallback degrades in the right direction: the saving-versus-spending distinction survives, and
+	   only the credit-card choice is lost until the backend catches up. Delete the retry once the
+	   deployed backend is known to accept the map. */
+	saveBankAccountSettings(){
+		const ud = this.getUserData()
+		if(!ud)return Promise.resolve()
+		const map = ud.accountTypes || {}
+		return ApiCaller.saveBankAccountSettings(map).catch(e => {
+			console.warn("account type map rejected, falling back to savings only", e)
+			return ApiCaller.saveBankAccountSettings(
+				Object.keys(map).filter(h => isSavingsType(map[h])))
+		})
+	}
 	saveUserPreferences(){return this.getUserData().userPreferences?ApiCaller.saveUserPreferences(this.getUserData().userPreferences):Promise.resolve()}
 
 	getErroredBankConnections(){return this.globalState.erroredBankConnections}
-	isSavingAccount(accountId){return this.getUserData().savingAccounts?.indexOf(accountId)>-1}
+	/* THE USER'S CHOICES, and the effective type of one account. Everything that wants to know what
+	   kind of account something is comes through here - see effectiveAccountType in Bank.js. */
+	accountTypeOverrides(){return (this.getUserData() || {}).accountTypes || {}}
+	accountTypeOf(account){return effectiveAccountType(account, this.accountTypeOverrides())}
+	/* A SAVINGS ACCOUNT IS ONE THE USER CALLS SAVINGS. Still answered from savingAccounts, which the
+	   server keeps in step with the type map on every write, so this stays correct for a user whose
+	   settings predate the map and for one whose client does. */
+	isSavingAccount(accountId){
+		const set = this.accountTypeOverrides()[accountId]
+		if(set)return isSavingsType(set)
+		return this.getUserData().savingAccounts?.indexOf(accountId)>-1
+	}
 	getTransactionsBetweenDates(start,end,forceFromCache){
 
 		//TODO

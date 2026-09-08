@@ -79,18 +79,24 @@ class BCSettingItem extends BaseComponent{
     }).then(() => this.props.parent.reloadData())
   }
   onToggleExpand(e){this.updateState({expanded:!this.state.expanded})}
-  getAccountTypeString(type){return type}//for future localization
-  getTypeForAccount(ba){return (Core.getUserData().savingAccounts.indexOf(ba.hash)!=-1)?AccountTypes.savings:AccountTypes.checking}
+  getAccountTypeString(type){return type=="credit"?"credit card":type}//for future localization
+  /* PRE-POPULATED FROM THE BANK, overridable by the user. The dropdown opens on whatever the
+     aggregator reported, so the common case needs no decision from anyone - and the choice is stored
+     only once it is made, which is why an untouched account has no entry at all. */
+  getTypeForAccount(ba){return Core.accountTypeOf(ba)}
   onChangeAccountType(e,ba){
-    if(this.getTypeForAccount(ba)!=AccountTypes[e.target.value]){//if changed (should be all the time)
-      let isSavings = AccountTypes[e.target.value]==AccountTypes.savings
-      if(isSavings){Core.getUserData().savingAccounts.push(ba.hash)}
-      else{
-        let idx = Core.getUserData().savingAccounts.indexOf(ba.hash)
-        Core.getUserData().savingAccounts.splice(idx,1)
-      }
-      Core.saveBankAccountSettings().then(r => console.log("Profile saved")).catch(e => console.log(e)) 
-    }
+    const chosen = AccountTypes[e.target.value]
+    if(!chosen || this.getTypeForAccount(ba)==chosen)return
+    const ud = Core.getUserData()
+    ud.accountTypes = ud.accountTypes || {}
+    ud.accountTypes[ba.hash] = chosen
+    /* savingAccounts is kept in step here as well as on the server, so every reader of it inside
+       this session is correct before the round trip returns */
+    ud.savingAccounts = ud.savingAccounts || []
+    const at = ud.savingAccounts.indexOf(ba.hash)
+    if(chosen==AccountTypes.savings){if(at<0)ud.savingAccounts.push(ba.hash)}
+    else if(at>-1){ud.savingAccounts.splice(at,1)}
+    Core.saveBankAccountSettings().then(r => console.log("Profile saved")).catch(e => console.log(e))
   }
   render(){
     return <DS.component.ContentTile style={{

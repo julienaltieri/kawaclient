@@ -21,6 +21,8 @@ export default class UserData {
     //this.amazonOrderHistory = json.amazonOrderHistory;
     this.bankConnections = json.bankConnections;
     this.savingAccounts = json.savingAccounts;
+    //what the user has chosen per account, keyed by hash; absent means "whatever the bank says"
+    this.accountTypes = json.accountTypes || {};
     this.preferredCurrency = json.preferredCurrency || currencies.USD;
     this.userPreferences = json.userPreferences || {}
   }

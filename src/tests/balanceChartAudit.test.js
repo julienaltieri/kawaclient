@@ -324,3 +324,56 @@ test("a stream that was budgeted but did not fire says why", async () => {
 	expect(found.why).toMatch(/another day|another account|card settlement|no expected amount|already paid this cycle/)
 	expect(Math.abs(found.expected)).toBeGreaterThan(1000)
 })
+
+/* =================================================================================================
+   THE USER'S ANSWER OVERRIDES THE BANK'S.
+
+   There are two notions of account type and they are not the same thing: what the aggregator
+   reports, which is a fact about the account, and what the user has chosen, which is a fact about
+   how they treat it. The forecast used to read only the first - and decided what a spending account
+   was by substring-matching "check" against a nullable subtype the user had no way to correct.
+   ================================================================================================= */
+test("a card the user calls savings leaves the runway", async () => {
+	//someone parking savings on a credit card: it is savings to its owner, whatever Plaid says
+	const chart = await mount("last")
+	expect(chart.creditHashes()).toContain(CARD)
+	expect(chart.spendingHashes()).toContain(CHECKING)
+
+	Core.globalState.userData.accountTypes = {[CARD]: "savings"}
+	chart._models = null
+	expect(chart.creditHashes()).not.toContain(CARD)
+	//and it is not spending either - savings is excluded from the runway on purpose
+	expect(chart.spendingHashes()).not.toContain(CARD)
+	Core.globalState.userData.accountTypes = {}
+})
+
+test("a checking account the user calls savings stops being the runway", async () => {
+	const chart = await mount("last")
+	Core.globalState.userData.accountTypes = {[CHECKING]: "savings"}
+	chart._models = null
+	expect(chart.spendingHashes()).not.toContain(CHECKING)
+	Core.globalState.userData.accountTypes = {}
+})
+
+test("an account with no subtype is still a runway", async () => {
+	/* What the old substring fallback was really protecting against: the aggregator naming no
+	   subtype at all. It is handled by the default now, not by a fallback that would also have
+	   overruled the user. */
+	const chart = await mount("last")
+	Core.globalState.userData.accountTypes = {}
+	chart._models = null
+	expect(chart.typeOf({hash: "z", type: "depository"})).toBe("checking")
+	expect(chart.spendingHashes().length).toBeGreaterThan(0)
+})
+
+test("the type is inferred from the bank when the user has said nothing", async () => {
+	const chart = await mount("last")
+	Core.globalState.userData.accountTypes = {}
+	chart._models = null
+	//Plaid's own answer, unchanged: credit is credit, a checking subtype is checking
+	expect(chart.typeOf({hash: CARD, type: "credit"})).toBe("credit")
+	expect(chart.typeOf({hash: CHECKING, type: "depository", subtype: "checking"})).toBe("checking")
+	expect(chart.typeOf({hash: "x", type: "depository", subtype: "savings"})).toBe("savings")
+	//a nullable subtype must not produce an undefined type
+	expect(chart.typeOf({hash: "y", type: "depository"})).toBe("checking")
+})

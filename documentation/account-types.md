@@ -1,8 +1,8 @@
 # Account types: what the bank says, and what the user says
 
-> **What this file owns:** the two independent notions of "what kind of account is this" — the one
-> the aggregator reports and the one the user sets in Settings — where each is stored, which parts of
-> the app read which, and how to extend the user-set one without breaking transaction history.
+> **What this file owns:** the two notions of "what kind of account is this" — the one the aggregator
+> reports and the one the user sets in Settings — how the second overrides the first, where each is
+> stored, and which parts of the app read which.
 >
 > It does **not** own how a credit card is modelled — that is
 > [`credit-cards.md`](credit-cards.md) — nor the balance forecast, which is
@@ -12,15 +12,18 @@
 
 ## There are two account types, and they are not the same thing
 
-**The aggregator's type** comes from the bank via Plaid or Powens. It is a fact about the account and
-the user cannot change it.
+**The aggregator's type** comes from the bank via Plaid or Powens. It is a fact about the account:
+what the institution says this thing is.
 
-**The user's type** is a setting in the Settings page. Today it has exactly two values — *checking*
-or *savings* — and it exists because the aggregator's subtype is not always right, not always
-present, and not always meaningful to the person who owns the account.
+**The user's type** is a setting in Settings — *checking*, *savings* or *credit card*. It is a fact
+about how they treat it, which is a different question and sometimes has a different answer.
 
-They are stored separately, read by different parts of the app, and neither is derived from the
-other. Most of the confusion in this area comes from assuming there is one.
+The second **overrides** the first, and is pre-populated from it. The aggregator's answer is the
+default and never a constraint, because someone who routes savings onto a credit card is right about
+their own money and Plaid is right about the account, at the same time.
+
+Only one of the two is a fact about the world. Most of the confusion in this area comes from assuming
+there is one type rather than two.
 
 ---
 
@@ -60,9 +63,7 @@ the contract is connector-independent.
 
 ---
 
-## The account hash embeds the aggregator's type
-
-This is the single most important fact in this file, and every extension has to respect it.
+## The account hash is a uniqueness key, not a type
 
 `BankAPI.getAccountHashFromData` builds:
 
@@ -70,106 +71,112 @@ This is the single most important fact in this file, and every extension has to 
 hash = institutionId + "::" + signature + "::" + type
 ```
 
-so a Plaid credit card's hash literally ends in `::credit`. That hash is the account identity used
-everywhere — it is what every transaction's `userInstitutionAccountId` points at, what
-`savingAccounts` stores, and what the balance view groups by.
+The type appears in it, but **the hash is not how account type is identified**. Its job is to
+identify one account uniquely and stably across refreshes, logins and joint access, and the type is
+in there as part of what makes it unique. Nothing reads a type back out of a hash, and nothing
+should.
 
-**Consequence:** the type inside a hash can never be user-editable. Changing it would change the
-hash, and every transaction ever recorded against that account would stop resolving. Any user-set
-type must therefore be a **separate property keyed by hash**, never an edit to the hash itself.
-
-The existing `savingAccounts` setting already works this way, which is the precedent to follow.
+It stays exactly as it is. The user-set type is a **separate property keyed by that hash**, which is
+what lets someone change how an account is treated without changing what the account *is* — every
+transaction ever recorded still resolves.
 
 ---
 
 ## What the user sets, and where it lives
 
-**Client** — `AccountTypes` in [`Bank.js`](../src/Bank.js) is the two-value enum, and
-`BCSettingItem` in [`SettingPage.js`](../src/components/SettingPage.js) renders the dropdown.
-Selection is not stored as a type at all: it is stored as **membership of a list**. An account is
-savings if its hash appears in `savingAccounts`; otherwise it is checking.
+Three values — **checking**, **savings**, **credit card** — chosen per account in Settings.
 
-**Server** — `UserData.updateSavingsAccounts` validates and stores it as an array of strings on the
-user record. The route is `saveBankAccountSettings`, and the client calls it through
-`ApiCaller.saveBankAccountSettings`.
+**The dropdown is pre-populated from the aggregator**, so the common case needs no decision from
+anyone. What is stored is only what the user has actually chosen: an account nobody has touched has
+no entry at all, and answers to whatever the bank says.
 
-**What it currently drives:** one thing. `TransactionEvaluator` uses `Core.isSavingAccount` to decide
-whether a transaction came from a savings account, which feeds transaction typing. There is a
-commented-out second use in `ReportingCore`.
+**The user's choice overrides the bank's, and is not required to agree with it.** The choice is
+about *treatment*, not taxonomy: a credit card someone routes savings into is a savings account to
+its owner, whatever Plaid calls it, and the app has no business arguing. This was a real decision
+with a defensible alternative — letting the user only *refine* the aggregator, never contradict it —
+and it was decided in favour of the user.
+
+**Client** — `AccountTypes` in [`Bank.js`](../src/Bank.js) is the enum, and that file also holds the
+only two functions that answer "what kind of account is this": `inferAccountType` (the bank's answer,
+narrowed to the three) and `effectiveAccountType` (the user's, falling back to the bank's). Nothing
+else in the client decides an account's type. `BCSettingItem` in
+[`SettingPage.js`](../src/components/SettingPage.js) renders the dropdown.
+
+**Storage** — a map of account hash to chosen type, on the user record as `accountTypes`.
+
+**Server** — `UserData.updateAccountTypes` validates it, and `updateBankAccountSettings` dispatches
+on the body's shape so the one route takes either the map or the original savings array. That is what
+makes the client and server deployable in either order: an older client keeps sending the array, and
+a newer client against an older server degrades to savings-only rather than losing the setting
+entirely.
+
+### savingAccounts still exists, and is still the answer to one question
+
+`savingAccounts` is the original list and remains the source of truth for the **saving-versus-spending
+distinction** — whether an outflow was an act of saving or an act of spending. That is the only thing
+the rest of the app asks a type for, and it is a boolean, so a list is the right shape for it.
+
+The server keeps it in step with the map on **every write**, in both directions, so nothing that
+reads it needs to know the map exists. A user whose settings predate the map is migrated on read.
+
+**Checking and credit are indistinguishable to that question, deliberately.** Money spent on a card
+is spending. Only the balance forecast needs to know it is a card, because only it has to model money
+leaving the current account later and in a lump.
 
 ---
 
-## Who reads which — and the split that matters
+## Who reads which
 
 | Consumer | Reads | Notes |
 |---|---|---|
-| `TransactionEvaluator` | **user setting** | via `Core.isSavingAccount` |
-| Balance forecast — `creditHashes` | **aggregator `type`** | `type === "credit"` |
-| Balance forecast — `spendable` | **aggregator `type`** | `type === "depository"` |
-| Balance forecast — `spendingHashes` | **aggregator `subtype`** | substring match on `"check"`, falling back to all depository accounts when no subtype names one |
-| Balance anchor | **aggregator `type`** | credit balances are subtracted, since Plaid signs money owed positive |
+| `TransactionEvaluator` | **effective type** | via `Core.isSavingAccount`; only asks "is this savings" |
+| Balance forecast — `creditHashes` | **effective type** | the only consumer that needs the third value |
+| Balance forecast — `spendable` | **effective type** | anything not credit, with a balance |
+| Balance forecast — `spendingHashes` | **effective type** | the accounts the user calls checking |
+| Balance anchor | **effective type** | credit balances are subtracted, since Plaid signs money owed positive |
 
-**The balance forecast never consults the user's setting.** It decides what is a spending account
-from the aggregator's `subtype` alone. `Core.getAccountsWithBalances` does not even pass the user
-setting through to the client's account list, so the forecast has no access to it.
+All of them go through `Core.accountTypeOf`, which is `effectiveAccountType` with the user's
+overrides applied. There is one resolver and no second opinion.
 
-That is the gap. A user who has told Kawa "this account is savings" has not told the balance
-forecast anything, and the forecast's own guess is a substring match on a nullable field.
-
----
-
-## Two problems visible today
-
-**1. The dropdown is offered for every account, including credit cards.** `BCSettingItem` renders it
-for every account in the item without filtering on the aggregator's type, and
-`getTypeForAccount` returns *checking* for anything not in `savingAccounts` — so a credit card
-displays as "checking" and can be set to "savings". Neither value means anything for a card, and
-marking one as savings makes `isTransactionFromSavingAccount` true for every purchase on it.
-
-**2. The forecast and the settings disagree by construction.** They answer the same question from
-different data with no reconciliation, and only one of them is visible to the user.
+`Core.getAccountsWithBalances` carries the aggregator's `type` and `subtype` to the client, and the
+resolver reads them together with the overrides — so the forecast sees the user's answer without the
+account list having to be pre-resolved.
 
 ---
 
-## The extension: a third user-set type
+## Two things this fixed
 
-Adding *credit card* to the user-set type would let the balance model stop inferring what it can be
-told. The findings above constrain how.
+**The forecast used to ignore the user entirely.** It decided what a spending account was by
+substring-matching `"check"` against the aggregator's nullable `subtype`. Someone who had told Kawa
+an account was savings had told the forecast nothing.
 
-**What already supports it**
+**The dropdown offered checking or savings for every account, including credit cards** — so a card
+displayed as "checking" and could be set to "savings", which made every purchase on it look like a
+transfer into savings.
 
-- The aggregator side needs nothing: `type: "credit"` and `subtype: "credit card"` already arrive,
-  are already mapped, and are already in the hash.
-- The persistence shape is proven — a list of hashes on the user record, one route, one validator.
-- The UI is a dropdown driven off an enum, so a third option costs one entry.
+### And one fallback that was removed rather than kept
 
-**What does not, and must change**
+`spendingHashes` used to fall back to *every* depository account when no subtype matched `"check"`.
+That existed because the old rule required the subtype to contain the word, so an account with no
+subtype matched nothing and the chart came out empty. `inferAccountType` now defaults anything that
+is neither credit nor savings to checking, so that case cannot arise — and keeping the fallback would
+have turned it into something worse: it would have handed back an account the user had just marked as
+savings, contradicting them. An empty runway is the honest answer when someone says they have no
+current account.
 
-- **`savingAccounts` cannot hold it.** A single list expresses one boolean. Three types need either
-  a second list or — better — a map from hash to type. A map is the shape the feature actually has
-  and would let the fourth type cost nothing.
-- **The server validator is list-shaped.** `updateSavingsAccounts` checks "array of strings". A map
-  needs its own validation, and the migration has to keep reading the old array so an existing user
-  is not silently reset.
-- **`getAccountsWithBalances` must carry the setting through**, or the forecast still cannot see it.
-  This is the change that actually delivers the benefit; the rest is plumbing.
-- **The dropdown must be filtered by the aggregator's type.** Offering *credit card* for a depository
-  account, or *savings* for a card, invites a setting that contradicts the bank.
+---
 
-**The open design question:** what happens when the user's type contradicts the aggregator's. Two
-defensible answers, and it needs deciding rather than falling out of the code:
+## What is left open
 
-- *The user always wins* — simple, and lets someone correct a bank that reports a cash-management
-  account as `other`.
-- *The user may only refine, not contradict* — a `depository` account may be marked checking or
-  savings; a `credit` account may only be marked credit card. Safer, and it keeps the hash honest,
-  since the hash already carries the aggregator's answer.
-
-**What it would buy the forecast**, in the order the value lands:
-
-1. `spendingHashes` stops being a substring match on a nullable field and becomes a user statement.
-2. Multiple cards, multiple checking accounts and joint accounts stop depending on how a particular
-   institution words its subtypes.
-3. The "is this current account connected to that card" question in
-   [`credit-cards.md`](credit-cards.md) gains a declared answer to fall back on when no payment has
-   been observed yet.
+- **The map is written whole.** Every save sends every override. That is fine at a handful of
+  accounts and would not be at a hundred.
+- **The legacy fallback in `Core.saveBankAccountSettings`** retries as a savings-only array if the
+  map is rejected. It exists only so the two sides can be deployed in either order, and should be
+  deleted once the deployed backend is known to accept the map.
+- **Nothing validates a type against the aggregator's.** By design — the user may contradict the
+  bank. But there is no way for them to see that they have, and a contradiction is far more likely to
+  be a mistake than an intention.
+- **The three types are the three the app needs, not the ones Plaid has.** `loan`, `investment` and
+  the rest collapse to `other` at the connector and then to *checking* at the resolver, which is
+  wrong for a mortgage and harmless only because such accounts carry no spending. A fourth value
+  would be the fix if those are ever connected.
