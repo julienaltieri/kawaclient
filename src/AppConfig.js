@@ -1,7 +1,7 @@
 import {relativeDates} from './Time'
 import utils from './utils'
 
-let staging = false;
+let staging = true;
 
 const AppConfig = {
 	staging,
@@ -11,8 +11,9 @@ const AppConfig = {
 		apiUncategorizationOfflineMode: false,
 		apiDisableMasterStreamUpdates: false,
 		forceDesignMode: ["","darkMode","lightMode"][0],
+		includeInterestInBudgeting: false,
 	},
-	transactionFetchMinDate: relativeDates.oneYearAgo(),
+	transactionFetchMinDate: relativeDates.threeYearsAgo(),
 }
 
 

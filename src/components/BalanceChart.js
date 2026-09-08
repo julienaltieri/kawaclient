@@ -283,8 +283,11 @@ export default class BalanceChart extends BaseComponent{
 		const actual = this.ledger().filter(t => dayKey(t.date) === k)
 			.map(t => ({name: t.streamName || "(uncategorised)", amount: t.amount}))
 			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-		const predicted = this._lastOpts
-			? contributionsOn(new Date(point.date), this._lastOpts) : []
+		/* explained by the line that DREW it: the backtest owns the past, the forecast owns the
+		   future, and they do not run the same model */
+		const a = this.series()
+		const opts = (point.actual === false ? a.live : (a.bench || a.live))
+		const predicted = opts ? contributionsOn(new Date(point.date), opts) : []
 		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
 		return {date: k, balance: point.value, actual: actual, predicted: predicted,
 			actualTotal: sum(actual), predictedTotal: sum(predicted),
@@ -612,22 +615,52 @@ export default class BalanceChart extends BaseComponent{
 
 		   The expected AMOUNTS still come from the master's own step function evaluated at each date,
 		   which is right: that is the plan as it stood then, not the outcome. */
-		let backtest = []
+		let backtest = [], benchOpts = null
 		if(past.length > 1){
 			const opened = past[0].date
 			const asOf = this.shapesAsOf(opened)
-			backtest = forecast({terminals:use, shapes:asOf.shapes, excludeIds:excludeIds,
-				routing:asOf.routing, now:opened, balanceNow:past[0].value,
-				days:Math.round((past[past.length-1].date - opened)/DAY),
-				covers:covers, settles:settles,
-				periodName:"monthly", settlementDay:this.settlementDay()})
+			let benchUse = this.terminalsFor(this.state.basis)
+			/* THE SETTLEMENT IS OUT OF SAMPLE HERE TOO. It was being modelled from the six months
+			   ending TODAY and then handed to a forecast that starts a month ago, which leaks the
+			   answer into the benchmark; worse, the shape was written onto the live inputs object and
+			   never onto this one, so the backtest carried the settlement stream with no histogram and
+			   spread the single largest outflow in the portfolio flat across the month. */
+			const benchSeen = inferred.filter(x => x.date < opened
+				&& x.date >= new Date(opened.getTime() - SETTLE_MONTHS*30.44*DAY))
+			const benchMonths = benchSeen.length ? Math.max(1,
+				(opened - Math.min.apply(null, benchSeen.map(x => +x.date)))/(30.44*DAY)) : 1
+			const benchMonthly = benchSeen.reduce((a, b) => a + b.amount, 0)/benchMonths
+			const benchSettle = !netted && Math.abs(benchMonthly) > 1 && benchSeen.length > 1
+			if(benchSettle){
+				const st = {id:"__settlement__", name:"Card settlement",
+					getPreferredPeriod: () => "monthly",
+					getExpectedAmountAtDateByPeriod: () => benchMonthly}
+				asOf.shapes[st.id] = histogramOf(benchSeen.map(x => ({date:x.date, amount:x.amount})),
+					{prefer:"weekly"})
+				asOf.routing[st.id] = keep[0]
+				benchUse = benchUse.concat([st])
+			}
+			benchOpts = {terminals:benchUse, shapes:asOf.shapes, routing:asOf.routing, covers:covers,
+				settles:(netted || benchSettle) ? null : (h => cards.indexOf(h) > -1),
+				periodName:"monthly", excludeIds:excludeIds,
+				settlementDay:this.settlementDay()}
+			backtest = forecast(Object.assign({now:opened, balanceNow:past[0].value,
+				days:Math.round((past[past.length-1].date - opened)/DAY)}, benchOpts))
 			backtest = [{date:opened, value:past[0].value, bench:true}]
 				.concat(backtest.map(p => ({date:p.date, value:p.value, bench:true})))
 		}
-		//kept so a hovered day can be explained with exactly the inputs the forecast ran on
-		this._lastOpts = {terminals:use, shapes:shapes, routing:this.routing(), covers:covers,
-			periodName:"monthly", excludeIds:excludeIds, extraFlow:extraFlow}
-		return {past:past, future:future, backtest:backtest, txns:txns, now:now}
+		/* THE INPUTS BEHIND EACH DRAWN LINE, carried on the series they drew rather than on the
+		   component. Two reasons, and the audit was wrong for both. An instance field was overwritten
+		   by whichever month allSeries() happened to compute LAST, so a hovered day could be explained
+		   with the other month's model; and the past is drawn by the BACKTEST, which runs on
+		   out-of-sample shapes, while the field only ever held the live ones. So the dotted line put a
+		   large step on a day the table then said was worth $16. A breakdown is only worth having if it
+		   is the arithmetic of the line above it. */
+		const liveOpts = {terminals:use, shapes:shapes, routing:this.routing(), covers:covers,
+			settles:settles, periodName:"monthly", excludeIds:excludeIds, extraFlow:extraFlow,
+			settlementDay:this.settlementDay()}
+		return {past:past, future:future, backtest:backtest, txns:txns, now:now,
+			live:liveOpts, bench:benchOpts}
 	}
 
 	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts

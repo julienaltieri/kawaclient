@@ -206,9 +206,28 @@ export function contributionsOn(d, opts){
 		const part = shareOfDay(s, d, opts);
 		if(Math.abs(part) > 0.005)out.push({name: s.name, id: s.id, amount: part});
 	});
+	/* EVERY OTHER TERM THE FORECAST ADDS TO A DAY. A breakdown that lists only the streams is not a
+	   breakdown, it is a subset - and a subset reads as an accounting, so the reader trusts it and
+	   concludes the picture is wrong. These three are the rest of `day` in forecast(): the synthesised
+	   card bill, the caller's explicit events, and the leak. */
+	if(opts.settlementDay && opts.settles && d.getUTCDate() === opts.settlementDay){
+		const periodName = opts.periodName;
+		const expectedFor = opts.expectedFor
+			|| ((st, when) => monthlyExpectationAt(st, when, periodName));
+		let bill = 0;
+		(opts.terminals || []).forEach(s => {
+			if(opts.settles((opts.routing || {})[s.id]))bill += expectedFor(s, d);
+		});
+		if(Math.abs(bill) > 0.005)
+			out.push({name: "Credit card payment", id: "__bill__", amount: bill});
+	}
 	const ex = opts.extraFlow ? opts.extraFlow[dayKey(d)] : null;
 	if(ex && Math.abs(ex.amount) > 0.005){
 		out.push({name: ex.name || "Card settlement", id: "__card__", amount: ex.amount});
+	}
+	if(opts.leakPerMonth){
+		out.push({name: "Unmodelled drift", id: "__leak__",
+			amount: -opts.leakPerMonth/daysInMonth(d)});
 	}
 	return out.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
 }
