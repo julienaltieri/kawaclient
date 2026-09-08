@@ -983,7 +983,140 @@ export function observedSettlement(transactions, coveredHashes, creditHashes){
    Deliberately NOT matched by name, category or stream: those are conventions a user can change, and
    the amount arriving where the amount left is a fact about the money.
    ================================================================================================== */
-/* WHICH STREAMS ARE THE CARD BEING PAID.
+const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
+	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
+
+/* ==================================================================================================
+   PHASE 0 - IS THIS CARD LINKED TO AN ACCOUNT WE CAN SEE, AND WHICH ONE.
+
+   A card repayment is a transfer with a leg on each side, and the data model already records that:
+   `pairedTransferTransactionId` joins the two. Where one leg sits on an account typed `credit` and
+   the other on one typed `checking`, that pair IS the repayment, and it establishes which checking
+   account funds that card.
+
+   Nothing here reads a stream. A stream is a budgeting concept; the link between two accounts is a
+   fact about the accounts.
+
+   THE BRANCH MATTERS MORE THAN THE LINK. A card with no such pair is a card whose charges are not
+   visible - only the money leaving the checking account is. There is no statement to reconstruct, so
+   it is an ordinary expected outflow and gets an amount and a timing like anything else. That is the
+   correct description of the situation rather than a fallback, and it is probably the common one.
+
+   Returns the links, the repayments themselves, and the ids of every leg - which the account
+   forecasts use to take repayments out of their stream histories, so that neither side counts a
+   transfer as spending.
+   ================================================================================================== */
+export function accountLinks(transactions, cardHashes, checkingHashes){
+	const cards = cardHashes || [], checking = checkingHashes || [];
+	const byId = {};
+	(transactions || []).forEach(t => {if(t.transactionId)byId[t.transactionId] = t});
+
+	const links = {}, repayments = [], legIds = {}, seen = {};
+	(transactions || []).forEach(t => {
+		const pid = t.pairedTransferTransactionId;
+		if(!pid)return;
+		const other = byId[pid];
+		if(!other)return;                                  //the other leg is out of the fetched range
+		const key = [String(t.transactionId), String(pid)].sort().join("|");
+		if(seen[key])return;
+		seen[key] = true;
+
+		const aIsCard = cards.indexOf(t.userInstitutionAccountId) > -1;
+		const bIsCard = cards.indexOf(other.userInstitutionAccountId) > -1;
+		const aIsChk = checking.indexOf(t.userInstitutionAccountId) > -1;
+		const bIsChk = checking.indexOf(other.userInstitutionAccountId) > -1;
+		let cardLeg = null, chkLeg = null;
+		if(aIsCard && bIsChk){cardLeg = t; chkLeg = other}
+		else if(bIsCard && aIsChk){cardLeg = other; chkLeg = t}
+		else return;                                       //not a card repayment
+
+		links[cardLeg.userInstitutionAccountId] = chkLeg.userInstitutionAccountId;
+		repayments.push({date: new Date(chkLeg.date), amount: chkLeg.amount,
+			card: cardLeg.userInstitutionAccountId, checking: chkLeg.userInstitutionAccountId});
+		legIds[t.transactionId] = true;
+		legIds[pid] = true;
+	});
+	repayments.sort((a, b) => a.date - b.date);
+	return {links: links, repayments: repayments, legIds: legIds};
+}
+
+/* PHASE 4 - THE SCHEDULE OF A LINKED CARD, and how it has been behaving.
+
+   Interval and offset are parameters of the account. Pass-through and coverage describe behaviour
+   and exist only to say something about a statement that is not finished.
+
+   RE-DERIVED FROM RECENT REPAYMENTS, not fitted once. A repayment schedule is usually held steady by
+   autopay, but the holder can change it - moving from weekly to monthly to smooth a cash-flow
+   mismatch is a normal thing to do - so a schedule averaged over all history describes an
+   arrangement that may have ended. Only the last handful of repayments are read, which is also what
+   makes a change in schedule visible rather than smoothed away. */
+export function cardSchedule(transactions, cardHash, repayments, opts){
+	const o = opts || {};
+	const recent = o.recent === undefined ? 8 : o.recent;
+	const mine = (repayments || []).filter(r => r.card === cardHash)
+		.sort((a, b) => a.date - b.date);
+	const out = {card: cardHash, repayments: mine, intervalDays: 0, offsetDays: 0,
+		passThrough: 1, coverage: 1, schedule: null, fit: null, count: mine.length};
+	if(!mine.length)return out;
+
+	//SAME DAY IS ONE STATEMENT. Several cards on one account are repaid together; the gap between
+	//those repayments is not a cycle, and treating it as one collapses the interval to nothing.
+	const byDay = {};
+	mine.forEach(r => {
+		const k = dayKey(r.date);
+		if(!byDay[k])byDay[k] = {date: r.date, amount: 0, legs: 0};
+		byDay[k].amount += r.amount;
+		byDay[k].legs++;
+	});
+	const events = Object.keys(byDay).sort().map(k => byDay[k]);
+	out.events = events;
+	out.perStatement = mine.length/(events.length || 1);
+
+	const look = events.slice(-Math.max(3, recent));
+	const gaps = [];
+	for(let i = 1; i < look.length; i++)
+		gaps.push((look[i].date - look[i-1].date)/DAY);
+	const median = gaps.length ? MED(gaps) : 30.44;
+	if(Math.abs(median - 7) < 1.5)out.schedule = {every: 7};
+	else if(Math.abs(median - 14) < 2)out.schedule = {every: 14};
+	else if(median > 25 && median < 36)out.schedule = {monthDay:
+		events[events.length-1].date.getUTCDate()};
+	out.intervalDays = out.schedule && out.schedule.every ? out.schedule.every : median;
+
+	/* THE OFFSET is the alignment that makes the charges in a window add up to the repayment that
+	   covers it, compared after the best single pass-through so a card that is not cleared in full is
+	   not mistaken for one that is misaligned. */
+	const charges = cardSpend(transactions, cardHash, mine);
+	let best = null;
+	for(let lag = 0; lag <= 20; lag++){
+		const pairs = [];
+		for(let i = 1; i < look.length; i++){
+			const a = look[i-1].date.getTime() - lag*DAY, b = look[i].date.getTime() - lag*DAY;
+			let sum = 0;
+			charges.forEach(x => {const d = x.d.getTime(); if(d > a && d <= b)sum += x.v});
+			if(sum > 1)pairs.push({paid: Math.abs(look[i].amount), spend: sum});
+		}
+		if(pairs.length < 2)continue;
+		const r = MED(pairs.map(p => p.paid/p.spend));
+		let err = 0, tot = 0;
+		pairs.forEach(p => {err += Math.abs(p.paid - r*p.spend); tot += p.paid});
+		if(!tot)continue;
+		const rel = err/tot;
+		if(!best || rel < best.rel)best = {rel: rel, lag: lag, ratio: r};
+	}
+	if(best){
+		out.offsetDays = best.lag;
+		out.fit = best.rel;
+		out.passThrough = Math.min(1.5, Math.max(0.2, best.ratio));
+	}
+	return out;
+}
+
+/* WHICH STREAMS LOOK LIKE THE CARD BEING PAID.
+
+   Superseded by accountLinks, which reads the pairing the data model already carries. Kept because
+   it is exported and tested, and because it is the only route available where a repayment was never
+   paired.
 
    A card payment is the one kind of transaction that is visible from both sides: a leg leaving the
    current account and a leg arriving on a credit account, categorised to the same stream. That makes
@@ -1000,8 +1133,6 @@ const LONG_PERIODS = {yearly: true, biyearly: true, bimonthly: true};
 
 /* declared ABOVE its first use rather than beside the card model it was written for: this file has
    twice shipped a "cannot access before initialization" from a const sitting below a caller */
-const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
-	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
 
 export function cardPaymentStreams(transactions, coveredHashes, creditHashes){
 	/* IT IS NOT ENOUGH FOR A STREAM TO TOUCH BOTH SIDES, and b28 shipped exactly that mistake.
@@ -1368,6 +1499,112 @@ export function cardCycles(transactions, creditHashes, settlements){
 	return out;
 }
 
+/* PHASE 5 - THE REPAYMENTS A LINKED CARD WILL MAKE, between `from` and `to`.
+
+   The statement a repayment covers is charges, and the charges are the card account's own streams -
+   childcare, groceries, a supplier invoice. So the card's balance is forecast the way any account is
+   forecast, and the repayment discharges it:
+
+     close        = repayment date - offset
+     observed     = charges already recorded in (previous close, close]
+     unobserved   = what the card's streams predict for the days from `from` to close, plus a
+                    residual rate for charges no stream accounts for
+     repayment    = (observed + unobserved x coverage) x pass-through
+
+   `observed` is arithmetic. Only `unobserved` is estimated, and it is zero once the close has passed.
+
+   COVERAGE is measured, and it is what keeps stream composition honest. A stream forecast is only as
+   large as the budget behind it, and a budget set below what the card is actually charged would drag
+   every statement down with it. Coverage is the ratio of what a window was actually charged to what
+   the streams predicted for that window, taken over recent statements: where the budgets are right it
+   is 1 and does nothing, and where they are systematically low it corrects by exactly as much as they
+   are low by. */
+export function cardRepaymentForecast(transactions, cardHash, sched, from, to, opts){
+	const o = opts || {};
+	const events = [];
+	if(!sched || !sched.events || !sched.events.length)return events;
+
+	const charges = cardSpend(transactions, cardHash, sched.repayments).filter(x => x.d < from);
+	const chargedOn = o.chargedOn || (() => 0);
+
+	/* THE RESIDUAL RATE covers charges no stream accounts for - uncategorised spending, mostly. Only
+	   those, because everything a stream forecasts is already counted by name and adding an average
+	   of it on top would count it twice. */
+	const rateFrom = new Date(from.getTime() - 90*DAY);
+	let residual = 0, earliest = null;
+	charges.forEach(x => {
+		if(x.d < rateFrom)return;
+		if((x.streamIds || []).length)return;
+		residual += x.v;
+		if(!earliest || x.d < earliest)earliest = x.d;
+	});
+	const rate = residual/(earliest ? Math.max(1, (from - earliest)/DAY) : 1);
+
+	const past = sched.events.filter(e => e.date < from);
+	const last = past.length ? past[past.length-1].date : null;
+	if(!last)return events;
+
+	/* DORMANT. A schedule projected off the last repayment goes on producing repayments for ever, and
+	   an account that has not moved for several cycles has stopped being repaid because it has
+	   stopped being used. */
+	const idle = (from - last)/DAY;
+	if(idle > Math.max(60, 3*sched.intervalDays))return events;
+
+	//COVERAGE, over the statements that have closed: charged against predicted, for the same windows
+	const ratios = [];
+	for(let i = Math.max(1, past.length - 6); i < past.length; i++){
+		const a = past[i-1].date.getTime() - sched.offsetDays*DAY;
+		const b = past[i].date.getTime() - sched.offsetDays*DAY;
+		let was = 0;
+		charges.forEach(x => {const d = x.d.getTime(); if(d > a && d <= b)was += x.v});
+		let said = 0;
+		for(let t = a + DAY; t <= b; t += DAY)said += chargedOn(cardHash, new Date(t));
+		if(said > 1 && was > 1)ratios.push(was/said);
+	}
+	const coverage = ratios.length ? Math.min(4, Math.max(0.25, MED(ratios))) : 1;
+
+	const nextAfter = d => {
+		if(sched.schedule && sched.schedule.every)
+			return new Date(d.getTime() + sched.schedule.every*DAY);
+		if(sched.schedule && sched.schedule.monthDay){
+			const y = d.getUTCFullYear(), m = d.getUTCMonth();
+			const lastDay = new Date(Date.UTC(y, m + 2, 0)).getUTCDate();
+			return new Date(Date.UTC(y, m + 1, Math.min(sched.schedule.monthDay, lastDay)));
+		}
+		return new Date(d.getTime() + sched.intervalDays*DAY);
+	};
+	let when = nextAfter(last), guard = 0;
+	while(when < from && guard++ < 64)when = nextAfter(when);
+
+	let prevClose = new Date(last.getTime() - sched.offsetDays*DAY);
+	guard = 0;
+	while(when <= to && guard++ < 64){
+		const close = new Date(when.getTime() - sched.offsetDays*DAY);
+		if(close > prevClose){
+			let observed = 0;
+			charges.forEach(x => {
+				const d = x.d.getTime();
+				if(d > prevClose.getTime() && d <= close.getTime())observed += x.v;
+			});
+			const openAt = Math.max(from.getTime(), prevClose.getTime());
+			let planned = 0;
+			for(let t = openAt + DAY; t <= close.getTime(); t += DAY)
+				planned += chargedOn(cardHash, new Date(t));
+			const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
+			const unobserved = planned*coverage + rate*ahead;
+			const spend = observed + unobserved;
+			if(spend > 1)events.push({date: new Date(when), card: cardHash, close: close,
+				amount: -spend*sched.passThrough,
+				observed: -observed*sched.passThrough,
+				unobserved: -unobserved*sched.passThrough,
+				coverage: coverage, rate: rate});
+		}
+		prevClose = close;
+		when = nextAfter(when);
+	}
+	return events;
+}
+
 /* The settlement events expected between `from` and `to`, per card, as {date, amount}. */
 export function cardSettlementForecast(transactions, creditHashes, settlements, from, to, opts){
 	const o = opts || {};
@@ -1591,7 +1828,26 @@ export function buildModel(input){
 		const a = monthlyExpectationAt(s, asOf, periodName);
 		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
-	const byStream = groupByStream(past, terminals.map(s => s.id), id => dir[id]);
+	/* PHASE 0 - THE LINK, established from paired transactions and nothing else.
+
+	   `checking` is the accounts typed checking, which is what a card can be linked TO. It is not the
+	   same list as `covered`: covered is whichever accounts this reading is about, and in the netted
+	   reading that includes the cards themselves. */
+	const checking = input.checking || covered;
+	const link = accountLinks(past, cards, checking);
+	const linked = Object.keys(link.links);
+
+	/* PHASE 3 - A REPAYMENT IS NOT SPENDING, ON EITHER SIDE.
+
+	   Both legs leave the stream ledger the forecast is built from. The checking leg is the discharge
+	   of another account's balance rather than an outflow of its own, and it returns in Phase 5 as
+	   the card's repayment; the credit leg is money arriving on the card, which is not a charge.
+
+	   Removing the TRANSACTIONS rather than excluding a stream by name is what makes this safe: a
+	   stream that carries both repayments and ordinary spending keeps the ordinary spending. */
+	const spendingOnly = linked.length
+		? past.filter(t => !link.legIds[t.transactionId]) : past;
+	const byStream = groupByStream(spendingOnly, terminals.map(s => s.id), id => dir[id]);
 
 	/* the long window for DATES. A year, because a stream's day survives a change of price but not a
 	   change of arrangement, and a year is the reporting cycle the declarations themselves are set
@@ -1604,14 +1860,16 @@ export function buildModel(input){
 
 	const covers = h => covered.indexOf(h || fallback) > -1;
 
-	/* THE CARD. Settlements are inferred from the pair - the outflow on the covered account and the
-	   receipt on the credit account - and the streams they are categorised to are then excluded, so
-	   the bill is counted once. */
-	const inferred = inferSettlements(past, covered, cards,
-		{zeroSumIds: terminals.filter(t => t.isZeroSumStream).map(t => t.id)});
-	const excludeIds = {};
-	inferred.forEach(x => (x.streamIds || []).forEach(id => {excludeIds[id] = true}));
+	/* PHASE 2 - THE CARD IS AN ACCOUNT, and its repayment is a connection between two of them.
 
+	   No synthetic pseudo-stream, no exclusion list, and no inference about which outflow was a card
+	   payment: the pairing said so, above. What remains is to describe each linked card's own balance
+	   and let the repayment discharge it.
+
+	   `excludeIds` stays empty. It is passed on only because forecast() and contributionsOn() accept
+	   it; nothing populates it any more, because a repayment leaves the ledger as a transaction
+	   rather than as a stream. */
+	const excludeIds = {};
 	const cardName = {};
 	(input.accounts || []).forEach(a => {cardName[a.hash] = a.name});
 
@@ -1693,54 +1951,49 @@ export function buildModel(input){
 	   estimated, at that card's own rate - so the figure sharpens as the settlement approaches, which
 	   a mean never does. PER CARD, because two cards on their own cycles pooled into one rhythm put a
 	   fraction of the bill on each card's day instead of the whole bill on the right one. */
-	let extraFlow = null, cardModel = null, cardNamed = null;
-	if(!input.netted && inferred.length && until > asOf){
-		/* ONLY THE LUMPS ARE NAMED, and everything else stays in the average.
+	/* PHASE 5 - EACH LINKED CARD'S REPAYMENTS, as explicit events on the checking account.
 
-		   Composing the WHOLE card from its streams was the obvious version and it is wrong: a stream
-		   whose budget is set below what it actually charges then drags the card down with it, and the
-		   rate - which measured real spending regardless of what was declared - was protecting against
-		   exactly that. A test caught it at half the true bill.
-
-		   So the two are split by what each is good at. A rate describes a trickle well and cannot
-		   represent a single large charge at all; a stream forecast that has resolved to a DATE can.
-		   Only card-routed streams the model already treats as events are named into the card, their
-		   history leaves the average so nothing is counted twice, and the diffuse majority - groceries,
-		   fuel, subscriptions - stays exactly where it was. */
-		const modelled = {};
+	   The charges a statement is made of are the card account's own streams, asked day by day through
+	   a reading in which they are visible. They are hidden from the checking view on purpose, because
+	   that money has not moved through it, and this is the one place that needs them. */
+	const cardOpts = {terminals: terminals, shapes: built.shapes, routing: built.routing,
+		covers: () => true, expectedFor: expectedFor, excludeIds: excludeIds,
+		periodName: periodName, settled: built.settled};
+	const chargedOn = (hash, d) => {
+		let sum = 0;
 		terminals.forEach(t => {
-			if(cards.indexOf(built.routing[t.id]) < 0)return;
-			const h = built.shapes[t.id];
-			if(!h || !h.any || h.spreadReason)return;
-			const live = h.weights.filter(w => w > 0.0001).length;
-			if(live > 2)return;                     //diffuse: an average already describes it
-			if(!h.events || h.events > 1.5)return;  //more than one movement a turn is not a lump
-			modelled[t.id] = true;
+			if(built.routing[t.id] !== hash)return;
+			const v = shareOfDay(t, d, cardOpts);
+			if(v < 0)sum += -v;                          //charges only; a refund is not a charge
 		});
-		const cardOpts = {terminals: terminals, shapes: built.shapes, routing: built.routing,
-			covers: () => true, expectedFor: expectedFor, excludeIds: excludeIds,
-			only: modelled, periodName: periodName, settled: built.settled};
-		const m = cardSettlementForecast(past, cards, inferred, asOf, until,
-			{modelled: modelled, plannedOn: (h, d) => plannedCardSpend(d, h, cardOpts)});
-		cardNamed = {};
-		Object.keys(modelled).forEach(id => {cardNamed[id] = built.routing[id]});
-		cardModel = m.cycles;
-		if(m.events.length){
-			extraFlow = {};
-			m.events.forEach(e => {
-				const k = dayKey(e.date);
-				if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card settlement", parts: []};
-				extraFlow[k].amount += e.amount;
-				extraFlow[k].parts.push({card: e.card, amount: e.amount, posted: e.posted,
-					planned: e.planned, projected: e.projected,
-					name: "Card settlement"
-						+ (cards.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
-			});
-		}
+		return sum;
+	};
+
+	let extraFlow = null;
+	const cardModel = {};
+	if(!input.netted){
+		linked.forEach(hash => {
+			const sched = cardSchedule(past, hash, link.repayments);
+			cardModel[hash] = sched;
+			if(!(until > asOf))return;
+			cardRepaymentForecast(past, hash, sched, asOf, until, {chargedOn: chargedOn})
+				.forEach(e => {
+					const k = dayKey(e.date);
+					if(!extraFlow)extraFlow = {};
+					if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card repayment", parts: []};
+					extraFlow[k].amount += e.amount;
+					extraFlow[k].parts.push({card: e.card, amount: e.amount,
+						posted: e.observed, planned: e.unobserved, projected: 0,
+						coverage: e.coverage,
+						name: "Card repayment"
+							+ (linked.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
+				});
+		});
 	}
-	/* the synthesised due-day bill is the FALLBACK, for a reading where no settlement could be
-	   inferred at all. With the causal events in hand it would pay the card twice. */
-	const settles = (input.netted || extraFlow) ? null : (h => cards.indexOf(h) > -1);
+	/* NOTHING IS SYNTHESISED FOR AN UNLINKED CARD. Its charges are invisible, so there is no
+	   statement to reconstruct from - and its repayment is still in the checking account's stream
+	   ledger, forecast as the ordinary outflow it is. */
+	const settles = null;
 
 	/* Everything forecast() and contributionsOn() read, and nothing either of them has to assemble. */
 	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
@@ -1750,8 +2003,9 @@ export function buildModel(input){
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
 			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
 			promoted: built.promoted, instalment: built.instalment,
-			cardNamed: cardNamed,
-			cycleStart: cycleFrom, inferred: inferred,
+			links: link.links, linked: linked, repayments: link.repayments,
+			legIds: link.legIds, chargedOn: chargedOn,
+			cycleStart: cycleFrom,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,
 			settlementEvents: extraFlow}};

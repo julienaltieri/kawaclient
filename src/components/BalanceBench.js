@@ -5,7 +5,7 @@ import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
-	groupByStream, dayLabel, TIERS, cycleStartOf, inferSettlements, cardCycles,
+	groupByStream, dayLabel, TIERS, cycleStartOf, accountLinks, cardSchedule,
 	cardSpend, shareOfDay}
 	from '../processors/BankBalance.js';
 
@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b41 - unpredictable until it becomes predictable";
+export const BENCH_VERSION = "b42 - accounts, linked by the pairing";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -231,7 +231,11 @@ export default class BalanceBench extends BaseComponent{
 			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
 
 		const forecastTerminals = model.terminals
-		const excludeIds = model.excludeIds
+	/* THE REPAYMENT LEGS, which are what the card row is scored against. A repayment is not spending
+	   on either side, so both legs are out of the stream forecast - and the checking-side legs ARE
+	   the money the card model has to reproduce. */
+		const legIds = model.meta.legIds || {}
+		const linked = model.meta.linked || []
 		const shapes = model.shapes, routed = model.routing
 		const sliced = model.meta.sliced
 		/* TWO LEDGERS, AND THEY ARE NOT INTERCHANGEABLE. The model's is truncated at the as-of date -
@@ -241,7 +245,7 @@ export default class BalanceBench extends BaseComponent{
 		   Named apart so the two can never be swapped again by autocomplete. */
 		const modelLedger = model.meta.byStream
 		const actualLedger = this.byStream()
-		const inferred = model.meta.inferred
+		const repayments = model.meta.repayments || []
 		const extraFlow = model.extraFlow || {}
 		const observed = model.meta.observed
 		const expectedFor = model.expectedFor
@@ -281,8 +285,8 @@ export default class BalanceBench extends BaseComponent{
 		dayKeys.forEach(k => {settlementFlow[k] = (withS[k]||0) - (withoutS[k]||0)
 			+ ((extraFlow[k] || {}).amount || 0)})
 
-		const settleActual = inferred.map(x => ({date: x.date, amount: x.amount,
-			accountHash: x.accountHash}))
+		const settleActual = repayments.map(x => ({date: x.date, amount: x.amount,
+			accountHash: x.checking}))
 		const perStream = {}, actualByStream = {}
 		forecastTerminals.forEach(t => {
 			perStream[t.id] = flowsOf(run([t], false, false))
@@ -317,8 +321,7 @@ export default class BalanceBench extends BaseComponent{
 		   asking which card a payment cleared is a question about the past. Anything that cannot be
 		   attributed is reported as such rather than dropped: an unattributed payment is a mapping
 		   gap, and it is the one number that says so. */
-		const reportSettlements = inferSettlements(this.props.transactions, keep, cards,
-			{zeroSumIds: this.terminals().filter(t => t.isZeroSumStream).map(t => t.id)})
+		const reportSettlements = accountLinks(this.props.transactions, cards, keep).repayments
 		const cardName = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
 		const cardIdOf = h => "__card__" + h
 		const cardRows = cards.map(h => ({id: cardIdOf(h), name: "Card · " + (cardName[h] || h)}))
@@ -350,12 +353,10 @@ export default class BalanceBench extends BaseComponent{
 		   the whole time: they are the covered-account legs of the streams the card model excluded,
 		   which is the same $9,800 the "Credit Card Payments" row has been reporting all along. */
 		actualByStream[CARD_ID] = {}
-		Object.keys(excludeIds).forEach(id => {
-			(actualLedger[id] || []).forEach(x => {
-				if(x.date < open || x.date > close || !covers(x.accountHash))return
-				const k = dayKey(x.date)
-				actualByStream[CARD_ID][k] = (actualByStream[CARD_ID][k] || 0) + x.amount
-			})
+		reportSettlements.forEach(x => {
+			if(x.date < open || x.date > close || !covers(x.checking))return
+			const k = dayKey(x.date)
+			actualByStream[CARD_ID][k] = (actualByStream[CARD_ID][k] || 0) + x.amount
 		})
 
 
@@ -509,10 +510,11 @@ export default class BalanceBench extends BaseComponent{
 			since:since, surface:surface, area:area, error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
 			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
-			settlements:inferred, settleMonthly:settleMonthly, cards:model.meta.cards,
+			settlements:repayments, settleMonthly:settleMonthly, cards:model.meta.cards,
+			linked:linked, legIds:legIds,
 			model:model,
 			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
-			excluded:Object.keys(excludeIds).length, excludeIds:excludeIds,
+			excluded:Object.keys(legIds).length, excludeIds:{},
 			cardRows:cardRows, cardAttributed:attributed,
 			cardTotal:Object.keys(actualByStream[CARD_ID] || {})
 				.reduce((x, k) => x + actualByStream[CARD_ID][k], 0)}
@@ -546,27 +548,28 @@ export default class BalanceBench extends BaseComponent{
 		if(!cards.length)return "no credit accounts"
 		const names = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
 		const want = statements || 12
-		const found = inferSettlements(this.props.transactions, keep, cards,
-			{zeroSumIds: this.terminals().filter(t => t.isZeroSumStream).map(t => t.id)})
-		const cy = cardCycles(this.props.transactions, cards, found)
+		const lk = accountLinks(this.props.transactions, cards, keep)
+		const found = lk.repayments
+		const cy = {}
+		cards.forEach(h => {cy[h] = cardSchedule(this.props.transactions, h, found)})
 		const out = ["CARD EXPORT  " + BENCH_VERSION, ""]
 
 		cards.forEach(h => {
 			const c = cy[h]
 			if(!c || !c.events.length)return
 			out.push(names[h] || h)
-			out.push("  interval " + Math.round(c.intervalDays) + "d   offset " + c.lagDays
-				+ "d   pass-through " + Math.round(c.ratio*100) + "%"
-				+ (c.ratio >= 1.49 ? "  <-- AT THE CLAMP: purchases are probably missing" : "")
+			out.push("  interval " + Math.round(c.intervalDays) + "d   offset " + c.offsetDays
+				+ "d   pass-through " + Math.round(c.passThrough*100) + "%"
+				+ (c.passThrough >= 1.49 ? "  <-- AT THE CLAMP: purchases are probably missing" : "")
 				+ "   payments per statement " + (c.perStatement || 1).toFixed(1)
-				+ (c.dormant ? "   DORMANT" : ""))
+				+ (c.count ? "" : "   NO REPAYMENTS FOUND"))
 			out.push("")
 			out.push("  close        paid on      payment      n   purchases    n   pay/purch")
 			const evs = c.events.slice(-want)
 			evs.forEach((e, i) => {
 				const pay = new Date(e.date)
-				const close = new Date(pay.getTime() - c.lagDays*DAY)
-				const prev = i ? new Date(new Date(evs[i-1].date).getTime() - c.lagDays*DAY)
+				const close = new Date(pay.getTime() - c.offsetDays*DAY)
+				const prev = i ? new Date(new Date(evs[i-1].date).getTime() - c.offsetDays*DAY)
 					: new Date(close.getTime() - c.intervalDays*DAY)
 				//the same netted list the model reads, so the export cannot flatter or accuse it
 				let sum = 0, n = 0
@@ -627,17 +630,17 @@ export default class BalanceBench extends BaseComponent{
 			/* WHICH STREAMS WERE PROMOTED, named. The whole idea is that a lump has a name and an
 			   average does not; if nothing qualifies, this line says so rather than leaving the
 			   reader to infer it from a number that did not move. */
-			const nm = (this.analyse() && this.analyse().model && this.analyse().model.meta
-				&& this.analyse().model.meta.cardNamed) || {}
-			const named = Object.keys(nm).filter(id => nm[id] === h)
-				.map(id => (this.terminals().filter(t => t.id === id)[0] || {}).name).filter(Boolean)
-			out.push("  named streams folded into this card: "
-				+ (named.length ? named.join(", ") : "none - the whole card is the average"))
+			//every stream routed to this card composes its statement now, so what is worth printing is
+			//how much of the charges the streams account for at all
+			const mdl = this.analyse() && this.analyse().model
+			const routed = mdl ? this.terminals().filter(t => mdl.routing[t.id] === h) : []
+			out.push("  streams routed to this card: "
+				+ (routed.length ? routed.map(t => t.name).join(", ") : "none categorised"))
 			out.push("")
 			out.push("  rate basis                        $/day    implies per statement")
 
 			bases.forEach(b => out.push("  " + b[0].padEnd(34) + money(-b[1]).padStart(8)
-				+ "   " + money(-b[1]*c.intervalDays*c.ratio).padStart(10)))
+				+ "   " + money(-b[1]*c.intervalDays*c.passThrough).padStart(10)))
 			const recent = c.events.slice(-8)
 			const avg = recent.reduce((x, y) => x + Math.abs(y.amount), 0)/(recent.length || 1)
 			out.push("  " + "what the last 8 statements ACTUALLY paid".padEnd(34)
@@ -797,11 +800,11 @@ export default class BalanceBench extends BaseComponent{
 				? (c.events || [])[(c.events || []).length - 1] : null
 			const n = soonest[h]
 			const close = n ? new Date(new Date(n.day + "T00:00:00Z").getTime()
-				- (c.lagDays || 0)*DAY) : null
+				- (c.offsetDays || 0)*DAY) : null
 			return {hash: h, name: names[h] || h.slice(0, 20),
 				last: last ? dayKey(last.date) : null, lastAmount: last ? last.amount : 0,
 				every: c.intervalDays ? Math.round(c.intervalDays) : null,
-				lag: c.lagDays || 0, ratio: c.ratio || 1, rate: c.rate || 0,
+				lag: c.offsetDays || 0, ratio: c.passThrough || 1, rate: 0,
 				purchases: c.spend || 0, settlements: (c.events || []).length,
 				when: n ? n.day : null, close: close ? dayKey(close) : null,
 				daysToClose: close ? Math.max(0, Math.round((close - now)/DAY)) : null,
@@ -815,15 +818,14 @@ export default class BalanceBench extends BaseComponent{
 
 	nextPaymentLines(){
 		return this.nextPayments().map(c => {
-			if(!c.when)return "  " + c.name + ": no next payment modelled ("
-				+ c.settlements + " settlements, " + c.purchases + " purchases seen)"
+			if(!c.when)return "  " + c.name + ": no next repayment modelled ("
+				+ c.settlements + " repayments seen)"
 			return "  " + c.name + ": " + money(c.amount) + " on " + c.when
 				+ "\n      statement closed " + c.close + " (" + c.lag + "d before payment)"
 				+ (c.daysToClose ? ", " + c.daysToClose + "d still open" : ", already shut")
 				+ "\n      " + money(c.posted) + " already posted"
-				+ (c.planned ? " + " + money(c.planned) + " from named streams" : "")
-				+ " + " + money(c.projected) + " projected at " + money(-c.rate) + "/day"
-				+ (c.ratio !== 1 ? " x " + Math.round(c.ratio*100) + "% pass-through" : "")
+				+ (c.planned ? " + " + money(c.planned) + " the card's streams still expect" : "")
+				+ (c.passThrough !== 1 ? " x " + Math.round(c.passThrough*100) + "% pass-through" : "")
 				+ "\n      " + Math.round((c.known || 0)*100) + "% of it is already fact"
 				+ " · last paid " + money(c.lastAmount) + " on " + c.last
 				+ " · every " + c.every + "d"
@@ -846,20 +848,15 @@ export default class BalanceBench extends BaseComponent{
 		const names = a.cardNames || {}
 		return Object.keys(a.cards).map(h => {
 			const c = a.cards[h]
-			const per = c.events.length > 1
-				? c.events.slice(1).reduce((x, e) => x + Math.abs(e.amount), 0)/(c.events.length - 1)
-				: 0
+			const evs = c.events || []
+			const per = evs.length > 1
+				? evs.slice(1).reduce((x, e) => x + Math.abs(e.amount), 0)/(evs.length - 1) : 0
 			return {hash: h, name: names[h] || h.slice(0, 18),
-				matched: c.events.length, purchases: c.spend,
-				perStatement: c.perStatement || 1, dormant: !!c.dormant,
-				idle: c.idleDays, interleaved: !!c.interleaved,
-				gapLo: c.gapLo, gapHi: c.gapHi,
-				byReceipt: c.events.filter(e => e.by === "receipt").length,
-				byAmount: c.events.filter(e => e.by === "amount").length,
-				bySameDay: c.events.filter(e => e.by === "same statement").length,
-				interval: Math.round(c.intervalDays), lag: c.lagDays,
-				ratio: c.ratio, rate: c.rate || 0, per: per,
-				fit: c.fit === null ? null : c.fit}
+				matched: evs.length, legs: c.count || 0, perStatement: c.perStatement || 1,
+				linked: !!(a && (a.linked || []).indexOf(h) > -1),
+				interval: Math.round(c.intervalDays || 0), lag: c.offsetDays || 0,
+				ratio: c.passThrough || 1, per: per,
+				fit: c.fit === null || c.fit === undefined ? null : c.fit}
 		}).sort((x, y) => y.matched - x.matched)
 	}
 
@@ -944,7 +941,7 @@ export default class BalanceBench extends BaseComponent{
 				amount: pred, spread: 0, gain: (a.gain || {})[c.id] || 0,
 				sort: Math.abs((d && d.actTotal) || pred), detail: d}
 		})
-		const dropped = (a && a.excludeIds) || {}
+		const dropped = {}
 		/* THE TABLE ASKS THE MODEL, and until now it asked a second opinion.
 
 		   Tier, predicted day and confidence all came from pointPrediction - a classifier written
@@ -1055,21 +1052,15 @@ export default class BalanceBench extends BaseComponent{
 					+ " separately - the card rows ARE that money)")
 			}
 			this.cardLines().forEach(c => {
-				out.push("  " + c.name + ": " + c.matched + " statements from " + c.purchases
-					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount, "
-					+ c.bySameDay + " same-statement)"
+				out.push("  " + c.name + ": " + (c.linked ? "" : "NOT LINKED (no paired repayment) - ")
+					+ c.matched + " statements from " + c.legs + " paired repayments"
 					+ (c.perStatement > 1.2
-						? ", " + c.perStatement.toFixed(1) + " payments per statement" : "")
+						? " (" + c.perStatement.toFixed(1) + " per statement)" : "")
 					+ ", every " + c.interval + "d, statement closes "
 					+ c.lag + "d before payment, clears "
-					+ Math.round(c.ratio*100) + "% at " + money(-c.rate) + "/day"
-					+ (c.fit === null ? "  (offset not fitted: too few settlements)"
+					+ Math.round(c.ratio*100) + "%"
+					+ (c.fit === null ? "  (offset not fitted: too few repayments)"
 						: "  (spread " + Math.round(c.fit*100) + "%)"))
-				if(c.dormant)out.push("      DORMANT - nothing settled for " + c.idle
-					+ " days, so no payment is forecast")
-				if(c.interleaved)out.push("      TWO RHYTHMS on this account: gaps alternate "
-					+ c.gapLo.toFixed(1) + "d / " + c.gapHi.toFixed(1)
-					+ "d - two statements that do not share a day")
 			})
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
@@ -1193,13 +1184,12 @@ export default class BalanceBench extends BaseComponent{
 					+ " · excluded: " + (a.excluded || 0)
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
 				{this.cardLines().map(c => <Note key={c.hash}>
-					{c.dormant ? "DORMANT · " : ""}{c.interleaved ? "TWO RHYTHMS · " : ""}
-					{c.name}: {c.matched} statements ({c.byReceipt} receipt, {c.byAmount} amount,
-					{c.bySameDay} same-statement) from {c.purchases} purchases
-					{c.perStatement > 1.2 ? " · " + c.perStatement.toFixed(1) + " payments each" : ""}
+					{c.linked ? "" : "NOT LINKED · "}
+					{c.name}: {c.matched} statements from {c.legs} paired repayments
+					{c.perStatement > 1.2 ? " · " + c.perStatement.toFixed(1) + " per statement" : ""}
 					· every
 					{" " + c.interval}d · closes {c.lag}d before payment · clears
-					{" " + Math.round(c.ratio*100)}% · {money(-c.rate)}/day
+					{" " + Math.round(c.ratio*100)}%
 					{c.fit === null ? " · offset not fitted"
 						: " · spread " + Math.round(c.fit*100) + "%"}
 				</Note>)}

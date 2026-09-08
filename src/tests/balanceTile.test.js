@@ -19,7 +19,8 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
-	buildModel, eventsPerTurn, cardPaymentStreams, shareOfDayDetail, cardSpend,
+	buildModel, eventsPerTurn, accountLinks, cardSchedule, cardRepaymentForecast,
+	shareOfDayDetail, cardSpend,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -1835,9 +1836,12 @@ test("a week is still held to a narrower radius than a month", () => {
    ================================================================================================= */
 //a plain ledger record: groupByStream reads these five fields and nothing else, and building a real
 //GenericTransaction here would drag in the evaluator and a master stream this test has no use for
-const evTxn = (d, amt, stream, acct, id) => ({categorized: true, date: d, amount: amt,
+const evTxn = (d, amt, stream, acct, id, pair) => ({categorized: true, date: d, amount: amt,
 	streamAllocation: [{streamId: stream, amount: amt}],
-	userInstitutionAccountId: acct || "chk", transactionId: id})
+	userInstitutionAccountId: acct || "chk", transactionId: id,
+	//a card repayment is a PAIR - one leg on checking, one on the card - and that pairing is what
+	//links the two accounts. A fixture without it describes an unlinked card.
+	pairedTransferTransactionId: pair})
 const evStream = (id, name, amt, period) => ({id: id, name: name,
 	getPreferredPeriod: () => period || "monthly",
 	getExpectedAmountAtDateByPeriod: () => amt})
@@ -2064,8 +2068,8 @@ const cardFixture = (lag, weeks) => {
 			txns.push(evTxn(when, -(20 + ((w*29) % 70) + d*11), "card", "visa", "a" + w + "-" + d))
 			carried += 20 + ((w*29) % 70) + d*11
 		}
-		txns.push(evTxn(pay, -statement, "ccpay", "chk", "s" + w))
-		txns.push(evTxn(pay, statement, "ccpay", "visa", "r" + w))
+		txns.push(evTxn(pay, -statement, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, statement, "ccpay", "visa", "r" + w, "s" + w))
 		settles.push({date: pay, amount: statement})
 	}
 	return {txns: txns, settles: settles}
@@ -2171,8 +2175,8 @@ test("two cards on one payment stream are modelled separately", () => {
 				"D" + w + "-" + d))
 			hisCarried += amt
 		}
-		txns.push(evTxn(payA, -a, "ccpay", "chk", "pa" + w))
-		txns.push(evTxn(payA, a, "ccpay", "his", "ra" + w))
+		txns.push(evTxn(payA, -a, "ccpay", "chk", "pa" + w, "ra" + w))
+		txns.push(evTxn(payA, a, "ccpay", "his", "ra" + w, "pa" + w))
 
 		//hers: fortnightly, closes 6 days before payment, NO receipt on the card
 		if(w % 2)continue
@@ -2229,12 +2233,18 @@ test("a spending stream split across a card and the current account is NOT a car
 			"visa", "gr" + w))
 		//and a genuine card payment on its own stream
 		const pay = new Date(Date.UTC(2026, 2 + (w >> 2), 2 + (w % 4)*7))
-		txns.push(evTxn(pay, -560, "ccpay", "chk", "pp" + w))
-		txns.push(evTxn(pay, 560, "ccpay", "visa", "pr" + w))
+		txns.push(evTxn(pay, -560, "ccpay", "chk", "pp" + w, "pr" + w))
+		txns.push(evTxn(pay, 560, "ccpay", "visa", "pr" + w, "pp" + w))
 	}
-	const found = cardPaymentStreams(txns, ["chk"], ["visa"])
-	expect(found).toContain("ccpay")
-	expect(found).not.toContain("food")
+	/* The pairing settles it without asking what a stream is for: a repayment has a leg on each side
+	   of the same transfer, and a grocery bought on a card is one transaction on one account. */
+	const lk = accountLinks(txns, ["visa"], ["chk"])
+	expect(lk.links.visa).toBe("chk")
+	//only the repayment legs are taken out of the ledger, and groceries are not among them
+	const groceryIds = txns.filter(t => t.streamAllocation[0].streamId === "food")
+		.map(t => t.transactionId)
+	groceryIds.forEach(id => expect(lk.legIds[id]).toBeUndefined())
+	expect(Object.keys(lk.legIds).length).toBe(24)          //twelve repayments, two legs each
 
 	//and the grocery stream therefore keeps contributing to the forecast
 	const st = evStream("food", "Groceries", -920)
@@ -2242,8 +2252,18 @@ test("a spending stream split across a card and the current account is NOT a car
 	const m = buildModel({transactions: txns, terminals: [st, pay], covered: ["chk"],
 		cards: ["visa"], asOf: new Date(Date.UTC(2026, 6, 1)),
 		until: new Date(Date.UTC(2026, 6, 31)), since: new Date(Date.UTC(2026, 2, 1))})
-	expect(m.excludeIds.food).toBeUndefined()
-	expect(m.excludeIds.ccpay).toBe(true)
+	/* Groceries route to the CARD, so they do not appear in the checking reading directly - that
+	   money has not moved through it. They arrive inside the repayment, which is what the card's
+	   charge forecast is built from. */
+	expect(m.routing.food).toBe("visa")
+	let charged = 0
+	for(let d = 1; d <= 31; d++)
+		charged += m.meta.chargedOn("visa", new Date(Date.UTC(2026, 6, d)))
+	expect(charged).toBeGreaterThan(100)
+	//and the repayment stream predicts nothing: its transactions left the ledger with the pairing
+	let cc = 0
+	for(let d = 1; d <= 31; d++)cc += shareOfDay(pay, new Date(Date.UTC(2026, 6, d)), m)
+	expect(cc).toBe(0)
 })
 
 /* =================================================================================================
@@ -2372,10 +2392,10 @@ test("two payments on the same day are one statement, not a zero-day cycle", () 
 			his += a; hers += b
 		}
 		//two settlements, same day, same account - one per person
-		txns.push(evTxn(pay, -his, "ccpay", "chk", "ph" + w))
-		txns.push(evTxn(pay, his, "ccpay", "rh", "rh" + w))
-		txns.push(evTxn(pay, -hers, "ccpay", "chk", "pf" + w))
-		txns.push(evTxn(pay, hers, "ccpay", "rh", "rf" + w))
+		txns.push(evTxn(pay, -his, "ccpay", "chk", "ph" + w, "rh" + w))
+		txns.push(evTxn(pay, his, "ccpay", "rh", "rh" + w, "ph" + w))
+		txns.push(evTxn(pay, -hers, "ccpay", "chk", "pf" + w, "rf" + w))
+		txns.push(evTxn(pay, hers, "ccpay", "rh", "rf" + w, "pf" + w))
 		settles.push({date: pay, amount: his + hers})
 	}
 	const found = inferSettlements(txns, ["chk"], ["rh"])
@@ -2402,8 +2422,8 @@ test("a closed card is not forecast for ever", () => {
 		for(let d = 0; d < 3; d++)
 			txns.push(evTxn(new Date(pay.getTime() - (4 - d)*86400000), -60, "card", "x1",
 				"p" + w + "-" + d))
-		txns.push(evTxn(pay, -180, "ccpay", "chk", "s" + w))
-		txns.push(evTxn(pay, 180, "ccpay", "x1", "r" + w))
+		txns.push(evTxn(pay, -180, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, 180, "ccpay", "x1", "r" + w, "s" + w))
 	}
 	const found = inferSettlements(txns, ["chk"], ["x1"])
 	expect(found.length).toBeGreaterThan(5)               //the history is real
@@ -2424,8 +2444,8 @@ test("a card merely late is not written off", () => {
 		const pay = new Date(Date.UTC(2026, m, 12))
 		for(let d = 0; d < 4; d++)
 			txns.push(evTxn(new Date(Date.UTC(2026, m, 2 + d)), -150, "card", "v", "p" + m + "-" + d))
-		txns.push(evTxn(pay, -600, "ccpay", "chk", "s" + m))
-		txns.push(evTxn(pay, 600, "ccpay", "v", "r" + m))
+		txns.push(evTxn(pay, -600, "ccpay", "chk", "s" + m, "r" + m))
+		txns.push(evTxn(pay, 600, "ccpay", "v", "r" + m, "s" + m))
 	}
 	const found = inferSettlements(txns, ["chk"], ["v"])
 	const from = new Date(Date.UTC(2026, 8, 5))            //three weeks after the last payment
@@ -2496,8 +2516,8 @@ test("a refund reduces the statement; a payment receipt does not", () => {
 		//one refund inside the window: money back, not money spent
 		txns.push(evTxn(new Date(close.getTime() - 1*86400000), 90, "card", "rh", "ref" + w))
 		net -= 90
-		txns.push(evTxn(pay, -net, "ccpay", "chk", "s" + w))
-		txns.push(evTxn(pay, net, "ccpay", "rh", "r" + w))
+		txns.push(evTxn(pay, -net, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, net, "ccpay", "rh", "r" + w, "s" + w))
 	}
 	const found = inferSettlements(txns, ["chk"], ["rh"])
 	const spend = cardSpend(txns, "rh", found)
@@ -2524,8 +2544,8 @@ test("the projection rate is the trailing ninety days, not the year", () => {
 	}
 	for(let w = 0; w < 34; w++){
 		const pay = new Date(Date.UTC(2026, 0, 8 + w*7))
-		txns.push(evTxn(pay, -1, "ccpay", "chk", "s" + w))
-		txns.push(evTxn(pay, 1, "ccpay", "rh", "r" + w))
+		txns.push(evTxn(pay, -1, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, 1, "ccpay", "rh", "r" + w, "s" + w))
 	}
 	const from = new Date(Date.UTC(2026, 8, 1))
 	const found = inferSettlements(txns, ["chk"], ["rh"])
@@ -2579,28 +2599,20 @@ test("a MONTHLY income is untouched - the rule is yearly only", () => {
 	expect(m.expectedFor(st, at)).toBeGreaterThan(7000)
 })
 
-test("a lump on a card is forecast by name, and leaves the average behind it", () => {
-	/* The card's unposted remainder was a blind daily rate: an average that knows how much a card is
-	   usually spent on and nothing about what is coming. A rate cannot represent a single large
-	   charge at all - and on the real portfolio three charges over $500 in twelve weeks were $7,665
-	   of $12,345 paid. The lumps are the error, and the lumps have names.
-
-	   The two halves must PARTITION the card. Naming a stream while leaving its history in the
-	   average bills it twice, which is what the first version of this did. */
+test("a linked card's statement is composed from that card's own streams", () => {
+	/* The statement a repayment covers is charges, and the charges are the card account's own
+	   streams. A rate cannot represent a single large charge at any smoothing, and a supplier
+	   invoice on a card is exactly that. */
 	const DAYMS = 86400000
 	const buys = []
-	//a diffuse trickle: groceries, several a week, which an average describes well
 	for(let d = 0; d < 150; d++){
 		const at = new Date(Date.UTC(2026, 0, 2 + d))
 		if(d % 7 === 3 || d % 7 === 5 || d % 7 === 6)continue
 		buys.push({at: at, amt: 40 + ((d*13) % 30), stream: "food", id: "f" + d})
 	}
-	//and a supplier bill on the 26th of each month - a real lump lands on a DATE, which is what
-	//lets a stream forecast name it at all
 	for(let mth = 0; mth < 5; mth++)
 		buys.push({at: new Date(Date.UTC(2026, mth, 26)), amt: 2600, stream: "supp", id: "g" + mth})
 	const txns = buys.map(b => evTxn(b.at, -b.amt, b.stream, "rh", b.id))
-	//statements: everything in the window, paid three days after it closes
 	for(let w = 0; w < 21; w++){
 		const pay = new Date(Date.UTC(2026, 0, 8 + w*7))
 		const close = new Date(pay.getTime() - 3*DAYMS), prev = new Date(close.getTime() - 7*DAYMS)
@@ -2609,8 +2621,8 @@ test("a lump on a card is forecast by name, and leaves the average behind it", (
 			if(b.at.getTime() > prev.getTime() && b.at.getTime() <= close.getTime())stmt += b.amt
 		})
 		if(stmt < 1)continue
-		txns.push(evTxn(pay, -stmt, "ccpay", "chk", "s" + w))
-		txns.push(evTxn(pay, stmt, "ccpay", "rh", "r" + w))
+		txns.push(evTxn(pay, -stmt, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, stmt, "ccpay", "rh", "r" + w, "s" + w))
 	}
 	const food = evStream("food", "Groceries", -1100)
 	const supp = evStream("supp", "Supplier", -2600)
@@ -2620,23 +2632,30 @@ test("a lump on a card is forecast by name, and leaves the average behind it", (
 		covered: ["chk"], cards: ["rh"], asOf: asOf, until: new Date(Date.UTC(2026, 4, 20)),
 		since: new Date(Date.UTC(2026, 0, 1))})
 
-	//the lump is named; the trickle is not, and stays in the average
-	expect(m.meta.cardNamed.supp).toBe("rh")
-	expect(m.meta.cardNamed.food).toBeUndefined()
+	//the card is linked, and its schedule was read off the repayments
+	expect(m.meta.linked).toEqual(["rh"])
+	expect(m.meta.cards.rh.intervalDays).toBe(7)
+	expect(Math.abs(m.meta.cards.rh.offsetDays - 3)).toBeLessThanOrEqual(1)
 
-	//and the whole month of bills still adds up to about what a month of this card costs
+	//a month of repayments lands in the right ballpark: four weeks of groceries plus one invoice
 	const flow = m.extraFlow || {}
-	const total = Object.keys(flow).reduce((x, k) => x + Math.abs(flow[k].amount), 0)
-	//four weekly statements of ~$250 of groceries plus one $2,600 supplier bill
-	expect(total).toBeGreaterThan(3000)
-	expect(total).toBeLessThan(5200)
-	//the parts of every bill add to the whole - no half counted twice, none dropped
+	const amounts = Object.keys(flow).sort().map(k => Math.abs(flow[k].amount))
+	expect(amounts.length).toBeGreaterThan(2)
+	/* THE LUMP HAS TO BE VISIBLE. One statement contains the supplier invoice and the others do not,
+	   so one repayment must stand several times above the rest - which is precisely what a rate
+	   cannot produce, however it is smoothed. */
+	const big = Math.max.apply(null, amounts), small = Math.min.apply(null, amounts)
+	expect(big/small).toBeGreaterThan(3)
+	//the invoice is $2,600 and the coverage correction scales the estimate a little
+	expect(big).toBeGreaterThan(1500)
+	//and the parts of every repayment add to the whole
 	Object.keys(flow).forEach(k => {
 		(flow[k].parts || []).forEach(p => {
 			expect(p.posted + (p.planned || 0) + p.projected).toBeCloseTo(p.amount, 4)
 		})
 	})
 })
+
 
 /* =================================================================================================
    UNPREDICTABLE UNTIL IT BECOMES PREDICTABLE.
@@ -2716,4 +2735,132 @@ test("a yearly budget drawn on at irregular intervals still spreads", () => {
 		since: new Date(Date.UTC(2026, 0, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))})
 	expect(m.meta.promoted.hob).toBe(false)
 	expect(m.shapes.hob.spreadReason).toMatch(/long-period/)
+})
+
+/* =================================================================================================
+   PHASE 0 - THE LINK, AND THE BRANCH ON IT.
+
+   A card repayment is a transfer with a leg on each side, and the data model already records the
+   pairing. Where one leg is on an account typed credit and the other on one typed checking, that
+   pair IS the repayment and it says which checking account funds that card.
+
+   The branch matters more than the link: a card with no such pair has invisible charges, so there is
+   no statement to reconstruct and it is an ordinary expected outflow.
+   ================================================================================================= */
+const linkedCard = (pairThem) => {
+	const txns = []
+	for(let w = 0; w < 16; w++){
+		const pay = new Date(Date.UTC(2026, 0, 9 + w*7))
+		const close = new Date(pay.getTime() - 3*86400000)
+		let stmt = 0
+		for(let d = 0; d < 5; d++){
+			const amt = 60 + ((w*11 + d*7) % 40)
+			txns.push(evTxn(new Date(close.getTime() - (4 - d)*86400000), -amt, "food", "rh",
+				"f" + w + "-" + d))
+			stmt += amt
+		}
+		txns.push(evTxn(pay, -stmt, "ccpay", "chk", "s" + w, pairThem ? "r" + w : undefined))
+		txns.push(evTxn(pay, stmt, "ccpay", "rh", "r" + w, pairThem ? "s" + w : undefined))
+	}
+	return txns
+}
+const modelFor = txns => {
+	const food = evStream("food", "Groceries", -1500)
+	const pay = evStream("ccpay", "Credit Card Payments", 0)
+	return buildModel({transactions: txns, terminals: [food, pay], covered: ["chk"], cards: ["rh"],
+		asOf: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 3, 30)),
+		since: new Date(Date.UTC(2026, 0, 1))})
+}
+
+test("a paired repayment links the card to the account that funds it", () => {
+	const lk = accountLinks(linkedCard(true), ["rh"], ["chk"])
+	expect(lk.links.rh).toBe("chk")
+	expect(lk.repayments.length).toBe(16)
+	//both legs are named, because both have to leave the stream ledger
+	expect(Object.keys(lk.legIds).length).toBe(32)
+	//the repayment carries the CHECKING side's amount, which is the money that actually left
+	expect(lk.repayments[0].amount).toBeLessThan(0)
+	expect(lk.repayments[0].checking).toBe("chk")
+})
+
+test("an unpaired repayment links nothing, and the card is left as an ordinary outflow", () => {
+	const txns = linkedCard(false)
+	const lk = accountLinks(txns, ["rh"], ["chk"])
+	expect(Object.keys(lk.links).length).toBe(0)
+	expect(Object.keys(lk.legIds).length).toBe(0)
+
+	const m = modelFor(txns)
+	expect(m.meta.linked).toEqual([])
+	//nothing is synthesised for it
+	expect(m.extraFlow).toBe(null)
+	//and its repayment is still in the ledger, forecast as the ordinary outflow it is
+	const pay = m.terminals.filter(t => t.id === "ccpay")[0]
+	let out = 0
+	for(let d = 1; d <= 30; d++)out += shareOfDay(pay, new Date(Date.UTC(2026, 3, d)), m)
+	expect(out).toBeLessThan(-100)
+})
+
+test("a repayment is not spending on either side", () => {
+	const m = modelFor(linkedCard(true))
+	expect(m.meta.linked).toEqual(["rh"])
+	//the checking leg is gone from the stream ledger, so the repayment stream forecasts nothing
+	const pay = m.terminals.filter(t => t.id === "ccpay")[0]
+	let out = 0
+	for(let d = 1; d <= 30; d++)out += shareOfDay(pay, new Date(Date.UTC(2026, 3, d)), m)
+	expect(out).toBe(0)
+	//and it comes back as the card's repayment instead
+	expect(m.extraFlow).toBeTruthy()
+	const total = Object.keys(m.extraFlow).reduce((x, k) => x + Math.abs(m.extraFlow[k].amount), 0)
+	expect(total).toBeGreaterThan(500)
+})
+
+test("the schedule is re-derived from recent repayments, not held for ever", () => {
+	/* Autopay usually holds a schedule steady, but the holder can change it - weekly to monthly to
+	   smooth a cash-flow mismatch is a normal thing to do. A schedule averaged over all history
+	   describes an arrangement that may have ended. */
+	const txns = []
+	let w = 0
+	//twelve weeks weekly...
+	for(; w < 12; w++){
+		const pay = new Date(Date.UTC(2026, 0, 9 + w*7))
+		txns.push(evTxn(new Date(pay.getTime() - 5*86400000), -300, "food", "rh", "f" + w))
+		txns.push(evTxn(pay, -300, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, 300, "ccpay", "rh", "r" + w, "s" + w))
+	}
+	//...then switched to monthly
+	for(let m2 = 0; m2 < 5; m2++){
+		const pay = new Date(Date.UTC(2026, 3 + m2, 12))
+		txns.push(evTxn(new Date(pay.getTime() - 5*86400000), -1200, "food", "rh", "F" + m2))
+		txns.push(evTxn(pay, -1200, "ccpay", "chk", "S" + m2, "R" + m2))
+		txns.push(evTxn(pay, 1200, "ccpay", "rh", "R" + m2, "S" + m2))
+	}
+	const lk = accountLinks(txns, ["rh"], ["chk"])
+	const sched = cardSchedule(txns, "rh", lk.repayments)
+	//the recent arrangement, not the average of both
+	expect(sched.intervalDays).toBeGreaterThan(25)
+	expect(sched.schedule.monthDay).toBe(12)
+})
+
+test("a card that stopped being used is not repaid for ever", () => {
+	/* The schedule runs off the last repayment, so without this a card last repaid a year ago keeps
+	   producing repayments - money leaving an account that is no longer being used. */
+	const txns = []
+	for(let w = 0; w < 10; w++){
+		const pay = new Date(Date.UTC(2025, 8, 3 + w*7))
+		txns.push(evTxn(new Date(pay.getTime() - 5*86400000), -200, "food", "rh", "f" + w))
+		txns.push(evTxn(pay, -200, "ccpay", "chk", "s" + w, "r" + w))
+		txns.push(evTxn(pay, 200, "ccpay", "rh", "r" + w, "s" + w))
+	}
+	const lk = accountLinks(txns, ["rh"], ["chk"])
+	expect(lk.repayments.length).toBe(10)                //the history is real
+	const sched = cardSchedule(txns, "rh", lk.repayments)
+	//...but a year later there is nothing to repay
+	const from = new Date(Date.UTC(2026, 8, 1))
+	const events = cardRepaymentForecast(txns, "rh", sched, from, new Date(Date.UTC(2026, 9, 1)),
+		{chargedOn: () => 50})
+	expect(events.length).toBe(0)
+	//while a card repaid three weeks ago is still live
+	const soon = new Date(Date.UTC(2025, 9, 25))
+	expect(cardRepaymentForecast(txns, "rh", sched, soon, new Date(Date.UTC(2025, 10, 25)),
+		{chargedOn: () => 50}).length).toBeGreaterThan(0)
 })

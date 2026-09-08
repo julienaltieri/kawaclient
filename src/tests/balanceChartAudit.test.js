@@ -58,10 +58,12 @@ const addSecondCard = () => {
 				"B" + w + "-" + i, "B" + w + "-" + i))
 		}
 		txns.push(new GenericTransaction(settleDay.toISOString(), -100, "amex bill",
-			[{streamId: "ccpay", amount: -100}], CHECKING, undefined, undefined, "S" + w, "S" + w))
+			[{streamId: "ccpay", amount: -100}], CHECKING, undefined, undefined, "S" + w, "S" + w,
+			"R" + w))
 		const back = new Date(settleDay.getTime() + DAY)
 		txns.push(new GenericTransaction(back.toISOString(), 100, "payment received",
-			[{streamId: "ccpay", amount: 100}], CARD2, undefined, undefined, "R" + w, "R" + w))
+			[{streamId: "ccpay", amount: 100}], CARD2, undefined, undefined, "R" + w, "R" + w,
+			"S" + w))
 	}
 }
 
@@ -99,12 +101,14 @@ beforeEach(() => {
 		}
 		const bill = each*3
 		txns.push(new GenericTransaction(settleDay.toISOString(), -bill, "card bill",
-			[{streamId: "ccpay", amount: -bill}], CHECKING, undefined, undefined, "s" + w, "s" + w))
+			[{streamId: "ccpay", amount: -bill}], CHECKING, undefined, undefined, "s" + w, "s" + w,
+			"r" + w))
 		//the card-side leg of the same payment: the settlement is INFERRED from the pair, so a
 		//fixture with only the checking half contains no settlement to find
 		const back = new Date(settleDay.getTime() + DAY)
 		txns.push(new GenericTransaction(back.toISOString(), bill, "payment received",
-			[{streamId: "ccpay", amount: bill}], CARD, undefined, undefined, "r" + w, "r" + w))
+			[{streamId: "ccpay", amount: bill}], CARD, undefined, undefined, "r" + w, "r" + w,
+			"s" + w))
 	}
 	for(let m = 0; m < 7; m++){
 		txns.push(new GenericTransaction(d(200 - m*30).toISOString(), 5100, "pay",
@@ -236,11 +240,13 @@ test("each card names itself in the breakdown", async () => {
 		const point = a.backtest.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
 		if(!point)return
 		const rows = chart.dayAudit({date: point.date, value: point.value, actual: true}).predicted
-		named = named.concat(rows.filter(r => /Card settlement/.test(r.name)))
+		named = named.concat(rows.filter(r => /^__card__/.test(r.id || "")))
 	})
 	expect(named.length).toBeGreaterThan(0)
 	expect(named.some(r => /Visa/.test(r.name))).toBe(true)
 	expect(named.some(r => /Amex/.test(r.name))).toBe(true)
+	//each row is one card's repayment, so the ids differ too
+	expect(new Set(named.map(r => r.id)).size).toBeGreaterThan(1)
 })
 
 /* =================================================================================================
@@ -300,7 +306,7 @@ test("every predicted row carries the expectation and the weight it came from", 
 	})
 	expect(audit).toBeTruthy()
 	expect(audit.predicted.length).toBeGreaterThan(0)
-	audit.predicted.filter(r => !/Card settlement/.test(r.name)).forEach(r => {
+	audit.predicted.filter(r => !/^__card__/.test(r.id || "")).forEach(r => {
 		expect(typeof r.expected).toBe("number")
 		expect(typeof r.weight).toBe("number")
 		expect(typeof r.cycle).toBe("string")

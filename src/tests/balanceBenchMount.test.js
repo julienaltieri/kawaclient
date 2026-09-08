@@ -67,10 +67,11 @@ beforeEach(() => {
 		}
 		txns.push(new GenericTransaction(settleDay.toISOString(), -261, "card bill",
 			[{streamId: "ccpay", amount: -261}], CHECKING, undefined, undefined,
-			"s" + w, "s" + w))
+			"s" + w, "s" + w, "r" + w))
 		const back = new Date(settleDay.getTime() + 24*3600*1000)
 		txns.push(new GenericTransaction(back.toISOString(), 261, "payment received",
-			[{streamId: "ccpay", amount: 261}], CARD, undefined, undefined, "r" + w, "r" + w))
+			[{streamId: "ccpay", amount: 261}], CARD, undefined, undefined, "r" + w, "r" + w,
+			"s" + w))
 	}
 	for(let m = 0; m < 6; m++){
 		txns.push(new GenericTransaction(d(170 - m*30).toISOString(), 5100, "pay",
@@ -113,7 +114,7 @@ test("the prior month is scored too, or reported as absent", async () => {
 	expect(prior === null || typeof prior.accuracy === "number").toBe(true)
 })
 
-test("weekly settlements are found and modelled, not left to a monthly due-day", async () => {
+test("a linked card is found through the pairing and given a weekly schedule", async () => {
 	const ref = await mount()
 	const a = ref.current.analyse()
 	expect(a.settlements.length).toBeGreaterThan(4)
@@ -154,7 +155,9 @@ test("the next card payment is computed as of today, with its arithmetic", async
 	//it is in the FUTURE, not inside the scored window
 	expect(new Date(c.when + "T00:00:00Z").getTime()).toBeGreaterThan(ref.current.today().getTime())
 	//and the parts add up to the whole
-	expect(c.posted + c.projected).toBeCloseTo(c.amount, 4)
+	/* Two parts now, and they must add to the whole: what the card has already been charged for this
+	   statement, and what its own streams say is still to come before the statement closes. */
+	expect(c.posted + (c.planned || 0)).toBeCloseTo(c.amount, 4)
 	expect(c.known).toBeGreaterThanOrEqual(0)
 	expect(ref.current.nextPaymentLines().join("\n")).toMatch(/already posted/)
 })
