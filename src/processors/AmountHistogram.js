@@ -168,10 +168,16 @@ const lastOfMonth = d => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth()+1
 export const CYCLES = {
 	/* biweekly needs a fixed origin or its phase means nothing between one call and the next; the
 	   epoch is as good as any, because only the RELATIVE phase of the transactions matters. */
+	/* `turnOf` NAMES THE TURN a date falls in, where `phaseOf` only says where inside one it sits.
+	   Two dates can share a phase and belong to different turns - the 6th of June and the 6th of July
+	   are both phase 5 - and telling those apart is what lets the forecast know a payment has already
+	   been made THIS cycle rather than merely on that day-number. */
 	weekly:   {name:"weekly",   bins:7,  span:7,
-		phaseOf: d => ((utcDay(d) % 7) + 7) % 7,    daysPerCycle: () => 7, reach: () => 7},
+		phaseOf: d => ((utcDay(d) % 7) + 7) % 7,    daysPerCycle: () => 7, reach: () => 7,
+		turnOf: d => "w" + Math.floor(utcDay(d)/7)},
 	biweekly: {name:"biweekly", bins:14, span:14,
-		phaseOf: d => ((utcDay(d) % 14) + 14) % 14, daysPerCycle: () => 14, reach: () => 14},
+		phaseOf: d => ((utcDay(d) % 14) + 14) % 14, daysPerCycle: () => 14, reach: () => 14,
+		turnOf: d => "b" + Math.floor(utcDay(d)/14)},
 
 	/* SEMIMONTHLY IS A CANDIDATE OF ITS OWN, and leaving it out was a mistake worth recording. The
 	   note that used to sit here said monthly already covered it - "a twice-a-month stream is two
@@ -189,6 +195,8 @@ export const CYCLES = {
 	   half. */
 	semimonthly: {name:"semimonthly", bins:16, span:15.22,
 		phaseOf: d => {const day = d.getUTCDate(); return day <= 15 ? day-1 : day-16},
+		turnOf: d => d.getUTCFullYear() + "-" + d.getUTCMonth()
+			+ "-" + (d.getUTCDate() <= 15 ? 0 : 1),
 		daysPerCycle: d => lastOfMonth(d)/2,
 		reach: d => lastOfMonth(d) >= 31 ? 16 : 15,
 		/* MONEY AIMED AT A DAY THE MONTH DOES NOT HAVE ARRIVES ON THE LAST DAY IT DOES.
@@ -210,6 +218,7 @@ export const CYCLES = {
 
 	monthly:  {name:"monthly",  bins:31, span:30.44,
 		phaseOf: d => d.getUTCDate()-1,             daysPerCycle: d => lastOfMonth(d),
+		turnOf: d => d.getUTCFullYear() + "-" + d.getUTCMonth(),
 		reach: d => lastOfMonth(d),
 		//same rule: a payment budgeted for the 31st happens on the 30th in a thirty-day month
 		dayShare: (w, day, nDays) => {

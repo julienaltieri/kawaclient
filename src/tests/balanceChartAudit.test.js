@@ -317,6 +317,6 @@ test("a stream that was budgeted but did not fire says why", async () => {
 		if(r)found = r
 	})
 	expect(found).toBeTruthy()
-	expect(found.why).toMatch(/another day|another account|card settlement|no expected amount/)
+	expect(found.why).toMatch(/another day|another account|card settlement|no expected amount|already paid this cycle/)
 	expect(Math.abs(found.expected)).toBeGreaterThan(1000)
 })

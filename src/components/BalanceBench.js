@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b29 - a card payment cancels; groceries do not";
+export const BENCH_VERSION = "b30 - rolling 7d, the next payment, and one stream at a time";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -79,6 +79,17 @@ const Head = styled.div`
 	color:${props => DS.getStyle().bodyTextSecondary};
 `
 const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin:${DS.spacing.xs}rem 0;`
+/* the picture belongs INSIDE the row it explains, not in a panel elsewhere with its own selector -
+   the row is already the thing being asked about, and a second place to choose a stream is a second
+   thing to keep in sync */
+const Chart = styled.svg`
+	grid-column:1 / -1; width:100%; height:auto; margin:0.3rem 0 0.1rem;
+	overflow:visible;
+`
+const Key = styled.div`
+	grid-column:1 / -1; display:flex; gap:0.8rem; flex-wrap:wrap;
+	font-size:${DS.fontSize.little}rem; color:${props => DS.getStyle().bodyTextSecondary};
+`
 const Btn = styled.button`
 	appearance:none; cursor:pointer; font:inherit; font-size:${DS.fontSize.little}rem;
 	background:none; color:${props => DS.getStyle().bodyText};
@@ -420,6 +431,7 @@ export default class BalanceBench extends BaseComponent{
 			const days = Object.keys(actualByStream[t.id]).sort()
 			detail[t.id] = {predTotal: pt, actTotal: at, worst: worst, worstDay: worstDay,
 				flowAccuracy: fm ? 1 - fe/fm : (fe > 0.005 ? 0 : 1),
+				dayKeys: dayKeys, pred: perStream[t.id], act: actualByStream[t.id],
 				actDays: days.map(d => d.slice(5) + " " + money(actualByStream[t.id][d])).join(", "),
 				predDays: Object.keys(perStream[t.id]).filter(k => Math.abs(perStream[t.id][k]) > 1)
 					.sort().map(d => d.slice(5) + " " + money(perStream[t.id][d])).join(", ")}
@@ -434,6 +446,171 @@ export default class BalanceBench extends BaseComponent{
 			excluded:Object.keys(excludeIds).length}
 		return this._cache[key]
 	}
+	/* ROLLING SEVEN DAYS - the horizon a decision is actually taken at.
+
+	   The headline is a single forecast made on one day and marked over the following month. That is
+	   a fair test of a month-long claim and a poor test of this product, which is re-forecast every
+	   morning and read to answer "is anything going to push me under in the next week". At a week the
+	   card's next bill has mostly already been spent and the payroll is a known date; at a month
+	   neither is true, and the month-long number is dominated by exactly the part nobody can know.
+
+	   THE `horizon` ROW ABOVE IS NOT THIS. That truncates ONE forecast at n days, so its "+7d" is the
+	   first week of a single month-old prediction - the easiest week there is, because it is the week
+	   closest to the day the model was built. This re-forecasts from every third day in the window and
+	   scores each one over the seven days that followed, which is the same question asked ten times
+	   from ten different mornings. Errors are pooled rather than averaged so a quiet week cannot
+	   outvote a busy one.
+
+	   Each origin rebuilds the model at that date, which makes every one of them genuinely out of
+	   sample - the as-of law does that for free, and is why this is only a few lines. */
+	rolling(daysAhead){
+		const key = "rolling" + daysAhead
+		this._cache = this._cache || {}
+		if(this._cache[key] !== undefined)return this._cache[key]
+		const a = this.analyse()
+		if(!a){this._cache[key] = null; return null}
+		const now = this.today()
+		const record = reconstruct(this.ledger(), now, this.anchor(), a.open)
+			.filter(p => p.date <= a.close)
+		const prefs = (Core.getUserData() || {}).userPreferences || {}
+		const keep = this.spending(), cards = this.credit()
+		const STEP = 3
+		let err = 0, area = 0, origins = 0
+		for(let i = 0; i + daysAhead < record.length; i += STEP){
+			const asOf = record[i].date
+			const until = new Date(asOf.getTime() + daysAhead*DAY)
+			let fc
+			try{
+				const m = buildModel({transactions: this.props.transactions,
+					terminals: this.terminals(), accounts: this.state.accounts || [],
+					covered: keep, cards: cards, fallback: keep[0],
+					asOf: asOf, until: until, settlementDay: this.settlementDay(),
+					startingMonth: reportingConfig.startingMonth,
+					startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
+				fc = forecast(Object.assign({now: asOf, balanceNow: record[i].value,
+					days: daysAhead}, m))
+			}catch(e){continue}
+			origins++
+			for(let k = 0; k < daysAhead && i + 1 + k < record.length; k++){
+				err += Math.abs(fc[k].value - record[i + 1 + k].value)
+				area += Math.abs(record[i + 1 + k].value)
+			}
+		}
+		this._cache[key] = area
+			? {accuracy: 1 - err/area, origins: origins, days: daysAhead, err: err, area: area}
+			: null
+		return this._cache[key]
+	}
+
+	/* ONE STREAM, DRAWN. The table ranks streams by how much they cost, which finds the biggest
+	   errors and not the most fixable ones. A row saying "predicted -$1,800 on the 6th, actual
+	   -$1,700 on the 11th" is a five-day miss and a row saying "-$77 a day against one $2,400 event"
+	   is a shape that is simply wrong, and both print as a percentage. Seen as two lines they are
+	   obviously different problems.
+
+	   CUMULATIVE, because that is what the balance is: the gap between the curves at any point is
+	   exactly the dollars the balance is out by on that day, which is the quantity being scored. A
+	   pair of daily bar charts shows the same data and hides the thing it is being read for. */
+	streamSeries(id){
+		const a = this.analyse()
+		if(!a || !a.detail || !a.detail[id])return null
+		const d = a.detail[id]
+		if(!d.dayKeys)return null
+		let p = 0, x = 0
+		const pred = [], act = []
+		d.dayKeys.forEach(k => {
+			p += d.pred[k] || 0; x += d.act[k] || 0
+			pred.push(p); act.push(x)
+		})
+		return {days: d.dayKeys, pred: pred, act: act, name: d.name,
+			gap: pred.map((v, i) => v - act[i])}
+	}
+
+	streamChart(id){
+		const s = this.streamSeries(id)
+		if(!s || !s.days.length)return null
+		const W = 320, H = 90, PAD = 4
+		const all = s.pred.concat(s.act).concat([0])
+		const lo = Math.min.apply(null, all), hi = Math.max.apply(null, all)
+		const span = (hi - lo) || 1
+		const x = i => PAD + (i/(Math.max(1, s.days.length - 1)))*(W - 2*PAD)
+		const y = v => PAD + (1 - (v - lo)/span)*(H - 2*PAD)
+		const path = arr => arr.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1)
+			+ " " + y(v).toFixed(1)).join(" ")
+		return {W: W, H: H, zero: y(0), pred: path(s.pred), act: path(s.act), series: s}
+	}
+
+	/* THE NEXT PAYMENT, AS OF NOW - not a score of a past window.
+
+	   Every other number on this page is a backtest: a forecast made a month ago and marked against
+	   what happened. That is the right way to score a MONTH, and the wrong way to look at a card,
+	   because a card bill is re-evaluated every day. Most of the next one has already been spent, and
+	   the part that has not is a few days at a known rate. Judging it by how a month-old single shot
+	   performed hides the only property that matters: today, right now, how much is the next payment
+	   and how much of that is already fact.
+
+	   So this stands at TODAY and shows the arithmetic, term by term, for each card's next payment. */
+	nextPayments(){
+		const cards = this.credit(), keep = this.spending()
+		if(!cards.length || !this.state.accounts)return []
+		const now = this.today()
+		const prefs = (Core.getUserData() || {}).userPreferences || {}
+		const model = buildModel({
+			transactions: this.props.transactions, terminals: this.terminals(),
+			accounts: this.state.accounts, covered: keep, cards: cards, fallback: keep[0],
+			asOf: now, until: new Date(now.getTime() + 45*DAY),
+			settlementDay: this.settlementDay(),
+			startingMonth: reportingConfig.startingMonth,
+			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
+		const cy = model.meta.cards || {}
+		const names = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
+		const flow = model.extraFlow || {}
+		//the soonest event per card, which is the one a decision this week depends on
+		const soonest = {}
+		Object.keys(flow).forEach(k => {
+			(flow[k].parts || []).forEach(p => {
+				if(!soonest[p.card] || k < soonest[p.card].day)
+					soonest[p.card] = {day: k, amount: p.amount, posted: p.posted,
+						projected: p.projected}
+			})
+		})
+		return cards.map(h => {
+			const c = cy[h] || {}
+			const last = (c.events || []).length
+				? (c.events || [])[(c.events || []).length - 1] : null
+			const n = soonest[h]
+			const close = n ? new Date(new Date(n.day + "T00:00:00Z").getTime()
+				- (c.lagDays || 0)*DAY) : null
+			return {hash: h, name: names[h] || h.slice(0, 20),
+				last: last ? dayKey(last.date) : null, lastAmount: last ? last.amount : 0,
+				every: c.intervalDays ? Math.round(c.intervalDays) : null,
+				lag: c.lagDays || 0, ratio: c.ratio || 1, rate: c.rate || 0,
+				purchases: c.spend || 0, settlements: (c.events || []).length,
+				when: n ? n.day : null, close: close ? dayKey(close) : null,
+				daysToClose: close ? Math.max(0, Math.round((close - now)/DAY)) : null,
+				posted: n ? n.posted : 0, projected: n ? n.projected : 0,
+				amount: n ? n.amount : 0,
+				known: n && Math.abs(n.amount) > 0.005
+					? Math.abs(n.posted)/Math.abs(n.amount) : null}
+		}).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+	}
+
+	nextPaymentLines(){
+		return this.nextPayments().map(c => {
+			if(!c.when)return "  " + c.name + ": no next payment modelled ("
+				+ c.settlements + " settlements, " + c.purchases + " purchases seen)"
+			return "  " + c.name + ": " + money(c.amount) + " on " + c.when
+				+ "\n      statement closed " + c.close + " (" + c.lag + "d before payment)"
+				+ (c.daysToClose ? ", " + c.daysToClose + "d still open" : ", already shut")
+				+ "\n      " + money(c.posted) + " already posted"
+				+ " + " + money(c.projected) + " projected at " + money(-c.rate) + "/day"
+				+ (c.ratio !== 1 ? " x " + Math.round(c.ratio*100) + "% pass-through" : "")
+				+ "\n      " + Math.round((c.known || 0)*100) + "% of it is already fact"
+				+ " · last paid " + money(c.lastAmount) + " on " + c.last
+				+ " · every " + c.every + "d"
+		})
+	}
+
 	/* THE CARD MODEL, PER CARD - because the whole claim rests on two things being right and neither
 	   was ever shown. "Once the prediction day advances the card should be near exact, since it is a
 	   re-evaluated pending amount and the transactions prove it - but only if you have the right
@@ -559,7 +736,7 @@ export default class BalanceBench extends BaseComponent{
 			   never saw. A column that disagrees with the thing it describes is worse than no column,
 			   because it sends the reader to audit a number nobody used. */
 			const used = a && a.expectedFor ? a.expectedFor(s, now) : p.amount
-			return {name:s.name, cycle:declared, expected:perCycle,
+			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
 				tier:p.thin ? 0 : p.tier, day:day,
 				amount:(p.tier === TIERS.spread ? used : p.amount)/(ratio || 1),
 				spread:p.confidence, gain:(a && a.gain[s.id]) || 0, sort:Math.abs(perMonth),
@@ -597,6 +774,13 @@ export default class BalanceBench extends BaseComponent{
 			//by construction before it, and a count of those inside could only ever be zero
 			out.push("card settlements identified before the window: " + st.length
 				+ "   payment streams excluded: " + (a.excluded || 0))
+			const r7 = this.rolling(7)
+			if(r7)out.push("ROLLING 7-DAY accuracy " + (r7.accuracy*100).toFixed(1)
+				+ "%   (re-forecast from " + r7.origins + " mornings, scored over the week after each)")
+			out.push("")
+			out.push("NEXT CARD PAYMENT (as of today, not the scored window)")
+			this.nextPaymentLines().forEach(l => out.push(l))
+			out.push("")
 			this.cardLines().forEach(c => {
 				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases
 					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount)"
@@ -655,6 +839,32 @@ export default class BalanceBench extends BaseComponent{
 		}catch(e){done(false)}
 	}
 
+	/* PREDICTED against ACTUAL, cumulative, for one stream. The vertical gap at any day is exactly
+	   the dollars the balance is out by because of this stream on that day - which is the quantity
+	   the score integrates, so the picture and the number cannot disagree. */
+	drawStream(id){
+		let c = null
+		try{c = this.streamChart(id)}catch(e){c = null}
+		if(!c)return null
+		const ink = DS.getStyle().bodyText, dim = DS.getStyle().bodyTextSecondary
+		const last = c.series.gap[c.series.gap.length - 1]
+		return <React.Fragment>
+			<Chart viewBox={"0 0 " + c.W + " " + c.H} preserveAspectRatio="none">
+				<line x1="0" y1={c.zero} x2={c.W} y2={c.zero} stroke={dim}
+					strokeWidth="0.5" strokeDasharray="2,2"/>
+				<path d={c.act} fill="none" stroke={ink} strokeWidth="1.6"/>
+				<path d={c.pred} fill="none" stroke={ink} strokeWidth="1.4"
+					strokeDasharray="3,2.5" opacity="0.75"/>
+			</Chart>
+			<Key>
+				<span>—— actual, cumulative</span>
+				<span>- - predicted</span>
+				<span>{c.series.days[0].slice(5)} to {c.series.days[c.series.days.length-1].slice(5)}</span>
+				<span>ends {money(last)} apart</span>
+			</Key>
+		</React.Fragment>
+	}
+
 	render(){
 		if(!this.state.accounts)return <Wrap>Reading balances…</Wrap>
 		let a, groups, err = null
@@ -673,7 +883,11 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
 					{a ? " · " + a.days + " settled days" : ""}</Note>
 				<Note>{this.prior() ? "prior month " + (this.prior().accuracy*100).toFixed(1) + "%" : ""}</Note>
-				<Note>{a && a.horizon ? "by horizon " + a.horizon.map(h => "+" + h.days + "d "
+				<Note style={{fontWeight:600}}>{this.rolling(7)
+					? "rolling 7-day " + (this.rolling(7).accuracy*100).toFixed(1) + "% · "
+						+ this.rolling(7).origins + " mornings"
+					: ""}</Note>
+				<Note>{a && a.horizon ? "one shot, truncated: " + a.horizon.map(h => "+" + h.days + "d "
 					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
 				<Note>{BENCH_VERSION}</Note>
 				<Note>{a ? "card settlements matched: " + (a.settlements || []).length
@@ -686,6 +900,17 @@ export default class BalanceBench extends BaseComponent{
 					{" " + Math.round(c.ratio*100)}% · {money(-c.rate)}/day
 					{c.fit === null ? " · offset not fitted"
 						: " · spread " + Math.round(c.fit*100) + "%"}
+				</Note>)}
+			</Score>
+			<Score>
+				<Note style={{fontWeight:600}}>next card payment, as of today</Note>
+				{this.nextPayments().map(c => <Note key={c.hash}>
+					{c.when
+						? c.name + ": " + money(c.amount) + " on " + c.when + " · "
+							+ money(c.posted) + " posted + " + money(c.projected) + " projected · "
+							+ Math.round((c.known || 0)*100) + "% already fact · closes " + c.close
+							+ (c.daysToClose ? " (" + c.daysToClose + "d open)" : " (shut)")
+						: c.name + ": no next payment modelled"}
 				</Note>)}
 			</Score>
 			<Score>
@@ -707,6 +932,7 @@ export default class BalanceBench extends BaseComponent{
 					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
 					<Line>{r.cycle} · expects {money(r.expected)} · predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3 ? " · " + (r.spread*100).toFixed(0) + "% there" : ""}</Line>
+					{this.state.open === r.name ? this.drawStream(r.id) : null}
 					{r.detail && this.state.open === r.name ? <Line>
 						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}
 						{" — actual " + money(r.detail.actTotal) + ": " + (r.detail.actDays || "nothing")}

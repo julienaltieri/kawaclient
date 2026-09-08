@@ -126,3 +126,47 @@ test("weekly settlements are found and modelled, not left to a monthly due-day",
 	const all = ref.current.analyse(new Date(0))
 	expect(all.settleMonthly).toBeCloseTo(a.settleMonthly, 6)
 })
+
+/* The three things asked for on the bench, exercised for real: a rolling 7-day score that rebuilds
+   the model from many mornings, a live next-payment readout that stands at today rather than in the
+   scored window, and a per-stream chart. All three call into the model, so a mount test is the only
+   place an ordering or wiring fault in them shows up. */
+test("the rolling 7-day score re-forecasts from several mornings", async () => {
+	const ref = await mount()
+	const r = ref.current.rolling(7)
+	expect(r).toBeTruthy()
+	expect(r.origins).toBeGreaterThan(3)
+	expect(r.days).toBe(7)
+	expect(typeof r.accuracy).toBe("number")
+	//it must differ from the truncated single shot, or it is measuring the same thing twice
+	const oneShot = (ref.current.analyse().horizon || []).filter(h => h.days === 7)[0]
+	expect(oneShot).toBeTruthy()
+	expect(r.accuracy).not.toBe(oneShot.accuracy)
+})
+
+test("the next card payment is computed as of today, with its arithmetic", async () => {
+	const ref = await mount()
+	const next = ref.current.nextPayments()
+	expect(next.length).toBeGreaterThan(0)
+	const c = next.filter(x => x.when)[0]
+	expect(c).toBeTruthy()
+	//it is in the FUTURE, not inside the scored window
+	expect(new Date(c.when + "T00:00:00Z").getTime()).toBeGreaterThan(ref.current.today().getTime())
+	//and the parts add up to the whole
+	expect(c.posted + c.projected).toBeCloseTo(c.amount, 4)
+	expect(c.known).toBeGreaterThanOrEqual(0)
+	expect(ref.current.nextPaymentLines().join("\n")).toMatch(/already posted/)
+})
+
+test("a stream's cumulative series is the same numbers the score used", async () => {
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const id = Object.keys(a.detail).filter(k => k !== "__card__")[0]
+	const s = ref.current.streamSeries(id)
+	expect(s).toBeTruthy()
+	expect(s.days.length).toBeGreaterThan(5)
+	//the last cumulative point IS the total the table prints, so picture and number cannot disagree
+	expect(s.pred[s.pred.length-1]).toBeCloseTo(a.detail[id].predTotal, 4)
+	expect(s.act[s.act.length-1]).toBeCloseTo(a.detail[id].actTotal, 4)
+	expect(ref.current.streamChart(id).pred).toMatch(/^M/)
+})

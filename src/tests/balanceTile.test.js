@@ -19,7 +19,7 @@ import BalanceChart from '../components/BalanceChart'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
-	buildModel, eventsPerTurn, cardPaymentStreams,
+	buildModel, eventsPerTurn, cardPaymentStreams, shareOfDayDetail,
 	buildForecastInputs} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
@@ -2244,4 +2244,70 @@ test("a spending stream split across a card and the current account is NOT a car
 		until: new Date(Date.UTC(2026, 6, 31)), since: new Date(Date.UTC(2026, 2, 1))})
 	expect(m.excludeIds.food).toBeUndefined()
 	expect(m.excludeIds.ccpay).toBe(true)
+})
+
+/* =================================================================================================
+   A BILL ALREADY PAID THIS CYCLE IS NOT EXPECTED AGAIN.
+
+   The shape says "this stream lands on the 6th", and the 6th comes round every month for ever. So a
+   payment made on the 12th was still followed by a full prediction on the next 6th, and in a window
+   straddling two months sometimes by one in the same month. Day Care Eleonore, $2,400, paid and
+   expected again.
+
+   The quota is what the stream has been OBSERVED to have per turn, never its declared period, and it
+   applies only to streams that arrive as events - stopping groceries because some groceries have
+   happened would empty the rest of every month.
+   ================================================================================================= */
+test("a monthly event already paid this month is not predicted again", () => {
+	const st = evStream("elo", "Day Care Eleonore", -2400)
+	const txns = []
+	for(let mth = 3; mth <= 7; mth++)
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, 6)), -2400, "elo", "chk", "e" + mth))
+	//and this month it came late, on the 12th
+	txns.push(evTxn(new Date(Date.UTC(2026, 8, 12)), -2400, "elo", "chk", "late"))
+	const asOf = new Date(Date.UTC(2026, 8, 20))          //after it landed
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: asOf, until: new Date(Date.UTC(2026, 9, 20)),
+		since: new Date(Date.UTC(2026, 5, 1))})
+	expect(Math.round(m.meta.events.elo)).toBe(1)
+	//nothing more this month...
+	let rest = 0
+	for(let d = 21; d <= 30; d++)rest += shareOfDay(st, new Date(Date.UTC(2026, 8, d)), m)
+	expect(Math.round(rest)).toBe(0)
+	//...and the reason is stated rather than the row silently vanishing
+	expect(shareOfDayDetail(st, new Date(Date.UTC(2026, 8, 25)), m).why).toBe("already paid this cycle")
+	//but next month is expected in full
+	let next = 0
+	for(let d = 1; d <= 31; d++)next += shareOfDay(st, new Date(Date.UTC(2026, 9, d)), m)
+	expect(Math.round(next)).toBe(-2400)
+})
+
+test("a stream that trickles is not stopped by having trickled", () => {
+	//the guard: a flow has no quota, and closing the month after the first grocery run would empty it
+	const st = evStream("food", "Groceries", -1200)
+	const txns = []
+	for(let mth = 4; mth < 9; mth++) for(let d = 1; d <= 27; d += 2)
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, d)), -89, "food", "chk", "f" + mth + "-" + d))
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 20)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 5, 1))})
+	let rest = 0
+	for(let d = 21; d <= 30; d++)rest += shareOfDay(st, new Date(Date.UTC(2026, 8, d)), m)
+	expect(rest).toBeLessThan(-100)
+})
+
+test("a semimonthly stream paid in the first half is still expected in the second", () => {
+	//the turn is the HALF month, so being paid on the 14th says nothing about the 29th
+	const st = evStream("wage", "Wages", 15674, "semimonthly")
+	const txns = []
+	for(let mth = 4; mth < 9; mth++){
+		txns.push(evTxn(new Date(Date.UTC(2026, mth, 14)), 7837, "wage", "chk", "a" + mth))
+		if(mth < 8)txns.push(evTxn(new Date(Date.UTC(2026, mth, 29)), 7837, "wage", "chk", "b" + mth))
+	}
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: [],
+		asOf: new Date(Date.UTC(2026, 8, 20)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 5, 1))})
+	let rest = 0
+	for(let d = 21; d <= 30; d++)rest += shareOfDay(st, new Date(Date.UTC(2026, 8, d)), m)
+	expect(Math.round(rest)).toBe(7837)
 })

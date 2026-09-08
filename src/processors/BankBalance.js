@@ -311,6 +311,17 @@ export function shareOfDayDetail(s, d, opts){
 	if(!out.expected){out.why = "no expected amount"; return out}
 	if(opts.excludeIds && opts.excludeIds[s.id]){out.why = "inside a card settlement"; return out}
 	if(!covers(routing[s.id])){out.why = "another account"; return out}
+	/* ALREADY PAID THIS CYCLE. An event stream gets as many occurrences per turn as it has been
+	   observed to have; once that turn's quota is in the ledger, the rest of the turn is over. Only
+	   for streams that arrive as events - a flow has no quota, and stopping groceries because some
+	   groceries have happened would empty the rest of every month. */
+	const ev = h && h.events ? h.events : 0;
+	if(ev && ev < 4 && h.cycle && h.cycle.turnOf && opts.settled){
+		const already = (opts.settled[s.id] || {})[h.cycle.turnOf(d)] || 0;
+		if(already >= Math.max(1, Math.round(ev))){
+			out.why = "already paid this cycle"; out.settledTurn = true; return out;
+		}
+	}
 	if(h && h.any && h.cycle){
 		if(h.cycle.dayShare)out.weight = h.cycle.dayShare(h.weights, d.getUTCDate(), nDays);
 		else out.weight = (h.cycle.daysPerCycle(d)/nDays) * h.weights[h.cycle.phaseOf(d)];
@@ -1288,8 +1299,11 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 				const openAt = Math.max(from.getTime(), prevClose.getTime());
 				const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
 				const spend = posted + rate*ahead;
+				//the parts carry the sign of the whole: posted + projected === amount, so a reader
+				//can add them up and a test can assert it
 				if(spend > 1)events.push({date: new Date(when), card: c, close: close,
-					amount: -spend*cy.ratio, posted: posted*cy.ratio, projected: rate*ahead*cy.ratio});
+					amount: -spend*cy.ratio, posted: -posted*cy.ratio,
+					projected: -rate*ahead*cy.ratio});
 			}
 			prevClose = close;
 			when = nextAfter(when);
@@ -1500,6 +1514,7 @@ export function buildModel(input){
 	/* Everything forecast() and contributionsOn() read, and nothing either of them has to assemble. */
 	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
 		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
+		settled: built.settled,
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
 			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
@@ -1527,7 +1542,7 @@ export function buildForecastInputs(opts){
 	   back with it. */
 	const wide = opts.sinceShape;
 	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
-	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {};
+	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {}, settled = {};
 	terminals.forEach(s => {
 		const all = byStream[s.id] || [];
 		seen[s.id] = all.filter(x => (!until || x.date < until) && (!since || x.date >= since));
@@ -1546,8 +1561,28 @@ export function buildForecastInputs(opts){
 		events[s.id] = eventsPerTurn(use, a);
 		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
+		/* WHICH TURNS HAVE ALREADY BEEN PAID.
+
+		   A monthly bill that has already gone out this month is not going out again this month. The
+		   forecast had no way to know that: the shape says "this stream lands on the 6th" and the
+		   6th comes round once a month for ever, so a payment made on the 12th was still followed by
+		   a full prediction on the NEXT 6th - and, in a window straddling two months, sometimes by
+		   one in the same month. Day Care Eleonore, $2,400, paid on the 12th and expected again.
+
+		   Counted on the covered accounts and only from what the model may see, so this stays a fact
+		   about the ledger rather than a peek past the as-of date. */
+		const done = {};
+		if(shapes[s.id].cycle && shapes[s.id].cycle.turnOf){
+			const turnOf = shapes[s.id].cycle.turnOf;
+			(byStream[s.id] || []).forEach(x => {
+				if(covered.indexOf(x.accountHash) < 0)return;
+				const k = turnOf(new Date(x.date));
+				done[k] = (done[k] || 0) + 1;
+			});
+		}
+		settled[s.id] = done;
 		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
 	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,
-		routing: accountRoutingOf(seen, id => dir[id])};
+		settled: settled, routing: accountRoutingOf(seen, id => dir[id])};
 }
