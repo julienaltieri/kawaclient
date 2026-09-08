@@ -2433,3 +2433,45 @@ test("a card merely late is not written off", () => {
 	expect(r.cycles.v.dormant).toBeUndefined()
 	expect(r.events.length).toBeGreaterThan(0)
 })
+
+test("the second card's payment is found even when only one carries a receipt", () => {
+	/* The account settles twice a week, one payment per person, and only one of them posts a receipt
+	   on the card. The other could never be matched by amount: the fallback compares a payment
+	   against a window of the ACCOUNT's purchases - pooled across both cards - and its shortest
+	   window is five days, while one person's share is about a third of a week of joint spending. Not
+	   a threshold set too tight; a comparison that cannot be made. So 39 settlements were found in 39
+	   weeks and the model saw half the money. */
+	const txns = []
+	let hisTotal = 0, hersTotal = 0
+	for(let w = 0; w < 16; w++){
+		const pay = new Date(Date.UTC(2026, 0, 9 + w*7))
+		const close = new Date(pay.getTime() - 3*86400000)
+		let his = 0, hers = 0
+		for(let d = 0; d < 7; d++){
+			const a = 120 + ((w*17 + d*11) % 90), b = 55 + ((w*13 + d*7) % 45)
+			const when = new Date(close.getTime() - (6 - d)*86400000)
+			txns.push(evTxn(when, -a, "card", "rh", "h" + w + "-" + d))
+			txns.push(evTxn(when, -b, "card", "rh", "f" + w + "-" + d))
+			his += a; hers += b
+		}
+		//his payment posts a receipt on the card; hers does not
+		txns.push(evTxn(pay, -his, "ccpay", "chk", "ph" + w))
+		txns.push(evTxn(pay, his, "ccpay", "rh", "rh" + w))
+		txns.push(evTxn(pay, -hers, "ccpay", "chk", "pf" + w))
+		hisTotal += his; hersTotal += hers
+	}
+	const found = inferSettlements(txns, ["chk"], ["rh"])
+	//both payments every week, not one
+	expect(found.length).toBe(32)
+	expect(found.filter(x => x.by === "receipt").length).toBe(16)
+	expect(found.filter(x => x.by === "same statement").length).toBe(16)
+	//and together they are the whole bill, not half of it
+	const total = found.reduce((a, b) => a + Math.abs(b.amount), 0)
+	expect(total).toBeCloseTo(hisTotal + hersTotal, 2)
+
+	//the statement is then one event of the combined amount, on a clean weekly rhythm
+	const cy = cardCycles(txns, ["rh"], found).rh
+	expect(cy.intervalDays).toBe(7)
+	expect(Math.round(cy.perStatement)).toBe(2)
+	expect(Math.abs(cy.lagDays - 3)).toBeLessThanOrEqual(1)
+})

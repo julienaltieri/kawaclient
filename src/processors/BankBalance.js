@@ -1098,11 +1098,55 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
 		return best <= 1.5;
 	};
 
+	/* WHERE A STATEMENT WAS ALREADY FOUND THAT DAY, the rest of that day belongs to it.
+
+	   Two people on one account pay it twice on the same day, one per card. Only one of those had a
+	   receipt, and the other could never be matched by amount: the fallback compares a payment against
+	   a window of the ACCOUNT's purchases, pooled across both cards, and its shortest window is five
+	   days. One person's share is about a third of a week of joint spending, so no window can come
+	   within a quarter of it - not a threshold that was set too tight, but a comparison that cannot be
+	   made, because the purchase feed carries no card identifier to split.
+
+	   The day answers it instead. A card payment on the same day as a settlement already proven by
+	   receipt, on the same payment stream, is the other card on that account - there is nothing else
+	   it could be. It is attached to that statement, and cardCycles then sums the day into one event.
+
+	   This is the difference between modelling half the card and all of it: the account settles twice
+	   a week and 39 settlements were being found in 39 weeks. */
+	const settledOn = {};
+	out.forEach(x => {
+		const k = dayKey(new Date(x.date));
+		(settledOn[k] = settledOn[k] || {})[x.card] = (settledOn[k][x.card] || 0) + x.amount;
+	});
+
 	leftover.forEach(t => {
 		/* Only a transaction the user has already categorised as a card payment may be attributed
 		   this way - without that gate every outflow in the account is offered to the card model and
 		   one of them is always the closest size. */
 		if(!(t.streamAllocation || []).some(al => streams[al.streamId]))return;
+		const sameDay = settledOn[dayKey(new Date(t.date))];
+		if(sameDay){
+			const on = Object.keys(sameDay);
+			if(on.length === 1){assign(t, on[0], "same statement"); return}
+			/* more than one account settled that day: the payment joins whichever of them its
+			   addition brings closest to that card's own spending over a statement */
+			let best = null, bestErr = Infinity;
+			on.forEach(c => {
+				const withIt = Math.abs(sameDay[c]) + Math.abs(t.amount);
+				let err = Infinity;
+				for(let len = 5; len <= 40; len++){
+					const open = new Date(t.date).getTime() - len*DAY;
+					let sum = 0;
+					spendByCard[c].forEach(x => {
+						const ms = x.d.getTime();
+						if(ms > open && ms <= new Date(t.date).getTime())sum += x.v;
+					});
+					err = Math.min(err, Math.abs(sum - withIt)/withIt);
+				}
+				if(err < bestErr){bestErr = err; best = c}
+			});
+			if(best){assign(t, best, "same statement"); return}
+		}
 		const want = Math.abs(t.amount), at = new Date(t.date).getTime();
 		let pick = null, bestErr = Infinity;
 		Object.keys(spendByCard).forEach(c => {

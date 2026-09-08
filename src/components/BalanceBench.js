@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b33 - the statement is the unit, and a closed card stops";
+export const BENCH_VERSION = "b34 - the other card on the same statement";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -712,6 +712,7 @@ export default class BalanceBench extends BaseComponent{
 				gapLo: c.gapLo, gapHi: c.gapHi,
 				byReceipt: c.events.filter(e => e.by === "receipt").length,
 				byAmount: c.events.filter(e => e.by === "amount").length,
+				bySameDay: c.events.filter(e => e.by === "same statement").length,
 				interval: Math.round(c.intervalDays), lag: c.lagDays,
 				ratio: c.ratio, rate: c.rate || 0, per: per,
 				fit: c.fit === null ? null : c.fit}
@@ -880,7 +881,8 @@ export default class BalanceBench extends BaseComponent{
 			}
 			this.cardLines().forEach(c => {
 				out.push("  " + c.name + ": " + c.matched + " statements from " + c.purchases
-					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount)"
+					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount, "
+					+ c.bySameDay + " same-statement)"
 					+ (c.perStatement > 1.2
 						? ", " + c.perStatement.toFixed(1) + " payments per statement" : "")
 					+ ", every " + c.interval + "d, statement closes "
@@ -1016,8 +1018,8 @@ export default class BalanceBench extends BaseComponent{
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
 				{this.cardLines().map(c => <Note key={c.hash}>
 					{c.dormant ? "DORMANT · " : ""}{c.interleaved ? "TWO RHYTHMS · " : ""}
-					{c.name}: {c.matched} statements ({c.byReceipt} by receipt, {c.byAmount} by
-					amount) from {c.purchases} purchases
+					{c.name}: {c.matched} statements ({c.byReceipt} receipt, {c.byAmount} amount,
+					{c.bySameDay} same-statement) from {c.purchases} purchases
 					{c.perStatement > 1.2 ? " · " + c.perStatement.toFixed(1) + " payments each" : ""}
 					· every
 					{" " + c.interval}d · closes {c.lag}d before payment · clears
