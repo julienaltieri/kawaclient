@@ -156,6 +156,7 @@ Recorded so far:
 | [`debugging-the-picture.md`](debugging-the-picture.md) | How to find out what a drawn thing is actually doing: the four levels of instrument, the order to reach for them in, and the catalogue of ways a measurement lied. Read before debugging anything visual. |
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
 | [`authentication.md`](authentication.md) | How you get into Kawa and stay in: the Cognito proxy login, why a session dies after an hour, what the credentials are worth if they leak, and the roadmap for refresh tokens and biometric unlock. |
+| [`credit-cards.md`](credit-cards.md) | The relationship between a credit card account and the current account that pays it: why a card cannot be a stream, how its payments are identified, how a statement is reconstructed, and the ways real portfolios break each of those. |
 
 ---
 
