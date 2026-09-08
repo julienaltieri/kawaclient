@@ -2047,18 +2047,22 @@ const cardFixture = (lag, weeks) => {
 		const pay = new Date(Date.UTC(2026, 0, 8 + w*14))
 		const close = new Date(pay.getTime() - lag*86400000)
 		let statement = carried; carried = 0
+		//the WEEK's level swings, not just the individual amounts - fourteen varied purchases
+		//average out to the same statement every cycle, which a mean reproduces perfectly
+		const level = 30 + ((w*53) % 90)
 		for(let d = 0; d < 14; d++){
 			const when = new Date(close.getTime() - (13 - d)*86400000)
-			const amt = 40 + ((w*7 + d*13) % 60)          //varies, so a mean cannot fake this
-			txns.push(evTxn(when, -amt, "card", "visa", "p" + w + "-" + d))
-			statement += amt
+			txns.push(evTxn(when, -(level + d*3), "card", "visa", "p" + w + "-" + d))
+			statement += level + d*3
 		}
 		//three purchases AFTER the close: they belong to the next statement, not this one
+		/* spending between the close and the payment, which bills on the NEXT statement. It has to
+		   VARY per cycle: a constant carry-forward is the same size going out as coming in, so a
+		   window that swaps one cycle's for another's balances exactly and every offset fits. */
 		for(let d = 1; d <= 3; d++){
 			const when = new Date(close.getTime() + d*86400000)
-			const amt = 55 + d*11
-			txns.push(evTxn(when, -amt, "card", "visa", "a" + w + "-" + d))
-			carried += amt
+			txns.push(evTxn(when, -(20 + ((w*29) % 70) + d*11), "card", "visa", "a" + w + "-" + d))
+			carried += 20 + ((w*29) % 70) + d*11
 		}
 		txns.push(evTxn(pay, -statement, "ccpay", "chk", "s" + w))
 		txns.push(evTxn(pay, statement, "ccpay", "visa", "r" + w))
@@ -2110,4 +2114,97 @@ test("spending after the close is billed on the NEXT statement, not this one", (
 	const over = Math.abs(r.events[0].amount) - f.settles[15].amount
 	//the post-close purchases are worth about $200; they must not be in this bill
 	expect(over).toBeLessThan(100)
+})
+
+test("the bill tracks each statement as it closes, bill by bill", () => {
+	/* THE SEQUENCE, which is what separates this from any average. Stand one day before each payment
+	   in turn and ask for that payment: the statement is shut, the transactions are in hand, and the
+	   answer must be the amount that actually left - not the typical amount.
+
+	   A mean matches the total and misses every individual bill. This fixture's bills swing about
+	   threefold, so a constant cannot pass. */
+	const lag = 4
+	const f = cardFixture(lag)
+	const found = inferSettlements(f.txns, ["chk"], ["visa"])
+	const ratios = [], actuals = []
+	for(let i = 10; i < 19; i++){
+		const pay = new Date(f.settles[i].date)
+		const from = new Date(pay.getTime() - (lag - 1)*86400000)
+		const r = cardSettlementForecast(f.txns, ["visa"], found, from,
+			new Date(pay.getTime() + 86400000))
+		const e = r.events[0]
+		expect(e).toBeTruthy()
+		ratios.push(Math.abs(e.amount)/f.settles[i].amount)
+		actuals.push(f.settles[i].amount)
+	}
+	//the bills genuinely move, or this proves nothing
+	expect(Math.max.apply(null, actuals)/Math.min.apply(null, actuals)).toBeGreaterThan(1.4)
+	//and every one of them is reproduced, not approached on average
+	ratios.forEach(r => {
+		expect(r).toBeGreaterThan(0.97)
+		expect(r).toBeLessThan(1.03)
+	})
+})
+
+test("two cards on one payment stream are modelled separately", () => {
+	/* Two people, two cards, both categorised to the same "Credit Card Payments" stream. Pooled they
+	   describe neither: different closing days, different rates, different bills on different days.
+	   And the second card has NO payment receipt, which is what made it vanish - the old
+	   identification needed both legs, so a connector that returns only the outflow produced no
+	   settlements at all and that card's spending was never billed. */
+	const txns = []
+	let hersCarried = 0, hisCarried = 0
+	for(let w = 0; w < 16; w++){
+		//his: weekly, closes 3 days before payment, receipt present
+		const payA = new Date(Date.UTC(2026, 0, 6 + w*7))
+		const closeA = new Date(payA.getTime() - 3*86400000)
+		let a = hisCarried; hisCarried = 0
+		for(let d = 0; d < 5; d++){
+			const amt = 30 + ((w*11 + d*7) % 40)
+			txns.push(evTxn(new Date(closeA.getTime() - (5 - d)*86400000), -amt, "card", "his",
+				"A" + w + "-" + d))
+			a += amt
+		}
+		for(let d = 1; d <= 2; d++){
+			const amt = 15 + ((w*23) % 40) + d*7
+			txns.push(evTxn(new Date(closeA.getTime() + d*86400000), -amt, "card", "his",
+				"D" + w + "-" + d))
+			hisCarried += amt
+		}
+		txns.push(evTxn(payA, -a, "ccpay", "chk", "pa" + w))
+		txns.push(evTxn(payA, a, "ccpay", "his", "ra" + w))
+
+		//hers: fortnightly, closes 6 days before payment, NO receipt on the card
+		if(w % 2)continue
+		const payB = new Date(Date.UTC(2026, 0, 10 + w*7))
+		const closeB = new Date(payB.getTime() - 6*86400000)
+		let b = hersCarried; hersCarried = 0
+		for(let d = 0; d < 8; d++){
+			const amt = 25 + ((w*13 + d*5) % 50)
+			txns.push(evTxn(new Date(closeB.getTime() - (7 - d)*86400000), -amt, "card", "hers",
+				"B" + w + "-" + d))
+			b += amt
+		}
+		//spending between her close and her payment, which belongs to the NEXT statement - without
+		//it every offset from one to seven days fits equally and the fit has nothing to find
+		for(let d = 1; d <= 3; d++){
+			const amt = 20 + ((w*31) % 60) + d*9
+			txns.push(evTxn(new Date(closeB.getTime() + d*86400000), -amt, "card", "hers",
+				"C" + w + "-" + d))
+			hersCarried += amt
+		}
+		txns.push(evTxn(payB, -b, "ccpay", "chk", "pb" + w))
+	}
+	const found = inferSettlements(txns, ["chk"], ["his", "hers"])
+	//both cards found, and the one without a receipt found by the amount its purchases add up to
+	expect(found.filter(x => x.card === "his").length).toBeGreaterThan(10)
+	expect(found.filter(x => x.card === "hers").length).toBeGreaterThan(5)
+	expect(found.some(x => x.by === "amount")).toBe(true)
+
+	const cy = cardCycles(txns, ["his", "hers"], found)
+	expect(cy.his.intervalDays).toBe(7)
+	expect(cy.hers.intervalDays).toBe(14)
+	//each keeps its own closing offset rather than being averaged into one
+	expect(Math.abs(cy.his.lagDays - 3)).toBeLessThanOrEqual(1)
+	expect(Math.abs(cy.hers.lagDays - 6)).toBeLessThanOrEqual(1)
 })

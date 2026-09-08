@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b27 - a closed statement is not a forecast";
+export const BENCH_VERSION = "b28 - the card model, rebuilt to spec";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -448,6 +448,8 @@ export default class BalanceBench extends BaseComponent{
 				: 0
 			return {hash: h, name: names[h] || h.slice(0, 18),
 				matched: c.events.length, purchases: c.spend,
+				byReceipt: c.events.filter(e => e.by === "receipt").length,
+				byAmount: c.events.filter(e => e.by === "amount").length,
 				interval: Math.round(c.intervalDays), lag: c.lagDays,
 				ratio: c.ratio, rate: c.rate || 0, per: per,
 				fit: c.fit === null ? null : c.fit}
@@ -590,7 +592,8 @@ export default class BalanceBench extends BaseComponent{
 				+ "   payment streams excluded: " + (a.excluded || 0))
 			this.cardLines().forEach(c => {
 				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases
-					+ " purchases, every " + c.interval + "d, statement closes "
+					+ " purchases (" + c.byReceipt + " by receipt, " + c.byAmount + " by amount)"
+					+ ", every " + c.interval + "d, statement closes "
 					+ c.lag + "d before payment, clears "
 					+ Math.round(c.ratio*100) + "% at " + money(-c.rate) + "/day"
 					+ (c.fit === null ? "  (offset not fitted: too few settlements)"
@@ -670,7 +673,8 @@ export default class BalanceBench extends BaseComponent{
 					+ " · excluded: " + (a.excluded || 0)
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
 				{this.cardLines().map(c => <Note key={c.hash}>
-					{c.name}: {c.matched} settlements from {c.purchases} purchases · every
+					{c.name}: {c.matched} settlements ({c.byReceipt} by receipt, {c.byAmount} by
+					amount) from {c.purchases} purchases · every
 					{" " + c.interval}d · closes {c.lag}d before payment · clears
 					{" " + Math.round(c.ratio*100)}% · {money(-c.rate)}/day
 					{c.fit === null ? " · offset not fitted"

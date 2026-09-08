@@ -82,12 +82,15 @@ beforeEach(() => {
 
 	txns = []
 	/* a card genuinely settled from checking, so the settlement model has something to find. The
-	   weekly spend STEPS UP: a fixture with a flat card cannot tell a causal model apart from the
-	   mean that was shipped in its place. The step is placed early enough that the 90-day rate window
-	   sits entirely inside the new regime, so the test measures the model and not the smoother. */
+	   weekly spend VARIES: a fixture with a flat card cannot tell a causal model apart from the mean
+	   that was shipped in its place. It varies around a stable level rather than stepping, because a
+	   step tests how fast the rate adapts - a different question, and one the card model deliberately
+	   answers slowly by averaging across the year. */
 	for(let w = 0; w < 26; w++){
 		const settleDay = d(190 - w*7)
-		const each = w < 9 ? 60 : 160
+		//varies week to week but STATIONARY: a mean cannot reproduce the variation, and a rate
+		//measured across the year is not misled by a level change that a real card would not make
+		const each = 60 + ((w*37) % 120)
 		for(let i = 0; i < 3; i++){
 			const buy = new Date(settleDay.getTime() - (5 - i)*DAY)
 			txns.push(new GenericTransaction(buy.toISOString(), -each, "purchase",
@@ -189,12 +192,13 @@ test("the backtest carries a settlement, as an extraFlow rather than a mean stre
    MOVES with the spending that produces it, which is the property a mean cannot have.
    ================================================================================================= */
 test("the modelled bill reproduces the settlements that actually posted", async () => {
-	/* The fixture spends $180 a week on the card for two months and then $480 a week. A six-month
-	   mean says ~$377 a settlement forever, which is the shape of the failure that was shipped: two
-	   real consecutive bills of $3,498 and $2,075 both predicted at $950.
+	/* The card's weekly bill swings between about $180 and $530. A mean says the same number every
+	   week forever, which is the failure that shipped: two real consecutive bills of $3,498 and
+	   $2,075 both predicted at $950.
 
-	   The causal model reads what has already posted on that card since its last settlement, so over
-	   a window it must reproduce what the window actually paid - not approach it on average. */
+	   The causal model reads what has already posted on that card since its last statement closed, so
+	   over a window it must reproduce what the window actually paid - and, bill by bill, must move
+	   when the bill moves. A constant can match a total by luck; it cannot match the sequence. */
 	const chart = await mount("last")
 	const a = chart.series()
 	const flow = a.bench.extraFlow
@@ -211,6 +215,10 @@ test("the modelled bill reproduces the settlements that actually posted", async 
 	expect(actual).toBeGreaterThan(0)
 	expect(modelled/actual).toBeGreaterThan(0.9)
 	expect(modelled/actual).toBeLessThan(1.1)
+	/* No assertion on the SEQUENCE here, deliberately. Thirty days out only the first bill has any
+	   posted spending behind it; the rest are the rate times the interval and are meant to be flat,
+	   because future card spending is not knowable. The sequence is a short-horizon property and is
+	   tested where it lives - see "the bill tracks each statement as it closes". */
 })
 
 test("each card names itself in the breakdown", async () => {

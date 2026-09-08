@@ -939,31 +939,146 @@ export function observedSettlement(transactions, coveredHashes, creditHashes){
    Deliberately NOT matched by name, category or stream: those are conventions a user can change, and
    the amount arriving where the amount left is a fact about the money.
    ================================================================================================== */
+/* WHICH STREAMS ARE THE CARD BEING PAID.
+
+   A card payment is the one kind of transaction that is visible from both sides: a leg leaving the
+   current account and a leg arriving on a credit account, categorised to the same stream. That makes
+   the stream itself the identifier - it straddles the boundary, and nothing else in a portfolio does.
+
+   This replaces matching each outflow to a receipt of the identical amount. That test needed BOTH
+   legs present, so a card whose connector does not return payment receipts produced no settlements at
+   all, silently: the audit named one card where there were two, and the second card's spending was
+   simply never billed. The stream is the user's own statement about what these transactions are, and
+   it survives a missing leg on either side. */
+/* declared ABOVE its first use rather than beside the card model it was written for: this file has
+   twice shipped a "cannot access before initialization" from a const sitting below a caller */
+const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
+	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
+
+export function cardPaymentStreams(transactions, coveredHashes, creditHashes){
+	const onCovered = {}, onCard = {};
+	(transactions || []).forEach(t => {
+		const acct = t.userInstitutionAccountId;
+		const here = coveredHashes.indexOf(acct) > -1, card = creditHashes.indexOf(acct) > -1;
+		if(!here && !card)return;
+		(t.streamAllocation || []).forEach(al => {
+			if(here)onCovered[al.streamId] = true;
+			if(card)onCard[al.streamId] = true;
+		});
+	});
+	return Object.keys(onCovered).filter(id => onCard[id]);
+}
+
+/* WHICH CARD A PAYMENT CLEARED.
+
+   The receipt says it outright where there is one, and where there is not the answer is still in the
+   ledger: the payment matches the card whose recent spending it is the size of. Two cards on the same
+   stream, paid on the same day, are told apart by which one actually ran up that amount. */
 export function inferSettlements(transactions, coveredHashes, creditHashes, opts){
 	const o = opts || {};
 	const windowDays = o.windowDays === undefined ? 4 : o.windowDays;
 	const txns = transactions || [];
-	//receipts on a credit account: money arriving to pay the card down
+	const streams = {};
+	cardPaymentStreams(txns, coveredHashes, creditHashes).forEach(id => {streams[id] = true});
+
 	const receipts = txns.filter(t => creditHashes.indexOf(t.userInstitutionAccountId) > -1
 		&& t.amount > 0).map(t => ({t: t, used: false}));
+	//each card's purchases, once, so the fallback does not re-scan the ledger per payment
+	const spendByCard = {};
+	(creditHashes || []).forEach(c => {
+		spendByCard[c] = txns.filter(t => t.userInstitutionAccountId === c && t.amount < 0)
+			.map(t => ({d: new Date(t.date), v: -t.amount})).sort((a, b) => a.d - b.d);
+	});
+
 	const out = [];
-	txns.filter(t => coveredHashes.indexOf(t.userInstitutionAccountId) > -1 && t.amount < 0)
-		.forEach(t => {
-			const want = Math.abs(t.amount);
-			let best = null, bestGap = Infinity;
-			receipts.forEach(r => {
-				if(r.used)return;
-				if(Math.abs(Math.abs(r.t.amount) - want) > 0.005)return;
-				const gap = Math.abs(new Date(r.t.date) - new Date(t.date))/86400000;
-				if(gap > windowDays)return;
-				if(gap < bestGap){bestGap = gap; best = r}
-			});
-			if(!best)return;
-			best.used = true;
-			out.push({date: t.date, amount: t.amount, accountHash: t.userInstitutionAccountId,
-				card: best.t.userInstitutionAccountId, id: t.transactionId,
-				streamIds: (t.streamAllocation || []).map(al => al.streamId)});
+	const payments = txns.filter(t =>
+		coveredHashes.indexOf(t.userInstitutionAccountId) > -1 && t.amount < 0);
+
+	/* TWO PASSES, because the receipts are what make the guesses safe.
+
+	   A receipt is proof: the same amount arriving on a named card within a few days. Every one of
+	   those is settled first, and only then are the payments with no receipt attributed - by which
+	   card ran up that amount, and only to a card whose own rhythm the date fits.
+
+	   Done in one pass it goes wrong in the obvious way. Two cards on one stream have bills of similar
+	   size, so the amount alone will hand one card a payment that belongs to the other, and the stolen
+	   payment then sits in the middle of the wrong card's cycle and wrecks the closing-day fit for
+	   both. Settling the proven ones first gives each card a schedule, and a schedule is what tells
+	   two similar bills apart. */
+	const assign = (t, card, how) => {
+		out.push({date: t.date, amount: t.amount, accountHash: t.userInstitutionAccountId,
+			card: card, id: t.transactionId, by: how,
+			streamIds: (t.streamAllocation || []).map(al => al.streamId)});
+	};
+
+	const leftover = [];
+	payments.forEach(t => {
+		const want = Math.abs(t.amount);
+		let hit = null, bestGap = Infinity;
+		receipts.forEach(r => {
+			if(r.used)return;
+			if(Math.abs(Math.abs(r.t.amount) - want) > 0.005)return;
+			const gap = Math.abs(new Date(r.t.date) - new Date(t.date))/DAY;
+			if(gap > windowDays)return;
+			if(gap < bestGap){bestGap = gap; hit = r}
 		});
+		if(hit){hit.used = true; assign(t, hit.t.userInstitutionAccountId, "receipt")}
+		else leftover.push(t);
+	});
+
+	//what each card's rhythm looks like from the payments already proven
+	const known = {};
+	out.forEach(x => {(known[x.card] = known[x.card] || []).push(new Date(x.date).getTime())});
+	const rhythm = {};
+	Object.keys(known).forEach(c => {
+		const d = known[c].sort((a, b) => a - b);
+		if(d.length < 3)return;
+		const gaps = [];
+		for(let i = 1; i < d.length; i++)gaps.push((d[i] - d[i-1])/DAY);
+		rhythm[c] = {every: MED(gaps), dates: d};
+	});
+	//does this date sit on that card's beat? a card is paid on its own schedule and not between beats
+	const onBeat = (c, at) => {
+		const r = rhythm[c];
+		if(!r || !r.every)return true;                //no established rhythm: nothing to contradict
+		let best = Infinity;
+		r.dates.forEach(d => {
+			const k = Math.round((at - d)/(r.every*DAY));
+			best = Math.min(best, Math.abs(at - (d + k*r.every*DAY))/DAY);
+		});
+		return best <= 1.5;
+	};
+
+	leftover.forEach(t => {
+		/* Only a transaction the user has already categorised as a card payment may be attributed
+		   this way - without that gate every outflow in the account is offered to the card model and
+		   one of them is always the closest size. */
+		if(!(t.streamAllocation || []).some(al => streams[al.streamId]))return;
+		const want = Math.abs(t.amount), at = new Date(t.date).getTime();
+		let pick = null, bestErr = Infinity;
+		Object.keys(spendByCard).forEach(c => {
+			if(!onBeat(c, at))return;
+			let err = Infinity;
+			for(let lag = 0; lag <= 14; lag++){
+				const close = at - lag*DAY;
+				for(let len = 5; len <= 40; len++){
+					const open = close - len*DAY;
+					let sum = 0;
+					spendByCard[c].forEach(x => {
+						const ms = x.d.getTime();
+						if(ms > open && ms <= close)sum += x.v;
+					});
+					const e = Math.abs(sum - want)/want;
+					if(e < err)err = e;
+				}
+			}
+			if(err < bestErr){bestErr = err; pick = c}
+		});
+		//a card that cannot come within a quarter of the amount did not run this bill up
+		if(!pick || bestErr > 0.25)return;
+		assign(t, pick, "amount");
+	});
+	out.sort((a, b) => new Date(a.date) - new Date(b.date));
 	return out;
 }
 
@@ -994,13 +1109,11 @@ export function inferSettlements(transactions, coveredHashes, creditHashes, opts
    for someone who revolves.
    ================================================================================================== */
 
-const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
-	return a.length ? (a.length % 2 ? a[m] : (a[m-1] + a[m])/2) : 0};
 
 export function cardCycles(transactions, creditHashes, settlements){
 	const out = {};
 	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0,
-		lagDays: 0, fit: null, spend: 0}});
+		lagDays: 0, fit: null, spend: 0, schedule: null}});
 	(settlements || []).forEach(s => {if(out[s.card])out[s.card].events.push(s)});
 
 	Object.keys(out).forEach(c => {
@@ -1013,49 +1126,58 @@ export function cardCycles(transactions, creditHashes, settlements){
 		const gaps = [];
 		for(let i = 1; i < o.events.length; i++)
 			gaps.push((new Date(o.events[i].date) - new Date(o.events[i-1].date))/DAY);
-		o.intervalDays = gaps.length ? MED(gaps) : 30.44;
+		const median = gaps.length ? MED(gaps) : 30.44;
 
-		/* THE STATEMENT CLOSES BEFORE IT IS PAID, and the model was ignoring the gap.
+		/* THE SCHEDULE IS LOCKED TO A CALENDAR, not chained off the last payment.
+		   An automated repayment lands on the same weekday, or the same day of the month, and
+		   `last + medianGap` drifts away from both: a median of 30.4 walks a monthly card backwards
+		   through the month, and one missed payment shifts every date after it. So a gap near a week
+		   or a fortnight is snapped to exactly that and phased from the last payment's weekday, and a
+		   monthly one is pinned to its day of the month. */
+		if(Math.abs(median - 7) < 1.5)o.schedule = {every: 7};
+		else if(Math.abs(median - 14) < 2)o.schedule = {every: 14};
+		else if(median > 25 && median < 36)o.schedule = {monthDay: o.events.length
+			? new Date(o.events[o.events.length-1].date).getUTCDate() : 1};
+		o.intervalDays = o.schedule && o.schedule.every ? o.schedule.every : median;
 
-		   A purchase made two days before the payment leaves is not on the statement that payment
-		   settles - it rolls to the next one. Counting everything since the last payment therefore
-		   loads the imminent bill with spending that has not been billed yet and starves the one
-		   after it, every cycle. And it costs exactly the property that makes this model worth having:
-		   once the statement has CLOSED the bill is arithmetic on transactions already in hand, not a
-		   projection at all, so a forecast made after the close should be near exact.
+		/* THE OFFSET IS FOUND BY MAKING THE SUM MATCH THE PAYMENT.
 
-		   THE LAG IS FITTED, not assumed, because it differs per card and nobody should be typing it
-		   in. The right offset is the one that makes the pass-through ratio CONSISTENT: line the
-		   windows up with the real statement periods and each settlement clears about the same
-		   fraction of its window's spending, cycle after cycle. Line them up wrongly and a few days of
-		   spending are attributed to the neighbouring statement, so the ratio swings above and below.
-		   Minimising the spread of that ratio finds the offset without ever being told it. */
+		   Slide the statement window and ask which alignment reproduces the amounts that were
+		   actually paid. That is the question directly: a window lined up with the real statement
+		   period contains exactly the purchases that bill on it, so its sum IS the payment.
+
+		   The comparison is made after the best single pass-through ratio, so a card that revolves is
+		   not mistaken for a misaligned one - a revolver pays a consistent FRACTION of its statement,
+		   which is a level and not an alignment, and scoring the raw difference would chase the level
+		   with the offset and land on neither.
+
+		   Fitted over all the history there is and then LOCKED, because a card's closing day is a
+		   property of the account rather than of the window being forecast. Refitting it per forecast
+		   made the same card answer differently in two views of the same month. */
 		let best = null;
-		for(let lag = 0; lag <= 14; lag++){
-			const ratios = [];
+		for(let lag = 0; lag <= 20; lag++){
+			const pairs = [];
 			for(let i = 1; i < o.events.length; i++){
-				const a = new Date(new Date(o.events[i-1].date).getTime() - lag*DAY);
-				const b = new Date(new Date(o.events[i].date).getTime() - lag*DAY);
+				const a = new Date(o.events[i-1].date).getTime() - lag*DAY;
+				const b = new Date(o.events[i].date).getTime() - lag*DAY;
 				let spend = 0;
-				spent.forEach(t => {const d = new Date(t.date); if(d > a && d <= b)spend += -t.amount});
-				if(spend > 1)ratios.push(Math.abs(o.events[i].amount)/spend);
+				spent.forEach(t => {const d = new Date(t.date).getTime();
+					if(d > a && d <= b)spend += -t.amount});
+				if(spend > 1)pairs.push({paid: Math.abs(o.events[i].amount), spend: spend});
 			}
-			if(ratios.length < 2)continue;
-			const mean = ratios.reduce((x, y) => x + y, 0)/ratios.length;
-			if(!mean)continue;
-			let v = 0;
-			ratios.forEach(r => {v += (r - mean)*(r - mean)});
-			const cv = Math.sqrt(v/ratios.length)/mean;
-			if(!best || cv < best.cv)best = {cv: cv, lag: lag, ratios: ratios};
+			if(pairs.length < 2)continue;
+			const r = MED(pairs.map(p => p.paid/p.spend));
+			let err = 0, tot = 0;
+			pairs.forEach(p => {err += Math.abs(p.paid - r*p.spend); tot += p.paid});
+			if(!tot)continue;
+			const rel = err/tot;
+			if(!best || rel < best.rel)best = {rel: rel, lag: lag, ratio: r};
 		}
 		if(best){
 			o.lagDays = best.lag;
-			o.fit = best.cv;
-			o.ratio = Math.min(1.5, Math.max(0.2, MED(best.ratios)));
-		}else{
-			//too few settlements to fit anything: no offset claimed, and the ratio left at one
-			o.ratio = 1;
-		}
+			o.fit = best.rel;                    //how much of the bill the alignment cannot explain
+			o.ratio = Math.min(1.5, Math.max(0.2, best.ratio));
+		}else o.ratio = 1;
 	});
 	return out;
 }
@@ -1071,11 +1193,19 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 		const cy = cycles[c];
 		const spent = (transactions || []).filter(t =>
 			t.userInstitutionAccountId === c && t.amount < 0 && new Date(t.date) < from);
-		//the card's own recent daily spend, which is what the unposted remainder is estimated at
-		/* DIVIDED BY THE DAYS ACTUALLY OBSERVED, not by the size of the window asked for. A card with
-		   two months of history divided by ninety days reports two thirds of its real spending rate,
-		   and the bill comes out short for a reason that has nothing to do with the card. */
-		const rateFrom = new Date(from.getTime() - rateDays*86400000);
+		/* THE RATE IS THE AVERAGE SINCE ACTIVITY BEGAN THIS YEAR, not a trailing ninety days.
+
+		   The unsettled transactions already on the card are a FLOOR for the bill about to arrive;
+		   only the days left before the statement closes have to be guessed, and the honest guess is
+		   how this card has actually been used across the year rather than across an arbitrary recent
+		   slice. A ninety-day window is itself a small sample of a variable thing, and it moves
+		   whenever the window moves, which put the same card at different rates in different views.
+
+		   Divided by the days actually observed, never by the length of the window asked for: a card
+		   with two months of history divided by a year reports a sixth of its real rate, and the bill
+		   comes out short for a reason that has nothing to do with the card. */
+		const rateFrom = o.rateFrom
+			|| new Date(Date.UTC(from.getUTCFullYear() - 1, from.getUTCMonth(), from.getUTCDate()));
 		let recent = 0, earliest = null;
 		spent.forEach(t => {
 			const d = new Date(t.date);
@@ -1083,34 +1213,44 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 			recent += -t.amount;
 			if(!earliest || d < earliest)earliest = d;
 		});
-		const observedDays = earliest ? Math.max(1, (from - earliest)/86400000) : rateDays;
-		const rate = recent/Math.min(rateDays, observedDays);
+		const observedDays = earliest ? Math.max(1, (from - earliest)/DAY) : 1;
+		const rate = recent/observedDays;
 
 		const past = cy.events.filter(e => new Date(e.date) < from);
 		const last = past.length ? new Date(past[past.length-1].date) : null;
 		if(!last && !rate)return;
 		cy.rate = rate;
 
-		let when = last ? new Date(last.getTime() + cy.intervalDays*DAY)
-			: new Date(from.getTime() + cy.intervalDays*DAY);
-		/* EACH SETTLEMENT CLEARS ONE STATEMENT, and a statement runs from the previous close to its
-		   own. Measured from the window start instead, the second bill charged two weeks of spending,
-		   the third charged three, and a month of weekly settlements came out at double the truth.
+		/* THE NEXT PAYMENT DATES, from the locked schedule. */
+		const nextAfter = d => {
+			if(cy.schedule && cy.schedule.every)
+				return new Date(d.getTime() + cy.schedule.every*DAY);
+			if(cy.schedule && cy.schedule.monthDay){
+				const y = d.getUTCFullYear(), m = d.getUTCMonth();
+				const lastDay = new Date(Date.UTC(y, m + 2, 0)).getUTCDate();
+				return new Date(Date.UTC(y, m + 1, Math.min(cy.schedule.monthDay, lastDay)));
+			}
+			return new Date(d.getTime() + cy.intervalDays*DAY);
+		};
+		let when = nextAfter(last || new Date(from.getTime() - cy.intervalDays*DAY));
+		let guard = 0;
+		while(when < from && guard++ < 64)when = nextAfter(when);
 
-		   Everything before the close that has already posted is KNOWN - it is arithmetic, not a
-		   forecast - and only the days between now and the close are projected at the card's rate.
-		   Once the close has passed there is nothing left to project and the bill is exact, which is
-		   the whole reason to model the card this way rather than from an average. */
+		/* EACH SETTLEMENT CLEARS ONE STATEMENT, which runs from the previous close to its own.
+		   Everything posted before the close is KNOWN - a floor, arithmetic on transactions in hand -
+		   and only the days between now and the close are projected at the rate. Once the close has
+		   passed there is nothing left to project and the bill is exact, which is the whole reason to
+		   model a card this way rather than from an average. */
 		let prevClose = new Date((last ? last.getTime() : from.getTime() - cy.intervalDays*DAY)
 			- cy.lagDays*DAY);
-		let guard = 0;
+		guard = 0;
 		while(when <= to && guard++ < 64){
 			const close = new Date(when.getTime() - cy.lagDays*DAY);
-			if(when >= from && close > prevClose){
+			if(close > prevClose){
 				let posted = 0;
 				spent.forEach(t => {
-					const d = new Date(t.date);
-					if(d > prevClose && d <= close)posted += -t.amount;
+					const d = new Date(t.date).getTime();
+					if(d > prevClose.getTime() && d <= close.getTime())posted += -t.amount;
 				});
 				const openAt = Math.max(from.getTime(), prevClose.getTime());
 				const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
@@ -1119,7 +1259,7 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 					amount: -spend*cy.ratio, posted: posted*cy.ratio, projected: rate*ahead*cy.ratio});
 			}
 			prevClose = close;
-			when = new Date(when.getTime() + cy.intervalDays*DAY);
+			when = nextAfter(when);
 		}
 	});
 	events.sort((a, b) => a.date - b.date);
@@ -1259,7 +1399,8 @@ export function buildModel(input){
 	   fraction of the bill on each card's day instead of the whole bill on the right one. */
 	let extraFlow = null, cardModel = null;
 	if(!input.netted && inferred.length && until > asOf){
-		const m = cardSettlementForecast(past, cards, inferred, asOf, until);
+		const m = cardSettlementForecast(past, cards, inferred, asOf, until,
+			{rateFrom: cycleFrom});
 		cardModel = m.cycles;
 		if(m.events.length){
 			extraFlow = {};
