@@ -1686,3 +1686,62 @@ test("the tile uses the shared builder, so its shapes match the bench's", async 
 	})
 	expect(ref.current.routing()).toEqual(built.routing)
 })
+
+/* ---- drift is measured in DAYS, not in fractions of a cycle ----------------------------------- */
+
+test("a payday drifting two days either side still collapses to one event", () => {
+	//the radius used to come from the bin count, so a semimonthly cycle got three bins - narrower
+	//than the wander. The run never collapsed and a paycheck was spread over eleven days at a sixth
+	//of its size each, which is what "wages predicted $2,612" was.
+	const pay = []
+	const mid = [12, 14, 16, 13, 15, 14], late = [27, 29, 31, 28, 30, 29]
+	for(let m = 0; m < 6; m++){
+		pay.push({date: new Date(Date.UTC(2026, m, mid[m])), amount: 7837})
+		pay.push({date: new Date(Date.UTC(2026, m, late[m])), amount: 7837})
+	}
+	const h = histogramOf(pay, {prefer: "semimonthly"})
+	const live = h.weights.filter(w => w > 0.001)
+	expect(live.length).toBe(1)
+	expect(live[0]).toBeCloseTo(1, 6)
+
+	const s1 = {id: "w", name: "Wages", getPreferredPeriod: () => "semimonthly",
+		getExpectedAmountAtDateByPeriod: () => 7837*2}
+	const opts = {terminals: [s1], shapes: {w: h}, routing: {}, covers: () => true,
+		periodName: "monthly"}
+	const days = []
+	for(let d = 1; d <= 31; d++){
+		const v = shareOfDay(s1, new Date(Date.UTC(2026, 7, d)), opts)
+		if(Math.abs(v) > 1)days.push(Math.round(v))
+	}
+	//two paydays of a whole paycheck, not eleven crumbs
+	expect(days.length).toBe(2)
+	days.forEach(v => expect(v).toBe(7837))
+})
+
+test("a cluster that WRAPS a boundary is still one cluster", () => {
+	//a payment nominally on the 31st lands on the 1st in a short month, and a payday drifting past
+	//the 15th crosses into the next half - both read as a run spanning the wrap
+	const t = []
+	;[31, 1, 30, 31, 1, 29].forEach((d, m) => t.push({
+		date: new Date(Date.UTC(2026, m, Math.min(d, 28))), amount: -900}))
+	const h = histogramOf(t, {prefer: "monthly"})
+	expect(h.weights.filter(w => w > 0.001).length).toBeLessThanOrEqual(2)
+})
+
+test("a week is still held to a narrower radius than a month", () => {
+	//six days would swallow most of a week and invent a rhythm; the cap is half a turn
+	const weekly = []
+	for(let i = 0; i < 40; i++){
+		const d = new Date(Date.UTC(2026, 0, 5)); d.setUTCDate(d.getUTCDate() + 7*i)
+		weekly.push({date: d, amount: -400})
+	}
+	//two genuinely different weekdays three days apart must not merge into one
+	const twoDays = []
+	for(let i = 0; i < 20; i++){
+		const a = new Date(Date.UTC(2026, 0, 5)); a.setUTCDate(a.getUTCDate() + 7*i)
+		const b = new Date(Date.UTC(2026, 0, 9)); b.setUTCDate(b.getUTCDate() + 7*i)
+		twoDays.push({date: a, amount: -400}, {date: b, amount: -400})
+	}
+	expect(histogramOf(weekly).weights.filter(w => w > 0.001).length).toBe(1)
+	expect(histogramOf(twoDays).weights.filter(w => w > 0.001).length).toBe(2)
+})

@@ -55,11 +55,27 @@ export function histogramOf(txnsForStream, opts){
 		{prefer: (opts || {}).prefer});
 	const bins = histogram.accumulate(txnsForStream, t => cycle.phaseOf(dateOf(t)), amountOf,
 		cycle.bins);
-	/* the collapse radius scales with the cycle. Five days either side is right in a month and absurd
-	   in a week, where it would merge the whole cycle into a single day and invent a payday. */
-	const maxSpan = Math.max(2, Math.round(cycle.bins/6));
-	const out = histogram.asWeights(histogram.consolidate(bins, maxSpan,
-		cycle.bins > 20 ? 2 : 1));
+	/* DRIFT IS MEASURED IN DAYS, NOT IN FRACTIONS OF A CYCLE - and deriving the collapse radius from
+	   the bin count was the mistake. Every cycle here bins by DAY, so a payday that wanders two days
+	   either side of its mark spans five bins whether the cycle is a week, a fortnight or a month. A
+	   radius of bins/6 gave a semimonthly cycle three, which is narrower than the wander: the run
+	   never collapsed, and a paycheck that arrives twice a month was spread across eleven days at a
+	   sixth of its size each. Reported from the app as "wages predicted $2,612 when it is highly
+	   predictable".
+
+	   So the radius is SIX DAYS for every cycle, capped at half a turn so it can never swallow more
+	   than half the cycle and invent a rhythm that is not there - which is what leaves a week at
+	   three. The gap is two days on the same reasoning, capped the same way.
+
+	   Six rather than five because a real cluster reaches that width in two ways at once. A payment
+	   dodging a weekend moves up to three days; and a mark near a boundary WRAPS, so a payday drifting
+	   from the 12th to the 16th crosses the half-month line, lands on phase 0, and its run reads as
+	   eleven through fifteen plus zero - six bins describing five consecutive days. Month-end does the
+	   same thing: a payment nominally on the 31st arrives on the 1st in a short month, which is one
+	   cluster spanning the wrap. Five was measured as too narrow for both. */
+	const maxSpan = Math.min(6, Math.max(2, Math.floor(cycle.bins/2)));
+	const gap = Math.min(2, Math.max(1, Math.floor(cycle.bins/4)));
+	const out = histogram.asWeights(histogram.consolidate(bins, maxSpan, gap));
 	out.cycle = cycle;
 	return out;
 }
