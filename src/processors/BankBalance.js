@@ -999,7 +999,8 @@ const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.
 
 export function cardCycles(transactions, creditHashes, settlements){
 	const out = {};
-	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0}});
+	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0,
+		lagDays: 0, fit: null, spend: 0}});
 	(settlements || []).forEach(s => {if(out[s.card])out[s.card].events.push(s)});
 
 	Object.keys(out).forEach(c => {
@@ -1007,20 +1008,54 @@ export function cardCycles(transactions, creditHashes, settlements){
 		o.events.sort((a, b) => new Date(a.date) - new Date(b.date));
 		const spent = (transactions || []).filter(t =>
 			t.userInstitutionAccountId === c && t.amount < 0);
+		o.spend = spent.length;
 
-		//how long a cycle runs, and how much of the cycle's spending each settlement actually clears
-		const gaps = [], ratios = [];
-		for(let i = 1; i < o.events.length; i++){
-			const a = new Date(o.events[i-1].date), b = new Date(o.events[i].date);
-			gaps.push((b - a)/86400000);
-			let cycleSpend = 0;
-			spent.forEach(t => {const d = new Date(t.date); if(d > a && d <= b)cycleSpend += -t.amount});
-			if(cycleSpend > 1)ratios.push(Math.abs(o.events[i].amount)/cycleSpend);
-		}
+		const gaps = [];
+		for(let i = 1; i < o.events.length; i++)
+			gaps.push((new Date(o.events[i].date) - new Date(o.events[i-1].date))/DAY);
 		o.intervalDays = gaps.length ? MED(gaps) : 30.44;
-		//clamped: a ratio far from 1 is usually a mis-matched settlement rather than a revolver, and
-		//an unclamped one compounds every cycle
-		o.ratio = ratios.length ? Math.min(1.5, Math.max(0.2, MED(ratios))) : 1;
+
+		/* THE STATEMENT CLOSES BEFORE IT IS PAID, and the model was ignoring the gap.
+
+		   A purchase made two days before the payment leaves is not on the statement that payment
+		   settles - it rolls to the next one. Counting everything since the last payment therefore
+		   loads the imminent bill with spending that has not been billed yet and starves the one
+		   after it, every cycle. And it costs exactly the property that makes this model worth having:
+		   once the statement has CLOSED the bill is arithmetic on transactions already in hand, not a
+		   projection at all, so a forecast made after the close should be near exact.
+
+		   THE LAG IS FITTED, not assumed, because it differs per card and nobody should be typing it
+		   in. The right offset is the one that makes the pass-through ratio CONSISTENT: line the
+		   windows up with the real statement periods and each settlement clears about the same
+		   fraction of its window's spending, cycle after cycle. Line them up wrongly and a few days of
+		   spending are attributed to the neighbouring statement, so the ratio swings above and below.
+		   Minimising the spread of that ratio finds the offset without ever being told it. */
+		let best = null;
+		for(let lag = 0; lag <= 14; lag++){
+			const ratios = [];
+			for(let i = 1; i < o.events.length; i++){
+				const a = new Date(new Date(o.events[i-1].date).getTime() - lag*DAY);
+				const b = new Date(new Date(o.events[i].date).getTime() - lag*DAY);
+				let spend = 0;
+				spent.forEach(t => {const d = new Date(t.date); if(d > a && d <= b)spend += -t.amount});
+				if(spend > 1)ratios.push(Math.abs(o.events[i].amount)/spend);
+			}
+			if(ratios.length < 2)continue;
+			const mean = ratios.reduce((x, y) => x + y, 0)/ratios.length;
+			if(!mean)continue;
+			let v = 0;
+			ratios.forEach(r => {v += (r - mean)*(r - mean)});
+			const cv = Math.sqrt(v/ratios.length)/mean;
+			if(!best || cv < best.cv)best = {cv: cv, lag: lag, ratios: ratios};
+		}
+		if(best){
+			o.lagDays = best.lag;
+			o.fit = best.cv;
+			o.ratio = Math.min(1.5, Math.max(0.2, MED(best.ratios)));
+		}else{
+			//too few settlements to fit anything: no offset claimed, and the ratio left at one
+			o.ratio = 1;
+		}
 	});
 	return out;
 }
@@ -1054,31 +1089,37 @@ export function cardSettlementForecast(transactions, creditHashes, settlements, 
 		const past = cy.events.filter(e => new Date(e.date) < from);
 		const last = past.length ? new Date(past[past.length-1].date) : null;
 		if(!last && !rate)return;
+		cy.rate = rate;
 
-		//what is ALREADY on the card and not yet paid: known, not estimated
-		let posted = 0;
-		spent.forEach(t => {const d = new Date(t.date); if(!last || d > last)posted += -t.amount});
+		let when = last ? new Date(last.getTime() + cy.intervalDays*DAY)
+			: new Date(from.getTime() + cy.intervalDays*DAY);
+		/* EACH SETTLEMENT CLEARS ONE STATEMENT, and a statement runs from the previous close to its
+		   own. Measured from the window start instead, the second bill charged two weeks of spending,
+		   the third charged three, and a month of weekly settlements came out at double the truth.
 
-		let when = last ? new Date(last.getTime() + cy.intervalDays*86400000)
-			: new Date(from.getTime() + cy.intervalDays*86400000);
-		/* EACH SETTLEMENT CLEARS ONLY WHAT ACCRUED SINCE THE ONE BEFORE IT.
-		   Measured from the window start instead, the second bill charged two weeks of spending, the
-		   third charged three, and a month of weekly settlements came out at double the truth. Every
-		   settlement resets the meter: `covered` is the moment the previous one cleared, and only the
-		   days after it are projected onto the next. */
-		let covered = from;
+		   Everything before the close that has already posted is KNOWN - it is arithmetic, not a
+		   forecast - and only the days between now and the close are projected at the card's rate.
+		   Once the close has passed there is nothing left to project and the bill is exact, which is
+		   the whole reason to model the card this way rather than from an average. */
+		let prevClose = new Date((last ? last.getTime() : from.getTime() - cy.intervalDays*DAY)
+			- cy.lagDays*DAY);
 		let guard = 0;
 		while(when <= to && guard++ < 64){
-			if(when >= from){
-				//what is already posted and unpaid, plus only the days since the previous settlement
-				const ahead = Math.max(0, (when - covered)/86400000);
+			const close = new Date(when.getTime() - cy.lagDays*DAY);
+			if(when >= from && close > prevClose){
+				let posted = 0;
+				spent.forEach(t => {
+					const d = new Date(t.date);
+					if(d > prevClose && d <= close)posted += -t.amount;
+				});
+				const openAt = Math.max(from.getTime(), prevClose.getTime());
+				const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
 				const spend = posted + rate*ahead;
-				if(spend > 1)events.push({date: new Date(when), card: c,
-					amount: -spend*cy.ratio, posted: posted, projected: rate*ahead});
-				posted = 0;                       //this settlement clears it
-				covered = new Date(when);
+				if(spend > 1)events.push({date: new Date(when), card: c, close: close,
+					amount: -spend*cy.ratio, posted: posted*cy.ratio, projected: rate*ahead*cy.ratio});
 			}
-			when = new Date(when.getTime() + cy.intervalDays*86400000);
+			prevClose = close;
+			when = new Date(when.getTime() + cy.intervalDays*DAY);
 		}
 	});
 	events.sort((a, b) => a.date - b.date);
@@ -1216,9 +1257,10 @@ export function buildModel(input){
 	   estimated, at that card's own rate - so the figure sharpens as the settlement approaches, which
 	   a mean never does. PER CARD, because two cards on their own cycles pooled into one rhythm put a
 	   fraction of the bill on each card's day instead of the whole bill on the right one. */
-	let extraFlow = null;
+	let extraFlow = null, cardModel = null;
 	if(!input.netted && inferred.length && until > asOf){
 		const m = cardSettlementForecast(past, cards, inferred, asOf, until);
+		cardModel = m.cycles;
 		if(m.events.length){
 			extraFlow = {};
 			m.events.forEach(e => {
@@ -1285,7 +1327,7 @@ export function buildModel(input){
 		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
-			events: built.events, shapeFrom: built.shapeFrom,
+			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
 			cycleStart: cycleFrom, inferred: inferred,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,

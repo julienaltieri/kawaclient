@@ -2026,3 +2026,88 @@ test("income seen only twice is not yet a date", () => {
 		since: new Date(Date.UTC(2026, 4, 1))})
 	expect(m.shapes.new.confident).toBe(false)
 })
+
+/* =================================================================================================
+   A CLOSED STATEMENT IS NOT A FORECAST.
+
+   "When the prediction day advances the card should be almost 100% accurate, since it is a
+   re-evaluated pending amount to settle and you have the transactions that prove it. This is only
+   true if you have the right mapping and the right offset."
+
+   Both halves are inferred, so both are tested here. The OFFSET is the gap between a statement
+   closing and being paid: counting every purchase since the last payment loads the imminent bill with
+   spending that has not been billed yet, and destroys the exactness that makes this model worth
+   having. The fixture has a real close date, and the model is never told it.
+   ================================================================================================= */
+const cardFixture = (lag, weeks) => {
+	//a card that closes `lag` days before it is paid, so the last few days of spend roll onward
+	const txns = [], settles = []
+	let carried = 0
+	for(let w = 0; w < (weeks || 20); w++){
+		const pay = new Date(Date.UTC(2026, 0, 8 + w*14))
+		const close = new Date(pay.getTime() - lag*86400000)
+		let statement = carried; carried = 0
+		for(let d = 0; d < 14; d++){
+			const when = new Date(close.getTime() - (13 - d)*86400000)
+			const amt = 40 + ((w*7 + d*13) % 60)          //varies, so a mean cannot fake this
+			txns.push(evTxn(when, -amt, "card", "visa", "p" + w + "-" + d))
+			statement += amt
+		}
+		//three purchases AFTER the close: they belong to the next statement, not this one
+		for(let d = 1; d <= 3; d++){
+			const when = new Date(close.getTime() + d*86400000)
+			const amt = 55 + d*11
+			txns.push(evTxn(when, -amt, "card", "visa", "a" + w + "-" + d))
+			carried += amt
+		}
+		txns.push(evTxn(pay, -statement, "ccpay", "chk", "s" + w))
+		txns.push(evTxn(pay, statement, "ccpay", "visa", "r" + w))
+		settles.push({date: pay, amount: statement})
+	}
+	return {txns: txns, settles: settles}
+}
+
+test("the statement close offset is recovered from the ledger", () => {
+	[0, 3, 6, 10].forEach(lag => {
+		const f = cardFixture(lag)
+		const found = inferSettlements(f.txns, ["chk"], ["visa"])
+		expect(found.length).toBeGreaterThan(10)          //the MAPPING half
+		const cy = cardCycles(f.txns, ["visa"], found).visa
+		expect(Math.round(cy.intervalDays)).toBe(14)
+		//the OFFSET half, never told to it
+		expect(Math.abs(cy.lagDays - lag)).toBeLessThanOrEqual(1)
+	})
+})
+
+test("once the statement has closed the bill is exact, not projected", () => {
+	const lag = 5
+	const f = cardFixture(lag)
+	const found = inferSettlements(f.txns, ["chk"], ["visa"])
+	//stand one day after a close, and one day before the payment it produces
+	const pay = new Date(f.settles[15].date)
+	const from = new Date(pay.getTime() - (lag - 1)*86400000)
+	const r = cardSettlementForecast(f.txns, ["visa"], found, from,
+		new Date(pay.getTime() + 86400000))
+	const e = r.events[0]
+	expect(e).toBeTruthy()
+	expect(Math.round(e.date.getTime()/86400000)).toBe(Math.round(pay.getTime()/86400000))
+	//nothing left to guess: the statement is shut
+	expect(e.projected).toBeCloseTo(0, 6)
+	//and it reproduces what actually settled
+	expect(Math.abs(e.amount)/f.settles[15].amount).toBeGreaterThan(0.95)
+	expect(Math.abs(e.amount)/f.settles[15].amount).toBeLessThan(1.05)
+})
+
+test("spending after the close is billed on the NEXT statement, not this one", () => {
+	//the failure the offset exists to prevent: three post-close purchases loaded onto the imminent
+	//bill every cycle, starving the one after it
+	const f = cardFixture(6)
+	const found = inferSettlements(f.txns, ["chk"], ["visa"])
+	const pay = new Date(f.settles[15].date)
+	const from = new Date(pay.getTime() - 2*86400000)     //after the close, before the payment
+	const r = cardSettlementForecast(f.txns, ["visa"], found, from,
+		new Date(pay.getTime() + 86400000))
+	const over = Math.abs(r.events[0].amount) - f.settles[15].amount
+	//the post-close purchases are worth about $200; they must not be in this bill
+	expect(over).toBeLessThan(100)
+})

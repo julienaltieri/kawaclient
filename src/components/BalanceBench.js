@@ -34,7 +34,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b26 - an inflow must earn its date";
+export const BENCH_VERSION = "b27 - a closed statement is not a forecast";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -422,10 +422,38 @@ export default class BalanceBench extends BaseComponent{
 			since:since, surface:surface, area:area, error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
 			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
-			settlements:inferred, settleMonthly:settleMonthly,
+			settlements:inferred, settleMonthly:settleMonthly, cards:model.meta.cards,
+			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
 			excluded:Object.keys(excludeIds).length}
 		return this._cache[key]
 	}
+	/* THE CARD MODEL, PER CARD - because the whole claim rests on two things being right and neither
+	   was ever shown. "Once the prediction day advances the card should be near exact, since it is a
+	   re-evaluated pending amount and the transactions prove it - but only if you have the right
+	   mapping and the right offset."
+
+	   The MAPPING is which purchases belong to which card and which settlement clears them; get it
+	   wrong and one card's spending is billed on another card's cycle. The OFFSET is the gap between
+	   a statement closing and being paid; get it wrong and the imminent bill is loaded with spending
+	   that has not been billed yet. Both are inferred, so both have to be inspectable - a model whose
+	   preconditions cannot be checked is a model that can only be trusted or abandoned. */
+	cardLines(){
+		const a = this.analyse()
+		if(!a || !a.cards)return []
+		const names = a.cardNames || {}
+		return Object.keys(a.cards).map(h => {
+			const c = a.cards[h]
+			const per = c.events.length > 1
+				? c.events.slice(1).reduce((x, e) => x + Math.abs(e.amount), 0)/(c.events.length - 1)
+				: 0
+			return {hash: h, name: names[h] || h.slice(0, 18),
+				matched: c.events.length, purchases: c.spend,
+				interval: Math.round(c.intervalDays), lag: c.lagDays,
+				ratio: c.ratio, rate: c.rate || 0, per: per,
+				fit: c.fit === null ? null : c.fit}
+		}).sort((x, y) => y.matched - x.matched)
+	}
+
 	//the same month, one month earlier - a single score says nothing about whether the model is
 	//improving or the month was simply kind
 	prior(){
@@ -560,6 +588,14 @@ export default class BalanceBench extends BaseComponent{
 			out.push("card settlements found: " + st.length + " total, " + inWin.length
 				+ " in window (" + money(inWin.reduce((x, y) => x + y.amount, 0)) + ")"
 				+ "   payment streams excluded: " + (a.excluded || 0))
+			this.cardLines().forEach(c => {
+				out.push("  " + c.name + ": " + c.matched + " settlements from " + c.purchases
+					+ " purchases, every " + c.interval + "d, statement closes "
+					+ c.lag + "d before payment, clears "
+					+ Math.round(c.ratio*100) + "% at " + money(-c.rate) + "/day"
+					+ (c.fit === null ? "  (offset not fitted: too few settlements)"
+						: "  (spread " + Math.round(c.fit*100) + "%)"))
+			})
 			out.push("windows: " + this.scoreboard().map(w => w.name + " "
 				+ (w.accuracy === null ? "-" : (w.accuracy*100).toFixed(1) + "%")).join("   "))
 			out.push("")
@@ -633,6 +669,13 @@ export default class BalanceBench extends BaseComponent{
 				<Note>{a ? "card settlements matched: " + (a.settlements || []).length
 					+ " · excluded: " + (a.excluded || 0)
 					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
+				{this.cardLines().map(c => <Note key={c.hash}>
+					{c.name}: {c.matched} settlements from {c.purchases} purchases · every
+					{" " + c.interval}d · closes {c.lag}d before payment · clears
+					{" " + Math.round(c.ratio*100)}% · {money(-c.rate)}/day
+					{c.fit === null ? " · offset not fitted"
+						: " · spread " + Math.round(c.fit*100) + "%"}
+				</Note>)}
 			</Score>
 			<Score>
 				<Note>lookback windows, same forecast, same month:</Note>
