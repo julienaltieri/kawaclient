@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b45 - narrow the wording gate, do not remove it";
+export const BENCH_VERSION = "b46 - the residual is a gap, not a multiplier";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -234,6 +234,12 @@ export default class BalanceBench extends BaseComponent{
 	/* THE REPAYMENT LEGS, which are what the card row is scored against. A repayment is not spending
 	   on either side, so both legs are out of the stream forecast - and the checking-side legs ARE
 	   the money the card model has to reproduce. */
+	/* TWO LEDGERS AGAIN, and they are not interchangeable. The model's legs stop at the as-of date -
+	   that is the law it is built on - so a repayment INSIDE the window is not among them. The
+	   actuals are describing what happened, so they need the legs from the whole ledger; the
+	   forecast needs the model's. Naming them apart is the only thing that keeps them straight. */
+		const reportLinks = accountLinks(this.props.transactions, this.credit(), this.spending())
+		const actualLegIds = reportLinks.legIds
 		const legIds = model.meta.legIds || {}
 		const linked = model.meta.linked || []
 		const shapes = model.shapes, routed = model.routing
@@ -293,6 +299,11 @@ export default class BalanceBench extends BaseComponent{
 			const act = {}
 			;(t.id === "__settlement__" ? settleActual : (actualLedger[t.id] || [])).forEach(x => {
 				if(x.date < open || x.date > close || !covers(x.accountHash))return
+				/* A REPAYMENT LEG IS THE CARD'S, NOT THIS STREAM'S. It is taken out of the forecast as
+				   a transaction, so it has to leave the actuals the same way - otherwise the stream it
+				   is categorised to shows the whole card bill as an unpredicted miss while the card
+				   row shows the same money again, and the dollar-days column counts it twice. */
+				if(actualLegIds[x.txnId])return
 				const k = dayKey(x.date); act[k] = (act[k]||0) + x.amount
 			})
 			actualByStream[t.id] = act
@@ -321,7 +332,7 @@ export default class BalanceBench extends BaseComponent{
 		   asking which card a payment cleared is a question about the past. Anything that cannot be
 		   attributed is reported as such rather than dropped: an unattributed payment is a mapping
 		   gap, and it is the one number that says so. */
-		const reportSettlements = accountLinks(this.props.transactions, cards, keep).repayments
+		const reportSettlements = reportLinks.repayments
 		const cardName = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
 		const cardIdOf = h => "__card__" + h
 		const cardRows = cards.map(h => ({id: cardIdOf(h), name: "Card · " + (cardName[h] || h)}))
@@ -514,7 +525,8 @@ export default class BalanceBench extends BaseComponent{
 			linked:linked, legIds:legIds,
 			model:model,
 			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
-			excluded:Object.keys(legIds).length, excludeIds:{},
+			excluded:Object.keys(legIds).length, actualLegs:Object.keys(actualLegIds).length,
+			excludeIds:{},
 			cardRows:cardRows, cardAttributed:attributed,
 			cardTotal:Object.keys(actualByStream[CARD_ID] || {})
 				.reduce((x, k) => x + actualByStream[CARD_ID][k], 0)}
@@ -804,7 +816,7 @@ export default class BalanceBench extends BaseComponent{
 			return {hash: h, name: names[h] || h.slice(0, 20),
 				last: last ? dayKey(last.date) : null, lastAmount: last ? last.amount : 0,
 				every: c.intervalDays ? Math.round(c.intervalDays) : null,
-				lag: c.offsetDays || 0, ratio: c.passThrough || 1, rate: 0,
+				lag: c.offsetDays || 0, passThrough: c.passThrough || 1,
 				purchases: c.spend || 0, settlements: (c.events || []).length,
 				when: n ? n.day : null, close: close ? dayKey(close) : null,
 				daysToClose: close ? Math.max(0, Math.round((close - now)/DAY)) : null,
@@ -1042,8 +1054,8 @@ export default class BalanceBench extends BaseComponent{
 			//amount and date agreed but no wording did: the vocabulary the gate is missing
 			;(lkAll.rejected || []).forEach(r => out.push("      not paired (x" + r.n
 				+ "), no payment wording: " + r.pair))
-			out.push("card settlements identified before the window: " + st.length
-				+ "   payment streams excluded: " + (a.excluded || 0))
+			out.push("repayment legs taken out of the forecast: " + (a.excluded || 0)
+				+ "   and out of the actuals: " + (a.actualLegs || 0))
 			const r7 = this.rolling(7)
 			if(r7)out.push("ROLLING 7-DAY accuracy " + (r7.accuracy*100).toFixed(1)
 				+ "%   (re-forecast from " + r7.origins + " mornings, scored over the week after each)")

@@ -691,7 +691,10 @@ export function groupByStream(transactions, terminalIds, directionOf){
 			const key = c.streamId + "::" + [String(c.txnId), String(c.pairId)].sort().join("|");
 			if(dropped[key + "::" + c.txnId])return;
 		}
-		out[c.streamId].push({date: c.date, amount: c.amount, accountHash: c.accountHash});
+		//txnId rides along so a caller can tell one transaction from another - the card model needs
+		//to take repayment legs out of a stream's ACTUALS as well as out of its forecast
+		out[c.streamId].push({date: c.date, amount: c.amount, accountHash: c.accountHash,
+			txnId: c.txnId});
 	});
 	return out;
 }
@@ -1110,8 +1113,8 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 
 /* PHASE 4 - THE SCHEDULE OF A LINKED CARD, and how it has been behaving.
 
-   Interval and offset are parameters of the account. Pass-through and coverage describe behaviour
-   and exist only to say something about a statement that is not finished.
+   Interval and offset are parameters of the account. Pass-through describes behaviour and exists
+   only to say something about a statement that is not finished.
 
    RE-DERIVED FROM RECENT REPAYMENTS, not fitted once. A repayment schedule is usually held steady by
    autopay, but the holder can change it - moving from weekly to monthly to smooth a cash-flow
@@ -1124,7 +1127,7 @@ export function cardSchedule(transactions, cardHash, repayments, opts){
 	const mine = (repayments || []).filter(r => r.card === cardHash)
 		.sort((a, b) => a.date - b.date);
 	const out = {card: cardHash, repayments: mine, intervalDays: 0, offsetDays: 0,
-		passThrough: 1, coverage: 1, schedule: null, fit: null, count: mine.length};
+		passThrough: 1, schedule: null, fit: null, count: mine.length};
 	if(!mine.length)return out;
 
 	//SAME DAY IS ONE STATEMENT. Several cards on one account are repaid together; the gap between
@@ -1577,16 +1580,12 @@ export function cardCycles(transactions, creditHashes, settlements){
      observed     = charges already recorded in (previous close, close]
      unobserved   = what the card's streams predict for the days from `from` to close, plus a
                     residual rate for charges no stream accounts for
-     repayment    = (observed + unobserved x coverage) x pass-through
+     repayment    = (observed + unobserved) x pass-through
 
    `observed` is arithmetic. Only `unobserved` is estimated, and it is zero once the close has passed.
 
-   COVERAGE is measured, and it is what keeps stream composition honest. A stream forecast is only as
-   large as the budget behind it, and a budget set below what the card is actually charged would drag
-   every statement down with it. Coverage is the ratio of what a window was actually charged to what
-   the streams predicted for that window, taken over recent statements: where the budgets are right it
-   is 1 and does nothing, and where they are systematically low it corrects by exactly as much as they
-   are low by. */
+   `unobserved` is the streams' own forecast for those days PLUS a residual for what they miss - see
+   the note on the residual below, which is measured as a gap rather than as a multiplier. */
 export function cardRepaymentForecast(transactions, cardHash, sched, from, to, opts){
 	const o = opts || {};
 	const events = [];
@@ -1595,18 +1594,33 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 	const charges = cardSpend(transactions, cardHash, sched.repayments).filter(x => x.d < from);
 	const chargedOn = o.chargedOn || (() => 0);
 
-	/* THE RESIDUAL RATE covers charges no stream accounts for - uncategorised spending, mostly. Only
-	   those, because everything a stream forecasts is already counted by name and adding an average
-	   of it on top would count it twice. */
+	/* THE RESIDUAL IS WHAT THE STREAMS MISS, measured rather than assumed - and measured as a GAP
+	   rather than as a multiplier.
+
+	   Composing a statement from the card's streams is only as good as the budgets behind them, and
+	   several card-routed streams predict nothing at all: a yearly budget with no instalment evidence
+	   spreads to a few dollars a day, and one with no recent history predicts zero. A multiplier
+	   cannot rescue that - the ratio of what was charged to what was predicted goes to infinity as the
+	   prediction goes to zero, and clamping it turns a large miss into a quiet one.
+
+	   So the two are added, not multiplied. Over the rate window: what the card was actually charged,
+	   minus what the streams said it would be, floored at zero and divided by the days observed. Where
+	   the streams describe the card well this is near nothing and changes little; where they describe
+	   it badly it carries the whole difference, which is what the old blind rate did and did well. */
 	const rateFrom = new Date(from.getTime() - 90*DAY);
-	let residual = 0, earliest = null;
+	let charged = 0, earliest = null;
 	charges.forEach(x => {
 		if(x.d < rateFrom)return;
-		if((x.streamIds || []).length)return;
-		residual += x.v;
+		charged += x.v;
 		if(!earliest || x.d < earliest)earliest = x.d;
 	});
-	const rate = residual/(earliest ? Math.max(1, (from - earliest)/DAY) : 1);
+	const rateDays = earliest ? Math.max(1, (from - earliest)/DAY) : 1;
+	let saidForWindow = 0;
+	if(earliest){
+		for(let t = earliest.getTime(); t < from.getTime(); t += DAY)
+			saidForWindow += chargedOn(cardHash, new Date(t));
+	}
+	const rate = Math.max(0, charged - saidForWindow)/rateDays;
 
 	const past = sched.events.filter(e => e.date < from);
 	const last = past.length ? past[past.length-1].date : null;
@@ -1617,19 +1631,6 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 	   stopped being used. */
 	const idle = (from - last)/DAY;
 	if(idle > Math.max(60, 3*sched.intervalDays))return events;
-
-	//COVERAGE, over the statements that have closed: charged against predicted, for the same windows
-	const ratios = [];
-	for(let i = Math.max(1, past.length - 6); i < past.length; i++){
-		const a = past[i-1].date.getTime() - sched.offsetDays*DAY;
-		const b = past[i].date.getTime() - sched.offsetDays*DAY;
-		let was = 0;
-		charges.forEach(x => {const d = x.d.getTime(); if(d > a && d <= b)was += x.v});
-		let said = 0;
-		for(let t = a + DAY; t <= b; t += DAY)said += chargedOn(cardHash, new Date(t));
-		if(said > 1 && was > 1)ratios.push(was/said);
-	}
-	const coverage = ratios.length ? Math.min(4, Math.max(0.25, MED(ratios))) : 1;
 
 	const nextAfter = d => {
 		if(sched.schedule && sched.schedule.every)
@@ -1659,13 +1660,12 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 			for(let t = openAt + DAY; t <= close.getTime(); t += DAY)
 				planned += chargedOn(cardHash, new Date(t));
 			const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
-			const unobserved = planned*coverage + rate*ahead;
+			const unobserved = planned + rate*ahead;
 			const spend = observed + unobserved;
 			if(spend > 1)events.push({date: new Date(when), card: cardHash, close: close,
 				amount: -spend*sched.passThrough,
 				observed: -observed*sched.passThrough,
-				unobserved: -unobserved*sched.passThrough,
-				coverage: coverage, rate: rate});
+				unobserved: -unobserved*sched.passThrough, rate: rate});
 		}
 		prevClose = close;
 		when = nextAfter(when);
@@ -2052,7 +2052,6 @@ export function buildModel(input){
 					extraFlow[k].amount += e.amount;
 					extraFlow[k].parts.push({card: e.card, amount: e.amount,
 						posted: e.observed, planned: e.unobserved, projected: 0,
-						coverage: e.coverage,
 						name: "Card repayment"
 							+ (linked.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
 				});

@@ -264,3 +264,25 @@ test("the predicted day is named by the cycle's phase, not the day of the month"
 		nums.forEach(n => expect(n).toBeLessThanOrEqual(31))
 	})
 })
+
+test("a repayment is scored on the card row and nowhere else", async () => {
+	/* The leg is taken out of the FORECAST as a transaction, so it has to leave the ACTUALS the same
+	   way. Otherwise the stream it is categorised to shows the whole card bill as an unpredicted
+	   miss while the card row shows the same money again, and the dollar-days column counts the
+	   largest flow in the portfolio twice. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const legs = a.legIds || {}
+	expect(Object.keys(legs).length).toBeGreaterThan(0)
+
+	//no ordinary stream may carry a repayment leg in its actuals
+	const cardTotal = Object.keys(a.detail).filter(k => /^__card__/.test(k))
+		.reduce((x, k) => x + Math.abs(a.detail[k].actTotal), 0)
+	expect(cardTotal).toBeGreaterThan(0)
+	const payStreams = ref.current.terminals().filter(t => /credit card/i.test(t.name))
+	payStreams.forEach(t => {
+		const d = a.detail[t.id]
+		if(!d)return
+		expect(Math.abs(d.actTotal)).toBeLessThan(1)
+	})
+})
