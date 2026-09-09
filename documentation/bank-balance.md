@@ -98,8 +98,19 @@ There are now two sources, and they answer different questions:
 - **Remembered** — `ApiCaller.getBalanceHistory()`, the stored series. It only accumulates going
   forward, so a caller must read an empty answer as "no history yet", never as "no money".
 
-The view ships on the live anchor alone, which is what makes it correct on day one. The stored series
-makes §2a's drift test possible, and it gets better every day without anyone doing anything.
+The view shipped on the live anchor alone, which is what made it correct on day one. **It no longer
+does, and the reason is §2f.** The remembered series turned out not to be a nice-to-have for the drift
+test: it is the only thing in the system that knows what the bank actually said on a day that has
+passed, and the live anchor cannot stand in for it.
+
+The division of labour now:
+
+| question | source |
+|---|---|
+| what is the balance *now* | **live** — the only thing that knows about a cheque that posted an hour ago |
+| what was the balance on a day that has passed | **remembered** — the only thing that observed it |
+
+Both are still needed. Neither substitutes for the other.
 
 ---
 
@@ -188,6 +199,12 @@ Savings stays out of both. It is a different account and a different reconstruct
 
 ## §2 The past is reconstructed BACKWARDS from today
 
+> **Superseded in part by [§2f](#2f-an-observed-balance-is-not-a-reconstructed-one-and-it-wins).**
+> Everything below is still how the walk works and still how most of a long window is drawn — but the
+> walk is now the FALLBACK. Where the bank has told us what a day closed at, that observation is the
+> day's value and the walk only fills the gaps between observations. Read §2f before changing anything
+> here: the argument in this section turned out to apply to itself.
+
 ```
 balance(t) = balance(now) − Σ { transactions in (t, now] }
 ```
@@ -204,10 +221,111 @@ Anchored at a balance that is actually known, the arithmetic runs the other way 
 bounded by the transaction record instead of by a guess. It also gives a free invariant worth
 asserting: **at `t = now` the curve equals the reported balance by construction.**
 
+**And that is the whole of the improvement.** "Bounded by the transaction record" sounds like a small
+error and is not: it is bounded by the record's COMPLETENESS, and an incomplete record does not produce
+a small error but a constant one, carried into every value — the same shape of failure this section
+rejects the forwards walk for. The anchor is a fact about *now*; the ledger is a fact about *the last
+refresh*. Where those two moments differ, so does every point. §2f is what fixes it.
+
 **It must use EVERY transaction on that account, not the categorized ones.** This is the trap, and a
 real one, because the money-flow adapter does the opposite — it deliberately reads only what is
 categorized, and §1.4 there drops anything under a unit. Money leaves an account whether or not anyone
 has told the app what it was for.
+
+### §2f AN OBSERVED BALANCE IS NOT A RECONSTRUCTED ONE, AND IT WINS
+
+§2 rejects the forwards walk in these words: *the opening figure is a guess, and the guess is carried in
+every value from then to now, so the line is offset by an unknown constant while looking perfectly
+plausible. Every value is wrong and nothing about the picture says so.*
+
+**That is also what happened to the backwards walk**, for a different reason, and it took a user
+noticing that the chart showed a negative balance on a day he had thousands in the account.
+
+#### What happened
+
+A $1,699.50 cheque cleared at the bank. The next read of the account came back reduced by it. The
+transaction itself had not yet reached our store, because balances are fetched on demand and
+transactions arrive on a scheduled tick.
+
+So the two inputs to the walk were **as of different moments**, and the arithmetic has no way to know:
+
+```
+anchor  = live balance          knows about the cheque
+ledger  = transaction store     does not
+```
+
+Subtracting a ledger that is missing one transaction shifts every day before it by that transaction's
+amount — all of them, by the same amount, for as far back as the picture is drawn:
+
+```
+Aug 5, reported by the bank     $8,147.50
+Aug 5, drawn                    $6,448.00
+                                ---------
+                                $1,699.50   the cheque, on every single day
+```
+
+The curve remained perfectly self-consistent throughout. It agreed with itself, every step matched a
+transaction, and every value was wrong. **A reconstruction is exactly as good as the transaction record
+and no better, and it cannot report its own incompleteness.**
+
+#### The rule
+
+A closing balance is **observed**. The bank states it; it cannot drift; it does not care whether we
+have every transaction. So where one exists for a day, **it is that day's value** — not a candidate to
+be averaged with the walk, not a check on it. The walk's job shrinks to filling the gaps between
+observations, which is the one thing it is good at over a short span.
+
+`observedSeries()` in [`BankBalance.js`](../src/processors/BankBalance.js) takes **two anchors**, each
+correct for its own segment:
+
+| segment | anchored to | why |
+|---|---|---|
+| days at or before the newest observation | the **observations** | the bank said so |
+| days after it | the **live balance** | it is the only thing that knows about money moved since the last tick |
+
+**Each gap is walked backwards from the observation to its RIGHT.** This is the part that matters: an
+ingestion gap can then only distort the days *inside that gap*, never all of history. The failure above
+becomes structurally impossible rather than merely fixed.
+
+#### The discontinuity is real, and stays visible
+
+Where the live segment and the observations disagree at the join, that difference is **money the bank
+has seen and we have not**. It is reported as `unreconciled` and drawn as it falls.
+
+Smoothing it would put the error back into every historical point, which is the bug this exists to
+prevent. It heals by itself at the next refresh.
+
+#### Falls back completely
+
+With no observations this is `reconstruct()` point for point. History older than the first stored
+snapshot, and any provider that carries no balances at all, keep working exactly as before. **This is
+not a nicety** — the remembered series only accumulates forward from the day capture shipped, so most of
+any long window is still walked, and it must be right.
+
+Every point carries its source — `observed`, `walked between observations`, `walked from the live
+balance` — because "the bank said so" and "we inferred it" are different claims, and a reader auditing a
+surprising number needs to know which one they are looking at.
+
+#### Why there is no backfill, and never will be
+
+The obvious next move is to reconstruct observed balances for history from the aggregator. It is not
+available:
+
+- **Plaid carries no per-transaction balance.** Not on `Transaction`, not on `AssetReportTransaction`.
+- **Plaid's one historical balance product is our own walk.** Asset Reports' `historical_balances.current`
+  is defined as *"calculated from the `current` balance in the `balance` object by subtracting inflows
+  and adding back outflows"* — the same arithmetic with the same failure mode, requiring every Item to be
+  re-linked (Assets cannot be added after Link) and billed as Additional History.
+- **Powens carries no per-transaction balance either.** Their own documentation says to compute it from
+  an opening balance and the ordered transaction values.
+- **Powens does have a real daily series** — `GET /users/me/accounts/{id}/balances` with `min_date` and
+  `max_date` returns `daily_balances[].balance`, *"Balance of the account at the end of the day"*, which
+  is bank-stated rather than derived. It is Powens-only, its enablement per domain is unconfirmed, and
+  bank history depth floors at three months. **Worth wiring when a Powens account exists; it backfills
+  nothing on a Plaid-only portfolio.**
+
+So pre-snapshot history is walked, permanently. The honest response is the source label, not a
+fabricated observation.
 
 ### §2a THE DRIFT IS THE TEST, and it is the best reason to build this first
 
