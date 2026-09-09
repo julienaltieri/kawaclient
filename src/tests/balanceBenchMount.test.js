@@ -791,3 +791,21 @@ test("the screen shows the VALUE and the copy shows the working - from one set o
 		if(a.long)expect(copy).toContain(a.long)
 	})
 })
+
+test("the account share is of the account it CHOSE, not the card regardless", async () => {
+	/* "checking (0/27 tx, 0% money)" was the card's share printed under a checking heading: a stream
+	   that never touches a card reading as though it had been measured and found empty. */
+	const ref = await mount()
+	ref.current.rows().filter(r => !r.hash && r.split && r.split.n).forEach(r => {
+		const a = ref.current.rowAnswers(r)[0]
+		const m = a.short.match(/\((\d+)\/(\d+) tx, (\d+)% money\)/)
+		if(!m)return
+		const shown = Number(m[1]), total = Number(m[2]), share = Number(m[3])
+		expect(total).toBe(r.split.n)
+		expect(shown).toBe(r.onCard ? r.split.card : r.split.checking)
+		//and a routed account with none of the money is a contradiction, not a fact
+		if(shown > 0)expect(share).toBeGreaterThan(0)
+		expect(share).toBe(Math.round(100*(r.onCard ? r.split.cardShareByAmount
+			: 1 - r.split.cardShareByAmount)))
+	})
+})

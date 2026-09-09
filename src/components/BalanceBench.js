@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b70 - four values on screen, the working underneath";
+export const BENCH_VERSION = "b71 - the share is of the account it chose";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1552,9 +1552,17 @@ export default class BalanceBench extends BaseComponent{
 		const when = r.day === "spread by budget" ? "spread by budget"
 			: (r.day === "spread" ? "spread" : "lump day " + String(r.day).replace(/^day /, ""))
 		return [
+			/* THE SHARE IS OF THE ACCOUNT IT CHOSE, not of the card regardless.
+			   "checking (0/27 tx, 0% money)" was the card's share printed under a checking heading -
+			   a stream that never touches a card reading as though it had been measured and found
+			   empty. The number has to answer the question the line is asking: how much of this
+			   stream's money is where it says it routed. */
 			{key: "account", short: (r.onCard ? "card" : "checking")
-				+ (sp && sp.n ? " (" + sp.card + "/" + sp.n + " tx, " + pct(sp.cardShareByAmount)
-					+ " money)" : ""),
+				+ (sp && sp.n
+					? " (" + (r.onCard ? sp.card : sp.checking) + "/" + sp.n + " tx, "
+						+ pct(r.onCard ? sp.cardShareByAmount : 1 - sp.cardShareByAmount)
+						+ " money)"
+					: ""),
 				long: "routed to " + acct(r.routedTo)
 					+ (r.partOf ? " \u00b7 one side of a split, " + pct(r.partShare) + " of the budget"
 						: " \u00b7 whole stream")
