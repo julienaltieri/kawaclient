@@ -375,6 +375,45 @@ them, and everything before that stage is invisible in a way that reads as absen
 
 ---
 
+### 29. One model. Where it must fork, fork it downward
+
+Two pieces of code that answer the same question will disagree. Not might — will, and not at once: they
+agree on the day they are written, and then one of them is edited. The disagreement is silent, because
+each half is self-consistent and each looks right to whoever is holding it, and it surfaces as a
+contradiction between two screens that a reader has no way to adjudicate.
+
+So there is **one** definition of each quantity, and everything that needs it **asks**. A consumer that
+recomputes is a second author. A consumer that adjusts what it was given is a second author. A view that
+formats the same explanation its own way is a second author for the words.
+
+**Where two consumers genuinely need different answers, that is a fork in the MODEL, not a second
+model.** Put the branch inside the one definition, name the axis it branches on, and let both callers
+ask the same function a different question — a reading, a mode, an as-of date. The fork is then visible
+in one place, testable in one place, and a change to the shared part cannot reach one caller and miss
+the other. Hierarchy, not duplication: the common trunk holds everything both need, and each branch
+holds only what makes it different.
+
+The test of the design is a question, not a diagram: *if this rule changes, how many files have to
+change with it?* More than one means the model has already forked sideways.
+
+> *In practice:* five sessions were spent on the consequences of this in one feature. A balance tile
+> drew one forecast, a bench scored a second, and an audit table explained a third; every session began
+> with a discrepancy between two of them and ended having fixed the wrong one, because "the model was
+> wrong" and "this copy of the model was wrong" are indistinguishable from a single screen. Collapsing
+> the three into `buildModel(input)`, with the tile and the bench passing different `asOf` dates to the
+> same function, ended that class of bug outright — the as-of date was the real axis, and it belonged
+> inside the model rather than between three copies of it.
+>
+> It recurs wherever the guard is dropped. The bench's actuals were partitioned by a rule the forecast
+> also owned, until `partitionKey` was handed out instead of reimplemented. A card statement was
+> composed from streams in one place and scored in another. And most recently the expanded row on
+> screen was hand-built markup while the copy button called `rowDebug()`: the same explanation with two
+> authors, already drifted — the payload had gained the four questions and the statement arithmetic, the
+> screen had kept prose the payload dropped, and neither was wrong on its own terms. The row now renders
+> the payload, and a test asserts one is a substring of the other.
+
+---
+
 ### 23. A test that cannot fail the way production fails proves nothing
 
 The risk is not a missing test. It is a passing one, because it licenses a belief that nothing else will
