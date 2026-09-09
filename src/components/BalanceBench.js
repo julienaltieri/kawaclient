@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b69 - four answers, one line each";
+export const BENCH_VERSION = "b70 - four values on screen, the working underneath";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -89,14 +89,12 @@ const Head = styled.div`
 	font-size:${DS.fontSize.little}rem; font-weight:600; margin-top:${DS.spacing.s}rem;
 	color:${props => DS.getStyle().bodyTextSecondary};
 `
-/* The payload as it is copied: preformatted, wrapping, and scrollable sideways rather than pushing
-   the page - a row is read on a phone. */
-const Payload = styled.pre`
-	margin: 6px 0 2px 0;
-	white-space: pre-wrap;
-	overflow-x: auto;
-	font: 400 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-	opacity: 0.85;
+//the key of a key/value line: bold, and it does the work a column header would
+const K = styled.span`
+	font-weight: 600;
+	display: inline-block;
+	min-width: 62px;
+	opacity: 0.75;
 `
 const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin:${DS.spacing.xs}rem 0;`
 /* the picture belongs INSIDE the row it explains, not in a panel elsewhere with its own selector -
@@ -1520,6 +1518,66 @@ export default class BalanceBench extends BaseComponent{
 		return a ? a.name : null
 	}
 
+	/* THE FOUR ANSWERS, ONCE. The screen shows the VALUE and the copy shows the value and its
+	   working - which is a fork in the rendering, not a second set of answers. Two authors for one
+	   explanation is exactly what principle 29 is about, and it has already happened here once.
+
+	   `short` is what a row is scanned for: four values, no sentences. `long` is what a row is argued
+	   with, and it only reaches the clipboard. */
+	rowAnswers(r){
+		const acct = h => (this.accountName(h) || (h ? String(h).slice(0, 22) : "-"))
+		const pct = v => Math.round((v || 0)*100) + "%"
+		const sp = r.split
+		if(r.hash)return [
+			{key: "account", short: "the card itself, " + r.feeders + " streams charge to it",
+				long: (r.repaidFrom ? "repaid from " + acct(r.repaidFrom) : "not linked to an account")
+					+ " \u00b7 " + r.hash},
+			{key: "cycle", short: "every " + Math.round(r.interval) + "d"
+				+ (r.offset ? ", closes " + Math.round(r.offset) + "d before" : ""),
+				long: "fitted from " + r.fitFrom + " paired repayment(s), not detected from a shape"},
+			{key: "amount", short: money(r.amount) + "/statement",
+				long: money(r.expected) + " over the window \u00b7 pass-through " + pct(r.pass)},
+			{key: "method", short: "posted + planned + residual",
+				long: "the schedule sets the day, never the amount"}
+		]
+		const cycleShort = (r.detected || "-")
+			+ (r.declared === r.detected ? " (same as declared)" : " (declared " + r.declared + ")")
+		//WHICH RULE, in two words - the sentence version is the working, not the value
+		const m = r.amountRule || ""
+		const method = /LEDGER/.test(m) ? "ledger mean"
+			: (/INSTALMENT/.test(m) ? "instalment"
+				: (/SPREAD/.test(m) ? "budget spread"
+					: (/used up|not forecast|budget of nothing/.test(m) ? "nothing left"
+						: "declared")))
+		const when = r.day === "spread by budget" ? "spread by budget"
+			: (r.day === "spread" ? "spread" : "lump day " + String(r.day).replace(/^day /, ""))
+		return [
+			{key: "account", short: (r.onCard ? "card" : "checking")
+				+ (sp && sp.n ? " (" + sp.card + "/" + sp.n + " tx, " + pct(sp.cardShareByAmount)
+					+ " money)" : ""),
+				long: "routed to " + acct(r.routedTo)
+					+ (r.partOf ? " \u00b7 one side of a split, " + pct(r.partShare) + " of the budget"
+						: " \u00b7 whole stream")
+					+ (r.onCard ? " \u00b7 not drawn in checking; scored against its charges on the card"
+						: "")},
+			{key: "cycle", short: cycleShort,
+				long: "from " + r.legs + " transactions"
+					+ (r.shapeFrom && r.shapeFrom !== "recent" ? " (" + r.shapeFrom + " window)" : "")
+					+ (r.events ? " \u00b7 " + (Math.round(r.events*10)/10) + " movements per turn" : "")
+					+ (r.declared !== r.detected
+						? " \u00b7 declared is how the budget is WRITTEN, detected is how often money"
+							+ " MOVES" : "")},
+			{key: "amount", short: money(r.amount) + "/mo",
+				long: "you declared " + money(r.expected) + " per " + (r.declared || "month")
+					+ (m ? " \u00b7 " + m : "")},
+			{key: "method", short: method + ", " + when,
+				long: "top day carries " + pct(r.spread) + " \u00b7 tier " + r.tier
+					+ (r.day === "spread by budget"
+						? " \u00b7 the budget rule OVERRODE the measured shape" : "")
+					+ (r.promoted ? " \u00b7 instalment " + money(r.instalment) : "")}
+		]
+	}
+
 	//everything needed to argue about one row, as text
 	rowDebug(r){
 		const d = r.detail || {}
@@ -1532,54 +1590,10 @@ export default class BalanceBench extends BaseComponent{
 		   only" about the largest row in the reading, all three meaningless and one of them wrong. */
 		const isCard = !!r.hash
 		const out = [r.name + "   " + BENCH_VERSION]
-		/* FOUR ANSWERS, ONE LINE EACH.
-
-		   The row prints the four decisions that made it, and it has to fit on a phone beside eighty
-		   others. A paragraph per answer means scrolling a screen for one row, which is the same as
-		   not reading it - so each answer is one line of facts separated by dots, and nothing is
-		   explained that the fact does not already say.
-
-		   A CARD ROW ANSWERS DIFFERENT FOUR. It is an account, not a stream: nothing routes it, no
-		   cycle was detected for it, and its amount comes from a fitted schedule rather than a
-		   declaration. Asking it the stream questions produced "routed to nothing" and "detected -
-		   from undefined transactions". */
-		const acct = h => (this.accountName(h) || (h ? String(h).slice(0, 22) : "-"))
-		const pct = v => Math.round((v || 0)*100) + "%"
-		if(isCard){
-			out.push("1 ACCOUNT   this row IS the card \u00b7 " + r.feeders + " stream(s) charge to it"
-				+ (r.repaidFrom ? " \u00b7 repaid from " + acct(r.repaidFrom) : " \u00b7 unlinked"))
-			out.push("2 HOW OFTEN every " + Math.round(r.interval) + "d \u00b7 fitted from "
-				+ r.fitFrom + " paired repayment(s) \u00b7 statement closes "
-				+ Math.round(r.offset) + "d before payment")
-			out.push("3 HOW MUCH  " + money(r.amount) + " per statement \u00b7 " + money(r.expected)
-				+ " over the window \u00b7 posted + planned + residual, \u00d7 " + pct(r.pass)
-				+ " pass-through")
-			out.push("4 WHEN      " + r.day + " \u00b7 the schedule sets the day, never the amount")
-		}else{
-			out.push("1 ACCOUNT   " + (r.onCard ? "CARD " : "checking ") + acct(r.routedTo)
-				+ (r.split && r.split.n ? " \u00b7 " + pct(r.split.cardShareByAmount)
-					+ " of its money on a card (" + r.split.card + "/" + r.split.n + " txns)"
-					: " \u00b7 one account only")
-				+ (r.partOf ? " \u00b7 one SIDE of a split, " + pct(r.partShare) + " of the budget"
-					: "")
-				+ (r.onCard ? " \u00b7 not drawn in checking; scored on the card" : ""))
-			out.push("2 HOW OFTEN " + (r.detected || "-") + " detected from " + r.legs + " txns"
-				+ (r.shapeFrom && r.shapeFrom !== "recent" ? " (" + r.shapeFrom + " window)" : "")
-				+ " \u00b7 " + (r.declared === r.detected ? "agrees with your declaration"
-					: r.declared + " declared \u2014 declared is how the budget is WRITTEN, detected is"
-						+ " how often money MOVES")
-				+ (r.events ? " \u00b7 " + (Math.round(r.events*10)/10) + " movements/turn" : ""))
-			out.push("3 HOW MUCH  " + money(r.amount) + "/mo \u00b7 " + (r.amountRule || "-")
-				+ " \u00b7 you declared " + money(r.expected) + " per " + (r.declared || "month"))
-			out.push("4 WHEN      " + (r.day === "spread by budget"
-					? "spread by BUDGET \u2014 a long-period budget with no instalment evidence is"
-						+ " drawn evenly, overriding the measured shape"
-					: (r.day === "spread" ? "spread \u2014 no single event" : "lump on " + r.day))
-				+ " \u00b7 top day " + pct(r.spread) + " \u00b7 tier " + r.tier
-				+ (r.promoted ? " \u00b7 INSTALMENT " + money(r.instalment) : ""))
-		}
-		out.push("score " + pct(r.gain) + " \u00b7 surface " + money(r.surface) + " $-days"
-			+ (r.onCard && !isCard ? " (on the card)" : ""))
+		this.rowAnswers(r).forEach(x => out.push(x.key + ": " + x.short
+			+ (x.long ? "  \u2014 " + x.long : "")))
+		out.push("score " + Math.round((r.gain || 0)*100) + "% \u00b7 surface " + money(r.surface)
+			+ " $-days" + (r.onCard && !r.hash ? " (on the card)" : ""))
 		out.push("pred  " + money(d.predTotal || 0) + " \u00b7 " + (d.predDays || "nothing"))
 		out.push("act   " + money(d.actTotal || 0) + " \u00b7 " + (d.actDays || "nothing"))
 		out.push("worst " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : "")
@@ -1902,9 +1916,20 @@ export default class BalanceBench extends BaseComponent{
 					    screen kept prose the payload had dropped. Whatever is worth copying is worth
 					    reading, and there is no version of this where they should differ - so the row
 					    RENDERS the payload. */}
+					{/* FOUR VALUES, NOT FOUR SENTENCES. An expanded row is SCANNED - the reader wants to
+					    know which account, how often, how much and by what rule, and each of those is
+					    a value rather than an explanation. The working behind each one goes to the
+					    clipboard, where there is room to argue with it.
+
+					    Same four answers either way: rowAnswers() is the single source and this
+					    renders `short` where the copy renders `short` and `long`. */}
 					{this.state.open === r.name ? <React.Fragment>
 						{this.drawStream(r.id)}
-						<Payload>{this.rowDebug(r).split(NL).slice(1).join(NL).trim()}</Payload>
+						{this.rowAnswers(r).map(x =>
+							<Line key={x.key}><K>{x.key}</K>{x.short}</Line>)}
+						<Line>{money(r.surface)} $·days
+							{r.detail && Math.abs(r.detail.actTotal) > 1
+								? " · actual " + money(r.detail.actTotal) : ""}</Line>
 						<Bar onClick={e => e.stopPropagation()}>
 							<Btn type="button" onClick={() => this.copy(this.rowDebug(r))}>
 								Copy row</Btn>

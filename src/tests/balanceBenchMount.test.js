@@ -400,15 +400,13 @@ test("a row can be copied on its own", async () => {
 	/* THE FOUR QUESTIONS A ROW HAS TO ANSWER. It used to print the OUTPUTS of four decisions and none
 	   of the decisions: "monthly (declared yearly), spread by budget, -$600" is four answers with no
 	   working, and a reader who disagrees with the number has nothing to disagree WITH. */
-	expect(text).toMatch(/1 ACCOUNT /)
-	expect(text).toMatch(/2 HOW OFTEN /)
-	expect(text).toMatch(/3 HOW MUCH /)
-	expect(text).toMatch(/4 WHEN /)
-	//one line per answer: a paragraph each means scrolling a screen for one row of eighty
-	payloadLines(text).forEach(l => expect(l.length).toBeLessThan(190))
+	expect(text).toMatch(/account: /)
+	expect(text).toMatch(/cycle: /)
+	expect(text).toMatch(/amount: /)
+	expect(text).toMatch(/method: /)
 	//the four answers still carry their evidence, not just a verdict
-	expect(text).toMatch(/detected /)
-	expect(text).toMatch(/1 ACCOUNT   (checking|CARD) /)
+	expect(text).toMatch(/from \d+ transactions/)
+	expect(text).toMatch(/account: (checking|card)/)
 	expect(text).toMatch(/pred  /)
 	expect(text).toMatch(/act   /)
 	expect(text).toMatch(/worst /)
@@ -568,9 +566,10 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	/* A CARD ROW ANSWERS DIFFERENT FOUR. It is an account, not a stream: nothing routes it, no cycle
 	   was detected for it, and its amount comes from a fitted schedule rather than a declaration.
 	   Asking it the stream questions produced "routed to nothing" and "detected - from undefined". */
-	expect(txt).toMatch(/1 ACCOUNT   this row IS the card/)
-	expect(txt).toMatch(/2 HOW OFTEN every \d+d . fitted from \d+ paired repayment/)
-	expect(txt).toMatch(/3 HOW MUCH .* per statement/)
+	expect(txt).toMatch(/account: the card itself/)
+	expect(txt).toMatch(/cycle: every \d+d/)
+	expect(txt).toMatch(/fitted from \d+ paired repayment/)
+	expect(txt).toMatch(/amount: .*\/statement/)
 	expect(txt).not.toMatch(/routed to nothing/)
 	expect(txt).not.toMatch(/undefined/)
 	expect(txt).toMatch(/posted .* planned .* residual .* actual/)
@@ -580,8 +579,8 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	//and an ordinary stream keeps the three lines that do mean something about it
 	const stream = ref.current.rows().filter(r => !r.hash)[0]
 	const st = ref.current.rowDebug(stream)
-	expect(st).toMatch(/1 ACCOUNT /)
-	expect(st).toMatch(/4 WHEN /)
+	expect(st).toMatch(/account: /)
+	expect(st).toMatch(/method: /)
 	expect(st).not.toMatch(/each statement/)
 })
 
@@ -751,7 +750,7 @@ test("the expanded row on screen IS the copy payload, not a second account of it
 	const onScreen = payload.split(NL).slice(1).join(NL).trim()
 	expect(onScreen.length).toBeGreaterThan(40)
 	expect(payload).toContain(onScreen)
-	expect(onScreen).toMatch(/1 ACCOUNT /)
+	expect(onScreen).toMatch(/account: /)
 	expect(onScreen).not.toMatch(/^b\d+ -/)
 })
 
@@ -771,4 +770,24 @@ test("the raw score never flatters the headline - it cannot cancel", async () =>
 	let summed = 0
 	Object.keys(a.detail).forEach(k => {summed += a.detail[k].surface})
 	expect(summed).toBeCloseTo(a.grossSurface, 4)
+})
+
+test("the screen shows the VALUE and the copy shows the working - from one set of answers", async () => {
+	/* Principle 29, in the reporting layer where it has already been broken once. The screen is
+	   scanned and wants four values; the copy is argued with and wants the working behind each. That
+	   is a fork in the RENDERING, so rowAnswers() is the single source and neither side computes an
+	   answer of its own. */
+	const ref = await mount()
+	const row = ref.current.rows().filter(x => !x.hash)[0]
+	const answers = ref.current.rowAnswers(row)
+	expect(answers.map(a => a.key)).toEqual(["account", "cycle", "amount", "method"])
+	const copy = ref.current.rowDebug(row)
+	answers.forEach(a => {
+		//a value is scannable: no sentences on screen
+		expect(a.short.length).toBeLessThan(60)
+		expect(a.short).not.toMatch(/\. /)
+		//and every value, with its working, reaches the clipboard
+		expect(copy).toContain(a.key + ": " + a.short)
+		if(a.long)expect(copy).toContain(a.long)
+	})
 })
