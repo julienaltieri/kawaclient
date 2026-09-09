@@ -110,13 +110,15 @@ the as-of date, and the module must be provably a pure function of that instant.
 
 ---
 
-## §1 — Which account does this stream move money through
+## §1 — Which account does a stream relate to
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** For a stream and its transactions, name the account the stream moves money
-**through**. Money may **leave** it — an expense — or **enter** it — income, a refund, a
-reimbursement. Both are the stream touching that account, and the answer is the account, not the
+**The question.** This is a **stream ↔ account association**: given a stream and its transactions,
+which account is that stream related to?
+
+Money may **leave** that account — an expense — or **enter** it — income, a refund, a
+reimbursement. Both are the stream related to that account, and the association is the answer, not the
 direction.
 
 Where the stream genuinely moves money through two accounts, say so — but treat that as the exception
@@ -180,9 +182,11 @@ with a correction in it, a bank that posts late. Inference from a noisy signal s
 clean one.
 
 **Yearly is the exception, and it is the whole of the difficulty.** A yearly declaration is a *budget
-envelope*, not a rhythm: it says how much per year and nothing about when. Something must be inferred,
-and §5 is where that is worked out. This stage's only job for a yearly stream is to hand it on
-correctly labelled.
+envelope*: it states an amount per year, and it does not state a rhythm. The stream may well **have**
+one — a yearly budget charged every month has a perfectly good rhythm — but it has to be inferred
+rather than read, and the arithmetic relating that yearly figure to the size of one movement is unlike
+every other case. §5 is where both are worked out. This stage's only job for a yearly stream is to
+hand it on correctly labelled.
 
 **The open questions.** When does the ledger get to contradict a non-yearly declaration — never, or
 under some evidential threshold? What about a declaration that was true and has stopped being true?
@@ -266,18 +270,24 @@ says how wide the range is instead of asserting a number.
 
 ---
 
-## §5 — Yearly streams
+## §5 — Special case: yearly streams
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** A yearly declaration gives an amount per year and no rhythm. Infer the rest.
+**The question.** A yearly declaration states an amount per year. What rhythm does the stream
+actually have, and how does that yearly figure become the size of one movement?
 
-**Why it is genuinely different.** Every other stream has a declaration that constrains it. A yearly
-one has a budget and a year, and everything between is inference. And the streams involved are large:
-a $10,000 yearly budget contributes over $1,800 a month to a forecast whether or not a dollar of it
-moves.
+**Why it is genuinely different — and it is not that the rhythm is missing.** A yearly stream can
+be as regular as any other; a yearly budget charged every month is a monthly rhythm wearing a yearly
+declaration. What differs is **the arithmetic between the declaration and a movement**. Everywhere else
+the declared figure IS roughly what moves each time, so the amount is read. Here it is an envelope over
+a year, and the size of one movement has to be derived from it — divided, drawn down, or ignored
+entirely — and which of those applies depends on how the envelope is actually being spent.
 
-**The scenarios are not one problem.** They will need enumerating and naming before any rule is
+The stakes are high because the streams are large: a $10,000 yearly budget contributes over $1,800 a
+month to a forecast whether or not a dollar of it moves.
+
+**The scenarios are not one problem**, and each has its own arithmetic. They will need enumerating and naming before any rule is
 written — a yearly bill paid once on a date, a budget drawn down in instalments, an envelope spent
 erratically, an envelope that will not be spent at all, and a yearly *income*, which is a hope rather
 than a schedule and may deserve no forecast whatever. These behave differently enough that one rule
@@ -287,8 +297,8 @@ covering all of them is unlikely to be the answer.
 Whether draw-down is measured, and against which transactions, is unresolved — a card-routed stream's
 spending is not on the account being predicted.
 
-**Solved when:** each named scenario is recognised from its history, and a budget that is not being
-spent stops being forecast.
+**Solved when:** each named scenario is recognised from its history, the rhythm is found where the
+stream has one, and a budget that is not being spent stops being forecast.
 
 ---
 
