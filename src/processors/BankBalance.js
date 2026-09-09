@@ -2176,13 +2176,23 @@ export function buildModel(input){
 		});
 		spentSince[t.id] = w;
 	});
+	/* WHICH RULE PRODUCED THE NUMBER, recorded as it is produced.
+
+	   Five branches can return an amount and they fail in completely different ways: a stale
+	   declaration is a budget to edit, an observed-mean override is the ledger disagreeing with the
+	   declaration, a spread remainder is a yearly budget that may never be spent, an instalment is a
+	   detected rhythm, and zero can mean four different things. The number alone tells a reader none
+	   of that, so every row on the bench was an amount with no account of itself. */
+	const amountRule = {};
+	const rule = (t, why, v) => {amountRule[t.id] = why; return v};
 	const expectedFor = (t, when) => {
 		const declared = monthlyExpectationAt(t, when, periodName);
-		if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)return observed[t.id];
+		if(Math.abs(declared) < 0.005 && Math.abs(observed[t.id] || 0) > 1)
+			return rule(t, "declared nothing, so the LEDGER's mean is used instead", observed[t.id]);
 		const p = t.getPreferredPeriod ? t.getPreferredPeriod() : "monthly";
-		if(!LONG_PERIODS[p])return declared;
+		if(!LONG_PERIODS[p])return rule(t, "the declared amount, converted to a month", declared);
 		const budget = monthlyExpectationAt(t, when, p);
-		if(!budget)return 0;
+		if(!budget)return rule(t, "a " + p + " budget of nothing", 0);
 		/* A YEARLY INCOME IS A HOPE, NOT A SCHEDULE, and it is not forecast at all.
 
 		   Spending a yearly EXPENSE budget down is defensible: the money is committed, and the only
@@ -2195,10 +2205,10 @@ export function buildModel(input){
 		   to earn its date before it is drawn as a step; an inflow with no rhythm at all - which is
 		   what a yearly declaration means - has earned nothing, and drawing it says the reader has
 		   money they do not have. Predicting nothing is the conservative error and the honest one. */
-		if(budget > 0)return 0;
+		if(budget > 0)return rule(t, "a " + p + " INCOME is a hope, not a schedule - not forecast", 0);
 		const left = budget - (spentSince[t.id] || 0);
-		if(budget < 0 && left > 0)return 0;
-		if(budget > 0 && left < 0)return 0;
+		if(budget < 0 && left > 0)return rule(t, "the " + p + " budget is used up", 0);
+		if(budget > 0 && left < 0)return rule(t, "the " + p + " budget is used up", 0);
 		/* PROMOTED: one instalment per turn, until the budget is used up.
 		   The shape has already resolved to a day, so returning the instalment puts the whole charge
 		   there rather than a twelfth of a year. The last one is clamped to whatever is actually left,
@@ -2206,10 +2216,12 @@ export function buildModel(input){
 		   forecast, only by a person. */
 		if(built.promoted[t.id]){
 			const size = built.instalment[t.id];
-			if(!size)return 0;
-			return Math.abs(left) < Math.abs(size) ? left : size;
+			if(!size)return rule(t, "promoted to instalments, but none sized", 0);
+			return rule(t, "INSTALMENT of " + Math.round(Math.abs(size)) + ", from a repeated charge",
+				Math.abs(left) < Math.abs(size) ? left : size);
 		}
-		return left/monthsLeft;
+		return rule(t, "a " + p + " budget SPREAD: " + Math.round(Math.abs(left)) + " left over "
+			+ monthsLeft + " month(s)", left/monthsLeft);
 	};
 
 	/* MOVED BELOW expectedFor DELIBERATELY. The card block reads it when it builds the options it
@@ -2291,6 +2303,7 @@ export function buildModel(input){
 			legIds: link.legIds, chargedOn: chargedOn,
 			cycleStart: cycleFrom,
 			partitionKey: partitionKey, partitions: part ? part.report : {},
+			amountRule: amountRule,
 			wholeStreams: wholeStreams, declaredTerminals: terminals,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,

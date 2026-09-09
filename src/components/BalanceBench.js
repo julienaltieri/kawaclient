@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b66 - the cycle is the window, and short is gone";
+export const BENCH_VERSION = "b67 - a card row is scored on the card, and says how it got there";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -454,9 +454,27 @@ export default class BalanceBench extends BaseComponent{
 		const settleActual = repayments.map(x => ({date: x.date, amount: x.amount,
 			accountHash: x.checking}))
 		const partKey = model.meta.partitionKey || (id => id)
+		/* A CARD-ROUTED STREAM IS SCORED ON THE CARD, NOT ON NOTHING.
+
+		   shareOfDay returns zero for a stream whose money does not pass through this reading, which
+		   is right for the FORECAST - drawing it in checking would count it twice, once directly and
+		   once inside the repayment. It was also what the bench scored, so twenty-five rows read
+		   "predicted $0, actual $0, 100%": arithmetically true, and useless. A row nobody can audit is
+		   a row that cannot be wrong.
+
+		   So a card-routed stream is measured in a reading where it IS visible, against its own
+		   charges on that card. Those numbers are its contribution to the statement - the thing it is
+		   actually responsible for. They are kept OUT of `total`, which is the checking balance and
+		   must not gain them, so the headline is unchanged. */
+		const cardReading = Object.assign({}, model, {covers: () => true})
+		const onCardRouted = t => !covers(model.routing[t.id]) && !/^__card__/.test(t.id)
 		const perStream = {}, actualByStream = {}
 		forecastTerminals.forEach(t => {
-			perStream[t.id] = flowsOf(run([t], false, false))
+			perStream[t.id] = onCardRouted(t)
+				? flowsOf(forecast(Object.assign({}, cardReading, {terminals: [t], now: open,
+					balanceNow: 0, days: days, extraFlow: null, settles: null,
+					settlementDay: null})))
+				: flowsOf(run([t], false, false))
 			const act = {}
 			/* THE ACTUALS ARE PARTITIONED BY THE MODEL'S OWN RULE, not by a second copy of it. A
 			   stream paid two ways is forecast as two, so its transactions have to be scored as two -
@@ -467,8 +485,11 @@ export default class BalanceBench extends BaseComponent{
 				? (actualLedger[t.partitionOf] || []).filter(x =>
 					partKey(t.partitionOf, x.accountHash) === t.id)
 				: (actualLedger[t.id] || [])
+			//and a card-routed stream is scored against the card it is routed to
+			const inReading = onCardRouted(t)
+				? (h => h === model.routing[t.id]) : covers
 			;(t.id === "__settlement__" ? settleActual : src).forEach(x => {
-				if(x.date < open || x.date > close || !covers(x.accountHash))return
+				if(x.date < open || x.date > close || !inReading(x.accountHash))return
 				/* A REPAYMENT LEG IS THE CARD'S, NOT THIS STREAM'S. It is taken out of the forecast as
 				   a transaction, so it has to leave the actuals the same way - otherwise the stream it
 				   is categorised to shows the whole card bill as an unpredicted miss while the card
@@ -649,6 +670,20 @@ export default class BalanceBench extends BaseComponent{
 			return {days: n, accuracy: ar ? 1 - e/ar : 1}
 		})
 
+		/* TWO SURFACES, BECAUSE THEY MEASURE DIFFERENT THINGS.
+
+		   The headline sums every stream's SIGNED flow for a day and then takes the gap, so a stream
+		   predicted $500 early and another predicted $500 late cancel to nothing. That is honest about
+		   the BALANCE - the line really was right, and the balance is what the reader looks at.
+
+		   It is not honest about the MODEL. Both streams were wrong; they were wrong in opposite
+		   directions, which is luck and not a property either of them controls. Next month the same
+		   two errors add instead.
+
+		   So the gross surface adds each stream's own error without letting any of it cancel. The
+		   headline is the outcome; the gross is the raw work still to do; the ratio between them is
+		   how much of the current score is cancellation rather than accuracy. */
+		let grossSurface = 0
 		//the arithmetic behind one stream's score, so a surprising number can be audited rather than
 		//taken on trust
 		const detail = {}
@@ -680,6 +715,7 @@ export default class BalanceBench extends BaseComponent{
 			let pt = 0, at = 0
 			dayKeys.forEach(k => {pt += (perStream[t.id][k] || 0); at += (actualByStream[t.id][k] || 0)})
 			const days = Object.keys(actualByStream[t.id]).sort()
+			grossSurface += surface
 			detail[t.id] = {surface: surface, predTotal: pt, actTotal: at,
 				worst: worst, worstDay: worstDay,
 				flowAccuracy: fm ? 1 - fe/fm : (fe > 0.005 ? 0 : 1),
@@ -690,7 +726,8 @@ export default class BalanceBench extends BaseComponent{
 		})
 
 		this._cache[key] = {open:open, close:record[record.length-1].date, days:record.length,
-			since:since, surface:surface, area:area, error: area ? surface/area : 0,
+			since:since, surface:surface, grossSurface:grossSurface, area:area,
+			error: area ? surface/area : 0,
 			accuracy: area ? 1 - surface/area : 0, gain:gain, horizon:horizon, detail:detail,
 			flowAccuracy:flowAccuracy, bias:bias, expectedFor:expectedFor,
 			settlements:repayments, settleMonthly:settleMonthly, cards:model.meta.cards,
@@ -1271,6 +1308,12 @@ export default class BalanceBench extends BaseComponent{
 					? p.cycle + " (declared " + declared + ")" : declared,
 				detected:(p && p.cycle) || null, declared:declared, expected:perCycle,
 				split:splitOf(s.partitionOf || s.id),
+				amountRule:(mdl.meta.amountRule || {})[s.id] || null,
+				routedTo:mdl.routing[s.id] || null,
+				shapeFrom:(mdl.meta.shapeFrom || {})[s.id] || null,
+				events:(mdl.meta.events || {})[s.id] || null,
+				legs:((mdl.meta.seen || {})[s.id] || []).length,
+				scoredOn:(p && p.onCard) ? "card" : "checking",
 				partOf:s.partitionOf || null, partAccount:s.partitionAccount || null,
 				partShare:s.partitionShare || 0,
 				onCard:(p && p.onCard) || null, promoted:!!(p && p.promoted),
@@ -1440,6 +1483,11 @@ export default class BalanceBench extends BaseComponent{
 		return out
 	}
 
+	accountName(hash){
+		const a = (this.state.accounts || []).filter(x => x.hash === hash)[0]
+		return a ? a.name : null
+	}
+
 	//everything needed to argue about one row, as text
 	rowDebug(r){
 		const d = r.detail || {}
@@ -1455,24 +1503,51 @@ export default class BalanceBench extends BaseComponent{
 		if(isCard){
 			out.push("class      card settlement for " + r.hash + "   (not a stream: this row IS an"
 				+ " account, and its actual is what really left checking)")
-		}else{
-			out.push("class      " + (r.onCard ? "card " + r.onCard : "checking")
-				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""))
-			out.push("partition  " + (r.partOf
-				? "this row is one side of a split - " + Math.round(r.partShare*100)
-					+ "% of the budget, on " + r.partAccount
-				: "whole stream"))
-			out.push("paid       " + (r.split && r.split.n
-				? Math.round(r.split.cardShare*100) + "% by card (" + r.split.card + " of "
-					+ r.split.n + " transactions, " + Math.round(r.split.cardShareByAmount*100)
-					+ "% of the money)"
-				: "one account only"))
 		}
-		out.push("cycle      " + r.cycle + "   predicted day " + r.day
-			+ "   top day carries " + Math.round((r.spread || 0)*100) + "%")
-		out.push("amount     expects " + money(r.expected) + "   predicts " + money(r.amount))
+		/* FOUR QUESTIONS, IN ORDER, EACH ANSWERED WITH THE EVIDENCE THAT DECIDED IT.
+
+		   The row used to print the OUTPUTS of four decisions and none of the decisions. "monthly
+		   (declared yearly), spread by budget, -$600" is four answers with no working, and a reader
+		   who disagrees with the number has nothing to disagree WITH. */
+		const acct = r.routedTo ? (this.accountName(r.routedTo) || r.routedTo) : "nothing"
+		out.push("")
+		out.push("1. WHICH ACCOUNT   " + (r.split && r.split.n
+			? Math.round(r.split.cardShare*100) + "% of its money is on a card ("
+				+ r.split.card + " of " + r.split.n + " transactions)"
+			: "every transaction on one account")
+			+ "\n   -> routed to " + acct + (r.onCard ? "  (a CARD)" : "  (checking)")
+			+ (r.partOf ? "\n   -> and this row is one SIDE of a split, holding "
+				+ Math.round(r.partShare*100) + "% of the budget" : "")
+			+ (r.onCard ? "\n   -> so it is not drawn in the checking line at all; its money arrives"
+				+ " inside the card repayment. It is SCORED against its own charges on that card."
+				: ""))
+		out.push("2. HOW OFTEN       detected " + (r.detected || "-") + " from " + r.legs
+			+ " transaction(s)" + (r.shapeFrom ? " (" + r.shapeFrom + " window)" : "")
+			+ (r.declared && r.detected && r.declared !== r.detected
+				? "\n   -> you declared " + r.declared + ". These are different questions: DECLARED is"
+					+ " how the budget is written, DETECTED is how often money actually moves."
+				: "\n   -> which agrees with your declaration")
+			+ (r.events ? "\n   -> about " + (Math.round(r.events*10)/10) + " movement(s) per turn"
+				: ""))
+		out.push("3. HOW MUCH        " + money(r.amount) + " per month"
+			+ (r.amountRule ? "\n   -> " + r.amountRule : "")
+			+ "\n   -> you declared " + money(r.expected) + " per " + (r.declared || "month"))
+		out.push("4. WHEN            " + (r.day === "spread" || r.day === "spread by budget"
+			? "SPREAD across the month, no single day"
+			: "a LUMP on " + r.day)
+			+ "\n   -> the top day carries " + Math.round((r.spread || 0)*100)
+			+ "% of the month, and tier " + r.tier + " means "
+			+ (r.tier === 1 ? "one dated event" : (r.tier === 2 ? "a few days it moves between"
+				: (r.tier === 3 ? "no single event at all" : "too little history to say")))
+			+ (r.day === "spread by budget"
+				? "\n   -> SPREAD BY BUDGET overrides the shape: a long-period budget with no"
+					+ " instalment evidence is drawn evenly rather than on a day it has not earned."
+				: "")
+			+ (r.promoted ? "\n   -> promoted to an INSTALMENT of " + money(r.instalment)
+				+ ": repeated equal charges at a consistent interval earned a date." : ""))
+		out.push("")
 		out.push("score      " + Math.round((r.gain || 0)*100) + "%   surface " + money(r.surface)
-			+ " $-days")
+			+ " $-days" + (r.onCard ? "   (scored on the card)" : ""))
 		out.push("predicted  " + money(d.predTotal || 0) + "   " + (d.predDays || "nothing"))
 		out.push("actual     " + money(d.actTotal || 0) + "   " + (d.actDays || "nothing"))
 		out.push("worst gap  " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : ""))
@@ -1495,6 +1570,13 @@ export default class BalanceBench extends BaseComponent{
 				+ "   bias " + (a.bias > 0 ? "+" : "") + (a.bias*100).toFixed(1) + "%")
 			out.push("surface " + money(a.surface) + " / " + money(a.area) + " $-days"
 				+ (prev ? "   prior month " + (prev.accuracy*100).toFixed(1) + "%" : ""))
+			/* THE OUTCOME AND THE RAW WORK, side by side. The gap between them is cancellation - two
+			   streams wrong in opposite directions - which flatters the balance and says nothing good
+			   about the model. */
+			if(a.grossSurface > 0)out.push("gross surface " + money(a.grossSurface)
+				+ " $-days, summed per stream without cancelling"
+				+ "   (" + Math.round(100*(1 - a.surface/a.grossSurface))
+				+ "% of the stream error cancels)")
 			out.push("by horizon: " + a.horizon.map(h => "+" + h.days + "d "
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)

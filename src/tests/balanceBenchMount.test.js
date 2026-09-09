@@ -394,8 +394,16 @@ test("a row can be copied on its own", async () => {
 	const r = ref.current.rows().filter(x => x.detail)[0]
 	const text = ref.current.rowDebug(r)
 	expect(text.indexOf(r.name)).toBe(0)
-	expect(text).toMatch(/class /)
-	expect(text).toMatch(/cycle /)
+	/* THE FOUR QUESTIONS A ROW HAS TO ANSWER. It used to print the OUTPUTS of four decisions and none
+	   of the decisions: "monthly (declared yearly), spread by budget, -$600" is four answers with no
+	   working, and a reader who disagrees with the number has nothing to disagree WITH. */
+	expect(text).toMatch(/1\. WHICH ACCOUNT/)
+	expect(text).toMatch(/2\. HOW OFTEN/)
+	expect(text).toMatch(/3\. HOW MUCH/)
+	expect(text).toMatch(/4\. WHEN/)
+	//the four answers still carry their evidence, not just a verdict
+	expect(text).toMatch(/detected /)
+	expect(text).toMatch(/routed to /)
 	expect(text).toMatch(/predicted /)
 	expect(text).toMatch(/actual /)
 	expect(text).toMatch(/worst gap/)
@@ -563,8 +571,8 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	//and an ordinary stream keeps the three lines that do mean something about it
 	const stream = ref.current.rows().filter(r => !r.hash)[0]
 	const st = ref.current.rowDebug(stream)
-	expect(st).toMatch(/partition  /)
-	expect(st).toMatch(/paid       /)
+	expect(st).toMatch(/1\. WHICH ACCOUNT/)
+	expect(st).toMatch(/4\. WHEN/)
 	expect(st).not.toMatch(/each statement/)
 })
 
