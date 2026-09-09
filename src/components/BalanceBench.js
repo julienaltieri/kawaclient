@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b54 - a statement is three terms, and a budget draws down";
+export const BENCH_VERSION = "b55 - the rate is a difference, and both halves are printed";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1200,8 +1200,14 @@ export default class BalanceBench extends BaseComponent{
 	   between two adjacent lines is that mechanism's price. */
 	variants(){
 		if(this._variants)return this._variants
+		/* THE HEADLINE'S WINDOW, NOT THE CONTROL'S. The ladder was scored on whichever lookback the
+		   axis happened to be set to while the headline used the default, so its rungs were being
+		   read against a number from a different window - the same like-for-like error the ladder
+		   exists to prevent. It uses the headline's window and prints which one. */
+		const win = this.windows(this.today())[0]
+		this._variantWindow = win[0]
 		const of = v => {
-			const a = this.analyse(this.lookback()[1], 0, v)
+			const a = this.analyse(win[1], 0, v)
 			return a ? a.accuracy : null
 		}
 		this._variants = [
@@ -1227,15 +1233,38 @@ export default class BalanceBench extends BaseComponent{
 	   A residual of zero on an under-predicted card is the diagnosis worth seeing: it means the
 	   streams have already claimed the difference without spending it, so the gap that should have
 	   carried it measured nothing. */
+	/* WHAT THE CARD WAS CHARGED AGAINST WHAT IT WAS PAID, over the scored window.
+
+	   A card that clears in full cannot be repaid more than it was charged. Where those two disagree
+	   the card model's premise is wrong before any forecast is made, and no amount of tuning the rate
+	   will close it - so it is printed next to the rate rather than left to be inferred. */
+	chargeVsPay(hash){
+		const a = this.analyse()
+		if(!a)return null
+		let charged = 0
+		;(this.props.transactions || []).forEach(t => {
+			if(t.userInstitutionAccountId !== hash)return
+			const d = new Date(t.date)
+			if(d < a.open || d > a.close)return
+			if(t.amount < 0)charged += -t.amount
+		})
+		let paid = 0
+		const act = (a.detail && a.detail["__card__" + hash] && a.detail["__card__" + hash].act) || {}
+		Object.keys(act).forEach(k => {paid += Math.abs(act[k])})
+		return {charged: charged, paid: paid}
+	}
+
 	statementLines(hash){
 		const a = this.analyse()
 		const ev = (a && a.model && a.model.meta && a.model.meta.settlementEvents) || {}
 		const id = "__card__" + hash
 		const act = (a && a.detail && a.detail[id] && a.detail[id].act) || {}
 		const out = []
+		let seenAny = false
 		Object.keys(ev).sort().forEach(k => {
 			;(ev[k].parts || []).forEach(p => {
 				if(p.card !== hash)return
+				seenAny = true
 				out.push("      " + k.slice(5)
 					+ "  posted " + money(p.posted || 0)
 					+ " + planned " + money(p.planned || 0)
@@ -1245,6 +1274,19 @@ export default class BalanceBench extends BaseComponent{
 					+ "   actual " + money(act[k] || 0))
 			})
 		})
+		/* THE RATE IS A DIFFERENCE, so both halves are printed. Zero can mean the streams describe
+		   the card completely or that they claim money they never spend; only the two quantities it
+		   subtracts can say which. */
+		const r = ((a.model.meta || {}).cardRate || {})[hash]
+		if(seenAny && r)out.push("      rate = (charged " + money(-r.charged)
+			+ " - streams said " + money(-r.said) + ") / " + Math.round(r.rateDays) + "d"
+			+ "   =  " + money(-r.rate) + "/d"
+			+ (r.charged <= r.said ? "   <- the streams claim MORE than the card was charged" : ""))
+		const cp = this.chargeVsPay(hash)
+		if(seenAny && cp)out.push("      in this window: charged " + money(-cp.charged)
+			+ "   repaid " + money(-cp.paid)
+			+ (cp.charged > 1 && cp.paid > cp.charged*1.15
+				? "   <- repaid MORE than charged: the card does not clear from its own charges" : ""))
 		return out
 	}
 
@@ -1292,7 +1334,9 @@ export default class BalanceBench extends BaseComponent{
 			/* WHAT EACH MECHANISM IS WORTH, on this month. Nested: each line adds one thing to the
 			   line above, so the step between two lines is that mechanism's price. */
 			out.push("")
-			out.push("MECHANISMS, added one at a time to the same window:")
+			this.variants()
+			out.push("MECHANISMS, added one at a time to the \"" + (this._variantWindow || "?")
+				+ "\" window - the one the headline above uses:")
 			this.variants().forEach(v => out.push("  " + (v[1] === null ? "  -  "
 				: ((v[1]*100).toFixed(1) + "%").padStart(7)) + "   " + v[0]))
 			out.push("")

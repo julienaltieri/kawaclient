@@ -1621,6 +1621,12 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 			saidForWindow += chargedOn(cardHash, new Date(t));
 	}
 	const rate = Math.max(0, charged - saidForWindow)/rateDays;
+	/* THE RATE'S OWN ARITHMETIC, HANDED OUT. It came back zero on every statement of an
+	   under-predicted card, which is either true (the streams describe the card completely) or the
+	   sign that they are CLAIMING money they never spend. Those are opposite diagnoses and the rate
+	   alone cannot tell them apart - the two quantities it is a difference of can. */
+	if(o.diag)o.diag({charged: charged, said: saidForWindow, rateDays: rateDays, rate: rate,
+		earliest: earliest});
 
 	const past = sched.events.filter(e => e.date < from);
 	const last = past.length ? past[past.length-1].date : null;
@@ -2079,13 +2085,14 @@ export function buildModel(input){
 	};
 
 	let extraFlow = null;
-	const cardModel = {};
+	const cardModel = {}, cardRate = {};
 	if(!input.netted){
 		linked.forEach(hash => {
 			const sched = cardSchedule(past, hash, link.repayments);
 			cardModel[hash] = sched;
 			if(!(until > asOf))return;
-			cardRepaymentForecast(past, hash, sched, asOf, until, {chargedOn: chargedOn})
+			cardRepaymentForecast(past, hash, sched, asOf, until,
+				{chargedOn: chargedOn, diag: d => {cardRate[hash] = d}})
 				.forEach(e => {
 					const k = dayKey(e.date);
 					if(!extraFlow)extraFlow = {};
@@ -2111,6 +2118,7 @@ export function buildModel(input){
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
 			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
+			cardRate: cardRate,
 			promoted: built.promoted, instalment: built.instalment,
 			links: link.links, linked: linked, repayments: link.repayments,
 			legIds: link.legIds, chargedOn: chargedOn,

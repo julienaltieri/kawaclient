@@ -512,5 +512,25 @@ test("a card statement is reported as its three terms, and they add up to it", a
 	const cards = ref.current.credit()
 	const lines = ref.current.statementLines(cards[0])
 	expect(lines.length).toBeGreaterThan(0)
-	lines.forEach(l => expect(l).toMatch(/posted .* planned .* residual .* actual/))
+	const statements = lines.filter(l => /posted/.test(l))
+	expect(statements.length).toBeGreaterThan(0)
+	statements.forEach(l => expect(l).toMatch(/posted .* planned .* residual .* actual/))
+	/* AND THE RATE IS PRINTED AS THE DIFFERENCE IT IS. Zero can mean the streams describe the card
+	   completely or that they claim money they never spend; only both halves can say which. */
+	expect(lines.filter(l => /rate = \(charged .* streams said /.test(l)).length).toBe(1)
+	expect(lines.filter(l => /in this window: charged .* repaid /.test(l)).length).toBe(1)
+})
+
+test("a card repaid more than it was charged is called out, not quietly forecast", async () => {
+	/* THE PREMISE UNDER THE WHOLE CARD MODEL. A card that clears in full cannot be repaid more than
+	   it was charged, so where those disagree the model is wrong before any forecast is made and no
+	   tuning of the rate will close it. The fixture is coherent by construction, so what is pinned
+	   is that the two are measured from different places and actually compared. */
+	const ref = await mount()
+	const cp = ref.current.chargeVsPay(ref.current.credit()[0])
+	expect(cp).toBeTruthy()
+	expect(cp.charged).toBeGreaterThan(0)
+	expect(cp.paid).toBeGreaterThan(0)
+	//the mount fixture settles exactly what it buys, so the two agree within a statement
+	expect(Math.abs(cp.paid - cp.charged)).toBeLessThan(cp.charged*0.5)
 })
