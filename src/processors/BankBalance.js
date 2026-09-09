@@ -1051,8 +1051,15 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 
 	   Each side is consumed once, so two repayments of the same size in one week match two arrivals
 	   rather than one of them twice, and the nearest in time wins. */
+	/* A REFUND IS ALSO AN ARRIVAL, and it is the one thing that can be mistaken for a repayment: a
+	   returned item of the same size as an unrelated outflow, a few days apart, would pair. Excluded
+	   by what it says it is - this is the only place a description is read, and it is used to rule a
+	   candidate OUT rather than to let one in, which is the way round that cannot silently drop a
+	   real repayment for being worded unexpectedly. */
+	const looksRefund = t => /refund|return|reversal|cashback|reward/i.test(t.description || "");
 	const arrivals = txns.filter(t => cards.indexOf(t.userInstitutionAccountId) > -1
-		&& t.amount > 0 && !paired[t.transactionId]).map(t => ({t: t, used: false}));
+		&& t.amount > 0 && !paired[t.transactionId] && !looksRefund(t))
+		.map(t => ({t: t, used: false}));
 	txns.filter(t => checking.indexOf(t.userInstitutionAccountId) > -1
 		&& t.amount < 0 && !paired[t.transactionId]).forEach(t => {
 		const want = Math.abs(t.amount);
@@ -1070,7 +1077,10 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 	});
 
 	repayments.sort((a, b) => a.date - b.date);
-	return {links: links, repayments: repayments, legIds: legIds};
+	//how many were told to us versus worked out, so a bad reconstruction is visible as a number
+	const stored = Object.keys(paired).length/2;
+	return {links: links, repayments: repayments, legIds: legIds,
+		stored: stored, rebuilt: repayments.length - stored};
 }
 
 /* PHASE 4 - THE SCHEDULE OF A LINKED CARD, and how it has been behaving.

@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b43 - reconstruct the pair the ledger does not store";
+export const BENCH_VERSION = "b44 - the rule, tested client-side";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1034,6 +1034,11 @@ export default class BalanceBench extends BaseComponent{
 			out.push("card settlement modelled at " + money(a.settleMonthly || 0) + "/month")
 			//NOT filtered to the window: the model may not see inside it, so every settlement here is
 			//by construction before it, and a count of those inside could only ever be zero
+			const lkAll = accountLinks(this.props.transactions, this.credit(), this.spending())
+			out.push("card repayments: " + lkAll.repayments.length + " found ("
+				+ lkAll.stored + " stored pairs, " + lkAll.rebuilt + " reconstructed)"
+				+ "   linked cards: " + Object.keys(lkAll.links).length
+				+ " of " + this.credit().length)
 			out.push("card settlements identified before the window: " + st.length
 				+ "   payment streams excluded: " + (a.excluded || 0))
 			const r7 = this.rolling(7)
