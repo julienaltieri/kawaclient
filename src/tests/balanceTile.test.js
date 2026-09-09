@@ -3136,3 +3136,74 @@ test("the partitions are forecast separately end to end, and still sum to one bu
 	expect(total).toBeGreaterThan(-260)
 	expect(total).toBeLessThan(-190)
 })
+
+/* =================================================================================================
+   THE SWITCHES THE BENCH MEASURES WITH.
+
+   Two mechanisms shipped in one reading and the score fell eighteen points. Attributing that by
+   reading the code is guessing; both are switches, so the bench builds the model three ways against
+   the same month and the step between two lines is one mechanism's price.
+
+   An instrument that cannot be trusted is worse than none, so what is pinned here is that each switch
+   actually restores the earlier behaviour - not merely that it is accepted and ignored.
+   ================================================================================================= */
+test("noPartition keeps a two-way stream whole, exactly as it was before the split existed", () => {
+	const st = evStream("util", "Utilities", -225)
+	const txns = []
+	for(let m = 2; m <= 7; m++){
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 4)), -153, "util", "chk", "w" + m))
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 18)), -72, "util", "visa", "e" + m))
+	}
+	const opts = {transactions: txns, terminals: [st], covered: ["chk", "visa"], cards: ["visa"],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 2, 1))}
+	const split = buildModel(opts)
+	const whole = buildModel(Object.assign({}, opts, {noPartition: true}))
+	expect(split.terminals.length).toBe(2)
+	expect(whole.terminals.length).toBe(1)
+	expect(whole.terminals[0].id).toBe("util")
+	//and the whole stream is routed the way it always was: to the side carrying more of the money
+	expect(whole.routing.util).toBe("chk")
+})
+
+test("shapeFromRouted false restores the covered-account shape, stray debits and all", () => {
+	/* THE ABLATION AS A SWITCH. Fifteen card charges spread across the month and three debits on the
+	   20th: read from the covered accounts, the three debits own the month. That WAS the behaviour,
+	   and the bench has to be able to reproduce it or it cannot price the change. */
+	const s1 = {id: "food", name: "Groceries", getPreferredPeriod: () => "monthly",
+		getExpectedAmountAtDateByPeriod: () => -700}
+	const legs = []
+	for(let m = 3; m <= 5; m++){
+		[2, 9, 16, 23, 30].forEach(d =>
+			legs.push({date: new Date(Date.UTC(2026, m, d)), amount: -140, accountHash: "visa"}))
+		legs.push({date: new Date(Date.UTC(2026, m, 20)), amount: -90, accountHash: "chk"})
+	}
+	const args = {terminals: [s1], byStream: {food: legs},
+		since: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 6, 1)),
+		covered: ["chk"]}
+	const now = buildForecastInputs(args)
+	const before = buildForecastInputs(Object.assign({}, args, {shapeFromRouted: false}))
+	expect(now.shapes.food.weights[19]).toBeLessThan(0.3)
+	expect(before.shapes.food.weights[19]).toBeCloseTo(1, 6)
+	//and routing is untouched by the switch - only where the shape is READ from changes
+	expect(now.routing.food).toBe("visa")
+	expect(before.routing.food).toBe("visa")
+})
+
+test("with both switches off the model is the one that scored 54.7%", () => {
+	//the baseline rung of the ladder: neither mechanism, on a fixture that would trigger both
+	const st = evStream("util", "Utilities", -225)
+	const txns = []
+	for(let m = 2; m <= 7; m++){
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 4)), -153, "util", "chk", "w" + m))
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 18)), -72, "util", "visa", "e" + m))
+	}
+	const base = buildModel({transactions: txns, terminals: [st], covered: ["chk"], cards: ["visa"],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 2, 1)), noPartition: true, shapeFromRouted: false})
+	expect(base.terminals.length).toBe(1)
+	//the shape comes from the covered account only, so it lands on the 4th and knows nothing of the 18th
+	const w = base.shapes.util.weights
+	expect(w[3]).toBeGreaterThan(0.9)
+	expect(w[17]).toBeLessThan(0.05)
+})

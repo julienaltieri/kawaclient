@@ -474,3 +474,22 @@ test("the rows the bench audits are exactly the streams the model forecasts", as
 	ref.current.rows().filter(r => !/^__card__/.test(r.id))
 		.forEach(r => expect(known[r.id]).toBe(true))
 })
+
+test("the mechanism ladder scores three models against the same window", async () => {
+	/* THE INSTRUMENT ITSELF. It is only worth having if the rungs are genuinely different models -
+	   a ladder whose lines are all the same number would attribute a regression to nothing. */
+	const ref = await mount()
+	const v = ref.current.variants()
+	expect(v.length).toBe(3)
+	v.forEach(row => {
+		expect(typeof row[0]).toBe("string")
+		expect(row[1] === null || typeof row[1] === "number").toBe(true)
+	})
+	//the rungs are built from different models, and the fixture triggers both mechanisms
+	const base = ref.current.analyse(ref.current.lookback()[1], 0, "base")
+	const shape = ref.current.analyse(ref.current.lookback()[1], 0, "shape")
+	const full = ref.current.analyse(ref.current.lookback()[1], 0, null)
+	expect(base.model.terminals.length).toBe(shape.model.terminals.length)
+	expect(full.model.terminals.length).toBeGreaterThan(shape.model.terminals.length)
+	expect(ref.current.report()).toMatch(/MECHANISMS, added one at a time/)
+})

@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b52 - a stream paid two ways is two streams";
+export const BENCH_VERSION = "b53 - the mechanisms are scored one at a time";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -203,9 +203,9 @@ export default class BalanceBench extends BaseComponent{
 	   cumulative curve, both starting from zero, and the dollar-days between them. That number is a
 	   fact about that stream and nothing else. It is divided by the same account-level denominator as
 	   the headline, so a stream's figure reads directly as "this much of a full-scale error is mine". */
-	analyse(from, monthsBack){
+	analyse(from, monthsBack, variant){
 		const back = monthsBack || 0
-		const key = (from ? from.getTime() : "default") + "|" + back
+		const key = (from ? from.getTime() : "default") + "|" + back + "|" + (variant || "")
 		this._cache = this._cache || {}
 		if(this._cache[key])return this._cache[key]
 		const now = this.today()
@@ -234,6 +234,8 @@ export default class BalanceBench extends BaseComponent{
 			asOf: open, until: new Date(record[record.length - 1].date),
 			since: since,
 			settlementDay: this.settlementDay(),
+			shapeFromRouted: variant === "base" ? false : undefined,
+			noPartition: variant === "base" || variant === "shape",
 			startingMonth: reportingConfig.startingMonth,
 			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
 
@@ -1186,6 +1188,29 @@ export default class BalanceBench extends BaseComponent{
 			["both", "BOTH - routing had to choose", by.both]]
 	}
 
+	/* ONE MECHANISM AT A TIME, AGAINST THE SAME MONTH.
+
+	   Two changes shipped in one reading - shapes read from the routed account, and streams paid two
+	   ways split in half - and the score fell eighteen points. Attributing that by reading the code is
+	   guessing; both are switches, so the honest thing is to build the model three ways against the
+	   same window and print what each is worth.
+
+	   NESTED, NOT INDEPENDENT: each line adds one mechanism to the line above it, so the difference
+	   between two adjacent lines is that mechanism's price. */
+	variants(){
+		if(this._variants)return this._variants
+		const of = v => {
+			const a = this.analyse(this.lookback()[1], 0, v)
+			return a ? a.accuracy : null
+		}
+		this._variants = [
+			["baseline (covered-account shapes, no split)", of("base")],
+			["+ shape from the routed account", of("shape")],
+			["+ a stream paid two ways is two streams", of(null)]
+		]
+		return this._variants
+	}
+
 	//everything needed to argue about one row, as text
 	rowDebug(r){
 		const d = r.detail || {}
@@ -1227,6 +1252,13 @@ export default class BalanceBench extends BaseComponent{
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
+			/* WHAT EACH MECHANISM IS WORTH, on this month. Nested: each line adds one thing to the
+			   line above, so the step between two lines is that mechanism's price. */
+			out.push("")
+			out.push("MECHANISMS, added one at a time to the same window:")
+			this.variants().forEach(v => out.push("  " + (v[1] === null ? "  -  "
+				: ((v[1]*100).toFixed(1) + "%").padStart(7)) + "   " + v[0]))
+			out.push("")
 			const st = a.settlements || []
 			out.push("card settlement modelled at " + money(a.settleMonthly || 0) + "/month")
 			//NOT filtered to the window: the model may not see inside it, so every settlement here is

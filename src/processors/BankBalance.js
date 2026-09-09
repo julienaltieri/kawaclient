@@ -1941,6 +1941,7 @@ export function buildModel(input){
 		|| new Date(Date.UTC(asOf.getUTCFullYear() - 1, asOf.getUTCMonth(), asOf.getUTCDate()));
 	const built = buildForecastInputs({terminals: modelled, byStream: byStream,
 		since: since, sinceShape: sinceShape, until: asOf, covered: covered,
+		shapeFromRouted: input.shapeFromRouted,
 		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
 
 	const covers = h => covered.indexOf(h || fallback) > -1;
@@ -2241,6 +2242,11 @@ export function partitionStreams(terminals, byStream, opts){
 export function buildForecastInputs(opts){
 	const terminals = opts.terminals || [], byStream = opts.byStream || {};
 	const covered = opts.covered || [], since = opts.since, until = opts.until;
+	/* A SWITCH ONLY THE BENCH TURNS. Two mechanisms shipped in one reading and the score moved a long
+	   way; which of them moved it is a measurement, and it cannot be made unless the bench can build
+	   the model both ways against the same month. Default is the shipping behaviour, so nothing
+	   changes for anyone who does not ask. */
+	const shapeFromRouted = opts.shapeFromRouted === undefined ? true : opts.shapeFromRouted;
 	/* A SECOND, LONGER WINDOW - FOR DATES ONLY, and used only where the short one is empty.
 
 	   The short lookback exists because AMOUNTS go stale: a rent from two years ago is a different
@@ -2284,7 +2290,7 @@ export function buildForecastInputs(opts){
 		const period = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly";
 		/* the account the money leaves, first - the same set as `sliced` for anything on a covered
 		   account, and the right set for anything that is not */
-		const home = routing[s.id];
+		const home = shapeFromRouted ? routing[s.id] : null;
 		let use = home ? seen[s.id].filter(x => x.accountHash === home) : sliced[s.id];
 		if(!use.length)use = sliced[s.id];
 		shapeFrom[s.id] = "recent";
