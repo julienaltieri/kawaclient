@@ -648,3 +648,50 @@ test("no stored history is reported as no history, never as agreement", async ()
 	expect(ref.current.driftVsRemembered()).toBe(null)
 	expect(ref.current.report()).toMatch(/no stored history covering this window yet/)
 })
+
+/* =================================================================================================
+   WHICH ACCOUNTS THE READING IS ABOUT.
+
+   "The balance shows negative and I have never been negative" is not necessarily a forecast fault or
+   even drift. The walk starts from the sum of the accounts a reading covers, so an account left out
+   takes its whole balance out of the anchor AND its transactions out of the ledger - which leaves the
+   curve internally consistent and uniformly too low. From inside the curve it looks correct.
+   ================================================================================================= */
+test("the bench covers exactly the accounts the tile covers - one rule, not two", async () => {
+	/* The bench exists to measure what ships. It matched the subtype string for "check" while the
+	   tile asks Core.accountTypeOf, which honours the USER'S override - so retyping one account made
+	   the two measure different portfolios, silently and in the same direction. */
+	const ref = await mount()
+	const accts = ref.current.state.accounts
+	const tile = accts.filter(a => Core.accountTypeOf(a) === "checking").map(a => a.hash)
+	expect(ref.current.spending().sort()).toEqual(tile.sort())
+	const cards = accts.filter(a => Core.accountTypeOf(a) === "credit").map(a => a.hash)
+	expect(ref.current.credit().sort()).toEqual(cards.sort())
+})
+
+test("an override that retypes an account moves it in BOTH readings, or neither", async () => {
+	//the failure this prevents: the user calls the card a checking account and only one side listens
+	const ud = Core.getUserData()
+	Core.globalState = Object.assign({}, Core.globalState,
+		{userData: Object.assign({}, ud, {accountTypes: {[CARD]: "checking"}})})
+	const ref = await mount()
+	expect(ref.current.spending().indexOf(CARD)).toBeGreaterThan(-1)
+	expect(ref.current.credit().indexOf(CARD)).toBe(-1)
+})
+
+test("every account is named, with which reading claims it and whether it moves", async () => {
+	/* AN ACCOUNT WITH A BALANCE AND NO TRANSACTIONS is the quiet version of the fault: its money is
+	   in the anchor and its movements are not in the walk, which tilts the whole past by that balance
+	   and shows up in no total. */
+	const ref = await mount()
+	const audit = ref.current.accountAudit()
+	expect(audit.length).toBe((ref.current.state.accounts || []).length)
+	audit.forEach(a => {
+		expect(typeof a.hash).toBe("string")
+		expect(["checking", "savings", "credit"].indexOf(a.effective)).toBeGreaterThan(-1)
+		expect(typeof a.txns).toBe("number")
+	})
+	//the fixture moves money on both accounts, so neither is silently in the anchor alone
+	audit.filter(a => a.inTile).forEach(a => expect(a.txns).toBeGreaterThan(0))
+	expect(ref.current.report()).toMatch(/ACCOUNTS  \(tile = Core.accountTypeOf/)
+})

@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import ApiCaller from '../ApiCaller.js';
+import {AccountTypes, inferAccountType} from '../Bank.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
 	groupByStream, dayLabel, TIERS, cycleStartOf, accountLinks, cardSchedule,
@@ -36,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b58 - the anchor is checked account by account";
+export const BENCH_VERSION = "b59 - every account, and which reading claims it";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -130,6 +131,46 @@ export default class BalanceBench extends BaseComponent{
 			.catch(() => this.updateState({remembered: []}))
 	}
 
+	/* EVERY ACCOUNT, AND WHICH READING CLAIMS IT.
+
+	   "The balance is negative and I have never been negative" is not a forecast fault and not
+	   necessarily drift either. The walk starts from the sum of the accounts a reading covers, so an
+	   account left out takes its whole balance out of the anchor - and its transactions out of the
+	   ledger with it, which makes the curve internally consistent and uniformly too low. Nothing in
+	   the curve can report that, because from the inside it looks correct.
+
+	   The tile and this bench do not select accounts the same way, which is the second half of the
+	   problem. The tile asks Core.accountTypeOf - Plaid's type, then the user's own override. The
+	   bench matches the subtype string for "check" and falls back to every depository account. Those
+	   are two answers to "which accounts is this reading about", and they can disagree about the same
+	   account, so both are printed against every account rather than either being trusted.
+
+	   TRANSACTION COUNT IS THE THIRD COLUMN, because an account with a balance and no transactions
+	   contributes its money to the anchor and nothing to the walk - which tilts the whole past by
+	   that balance and is invisible in any total. */
+	accountAudit(){
+		const accts = this.state.accounts || []
+		if(!accts.length)return null
+		const benchSet = this.spending(), cards = this.credit()
+		const overrides = (Core.getUserData() || {}).accountTypes || {}
+		const counted = {}
+		;(this.props.transactions || []).forEach(t => {
+			const h = t.userInstitutionAccountId
+			counted[h] = (counted[h] || 0) + 1
+		})
+		return accts.map(a => {
+			const effective = Core.accountTypeOf ? Core.accountTypeOf(a) : inferAccountType(a)
+			return {name: a.name, hash: a.hash, type: a.type, subtype: a.subtype,
+				current: a.current,
+				inferred: inferAccountType(a), override: overrides[a.hash] || null,
+				effective: effective,
+				inTile: effective === AccountTypes.checking,
+				inBench: benchSet.indexOf(a.hash) > -1,
+				isCard: cards.indexOf(a.hash) > -1,
+				txns: counted[a.hash] || 0}
+		})
+	}
+
 	/* WHERE THE WALK PARTS COMPANY WITH WHAT THE BANK SAID.
 
 	   Reported minus reconstructed, per day, over the spending accounts. Anchored at today by
@@ -197,12 +238,25 @@ export default class BalanceBench extends BaseComponent{
 	   whose only honest verdict is "not applicable". getAllTerminalStreams(true) is the model's own
 	   filter, so this agrees with every other view rather than inventing a second definition. */
 	terminals(){const m = Core.getMasterStream(); return m ? m.getAllTerminalStreams(true) : []}
-	credit(){return (this.state.accounts||[]).filter(a => a.type === "credit").map(a => a.hash)}
+	/* THE TILE'S OWN ACCOUNT RULE, NOT A SECOND ONE.
+
+	   The bench exists to measure what ships. It was selecting accounts by matching the subtype
+	   string for "check" and falling back to every depository account, while the tile asks
+	   Core.accountTypeOf - Plaid's type, then the USER'S OWN override. Those disagree the moment
+	   somebody retypes an account, and then the two are not measuring the same portfolio: an account
+	   in one reading and not the other takes its whole balance out of that reading's anchor and its
+	   transactions out of that reading's walk.
+
+	   Every number here is a sum over this set, so a set that differs from the tile's makes every
+	   number differ from the tile's, in the same direction and with nothing to report it. */
+	typeOf(a){return Core.accountTypeOf(a)}
+	credit(){
+		return (this.state.accounts||[]).filter(a => this.typeOf(a) === AccountTypes.credit)
+			.map(a => a.hash)
+	}
 	spending(){
-		const dep = (this.state.accounts||[]).filter(a => a.type === "depository"
-			&& a.current !== undefined)
-		const chk = dep.filter(a => (a.subtype||"").toLowerCase().indexOf("check") > -1)
-		return (chk.length ? chk : dep).map(a => a.hash)
+		return (this.state.accounts||[]).filter(a => this.typeOf(a) === AccountTypes.checking
+			&& a.current !== undefined).map(a => a.hash)
 	}
 	today(){const n = new Date()
 		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))}
@@ -1430,6 +1484,37 @@ export default class BalanceBench extends BaseComponent{
 			   live balance walked backwards over the transactions. If that walk is wrong the whole
 			   reading is measured against a wrong line - so it is checked first, and against the only
 			   independent record there is. */
+			/* THE ACCOUNTS FIRST, because every number below is a sum over a set of them and a set
+			   that is wrong makes every number below wrong in the same direction. */
+			const aa = this.accountAudit()
+			out.push("")
+			if(aa){
+				out.push("ACCOUNTS  (tile = Core.accountTypeOf; bench = subtype contains \"check\")")
+				aa.forEach(x => out.push("  " + (x.name || "?")
+					+ "   " + x.hash
+					+ "   " + (x.type || "?") + "/" + (x.subtype || "?")
+					+ "   balance " + (x.current === undefined ? "NONE" : money(x.current))
+					+ "   inferred " + x.inferred
+					+ (x.override ? " -> override " + x.override : "")
+					+ "   " + x.txns + " txns"
+					+ "   [" + (x.inTile ? "TILE" : "    ") + "]"
+					+ "[" + (x.inBench ? "BENCH" : "     ") + "]"
+					+ (x.isCard ? "[CARD]" : "")))
+				const sum = list => list.reduce((n, x) => n + (x.current || 0), 0)
+				const tileSet = aa.filter(x => x.inTile), benchSet2 = aa.filter(x => x.inBench)
+				out.push("  anchor as the TILE builds it  " + money(sum(tileSet))
+					+ "   over " + tileSet.length + " account(s)")
+				out.push("  anchor as the BENCH builds it " + money(sum(benchSet2))
+					+ "   over " + benchSet2.length + " account(s)")
+				const missed = aa.filter(x => x.inTile !== x.inBench)
+				if(missed.length)out.push("  THE TWO READINGS DISAGREE about: "
+					+ missed.map(x => (x.name || x.hash)).join(", "))
+				const silent = aa.filter(x => x.inTile && !x.txns)
+				if(silent.length)out.push("  IN THE ANCHOR BUT WITH NO TRANSACTIONS: "
+					+ silent.map(x => (x.name || x.hash) + " " + money(x.current || 0)).join(", ")
+					+ "   - its money is in the anchor and its movements are not in the walk")
+			}
+
 			const dr = this.driftVsRemembered()
 			out.push("")
 			if(!dr){
