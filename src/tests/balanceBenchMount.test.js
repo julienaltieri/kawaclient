@@ -369,3 +369,19 @@ test("a row can be copied on its own", async () => {
 	expect(text).toMatch(/actual /)
 	expect(text).toMatch(/worst gap/)
 })
+
+test("the cycle column is what was DETECTED, and says so when it disagrees", async () => {
+	/* It was showing the declared period back to the reader - the one thing in the row they already
+	   know. A stream declared weekly whose shape resolved to a single monthly day is predicting a
+	   month of spending as one charge, and the row read "weekly" throughout. */
+	const ref = await mount()
+	const rows = ref.current.rows().filter(r => r.detected)
+	expect(rows.length).toBeGreaterThan(0)
+	rows.forEach(r => {
+		if(r.detected === r.declared)expect(r.cycle).toBe(r.declared)
+		else{
+			expect(r.cycle).toContain(r.detected)
+			expect(r.cycle).toContain("declared " + r.declared)
+		}
+	})
+})

@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b49 - one number, two axes, scannable rows";
+export const BENCH_VERSION = "b50 - the cycle column is the detected one";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1051,6 +1051,7 @@ export default class BalanceBench extends BaseComponent{
 			const at = new Date(Date.UTC(y, m, bigDay || 1))
 			const phase = h && h.cycle && h.cycle.phaseOf ? h.cycle.phaseOf(at) : (bigDay - 1)
 			return {total: total, big: big, bigDay: bigDay, phase: phase, live: live,
+				cycle: h && h.cycle ? h.cycle.name : "monthly",
 				promoted: !!(mdl.meta.promoted || {})[s.id],
 				instalment: (mdl.meta.instalment || {})[s.id],
 				cycle: h && h.cycle ? h.cycle.name : "monthly",
@@ -1072,7 +1073,16 @@ export default class BalanceBench extends BaseComponent{
 			const day = !p || !p.live ? "-"
 				: (p.spreadReason ? "spread by budget"
 					: (tier === TIERS.spread ? "spread" : dayLabel(p.cycle, p.phase)))
-			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
+			/* THE DETECTED CYCLE, not the declared one - and both when they disagree.
+			   The column was showing the user's own declaration back to them, which is the one thing
+			   in the row they already know. What the model DETECTED is the interesting half, and a
+			   disagreement between the two is the most interesting thing of all: a stream declared
+			   weekly whose shape resolved to a single monthly day is predicting a month of spending
+			   as one charge, and the row read "weekly" throughout. */
+			return {name:s.name, id:s.id,
+				cycle:(p && p.cycle && p.cycle !== declared)
+					? p.cycle + " (declared " + declared + ")" : declared,
+				detected:(p && p.cycle) || null, declared:declared, expected:perCycle,
 				onCard:(p && p.onCard) || null, promoted:!!(p && p.promoted),
 				instalment:(p && p.instalment) || 0,
 				surface:(det && det.surface) || 0,
