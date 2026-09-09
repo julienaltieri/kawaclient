@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b60 - current against available, on both sides";
+export const BENCH_VERSION = "b66 - the cycle is the window, and short is gone";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -296,14 +296,19 @@ export default class BalanceBench extends BaseComponent{
 		return cycleStartOf(now, reportingConfig.startingMonth,
 			prefs.reportingStartingDay || reportingConfig.startingDay)
 	}
+	/* THE CYCLE IS THE WINDOW, and it is first because it scores best - measured, not preferred.
+
+	   "short" was max(3 months, cycle start): a window with no meaning of its own, invented to be
+	   recent. It was the default, it lost to the cycle on every reading, and being neither a natural
+	   period nor the best number it had nothing left to be. Removed rather than demoted, because a
+	   losing option left on an axis is a thing someone who does not know it lost will try again.
+
+	   The reporting cycle is a real boundary: budgets are declared against it, a long-period stream
+	   draws down within it, and the declared amounts change on it. A window starting anywhere else
+	   averages across a change of arrangement. */
 	windows(now){
-		const threeMonths = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3,
-			now.getUTCDate()))
-		const cycle = this.cycleStart(now)
-		const short = threeMonths > cycle ? threeMonths : cycle
 		return [
-			["short", short],
-			["cycle", cycle],
+			["cycle", this.cycleStart(now)],
 			["1 year", new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()))],
 			["all", new Date(0)]
 		]

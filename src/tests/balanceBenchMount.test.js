@@ -123,10 +123,15 @@ test("the report names the version that produced it", async () => {
 })
 
 test("every window in the scoreboard is scored without throwing", async () => {
-	//each one re-runs analyse() from a different lookback, which is four more chances to trip
+	/* Each one re-runs analyse() from a different lookback, which is a chance to trip per window.
+	   The CYCLE is first and is therefore the default the headline uses - it scores best, and "short"
+	   (max of three months and the cycle start) was removed rather than demoted: it lost on every
+	   reading, and a losing option left on an axis is one somebody re-tries without knowing. */
 	const ref = await mount()
 	const board = ref.current.scoreboard()
-	expect(board.length).toBe(4)
+	expect(board.length).toBe(3)
+	expect(ref.current.windows(ref.current.today())[0][0]).toBe("cycle")
+	expect(ref.current.windows(ref.current.today()).map(w => w[0])).not.toContain("short")
 	board.forEach(w => expect(typeof w.accuracy === "number" || w.accuracy === null).toBe(true))
 })
 
