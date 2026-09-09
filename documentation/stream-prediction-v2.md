@@ -5,13 +5,26 @@
 
 ---
 
-## The goal
+## Purpose
 
 **The module that owns the prediction algorithm and the logic for predicting the transactions of a
 given stream.**
 
 Given a stream and its transactions, it says what that stream will do next — on which account, how
 often, in what shape, and for how much — and how sure it is of each.
+
+**Everything it needs comes in as arguments and everything it decides comes out as a value.** It holds
+no opinion about balances, no reference to a chart, and no knowledge of which reading it is being asked
+for. That is what makes it testable on its own and replaceable without touching what draws.
+
+**It answers per account, and accounts are plural.** A user may connect several checking accounts and
+several cards. A stream relates to one of them — sometimes to two — and a balance is drawn for each. A
+prediction that says only "$1,700 on the 6th" is not usable; it must say *out of which account*.
+
+**It predicts, and only predicts.** It does not explain itself. A stream the module is unsure of is
+distinguishable from one it is sure of through the **confidence on the prediction**, not through an
+account of how the decision was reached. Where a decision needs arguing with, that is a debugging need,
+and a debugging surface is built when there is something to debug.
 
 Each stage below carries a **status**, and gains its approach and its acceptance criteria as those are
 agreed.
