@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b68 - the screen and the copy button say the same thing";
+export const BENCH_VERSION = "b69 - four answers, one line each";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1197,6 +1197,12 @@ export default class BalanceBench extends BaseComponent{
 					: (sch.schedule && sch.schedule.monthDay
 						? "day " + sch.schedule.monthDay : "unscheduled"),
 				amount: each, spread: locked ? 1 : 0, gain: (a.gain || {})[c.id] || 0,
+				interval: sch.intervalDays || 0, offset: sch.offsetDays || 0,
+				pass: sch.passThrough === undefined ? 1 : sch.passThrough,
+				fitFrom: (sch.repayments || []).length,
+				repaidFrom: ((a.linked && a.model && a.model.meta.links) || {})[c.hash] || null,
+				feeders: (a.model ? a.model.terminals.filter(t => a.model.routing[t.id] === c.hash)
+					.length : 0),
 				sort: Math.abs((d && d.actTotal) || pred), detail: d}
 		})
 		const dropped = {}
@@ -1361,6 +1367,22 @@ export default class BalanceBench extends BaseComponent{
 		return r ? r.accuracy : null
 	}
 
+	/* THE SAME MONTH SCORED WITHOUT LETTING ERRORS CANCEL.
+
+	   The headline sums every stream's SIGNED flow for a day before taking the gap, so Savings
+	   predicted $4,000 on the 15th against $6,000 on the 14th is partly paid for by some other stream
+	   erring the other way. That is honest about the BALANCE, which is what the reader looks at, and
+	   it is not a measure of the model: both streams were wrong, and the cancellation is luck neither
+	   of them controls.
+
+	   RAW adds each stream's own error and lets none of it cancel. It is always the lower number. The
+	   gap between the two is how much of the score is currently luck. */
+	rawScore(){
+		const a = this.analyse(this.lookback()[1])
+		if(!a || !a.area || !a.grossSurface)return null
+		return 1 - a.grossSurface/a.area
+	}
+
 	/* GROUPED BY THE ACCOUNT THE MONEY LEAVES, not by how regular it is. The tier says how a stream
 	   behaves and is on the row already; the account says which of two forecasts it belongs to, which
 	   is the thing that has to be audited one side at a time.
@@ -1510,63 +1532,59 @@ export default class BalanceBench extends BaseComponent{
 		   only" about the largest row in the reading, all three meaningless and one of them wrong. */
 		const isCard = !!r.hash
 		const out = [r.name + "   " + BENCH_VERSION]
-		if(isCard){
-			out.push("class      card settlement for " + r.hash + "   (not a stream: this row IS an"
-				+ " account, and its actual is what really left checking)")
-		}
-		/* FOUR QUESTIONS, IN ORDER, EACH ANSWERED WITH THE EVIDENCE THAT DECIDED IT.
+		/* FOUR ANSWERS, ONE LINE EACH.
 
-		   The row used to print the OUTPUTS of four decisions and none of the decisions. "monthly
-		   (declared yearly), spread by budget, -$600" is four answers with no working, and a reader
-		   who disagrees with the number has nothing to disagree WITH. */
-		const acct = r.routedTo ? (this.accountName(r.routedTo) || r.routedTo) : "nothing"
-		out.push("")
-		out.push("1. WHICH ACCOUNT   " + (r.split && r.split.n
-			? Math.round(r.split.cardShare*100) + "% of its money is on a card ("
-				+ r.split.card + " of " + r.split.n + " transactions)"
-			: "every transaction on one account")
-			+ "\n   -> routed to " + acct + (r.onCard ? "  (a CARD)" : "  (checking)")
-			+ (r.partOf ? "\n   -> and this row is one SIDE of a split, holding "
-				+ Math.round(r.partShare*100) + "% of the budget" : "")
-			+ (r.onCard ? "\n   -> so it is not drawn in the checking line at all; its money arrives"
-				+ " inside the card repayment. It is SCORED against its own charges on that card."
-				: ""))
-		out.push("2. HOW OFTEN       detected " + (r.detected || "-") + " from " + r.legs
-			+ " transaction(s)" + (r.shapeFrom ? " (" + r.shapeFrom + " window)" : "")
-			+ (r.declared && r.detected && r.declared !== r.detected
-				? "\n   -> you declared " + r.declared + ". These are different questions: DECLARED is"
-					+ " how the budget is written, DETECTED is how often money actually moves."
-				: "\n   -> which agrees with your declaration")
-			+ (r.events ? "\n   -> about " + (Math.round(r.events*10)/10) + " movement(s) per turn"
-				: ""))
-		out.push("3. HOW MUCH        " + money(r.amount) + " per month"
-			+ (r.amountRule ? "\n   -> " + r.amountRule : "")
-			+ "\n   -> you declared " + money(r.expected) + " per " + (r.declared || "month"))
-		out.push("4. WHEN            " + (r.day === "spread" || r.day === "spread by budget"
-			? "SPREAD across the month, no single day"
-			: "a LUMP on " + r.day)
-			+ "\n   -> the top day carries " + Math.round((r.spread || 0)*100)
-			+ "% of the month, and tier " + r.tier + " means "
-			+ (r.tier === 1 ? "one dated event" : (r.tier === 2 ? "a few days it moves between"
-				: (r.tier === 3 ? "no single event at all" : "too little history to say")))
-			+ (r.day === "spread by budget"
-				? "\n   -> SPREAD BY BUDGET overrides the shape: a long-period budget with no"
-					+ " instalment evidence is drawn evenly rather than on a day it has not earned."
-				: "")
-			+ (r.promoted ? "\n   -> promoted to an INSTALMENT of " + money(r.instalment)
-				+ ": repeated equal charges at a consistent interval earned a date." : ""))
-		out.push("")
-		out.push("score      " + Math.round((r.gain || 0)*100) + "%   surface " + money(r.surface)
-			+ " $-days" + (r.onCard ? "   (scored on the card)" : ""))
-		out.push("predicted  " + money(d.predTotal || 0) + "   " + (d.predDays || "nothing"))
-		out.push("actual     " + money(d.actTotal || 0) + "   " + (d.actDays || "nothing"))
-		out.push("worst gap  " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : ""))
-		out.push("transactions " + Math.round((d.flowAccuracy || 0)*100) + "%")
+		   The row prints the four decisions that made it, and it has to fit on a phone beside eighty
+		   others. A paragraph per answer means scrolling a screen for one row, which is the same as
+		   not reading it - so each answer is one line of facts separated by dots, and nothing is
+		   explained that the fact does not already say.
+
+		   A CARD ROW ANSWERS DIFFERENT FOUR. It is an account, not a stream: nothing routes it, no
+		   cycle was detected for it, and its amount comes from a fitted schedule rather than a
+		   declaration. Asking it the stream questions produced "routed to nothing" and "detected -
+		   from undefined transactions". */
+		const acct = h => (this.accountName(h) || (h ? String(h).slice(0, 22) : "-"))
+		const pct = v => Math.round((v || 0)*100) + "%"
 		if(isCard){
-			out.push("")
-			out.push("each statement, as the three terms it is made of:")
-			this.statementLines(r.hash).forEach(l => out.push(l.replace(/^ {6}/, "  ")))
+			out.push("1 ACCOUNT   this row IS the card \u00b7 " + r.feeders + " stream(s) charge to it"
+				+ (r.repaidFrom ? " \u00b7 repaid from " + acct(r.repaidFrom) : " \u00b7 unlinked"))
+			out.push("2 HOW OFTEN every " + Math.round(r.interval) + "d \u00b7 fitted from "
+				+ r.fitFrom + " paired repayment(s) \u00b7 statement closes "
+				+ Math.round(r.offset) + "d before payment")
+			out.push("3 HOW MUCH  " + money(r.amount) + " per statement \u00b7 " + money(r.expected)
+				+ " over the window \u00b7 posted + planned + residual, \u00d7 " + pct(r.pass)
+				+ " pass-through")
+			out.push("4 WHEN      " + r.day + " \u00b7 the schedule sets the day, never the amount")
+		}else{
+			out.push("1 ACCOUNT   " + (r.onCard ? "CARD " : "checking ") + acct(r.routedTo)
+				+ (r.split && r.split.n ? " \u00b7 " + pct(r.split.cardShareByAmount)
+					+ " of its money on a card (" + r.split.card + "/" + r.split.n + " txns)"
+					: " \u00b7 one account only")
+				+ (r.partOf ? " \u00b7 one SIDE of a split, " + pct(r.partShare) + " of the budget"
+					: "")
+				+ (r.onCard ? " \u00b7 not drawn in checking; scored on the card" : ""))
+			out.push("2 HOW OFTEN " + (r.detected || "-") + " detected from " + r.legs + " txns"
+				+ (r.shapeFrom && r.shapeFrom !== "recent" ? " (" + r.shapeFrom + " window)" : "")
+				+ " \u00b7 " + (r.declared === r.detected ? "agrees with your declaration"
+					: r.declared + " declared \u2014 declared is how the budget is WRITTEN, detected is"
+						+ " how often money MOVES")
+				+ (r.events ? " \u00b7 " + (Math.round(r.events*10)/10) + " movements/turn" : ""))
+			out.push("3 HOW MUCH  " + money(r.amount) + "/mo \u00b7 " + (r.amountRule || "-")
+				+ " \u00b7 you declared " + money(r.expected) + " per " + (r.declared || "month"))
+			out.push("4 WHEN      " + (r.day === "spread by budget"
+					? "spread by BUDGET \u2014 a long-period budget with no instalment evidence is"
+						+ " drawn evenly, overriding the measured shape"
+					: (r.day === "spread" ? "spread \u2014 no single event" : "lump on " + r.day))
+				+ " \u00b7 top day " + pct(r.spread) + " \u00b7 tier " + r.tier
+				+ (r.promoted ? " \u00b7 INSTALMENT " + money(r.instalment) : ""))
 		}
+		out.push("score " + pct(r.gain) + " \u00b7 surface " + money(r.surface) + " $-days"
+			+ (r.onCard && !isCard ? " (on the card)" : ""))
+		out.push("pred  " + money(d.predTotal || 0) + " \u00b7 " + (d.predDays || "nothing"))
+		out.push("act   " + money(d.actTotal || 0) + " \u00b7 " + (d.actDays || "nothing"))
+		out.push("worst " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : "")
+			+ " \u00b7 transactions " + Math.round((d.flowAccuracy || 0)*100) + "%")
+		if(isCard)this.statementLines(r.hash).forEach(l => out.push(l.replace(/^ {6}/, "  ")))
 		return out.join("\n")
 	}
 
@@ -1840,6 +1858,15 @@ export default class BalanceBench extends BaseComponent{
 			<Score>
 				<Big>{score === null ? "—" : (score*100).toFixed(1) + "%"}
 					<Small> balance accuracy</Small></Big>
+				{/* the outcome and the raw work, because they are different claims and the headline
+				    alone flatters the model whenever two streams happen to err in opposite
+				    directions */}
+				<Line>{(() => {
+					let raw = null
+					try{raw = this.rawScore()}catch(e){raw = null}
+					return raw === null ? "" : (raw*100).toFixed(1)
+						+ "% raw — each stream's own error, nothing cancelling"
+				})()}</Line>
 				<Bar>
 					{this.horizons().map(h => <Btn key={h[0]} type="button"
 						style={this.horizon() === h[1] ? {fontWeight:600, borderStyle:"solid"} : null}

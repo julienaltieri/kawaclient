@@ -103,6 +103,9 @@ beforeEach(() => {
 	}
 })
 
+//the answer lines, without the name/version header
+const payloadLines = t => t.split(String.fromCharCode(10)).slice(1).filter(l => l.trim())
+
 const mount = async () => {
 	const ref = React.createRef()
 	await act(async () => {render(<BalanceBench ref={ref} transactions={txns}/>)})
@@ -397,16 +400,18 @@ test("a row can be copied on its own", async () => {
 	/* THE FOUR QUESTIONS A ROW HAS TO ANSWER. It used to print the OUTPUTS of four decisions and none
 	   of the decisions: "monthly (declared yearly), spread by budget, -$600" is four answers with no
 	   working, and a reader who disagrees with the number has nothing to disagree WITH. */
-	expect(text).toMatch(/1\. WHICH ACCOUNT/)
-	expect(text).toMatch(/2\. HOW OFTEN/)
-	expect(text).toMatch(/3\. HOW MUCH/)
-	expect(text).toMatch(/4\. WHEN/)
+	expect(text).toMatch(/1 ACCOUNT /)
+	expect(text).toMatch(/2 HOW OFTEN /)
+	expect(text).toMatch(/3 HOW MUCH /)
+	expect(text).toMatch(/4 WHEN /)
+	//one line per answer: a paragraph each means scrolling a screen for one row of eighty
+	payloadLines(text).forEach(l => expect(l.length).toBeLessThan(190))
 	//the four answers still carry their evidence, not just a verdict
 	expect(text).toMatch(/detected /)
-	expect(text).toMatch(/routed to /)
-	expect(text).toMatch(/predicted /)
-	expect(text).toMatch(/actual /)
-	expect(text).toMatch(/worst gap/)
+	expect(text).toMatch(/1 ACCOUNT   (checking|CARD) /)
+	expect(text).toMatch(/pred  /)
+	expect(text).toMatch(/act   /)
+	expect(text).toMatch(/worst /)
 })
 
 test("the cycle column is what was DETECTED, and says so when it disagrees", async () => {
@@ -560,10 +565,14 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	const card = ref.current.rows().filter(r => r.hash)[0]
 	expect(card).toBeTruthy()
 	const txt = ref.current.rowDebug(card)
-	expect(txt).toMatch(/card settlement for /)
-	expect(txt).not.toMatch(/partition  /)
-	expect(txt).not.toMatch(/paid       /)
-	expect(txt).toMatch(/each statement, as the three terms/)
+	/* A CARD ROW ANSWERS DIFFERENT FOUR. It is an account, not a stream: nothing routes it, no cycle
+	   was detected for it, and its amount comes from a fitted schedule rather than a declaration.
+	   Asking it the stream questions produced "routed to nothing" and "detected - from undefined". */
+	expect(txt).toMatch(/1 ACCOUNT   this row IS the card/)
+	expect(txt).toMatch(/2 HOW OFTEN every \d+d . fitted from \d+ paired repayment/)
+	expect(txt).toMatch(/3 HOW MUCH .* per statement/)
+	expect(txt).not.toMatch(/routed to nothing/)
+	expect(txt).not.toMatch(/undefined/)
 	expect(txt).toMatch(/posted .* planned .* residual .* actual/)
 	expect(txt).toMatch(/rate = \(charged .* streams said /)
 	expect(txt).toMatch(/in this window: charged .* repaid /)
@@ -571,8 +580,8 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	//and an ordinary stream keeps the three lines that do mean something about it
 	const stream = ref.current.rows().filter(r => !r.hash)[0]
 	const st = ref.current.rowDebug(stream)
-	expect(st).toMatch(/1\. WHICH ACCOUNT/)
-	expect(st).toMatch(/4\. WHEN/)
+	expect(st).toMatch(/1 ACCOUNT /)
+	expect(st).toMatch(/4 WHEN /)
 	expect(st).not.toMatch(/each statement/)
 })
 
@@ -742,6 +751,24 @@ test("the expanded row on screen IS the copy payload, not a second account of it
 	const onScreen = payload.split(NL).slice(1).join(NL).trim()
 	expect(onScreen.length).toBeGreaterThan(40)
 	expect(payload).toContain(onScreen)
-	expect(onScreen).toMatch(/1\. WHICH ACCOUNT/)
+	expect(onScreen).toMatch(/1 ACCOUNT /)
 	expect(onScreen).not.toMatch(/^b\d+ -/)
+})
+
+test("the raw score never flatters the headline - it cannot cancel", async () => {
+	/* The headline sums signed flows before taking the gap, so two streams wrong in opposite
+	   directions pay for each other. That is honest about the BALANCE and says nothing about the
+	   MODEL. RAW adds each stream's own error and lets none of it cancel, so it is always the lower
+	   number and the gap between them is how much of the score is luck. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	expect(a.grossSurface).toBeGreaterThan(0)
+	expect(a.grossSurface).toBeGreaterThanOrEqual(a.surface - 0.005)
+	const raw = ref.current.rawScore()
+	expect(raw).not.toBe(null)
+	expect(raw).toBeLessThanOrEqual(a.accuracy + 1e-9)
+	//and the gross is exactly the per-stream surfaces added up, with nothing else in it
+	let summed = 0
+	Object.keys(a.detail).forEach(k => {summed += a.detail[k].surface})
+	expect(summed).toBeCloseTo(a.grossSurface, 4)
 })
