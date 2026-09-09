@@ -22,7 +22,6 @@ const API = {
 	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
 	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
 	getBalanceHistory: 							AppConfig.serverURL + "/api" + "/getBalanceHistory",
-	saveFixture: 								AppConfig.serverURL + "/api" + "/saveFixture",
 	bankRemoveItem: 							AppConfig.serverURL + "/api" + "/bankRemoveItem",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
 	getSupportedInstitutions:  					AppConfig.serverURL + "/api" + "/getSupportedInstitutions",
@@ -327,33 +326,6 @@ class ApiCaller{
 	//The REMEMBERED balance series. Today's live figure arrives with the accounts instead - this only
 	//has whatever has accumulated since balance capture went in, so a caller must treat an empty
 	//answer as "no history yet" rather than as "no money".
-	/* DEVELOPMENT ONLY: asks the LOCAL server to write the bench fixture into the test folder.
-
-	   NOT via AppConfig.serverURL, which is the whole point. With `staging` false that URL is the
-	   DEPLOYED api, and the deployed api refuses this route on purpose - so the call succeeded at
-	   reaching the wrong machine, was correctly turned down, and fell back to a download. On a phone
-	   that reads as "the button does not work".
-
-	   The local server is on the same host the page came from, at its own port. Derived from
-	   window.location so it works from a laptop and from a phone on the LAN alike, which is where
-	   this actually gets used. */
-	localServerURL(){
-		if(typeof window === "undefined" || !window.location)return null
-		const l = window.location
-		if(!l.hostname)return null
-		return l.protocol + "//" + l.hostname + ":" + (AppConfig.localServerPort || 4001)
-	}
-
-	saveFixture(fixture){
-		const base = this.localServerURL()
-		if(!base)return Promise.reject(new Error("no local server to write to"))
-		const request = new Request(base + "/api/saveFixture",{
-			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
-			body:JSON.stringify({fixture: fixture})
-		})
-		return this.sendRequest(request)
-	}
-
 	getBalanceHistory(startDate, endDate){
 		const request = new Request(API.getBalanceHistory,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},

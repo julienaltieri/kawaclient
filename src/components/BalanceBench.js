@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b78 - the fixture goes to the local server, not the deployed one";
+export const BENCH_VERSION = "b73 - a turn is the stream's own period";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1588,85 +1588,6 @@ export default class BalanceBench extends BaseComponent{
 		]
 	}
 
-	/* THE WHOLE INPUT, AS A FILE.
-
-	   Every algorithm change so far has been argued from a row pasted into a chat: one stream, one
-	   month, no way to re-run it after the next change. A fixture is the same portfolio held still -
-	   the model is a pure function of these five things, so a file containing them can be replayed
-	   against any future version and the difference is the change.
-
-	   Captured from the bench because the bench already holds all five for its own reasons. Raw, not
-	   summarised: whatever is dropped here is a question that cannot be asked later, which is the
-	   whole argument of principle 27. */
-	fixture(){
-		return {
-			version: BENCH_VERSION,
-			capturedAt: new Date().toISOString(),
-			today: this.today().toISOString(),
-			settlementDay: this.settlementDay(),
-			//the master stream round-trips through its own constructor
-			masterStream: Core.getMasterStream() || null,
-			userPreferences: (Core.getUserData() || {}).userPreferences || {},
-			accountTypes: (Core.getUserData() || {}).accountTypes || {},
-			accounts: this.state.accounts || [],
-			remembered: this.state.remembered || [],
-			transactions: (this.props.transactions || []).map(t => ({
-				transactionId: t.transactionId, id: t.id,
-				date: t.date, frontendDate: t.frontendDate,
-				amount: t.amount, description: t.description,
-				categorized: t.categorized,
-				streamAllocation: t.streamAllocation,
-				userInstitutionAccountId: t.userInstitutionAccountId,
-				pairedTransferTransactionId: t.pairedTransferTransactionId,
-				disambiguationId: t.disambiguationId,
-				userDefinedTransactionType: t.userDefinedTransactionType,
-				connectorName: t.connectorName, institutionId: t.institutionId
-			}))
-		}
-	}
-
-	/* WRITTEN WHERE THE TESTS READ IT, by the local server.
-
-	   A browser cannot write to disk, so a download lands in Downloads and has to be moved by hand
-	   every time - which means it is done once, goes stale, and the tests quietly run against a
-	   portfolio from three weeks ago. The local server can write the file, so it does.
-
-	   The download stays as the fallback for a client not talking to a local server. It is worse in
-	   exactly the way described above, so it says so instead of looking like a success. */
-	saveFixture(){
-		const say = m => this.updateState({copied: m},
-			() => setTimeout(() => this.updateState({copied: null}), 3200))
-		let f = null
-		try{f = this.fixture()}
-		catch(e){return say("could not build the fixture: " + (e && e.message))}
-		say("writing " + f.transactions.length + " transactions...")
-		ApiCaller.saveFixture(f).then(r => {
-			if(r && r.saved)return say(r.transactions + " transactions written to " + r.path)
-			this.downloadFixture(f, (r && r.error) || "the server did not write it")
-		}).catch(e => this.downloadFixture(f,
-			(e && e.message) || "no local server at " + (ApiCaller.localServerURL() || "?")))
-	}
-
-	downloadFixture(f, why){
-		try{
-			const blob = new Blob([JSON.stringify(f)], {type: "application/json"})
-			const url = URL.createObjectURL(blob)
-			const a = document.createElement("a")
-			a.href = url
-			a.download = "portfolio.json"
-			document.body.appendChild(a)
-			a.click()
-			document.body.removeChild(a)
-			setTimeout(() => URL.revokeObjectURL(url), 4000)
-			this.updateState({copied: "downloaded instead (" + why
-				+ ") - move it to client/src/tests/fixtures/portfolio.json"},
-				() => setTimeout(() => this.updateState({copied: null}), 6000))
-		}catch(e){
-			this.updateState({copied: "save failed: " + (e && e.message)},
-				() => setTimeout(() => this.updateState({copied: null}), 4000))
-		}
-	}
-
 	//the transactions a stream's shape was actually built from, as the model kept them
 	shapeSourceOf(id){
 		const a = this.analyse()
@@ -2015,7 +1936,6 @@ export default class BalanceBench extends BaseComponent{
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
 				<Btn type="button" onClick={() => this.copy(this.cardExport())}>Copy card export</Btn>
-				<Btn type="button" onClick={() => this.saveFixture()}>Save fixture</Btn>
 			</Bar>
 			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
 				<Head>{g[1]}</Head>
