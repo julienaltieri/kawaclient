@@ -28,9 +28,37 @@ own and replaceable without touching what draws.
 several cards. A stream lives on one of them — sometimes on two — and a balance is drawn for each. A
 prediction that says only "$1,700 on the 6th" is not usable; it must say *out of which account*.
 
-**It reports its own confidence.** Every stage below produces a decision AND the evidence that
-produced it. A stream the module is guessing about must be distinguishable from one it is sure of,
-because the consumer's right response to those is different, and today they are indistinguishable.
+**It predicts, and only predicts.** It does not explain itself. A stream the module is unsure of is
+distinguishable from one it is sure of through the **confidence on the prediction**, not through an
+account of how the decision was reached. Where a decision needs arguing with, that is a debugging
+need, and a debugging surface is built when there is something to debug — not carried by the module
+as a standing cost in shape and speed.
+
+### What it hands back
+
+**A schedule of the next predicted events.** Not money per day, and not a distribution — a list of
+things expected to happen, which is the form that can answer "when is the next one" without the caller
+reconstructing it.
+
+| field | what it is |
+|---|---|
+| `date` | when the event is expected |
+| `amount` | how much moves |
+| `account` | which account it moves out of |
+| `confidence.date` | how sure the module is about *when* |
+| `confidence.amount` | how sure the module is about *how much* |
+
+**Confidence is per dimension, because the two fail independently.** Rent is certain in both. A card
+statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be
+confident about size and have no idea when. Collapsing those into one number throws away the half the
+consumer needs.
+
+**The horizon is a module setting, not a caller's argument.** How far ahead a schedule stays meaningful
+is a property of the model — a weekly stream and a yearly one do not become unpredictable at the same
+distance — so the module owns it rather than answering whatever it is asked.
+
+**A spread stream still produces events.** "Continuous" is a shape, not an absence of events; how a
+spread is expressed in a schedule is a §3 question and is deliberately left open here.
 
 ### Why v2 rather than repair
 
@@ -164,11 +192,15 @@ and drift is never read as multiplicity.
 
 **Out:** the money the stream places on each day of the cycle ahead, per account, with a confidence.
 
-**The unresolved tension is which source owns the amount.** The declaration is what the user
-*intends*; the ledger is what actually happened. They disagree constantly, and neither is reliably
-right: a declaration goes stale, and a ledger mean is dragged by one unusual month. Today the
-declaration always wins and the ledger is used only where the declaration is silent. Whether that is
-correct is an open question and probably the highest-value one in this document.
+**Which source owns the amount is DELIBERATELY LEFT OPEN, and will be decided case by case.** The
+declaration is what the user *intends*; the ledger is what actually happened. They disagree constantly
+and neither is reliably right — a declaration goes stale, and a ledger mean is dragged by one unusual
+month. Today the declaration always wins and the ledger is used only where the declaration is silent.
+
+This is not an omission to be resolved before starting. It is a decision that belongs to each case, and
+committing to one source up front would force the wrong answer onto whichever cases disagree with it.
+What this stage must do is make the choice **visible and per-case** rather than global, so that a
+stream taking its amount from the ledger and one taking it from the declaration are both legible.
 
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
@@ -235,13 +267,28 @@ stream that merely moved is recognised as having moved.
 perfect, because some of the variance is irreducible, but at the point where the remaining error is
 demonstrably the data's and not the model's.
 
+**And "as good as possible" is judged by agreement, stream by stream, against the captured portfolio.**
+Julien audits each stream in the fixture and asks whether the module's decision is the one he would
+have made. That is the measure, and it is deliberately not a percentage: stages 1 to 3 are
+classifications with no dollar error, so an accuracy score cannot price them at all, and a model that
+agrees with its owner about every stream is the thing actually being built.
+
+Two consequences worth stating, because they are easy to lose:
+
+- **A disagreement is a finding, not a failure.** Where the module and the judgment differ, one of the
+  two is wrong and which one is the interesting question. Several of v1's rules exist because the
+  ledger turned out to be right.
+- **The audit needs the module's decisions to be readable at the moment of judging.** That is a
+  debugging surface, built for the audit, and it is not the same as the module explaining itself in
+  production — see "It predicts, and only predicts".
+
 **The module is self-contained.** It can be handed a portfolio and an as-of date and will answer
 without reaching for anything else. It has no dependency on the chart, the bench, or the balance walk.
 
 **It is trusted, and trust is demonstrated rather than asserted:**
 
-- every decision it makes carries the evidence that produced it, in a form a person can read;
-- it is measured against the real portfolio, not only against fixtures built to test each rule;
+- it is audited against the real portfolio stream by stream, not only against fixtures built to test
+  each rule;
 - each stage can be turned off independently so its contribution can be priced;
 - a stage that fires can be shown to fire for the right reason, and a rule that changes nothing is
   removed rather than kept.
@@ -251,15 +298,22 @@ model stays in place, unchanged, throughout.
 
 ---
 
-## Open questions, carried forward
+## Decided
 
-These are not rhetorical. Each one changes the shape of the work.
+Four questions were open when this was first written. They are settled, and recorded here so they are
+not re-opened by accident.
 
-1. **Does the declaration or the ledger own the amount?** §4 cannot be specified until this is
-   decided, and §5 depends on it too.
-2. **What is the module's output unit** — money per day per account, or a list of dated events with
-   sizes? Events carry more information and are harder to consume; days are the opposite.
-3. **How is "as good as possible given known variability" measured per stage?** A stage-level metric is
-   needed, or the exit criteria cannot be evaluated except by eye.
-4. **Does the module predict, or does it also explain?** Carrying the evidence for every decision has a
-   real cost in shape and in speed; it is also the thing that was missing from v1.
+| question | answer |
+|---|---|
+| Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached — see §4. |
+| What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
+| How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
+| Does it predict, or also explain? | **Predict only.** Explanation is a debugging need and gets built when there is something to debug. |
+
+## Still open
+
+1. **How a spread stream appears in an event schedule.** A §3 question, and the one place the output
+   contract and the shape taxonomy have to meet.
+2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
+3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
+   not a person, and comparable between streams.
