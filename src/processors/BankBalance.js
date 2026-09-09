@@ -77,6 +77,22 @@ export function monthlyExpectationAt(stream, when, periodName){
 
    The period is the caller's to supply, because only the caller knows whether the declaration or the
    detected cycle is the right turn to count against. Absent one, this behaves exactly as it did. */
+/* A DECLARATION OF RHYTHM BEATS A DETECTION OF IT, and only a long-period declaration says nothing.
+
+   The cycle detector reads a rhythm off transactions, and transactions are noisy in ways a
+   declaration is not: a cheque that lands on the 1st because the 29th was a Sunday, a month with a
+   correction in it, a stream whose amount changed mid-year. Wages Julien is declared SEMIMONTHLY and
+   is paid once every half-month; the detector, given seventeen transactions spread over eight
+   day-of-month values by ordinary drift, had every reason to see something else.
+
+   So where the declaration names a rhythm, that is the cycle. It is a statement of fact by the person
+   who receives the money, and no amount of inference beats being told.
+
+   A YEARLY DECLARATION IS THE EXCEPTION, because it is not a rhythm at all - it is a budget envelope,
+   and it is silent about when the money moves. Day Care Emile declares $3,000 a year and is charged
+   monthly; there is nothing to override, so the detection stands. */
+export const RHYTHMLESS_PERIODS = {yearly: true, biyearly: true};
+
 export const TURN_DAYS = {weekly: 7, biweekly: 14, semimonthly: 15.22, monthly: 30.44,
 	bimonthly: 60.88, quarterly: 91.3, biyearly: 182.6, yearly: 365};
 
@@ -139,7 +155,7 @@ const MIN_TURNS_FOR_A_DATE = 3, DATE_REPEATS_AT = 0.6;
 export function histogramOf(txnsForStream, opts){
 	const dateOf = t => new Date(t.date), amountOf = t => t.amount;
 	const cycle = histogram.detectCycle(txnsForStream, dateOf, amountOf,
-		{prefer: (opts || {}).prefer});
+		{prefer: (opts || {}).prefer, force: (opts || {}).force});
 	const bins = histogram.accumulate(txnsForStream, t => cycle.phaseOf(dateOf(t)), amountOf,
 		cycle.bins);
 	/* DRIFT IS MEASURED IN DAYS, NOT IN FRACTIONS OF A CYCLE - and deriving the collapse radius from
@@ -2490,6 +2506,18 @@ export function partitionStreams(terminals, byStream, opts){
 		routingOverride: override};
 }
 
+/* WHEN THE DECLARED AMOUNT LAST CHANGED. The history is sorted ascending and deduped by the model, so
+   the last entry is the arrangement in force. Returns null where there is no history, one entry, or a
+   first entry old enough that clamping to it would change nothing. */
+export function latestSegmentStart(stream){
+	const hist = stream && stream.expAmountHistory;
+	if(!hist || hist.length < 2)return null;
+	const last = hist[hist.length - 1];
+	if(!last || !last.startDate)return null;
+	const d = new Date(last.startDate);
+	return isNaN(d.getTime()) ? null : d;
+}
+
 export function buildForecastInputs(opts){
 	const terminals = opts.terminals || [], byStream = opts.byStream || {};
 	const covered = opts.covered || [], since = opts.since, until = opts.until;
@@ -2555,6 +2583,23 @@ export function buildForecastInputs(opts){
 		const all = byStream[s.id] || [];
 		sliced[s.id] = seen[s.id].filter(x => covered.indexOf(x.accountHash) > -1);
 		const period = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly";
+		/* ONLY THE LATEST SEGMENT OF THE DECLARATION.
+
+		   A stream's expected amount has a history - each entry is "from this date, it is this much" -
+		   and a shape drawn across a change of amount is describing two different arrangements at
+		   once. Wages Julien reads $5,568 in January and $7,837 in July: averaging those is not a
+		   better estimate of either, it is an estimate of neither, and the days from the old
+		   arrangement carry weight in a forecast of the new one.
+
+		   The window is therefore clamped to the most recent segment's start. It is a clamp and never
+		   an extension - a segment that starts before `since` leaves the lookback exactly as it was -
+		   and it is skipped entirely when it would leave too little to measure, because a shape drawn
+		   from one transaction is worse than one drawn from a stale arrangement. */
+		const seg = latestSegmentStart(s);
+		if(seg){
+			const fresh = seen[s.id].filter(x => x.date >= seg);
+			if(fresh.length >= 3)seen[s.id] = fresh;
+		}
 		/* the account the money leaves, first - the same set as `sliced` for anything on a covered
 		   account, and the right set for anything that is not */
 		const home = shapeFromRouted ? routing[s.id] : null;
@@ -2614,7 +2659,12 @@ export function buildForecastInputs(opts){
 		   for how much - that is the whole evidence for the cycle, the events-per-turn and every day
 		   the forecast puts money on. It is a reference to rows already in memory, not a copy. */
 		shapeSource[s.id] = use;
-		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
+		/* `force` where the declaration names a rhythm; `prefer` only where it does not. The detector
+		   still runs and its answer is still reported - a disagreement is worth seeing - but it no
+		   longer decides for a stream whose owner has already said. */
+		const declaredRhythm = !RHYTHMLESS_PERIODS[period] ? period : null;
+		shapes[s.id] = histogramOf(use, {prefer: period, force: declaredRhythm,
+			events: events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
 		shapes[s.id].spreadReason = null;
 		shapes[s.id].notForecast = longInflow

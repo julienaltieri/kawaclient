@@ -295,6 +295,13 @@ export function concentrateTo(weights, events){
 export function detectCycle(items, dateOf, amountOf, opts){
 	const o = (typeof opts === "number") ? {minObservations: opts} : (opts || {});
 	const min = o.minObservations === undefined ? 2 : o.minObservations;
+	/* A DECLARATION OF RHYTHM IS NOT A HINT. Where the caller passes `force`, the person who receives
+	   the money has said how often it arrives, and detection has nothing to add: transactions are
+	   noisy in ways a declaration is not - a cheque moved off a Sunday, a month with a correction in
+	   it - and the detector was overruling a fact with an inference.
+
+	   `prefer` remains the tie-break for callers who are asking rather than telling. */
+	if(o.force && CYCLES[o.force])return CYCLES[o.force];
 	if(!items || items.length < min)return CYCLES.monthly;
 	const days = items.map(it => utcDay(dateOf(it)));
 	const span = Math.max.apply(null, days) - Math.min.apply(null, days);

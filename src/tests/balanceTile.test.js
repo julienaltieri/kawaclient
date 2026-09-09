@@ -23,7 +23,7 @@ import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CL
 	buildModel, eventsPerTurn, accountLinks, cardSchedule, cardRepaymentForecast,
 	shareOfDayDetail, cardSpend,
 	buildForecastInputs, partitionStreams, observedSeries, BALANCE_SOURCES,
-	turnKeyOf} from '../processors/BankBalance'
+	turnKeyOf, latestSegmentStart} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -3496,4 +3496,88 @@ test("a turn is the stream's own period, not always a calendar month", () => {
 	const monthly = []
 	for(let m = 0; m < 8; m++)monthly.push({date: new Date(Date.UTC(2026, m, 3)), amount: -1700})
 	expect(eventsPerTurn(monthly, -1700, "monthly")).toBeCloseTo(eventsPerTurn(monthly, -1700), 6)
+})
+
+/* =================================================================================================
+   A DECLARATION OF RHYTHM BEATS A DETECTION OF IT.
+
+   Transactions are noisy in ways a declaration is not - a cheque moved off a Sunday, a month with a
+   correction in it - and the detector was overruling a fact with an inference.
+   ================================================================================================= */
+test("a declared rhythm IS the cycle, however the transactions scatter", () => {
+	/* The adversarial case: transactions that land once a month, on a stream its owner declares
+	   WEEKLY. Detection says monthly and is right about the ledger; the declaration says weekly and
+	   is right about the arrangement. The declaration wins. */
+	const s1 = {id: "food", name: "Groceries", getPreferredPeriod: () => "weekly",
+		getExpectedAmountAtDateByPeriod: () => -230}
+	const legs = []
+	for(let m = 0; m <= 6; m++)
+		legs.push({date: new Date(Date.UTC(2026, m, 5)), amount: -996, accountHash: "chk"})
+	const loose = detectCycle(legs, t => t.date, t => t.amount, {prefer: "weekly"})
+	expect(loose.name).toBe("monthly")                //what the ledger alone says
+	const built = buildForecastInputs({terminals: [s1], byStream: {food: legs},
+		since: new Date(Date.UTC(2026, 0, 1)), until: new Date(Date.UTC(2026, 7, 1)),
+		covered: ["chk"]})
+	expect(built.shapes.food.cycle.name).toBe("weekly")
+
+	//and a YEARLY declaration is not a rhythm at all, so the detection still stands
+	const s2 = {id: "emile", name: "Emile", getPreferredPeriod: () => "yearly",
+		getExpectedAmountAtDateByPeriod: () => -3000}
+	const monthly = []
+	for(let m = 0; m <= 6; m++)
+		monthly.push({date: new Date(Date.UTC(2026, m, 9)), amount: -430, accountHash: "chk"})
+	const b2 = buildForecastInputs({terminals: [s2], byStream: {emile: monthly},
+		since: new Date(Date.UTC(2026, 0, 1)), until: new Date(Date.UTC(2026, 7, 1)),
+		covered: ["chk"]})
+	expect(b2.shapes.emile.cycle.name).toBe("monthly")
+})
+
+/* =================================================================================================
+   ONLY THE LATEST SEGMENT OF THE DECLARATION.
+
+   A shape drawn across a change of amount describes two arrangements at once. $5,568 in January and
+   $7,837 in July averaged is not a better estimate of either - it is an estimate of neither.
+   ================================================================================================= */
+test("the window is clamped to the latest expectation segment", () => {
+	const hist = [{startDate: new Date(Date.UTC(2026, 0, 1)), amount: -1000},
+		{startDate: new Date(Date.UTC(2026, 4, 1)), amount: -1700}]
+	expect(latestSegmentStart({expAmountHistory: hist}).getTime())
+		.toBe(Date.UTC(2026, 4, 1))
+	//one entry is not a change, so there is nothing to clamp to
+	expect(latestSegmentStart({expAmountHistory: [hist[0]]})).toBe(null)
+	expect(latestSegmentStart({})).toBe(null)
+
+	const s1 = {id: "rent", name: "Rent", expAmountHistory: hist,
+		getPreferredPeriod: () => "monthly", getExpectedAmountAtDateByPeriod: () => -1700}
+	const legs = []
+	/* The old arrangement ran longer and moved MORE money, so left in it wins the shape outright -
+	   which is the whole failure: a forecast of the current arrangement drawn on the old one's day. */
+	for(let m = 0; m <= 3; m++)
+		legs.push({date: new Date(Date.UTC(2026, m, 2)), amount: -3000, accountHash: "chk"})
+	for(let m = 4; m <= 6; m++)
+		legs.push({date: new Date(Date.UTC(2026, m, 20)), amount: -1700, accountHash: "chk"})
+	const built = buildForecastInputs({terminals: [s1], byStream: {rent: legs},
+		since: new Date(Date.UTC(2026, 0, 1)), until: new Date(Date.UTC(2026, 7, 1)),
+		covered: ["chk"]})
+	//the day the money lands on NOW owns the shape; the old arrangement carries none of it
+	expect(built.shapes.rent.weights[19]).toBeGreaterThan(0.9)
+	expect(built.shapes.rent.weights[1]).toBeLessThan(0.05)
+})
+
+test("a segment too new to measure is not clamped to - stale beats nothing", () => {
+	/* A shape drawn from one transaction is worse than one drawn from a stale arrangement, so the
+	   clamp is skipped rather than applied to scraps. */
+	const hist = [{startDate: new Date(Date.UTC(2026, 0, 1)), amount: -1000},
+		{startDate: new Date(Date.UTC(2026, 6, 1)), amount: -1700}]
+	const s1 = {id: "rent", name: "Rent", expAmountHistory: hist,
+		getPreferredPeriod: () => "monthly", getExpectedAmountAtDateByPeriod: () => -1700}
+	const legs = []
+	for(let m = 0; m <= 5; m++)
+		legs.push({date: new Date(Date.UTC(2026, m, 2)), amount: -3000, accountHash: "chk"})
+	legs.push({date: new Date(Date.UTC(2026, 6, 20)), amount: -1700, accountHash: "chk"})
+	const built = buildForecastInputs({terminals: [s1], byStream: {rent: legs},
+		since: new Date(Date.UTC(2026, 0, 1)), until: new Date(Date.UTC(2026, 7, 1)),
+		covered: ["chk"]})
+	//one transaction since the change is not a shape, so the older days still carry it
+	expect(built.shapes.rent.weights[1]).toBeGreaterThan(0.5)
 })
