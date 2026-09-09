@@ -3437,3 +3437,31 @@ test("a failing history call leaves the tile drawing, not blank", async () => {
 	await act(async () => {render(<BalanceChart ref={ref} stream={master} transactions={txns}/>)})
 	expect(ref.current.series("this").past.length).toBeGreaterThan(5)
 })
+
+test("a cycle that spoke with one voice ROUTES the stream, not just stops the split", () => {
+	/* SUPPRESSING THE SPLIT ALONE WAS WORSE THAN HAVING NO RULE. accountRoutingOf weighs the whole
+	   window by unweighted magnitude, so a stream that moved to the card last month was left unsplit
+	   and then routed to CHECKING on the strength of the months before it - all of its money in one
+	   wrong place, where a split would at least have had half of it right. */
+	const st = evStream("gym", "Gym", -200)
+	const txns = []
+	//six months on checking, then it moves to the card and August is card-only, twice
+	for(let m = 0; m <= 5; m++)
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 6)), -200, "gym", "chk", "c" + m))
+	txns.push(evTxn(new Date(Date.UTC(2026, 6, 21)), -200, "gym", "visa", "v6"))
+	txns.push(evTxn(new Date(Date.UTC(2026, 7, 8)), -200, "gym", "visa", "v7"))
+	txns.push(evTxn(new Date(Date.UTC(2026, 7, 22)), -200, "gym", "visa", "v8"))
+	const opts = {transactions: txns, terminals: [st], covered: ["chk"], cards: ["visa"],
+		asOf: new Date(Date.UTC(2026, 8, 1)), until: new Date(Date.UTC(2026, 8, 30)),
+		since: new Date(Date.UTC(2026, 0, 1))}
+	const m = buildModel(opts)
+	//the history says checking by weight of money, and the history is describing an arrangement that
+	//no longer exists
+	expect(m.meta.partitions.gym.unanimous).toBe("visa")
+	expect(m.terminals.length).toBe(1)
+	expect(m.routing.gym).toBe("visa")
+
+	//and without the partition step at all, the old answer is the one the window gives
+	const whole = buildModel(Object.assign({}, opts, {noPartition: true}))
+	expect(whole.routing.gym).toBe("chk")
+})

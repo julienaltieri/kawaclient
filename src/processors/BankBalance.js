@@ -1583,6 +1583,15 @@ export function cardSpend(transactions, cardHash, settlements){
 	return out.sort((a, b) => a.d - b.d);
 }
 
+/* SUPERSEDED, AND KEPT ONLY FOR ITS TESTS. buildModel no longer calls this, cardSettlementForecast or
+   inferSettlements: a card is linked by accountLinks and scheduled by cardSchedule, which fits the
+   same interval, offset and pass-through over the RECENT events rather than over all of history.
+
+   The two disagree about that deliberately and the trade is not settled. This function locks the
+   offset over everything, on the argument that refitting made one card answer differently in two views
+   of the same month; cardSchedule refits over the last eight, on the argument that a card whose
+   statement day moved is describing a new arrangement. Whoever merges these two must choose knowingly
+   rather than by whichever body they kept. */
 export function cardCycles(transactions, creditHashes, settlements){
 	const out = {};
 	(creditHashes || []).forEach(c => {out[c] = {events: [], intervalDays: 0, ratio: 1, rate: 0,
@@ -1724,6 +1733,21 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 	   minus what the streams said it would be, floored at zero and divided by the days observed. Where
 	   the streams describe the card well this is near nothing and changes little; where they describe
 	   it badly it carries the whole difference, which is what the old blind rate did and did well. */
+	/* THE TWO HALVES OF THE RATE MUST COVER THE SAME DAYS, AND THAT IS WHY THIS IS WRITTEN ODDLY.
+
+	   `rate` is a difference: what the card was actually charged, minus what its streams claimed over
+	   the same span. A difference of two sums is only meaningful if both sums run over the same days,
+	   so the window is anchored to the EARLIEST CHARGE inside the trailing ninety - not to ninety days
+	   flat - and `saidForWindow` then walks day by day from that same earliest charge. Replace either
+	   with a clean fixed window and the two desynchronise: the subtraction stops being a gap and
+	   becomes noise, silently, because it still produces a plausible number.
+
+	   Ninety days is the span, measured rather than preferred - see cardSettlementForecast, where the
+	   three candidate bases were scored against what the card was actually paid.
+
+	   `rateDays` is the observed span, so a card whose first charge in the window was three days ago
+	   divides by three. That is deliberate - a new card's rate should describe the days it has - but
+	   it is also why a nearly-dormant card can produce a large rate from very little evidence. */
 	const rateFrom = new Date(from.getTime() - 90*DAY);
 	let charged = 0, earliest = null;
 	charges.forEach(x => {
@@ -1737,6 +1761,14 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 		for(let t = earliest.getTime(); t < from.getTime(); t += DAY)
 			saidForWindow += chargedOn(cardHash, new Date(t));
 	}
+	/* FLOORED AT ZERO, AND THE FLOOR IS NOT SYMMETRY-BREAKING TIDINESS.
+
+	   A negative gap means the streams CLAIMED more than the card was charged. Letting that through
+	   would subtract from `planned` - the model would forecast fewer charges than its own streams say
+	   are coming, on the strength of an over-claim in the past. The residual exists to carry spending
+	   the streams do not know about; it has no business removing spending they DO know about, and the
+	   two errors have different cures. Removing the clamp for symmetry quietly cancels real forecast
+	   charges. */
 	const rate = Math.max(0, charged - saidForWindow)/rateDays;
 	/* THE RATE'S OWN ARITHMETIC, HANDED OUT. It came back zero on every statement of an
 	   under-predicted card, which is either true (the streams describe the card completely) or the
@@ -2073,6 +2105,7 @@ export function buildModel(input){
 	const built = buildForecastInputs({terminals: modelled, byStream: byStream,
 		since: since, sinceShape: sinceShape, until: asOf, covered: covered,
 		shapeFromRouted: input.shapeFromRouted,
+		routingOverride: part ? part.routingOverride : null,
 		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
 
 	const covers = h => covered.indexOf(h || fallback) > -1;
@@ -2120,17 +2153,20 @@ export function buildModel(input){
 		   with no upper bound of its own (shapes and observed both get theirs from
 		   buildForecastInputs' `until`), so without it the law would rest on a single slice thirty
 		   lines above rather than on each derivation being independently safe. */
-		/* A BUDGET IS DRAWN DOWN BY WHAT WAS SPENT, WHEREVER IT WAS SPENT.
+		/* WHAT DRAWS A BUDGET DOWN - AND THIS IS THE SHIPPING BEHAVIOUR, WHICH IS THE `covered` ONE.
 
-		   `covered` is the accounts this READING is about; it is not "the stream's own money". For a
-		   card-routed stream none of its spending is on a covered account, so nothing was ever
-		   subtracted and `left` stayed at the full budget every month for ever. Gembah declares
-		   $10,000 a year and contributed $1,880 a month to the card statement whether or not a dollar
-		   of it moved.
+		   The default subtracts only spending on a COVERED account. For a card-routed stream none of
+		   its spending is on one, so nothing is subtracted and `left` stays at the full budget every
+		   month for ever: Gembah declares $10,000 a year and contributes $1,880 a month to the card
+		   statement whether or not a dollar of it moved. That is a real defect and it is the same
+		   confusion b51 fixed for shapes, in a second place.
 
-		   That is the same confusion b51 fixed for shapes, in a second place. The money that draws a
-		   budget down is the money the stream spent - on the card, on checking, anywhere - and the
-		   as-of law is kept by the window, not by the account list. */
+		   IT IS NOT FIXED HERE, DELIBERATELY. `drawdownFromOwnAccount` switches to the stream's own
+		   ROUTED account - not "anywhere", one account - and the bench scores it as the fourth rung of
+		   the mechanism ladder. It cost 11.8 points on the month it was measured, because it lowers a
+		   card forecast that is already under-predicting, so what it exposes sits downstream of it.
+		   The switch stays off until that is understood; b51 is the precedent for measuring this class
+		   of fix rather than shipping it because the argument is good. */
 		const drawdownHome = drawFromOwn ? built.routing[t.id] : null;
 		(byStream[t.id] || []).forEach(x => {
 			if(x.date < cycleFrom || x.date >= asOf)return;
@@ -2191,6 +2227,17 @@ export function buildModel(input){
 	   The charges a statement is made of are the card account's own streams, asked day by day through
 	   a reading in which they are visible. They are hidden from the checking view on purpose, because
 	   that money has not moved through it, and this is the one place that needs them. */
+	/* `covers: () => true` IS LOAD-BEARING. IT IS NOT A STRAY OVERRIDE.
+
+	   shareOfDay refuses to report a stream whose money does not pass through the accounts this
+	   reading covers - which is right for the checking view and fatal here, because a card's charges
+	   are by definition NOT on a covered account. Left at the real `covers`, every stream routed to a
+	   card reports zero, every statement composes to zero, and the largest recurring outflow in the
+	   portfolio simply vanishes from the forecast. No crash, no warning, a missing line.
+
+	   So the card statement is composed in a reading where card-routed streams are VISIBLE. This is
+	   the one place that needs that, which is why it is an option here rather than a change to
+	   shareOfDay. Deleting it as redundant is a silent regression. */
 	const cardOpts = {terminals: modelled, shapes: built.shapes, routing: built.routing,
 		covers: () => true, expectedFor: expectedFor, excludeIds: excludeIds,
 		periodName: periodName, settled: built.settled};
@@ -2308,7 +2355,7 @@ export function partitionStreams(terminals, byStream, opts){
 	const cycEnd = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
 	const cycStart = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - 1, 1));
 
-	const out = [], grouped = {}, report = {}, assign = {};
+	const out = [], grouped = {}, report = {}, assign = {}, override = {};
 	terminals.forEach(s => {
 		const legs = byStream[s.id] || [];
 		const dir = dirOf(s.id);
@@ -2345,7 +2392,19 @@ export function partitionStreams(terminals, byStream, opts){
 			if(recent.every(x => x.accountHash === only))unanimous = only;
 		}
 
+		/* AND THE OVERRIDE HAS TO ROUTE, not merely stop the split.
+
+		   Suppressing the split alone left the decision to accountRoutingOf, which weighs the WHOLE
+		   window by unweighted magnitude - so a stream that moved to the card last month was left
+		   unsplit and then routed to checking on the strength of the eleven months before it. That is
+		   the opposite of what this rule is for, and it was worse than not having the rule: an
+		   unsplit stream on the wrong account has all of its money in one wrong place, where a split
+		   one would at least have had half of it right.
+
+		   The override therefore names the account as well, and buildForecastInputs applies it over
+		   the routing it computed. */
 		const keep = (unanimous || qualifying.length < 2) ? [] : qualifying;
+		if(unanimous)override[s.id] = unanimous;
 		report[s.id] = {shares: {}, rawShares: {}, counts: count, split: keep.length > 1,
 			partitions: keep, unanimous: unanimous, minShare: minShare, minCount: minCount};
 		hashes.forEach(h => {
@@ -2388,7 +2447,8 @@ export function partitionStreams(terminals, byStream, opts){
 
 	const keyOf = (streamId, accountHash) =>
 		(assign[streamId] ? assign[streamId](accountHash) : streamId);
-	return {terminals: out, byStream: grouped, keyOf: keyOf, report: report};
+	return {terminals: out, byStream: grouped, keyOf: keyOf, report: report,
+		routingOverride: override};
 }
 
 export function buildForecastInputs(opts){
@@ -2435,6 +2495,18 @@ export function buildForecastInputs(opts){
 		dir[s.id] = a0 < 0 ? -1 : (a0 > 0 ? 1 : 0);
 	});
 	const routing = accountRoutingOf(seen, id => dir[id]);
+	/* A CYCLE THAT SPOKE WITH ONE VOICE OVERRULES THE WINDOW.
+
+	   accountRoutingOf weighs every leg in the window equally, which is right when a stream has one
+	   home and wrong the month after it moves: eleven months of checking outvote the four card
+	   charges that are now the whole truth about it. partitionStreams has already established that
+	   the last complete cycle went one way and one way only - two transactions minimum, and never for
+	   a long-period stream where one cycle is one event - so that finding is applied here rather than
+	   being left as a fact nobody acts on. */
+	const override = opts.routingOverride || {};
+	Object.keys(override).forEach(id => {
+		if(routing[id] !== undefined || seen[id])routing[id] = override[id];
+	});
 
 	terminals.forEach(s => {
 		const all = byStream[s.id] || [];
@@ -2444,6 +2516,9 @@ export function buildForecastInputs(opts){
 		   account, and the right set for anything that is not */
 		const home = shapeFromRouted ? routing[s.id] : null;
 		let use = home ? seen[s.id].filter(x => x.accountHash === home) : sliced[s.id];
+		//LAST RESORT, NOT THE NORMAL PATH. A stream routed to an account with nothing in the window
+		//falls back to the covered set - which is the b51 fault in miniature, accepted only because
+		//the alternative is no shape at all. A stream reaching this line is worth noticing.
 		if(!use.length)use = sliced[s.id];
 		shapeFrom[s.id] = "recent";
 		if(!use.length && wide){
