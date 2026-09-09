@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b76 - the fixture is written where the tests read it";
+export const BENCH_VERSION = "b78 - the fixture goes to the local server, not the deployed one";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1643,7 +1643,8 @@ export default class BalanceBench extends BaseComponent{
 		ApiCaller.saveFixture(f).then(r => {
 			if(r && r.saved)return say(r.transactions + " transactions written to " + r.path)
 			this.downloadFixture(f, (r && r.error) || "the server did not write it")
-		}).catch(e => this.downloadFixture(f, (e && e.message) || "the server refused"))
+		}).catch(e => this.downloadFixture(f,
+			(e && e.message) || "no local server at " + (ApiCaller.localServerURL() || "?")))
 	}
 
 	downloadFixture(f, why){

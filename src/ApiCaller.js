@@ -327,9 +327,27 @@ class ApiCaller{
 	//The REMEMBERED balance series. Today's live figure arrives with the accounts instead - this only
 	//has whatever has accumulated since balance capture went in, so a caller must treat an empty
 	//answer as "no history yet" rather than as "no money".
-	//development only: asks the LOCAL server to write the bench fixture into the test folder
+	/* DEVELOPMENT ONLY: asks the LOCAL server to write the bench fixture into the test folder.
+
+	   NOT via AppConfig.serverURL, which is the whole point. With `staging` false that URL is the
+	   DEPLOYED api, and the deployed api refuses this route on purpose - so the call succeeded at
+	   reaching the wrong machine, was correctly turned down, and fell back to a download. On a phone
+	   that reads as "the button does not work".
+
+	   The local server is on the same host the page came from, at its own port. Derived from
+	   window.location so it works from a laptop and from a phone on the LAN alike, which is where
+	   this actually gets used. */
+	localServerURL(){
+		if(typeof window === "undefined" || !window.location)return null
+		const l = window.location
+		if(!l.hostname)return null
+		return l.protocol + "//" + l.hostname + ":" + (AppConfig.localServerPort || 4001)
+	}
+
 	saveFixture(fixture){
-		const request = new Request(API.saveFixture,{
+		const base = this.localServerURL()
+		if(!base)return Promise.reject(new Error("no local server to write to"))
+		const request = new Request(base + "/api/saveFixture",{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({fixture: fixture})
 		})
