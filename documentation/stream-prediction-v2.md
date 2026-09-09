@@ -1,61 +1,24 @@
 # Stream prediction v2
 
-> **THE SPECIFICATION FOR v2. It grows as decisions are made; nothing here is built yet.**
->
-> This is where v2 is specified, and it is written to be added to. Today it carries the goal and the
-> decomposition — for each stage, what the problem *is*, what it takes in, what it must hand back, what
-> makes it hard, and how we will know it is solved.
->
-> **Each stage then gains its approach, its constraints and its acceptance criteria as those are
-> agreed**, and the stage's status line says which of those it has. Methods are argued one stage at a
-> time and written down here when settled: the sequencing is deliberate, the absence of methods today
-> is a consequence of it, and neither is a limit on what this document covers.
->
-> **It is not wired to the balance view until the exit criteria are met, by Julien's judgment.** The
-> existing model keeps running until then.
-
-### How to read a stage
-
-| line | what it means |
-|---|---|
-| **status** | how far this stage has got: *problem stated* → *approach agreed* → *built* → *audited* |
-| **the question** | what the stage decides, in one sentence |
-| **in / out** | its interface. Stable once agreed, because the stage after it depends on this |
-| the body | what makes it hard, and the evidence behind that |
-| **approach** | the method, once chosen. Absent until then rather than guessed |
-| **solved when** | the acceptance criterion. Written before the method, on purpose |
+> **THE SPECIFICATION FOR v2. Nothing here is built.** It is not wired to the balance view until the
+> exit criteria are met, by Julien's judgment; the existing model keeps running until then.
 
 ---
 
 ## The goal
 
-Several features of Kawa rely on predicting future transactions. **This is the module that owns that
-prediction for a given stream.**
+**The module that owns the prediction algorithm and the logic for predicting the transactions of a
+given stream.**
 
 Given a stream and its transactions, it says what that stream will do next — on which account, how
 often, in what shape, and for how much — and how sure it is of each.
 
-Owning it in one place is the point. Prediction is currently spread through whatever needs it, so every
-consumer has its own opinion and none of them can be improved without moving the others.
+Each stage below carries a **status**, and gains its approach and its acceptance criteria as those are
+agreed.
 
-Three things define the scope.
+---
 
-**A module that owns prediction for one stream.** Everything it needs comes in as arguments and
-everything it decides comes out as a value. It holds no opinion about balances, no reference to a
-chart, and no knowledge of which reading it is being asked for. That is what makes it testable on its
-own and replaceable without touching what draws.
-
-**It answers per account, and accounts are plural.** A user may connect several checking accounts and
-several cards. A stream lives on one of them — sometimes on two — and a balance is drawn for each. A
-prediction that says only "$1,700 on the 6th" is not usable; it must say *out of which account*.
-
-**It predicts, and only predicts.** It does not explain itself. A stream the module is unsure of is
-distinguishable from one it is sure of through the **confidence on the prediction**, not through an
-account of how the decision was reached. Where a decision needs arguing with, that is a debugging
-need, and a debugging surface is built when there is something to debug — not carried by the module
-as a standing cost in shape and speed.
-
-### What it hands back
+## What it hands back
 
 **A schedule of the next predicted events.** Not money per day, and not a distribution — a list of
 things expected to happen, which is the form that can answer "when is the next one" without the caller
@@ -100,15 +63,22 @@ here.
 **Owns:** the behaviour of a single stream — its account, its rhythm, its shape, its amount, and the
 uncertainty on each.
 
-**Does not own:** the balance walk, the reconstruction, observed balances, the chart, the accuracy
-bench, or the card's *settlement* arithmetic. A card statement is a fact about an account, assembled
-from the streams charged to it; this module supplies those streams and does not compute the statement.
+**Does not own: anything that CONSUMES a prediction.** Drawing it, aggregating it across streams,
+reconciling it against what happened, scoring it, or acting on it are all downstream of this module and
+belong to whatever feature needs them. The test is direction: if it takes a prediction as input, it is
+not here.
+
+That boundary holds whatever the consumers turn out to be, so it does not need editing each time one is
+added. One case is worth naming because it looks like an exception and is not: a card statement is
+assembled from the streams charged to that card, so this module supplies the streams and the consumer
+computes the statement.
 
 **Takes as given:** the account list with types, the transaction ledger, the stream's declaration
-(amount and period, with its history), and an as-of date. Nothing else.
+(amount and period, with its history), and an **as-of date**. Nothing else.
 
-**The as-of law is inherited, not re-litigated.** Everything reads only transactions strictly before
-the as-of date, and the module must be provably a pure function of that instant.
+**The as-of date bounds every other input.** Only transactions strictly before it are visible, to any
+stage, for any purpose — so the module is a pure function of that instant, and can be run against a
+past date to see what it would have predicted then.
 
 ---
 
