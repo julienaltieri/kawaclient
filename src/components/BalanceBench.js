@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b73 - a turn is the stream's own period";
+export const BENCH_VERSION = "b75 - the portfolio dumps to a fixture";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1588,6 +1588,65 @@ export default class BalanceBench extends BaseComponent{
 		]
 	}
 
+	/* THE WHOLE INPUT, AS A FILE.
+
+	   Every algorithm change so far has been argued from a row pasted into a chat: one stream, one
+	   month, no way to re-run it after the next change. A fixture is the same portfolio held still -
+	   the model is a pure function of these five things, so a file containing them can be replayed
+	   against any future version and the difference is the change.
+
+	   Captured from the bench because the bench already holds all five for its own reasons. Raw, not
+	   summarised: whatever is dropped here is a question that cannot be asked later, which is the
+	   whole argument of principle 27. */
+	fixture(){
+		return {
+			version: BENCH_VERSION,
+			capturedAt: new Date().toISOString(),
+			today: this.today().toISOString(),
+			settlementDay: this.settlementDay(),
+			//the master stream round-trips through its own constructor
+			masterStream: Core.getMasterStream() || null,
+			userPreferences: (Core.getUserData() || {}).userPreferences || {},
+			accountTypes: (Core.getUserData() || {}).accountTypes || {},
+			accounts: this.state.accounts || [],
+			remembered: this.state.remembered || [],
+			transactions: (this.props.transactions || []).map(t => ({
+				transactionId: t.transactionId, id: t.id,
+				date: t.date, frontendDate: t.frontendDate,
+				amount: t.amount, description: t.description,
+				categorized: t.categorized,
+				streamAllocation: t.streamAllocation,
+				userInstitutionAccountId: t.userInstitutionAccountId,
+				pairedTransferTransactionId: t.pairedTransferTransactionId,
+				disambiguationId: t.disambiguationId,
+				userDefinedTransactionType: t.userDefinedTransactionType,
+				connectorName: t.connectorName, institutionId: t.institutionId
+			}))
+		}
+	}
+
+	//written to a file rather than the clipboard: a portfolio is megabytes, and it is meant to be
+	//committed next to the tests that read it
+	saveFixture(){
+		try{
+			const f = this.fixture()
+			const blob = new Blob([JSON.stringify(f)], {type: "application/json"})
+			const url = URL.createObjectURL(blob)
+			const a = document.createElement("a")
+			a.href = url
+			a.download = "portfolio-" + dayKey(new Date()) + ".json"
+			document.body.appendChild(a)
+			a.click()
+			document.body.removeChild(a)
+			setTimeout(() => URL.revokeObjectURL(url), 4000)
+			this.updateState({copied: f.transactions.length + " transactions saved"},
+				() => setTimeout(() => this.updateState({copied: null}), 2600))
+		}catch(e){
+			this.updateState({copied: "save failed: " + (e && e.message)},
+				() => setTimeout(() => this.updateState({copied: null}), 2600))
+		}
+	}
+
 	//the transactions a stream's shape was actually built from, as the model kept them
 	shapeSourceOf(id){
 		const a = this.analyse()
@@ -1936,6 +1995,7 @@ export default class BalanceBench extends BaseComponent{
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
 				<Btn type="button" onClick={() => this.copy(this.cardExport())}>Copy card export</Btn>
+				<Btn type="button" onClick={() => this.saveFixture()}>Save fixture</Btn>
 			</Bar>
 			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
 				<Head>{g[1]}</Head>
