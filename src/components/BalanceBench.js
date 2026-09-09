@@ -36,7 +36,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b57 - the reconstruction is checked against remembered balances";
+export const BENCH_VERSION = "b58 - the anchor is checked account by account";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -167,8 +167,28 @@ export default class BalanceBench extends BaseComponent{
 		if(!rows.length)return null
 		let worst = rows[0]
 		rows.forEach(r => {if(Math.abs(r.gap) > Math.abs(worst.gap))worst = r})
+
+		/* AND THE SAME COMPARISON ACCOUNT BY ACCOUNT, on the freshest day both series have.
+
+		   The walk is anchored at today, so today's gap is zero BY CONSTRUCTION - unless the anchor
+		   and the remembered series do not mean the same thing. A non-zero gap at the anchor point is
+		   not drift at all; it is the live balance and the stored balance disagreeing about the same
+		   account on the same day, which no amount of transaction history can explain. Summed, that
+		   is one number and unattributable; per account it names the account. */
+		const day = rows[rows.length - 1].day
+		const live = {}
+		;(this.state.accounts || []).forEach(a => {
+			if(keep.indexOf(a.hash) > -1)live[a.hash] = a.current
+		})
+		const perAccount = keep.map(h => ({hash: h,
+			name: ((this.state.accounts || []).filter(a => a.hash === h)[0] || {}).name || h,
+			live: live[h], remembered: byDay[day] ? byDay[day][h] : undefined}))
+		perAccount.forEach(p => {p.gap = (p.remembered === undefined || p.live === undefined)
+			? null : p.remembered - p.live})
 		return {rows: rows, worst: worst, first: rows[0], last: rows[rows.length - 1],
-			partial: Object.keys(byDay).length - rows.length}
+			partial: Object.keys(byDay).length - rows.length,
+			day: day, perAccount: perAccount,
+			anchorGap: rows[rows.length - 1].gap}
 	}
 
 	/* ---- the same inputs the tile uses ----------------------------------------------------------- */
@@ -1429,6 +1449,16 @@ export default class BalanceBench extends BaseComponent{
 				dr.rows.slice(-14).forEach(r => out.push("      " + r.day
 					+ "   reported " + money(r.reported) + "   walked " + money(r.walked)
 					+ "   gap " + money(r.gap)))
+				/* THE ANCHOR IS THE WALK'S ONE FIXED POINT, so a gap there is not drift. */
+				if(Math.abs(dr.anchorGap) > 1){
+					out.push("  THE GAP IS AT THE ANCHOR ITSELF (" + dr.day + "), so it is not drift:"
+						+ " the live balance and the remembered one disagree about the same accounts"
+						+ " on the same day. Account by account:")
+					dr.perAccount.forEach(p => out.push("      " + p.name + "  " + p.hash
+						+ "   live " + (p.live === undefined ? "-" : money(p.live))
+						+ "   remembered " + (p.remembered === undefined ? "-" : money(p.remembered))
+						+ (p.gap === null ? "   (no comparison)" : "   gap " + money(p.gap))))
+				}
 			}
 			out.push("")
 			/* WHAT EACH MECHANISM IS WORTH, on this month. Nested: each line adds one thing to the

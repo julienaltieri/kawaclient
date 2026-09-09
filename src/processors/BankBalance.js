@@ -1987,7 +1987,10 @@ export function buildModel(input){
 	   A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth. $10,000 a year with $6,000 gone
 	   has $4,000 left; dividing the whole budget by twelve forecasts money already spent, twice over
 	   by December. Clamped in the direction of spending: an exhausted budget is done, not reversed. */
-	const drawFromOwn = input.drawdownFromOwnAccount !== false;
+	/* OFF BY DEFAULT, because it is measured OFF. `!== false` made it default ON, so the tile shipped
+	   a mechanism the bench was scoring without - the two-models fault, in the switch that exists to
+	   prevent it. A switch under measurement defaults to the side being measured. */
+	const drawFromOwn = input.drawdownFromOwnAccount === true;
 	const monthsSeen = Math.max(1, (asOf - since)/(30.44*DAY));
 	const monthsLeft = Math.max(1, 12 - Math.round((asOf - cycleFrom)/(30.44*DAY)));
 	const observed = {}, spentSince = {};

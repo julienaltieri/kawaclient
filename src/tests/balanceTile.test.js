@@ -3239,3 +3239,32 @@ test("a statement's three terms are separable, not one number in three fields", 
 	expect(ahead.length).toBeGreaterThan(0)
 	ahead.forEach(e => expect(Math.abs(e.residual)).toBeGreaterThan(1))
 })
+
+test("a switch under measurement is OFF by default - the tile must not ship what the bench scores without", () => {
+	/* `!== false` defaults a switch ON, so the tile ran the drawdown mechanism while the bench scored
+	   the model without it: the two-models fault, inside the switch built to prevent it. A card-routed
+	   stream's yearly budget must therefore NOT draw down unless the caller asks. */
+	const st = evStream("gem", "Gembah", -12000, "yearly")
+	const txns = []
+	//spent hard on the card, and nothing on checking
+	//irregular, so it is not promoted to an instalment - the spread is what is under test
+	const amts = [-800, -1250, -640, -1410, -900], days = [4, 19, 7, 26, 11]
+	for(let m = 2; m <= 6; m++)
+		txns.push(evTxn(new Date(Date.UTC(2026, m, days[m - 2])), amts[m - 2], "gem", "visa",
+			"g" + m))
+	const opts = {transactions: txns, terminals: [st], covered: ["chk"], cards: ["visa"],
+		asOf: new Date(Date.UTC(2026, 7, 1)), until: new Date(Date.UTC(2026, 7, 30)),
+		since: new Date(Date.UTC(2026, 1, 1)), cycleStart: new Date(Date.UTC(2026, 0, 1))}
+	const shipped = buildModel(opts)
+	const asked = buildModel(Object.assign({}, opts, {drawdownFromOwnAccount: true}))
+	expect(shipped.meta.spentSince.gem).toBe(0)              //default: card spending is not counted
+	expect(asked.meta.spentSince.gem).toBeCloseTo(-5000, 4)  //asked for: it is
+	expect(shipped.meta.promoted.gem).toBeFalsy()
+	/* AND THE TWO THEREFORE FORECAST DIFFERENT AMOUNTS, which is the whole point of measuring it:
+	   the budget left to spend is $12,000 under the default and $7,000 once the card is counted. */
+	expect(shipped.meta.monthsLeft).toBe(asked.meta.monthsLeft)
+	const n = shipped.meta.monthsLeft
+	expect(shipped.expectedFor(shipped.terminals[0], opts.asOf)).toBeCloseTo(-12000/n, 4)
+	expect(asked.expectedFor(asked.terminals[0], opts.asOf)).toBeCloseTo(-7000/n, 4)
+	expect(n).toBeGreaterThan(1)
+})

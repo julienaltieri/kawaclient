@@ -613,6 +613,33 @@ test("a transaction the ledger never saw shows up as a CONSTANT offset, not a wo
 	older.forEach(r => expect(r.gap).toBeCloseTo(250, 4))     //constant, not growing
 	newer.forEach(r => expect(Math.abs(r.gap)).toBeLessThan(0.01))
 	expect(ref.current.report()).toMatch(/RECONSTRUCTION vs REMEMBERED BALANCES/)
+	//the newest day agrees, so this is drift and not an anchor disagreement
+	expect(Math.abs(d.anchorGap)).toBeLessThan(0.01)
+	expect(ref.current.report()).not.toMatch(/THE GAP IS AT THE ANCHOR ITSELF/)
+})
+
+test("a gap at the anchor is named as an anchor disagreement, not as drift", async () => {
+	/* THE WALK'S ONE FIXED POINT. Today's value IS the anchor, so today's gap is zero by
+	   construction - unless the live balance and the remembered one disagree about the same accounts
+	   on the same day, which no amount of transaction history can explain and which reading it as
+	   drift would send someone hunting for a missing transaction that does not exist. */
+	let ref = await mount()
+	const now = ref.current.today()
+	const walk = reconstruct(ref.current.ledger(), now, ref.current.anchor(),
+		new Date(now.getTime() - 20*24*3600*1000))
+	const truth = walk.map(p => ({accountHash: CHECKING, date: p.date.toISOString(),
+		current: p.value + 1700}))                       //every day, today included
+	ApiCaller.getBalanceHistory = () => Promise.resolve(truth)
+	ref = await mount()
+	const d = ref.current.driftVsRemembered()
+	expect(d.anchorGap).toBeCloseTo(1700, 4)
+	//and it is attributed to an account rather than left as one unexplainable number
+	expect(d.perAccount.length).toBe(ref.current.spending().length)
+	const chk = d.perAccount.filter(p => p.hash === CHECKING)[0]
+	expect(chk.gap).toBeCloseTo(1700, 4)
+	const txt = ref.current.report()
+	expect(txt).toMatch(/THE GAP IS AT THE ANCHOR ITSELF/)
+	expect(txt).toMatch(/live .* remembered .* gap/)
 })
 
 test("no stored history is reported as no history, never as agreement", async () => {
