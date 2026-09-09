@@ -1052,6 +1052,7 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 	   Each side is consumed once, so two repayments of the same size in one week match two arrivals
 	   rather than one of them twice, and the nearest in time wins. */
 	/* THE DESCRIPTION STILL HAS TO AGREE, and the gate is NARROWED rather than removed.
+	   DECISION-PRINCIPLES.md #28.
 
 	   The backend's transfer rule requires wording on both legs, and card repayments fail it because
 	   they are described "card bill" and "Payment" rather than "transfer". The temptation is to drop

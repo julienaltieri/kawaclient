@@ -194,6 +194,42 @@ adjustment, a bad match. Reading it as confirmation launders a coincidence into 
 
 ---
 
+### 28. Never drop a gate without knowing what it protects
+
+A condition that blocks the case in front of you is not thereby wrong. It was put there against
+something, and the fact that its reason is not obvious now is a statement about your knowledge, not
+about the condition. Removing it makes the case pass and leaves whatever it was guarding unguarded —
+silently, because the thing it protected against was by definition never seen.
+
+So find out first. If the reason is traceable, you know whether it still applies. If it is not, the
+change to make is the **narrowest one that admits the case you actually have**: extend the vocabulary,
+loosen the arity, add the missing alternative — never delete the test. A gate narrowed is reversible
+and its blast radius is the case you named; a gate removed is unbounded and nothing will report it.
+
+Two things make a narrowing safe. A condition should be able to rule a candidate **out** as well as
+let one in, and the exclusion is checked first — that is how you admit a new case without admitting
+its lookalikes. And whatever the gate still refuses should be **counted and named**, so a rule that is
+still too tight arrives as evidence in a report rather than as a case that quietly never happens.
+
+> *In practice:* card repayments were never being paired to the account funding them, because the
+> transfer rule required `/transfer|zelle|withdrawal/` on *both* legs and the legs are described "card
+> bill" and "Payment". The obvious fix was to pair on the two accounts and the two amounts alone — a
+> movement from a checking account to a credit account is a repayment whatever it is called. That
+> shipped, and it was wrong: pairing has consequences well past the forecast that needed it, deciding
+> which leg of a pair enters a stream's history and letting the evaluator share one descriptor across
+> both, and none of that had been traced.
+>
+> The correct change was smaller in every direction. Keep the wording requirement; extend the
+> vocabulary to what a repayment actually says. Require one leg rather than both, because banks label
+> the two ends of one movement differently and demanding both was most of why nothing matched. Rule
+> refunds out by name, since a refund is also an arrival on a card and a returned item the size of an
+> unrelated outflow would otherwise pair — inventing a repayment and deleting a real outflow at once.
+> And print every candidate that agreed on amount, date and accounts but on no wording, with both
+> descriptions: if the gate is still too tight for some issuer, the missing word shows up as a line in
+> a report instead of as a card that never links.
+
+---
+
 ## Interface
 
 ### 12. Structure should carry the meaning before a label does
