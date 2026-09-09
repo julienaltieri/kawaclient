@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b59 - every account, and which reading claims it";
+export const BENCH_VERSION = "b60 - current against available, on both sides";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -161,7 +161,7 @@ export default class BalanceBench extends BaseComponent{
 		return accts.map(a => {
 			const effective = Core.accountTypeOf ? Core.accountTypeOf(a) : inferAccountType(a)
 			return {name: a.name, hash: a.hash, type: a.type, subtype: a.subtype,
-				current: a.current,
+				current: a.current, available: a.available,
 				inferred: inferAccountType(a), override: overrides[a.hash] || null,
 				effective: effective,
 				inTile: effective === AccountTypes.checking,
@@ -221,9 +221,25 @@ export default class BalanceBench extends BaseComponent{
 		;(this.state.accounts || []).forEach(a => {
 			if(keep.indexOf(a.hash) > -1)live[a.hash] = a.current
 		})
-		const perAccount = keep.map(h => ({hash: h,
-			name: ((this.state.accounts || []).filter(a => a.hash === h)[0] || {}).name || h,
-			live: live[h], remembered: byDay[day] ? byDay[day][h] : undefined}))
+		/* THE REMEMBERED ROW IN FULL, because "they disagree" is not yet a diagnosis. Both sides
+		   store a CURRENT and an AVAILABLE, and they are different quantities - available subtracts
+		   pending holds. If one side's current equals the other side's available, the fault is a
+		   field and not a balance, and that is a different fix from a stale reading. */
+		const rememberedRow = {}
+		snaps.forEach(x => {
+			if(keep.indexOf(x.accountHash) < 0)return
+			if(dayKey(new Date(x.date)) !== day)return
+			rememberedRow[x.accountHash] = x
+		})
+		const perAccount = keep.map(h => {
+			const acct = (this.state.accounts || []).filter(a => a.hash === h)[0] || {}
+			const row = rememberedRow[h] || {}
+			return {hash: h, name: acct.name || h,
+				live: live[h], liveAvailable: acct.available,
+				remembered: byDay[day] ? byDay[day][h] : undefined,
+				rememberedAvailable: row.available,
+				rememberedLimit: row.limit, rememberedAt: row.date || null}
+		})
 		perAccount.forEach(p => {p.gap = (p.remembered === undefined || p.live === undefined)
 			? null : p.remembered - p.live})
 		return {rows: rows, worst: worst, first: rows[0], last: rows[rows.length - 1],
@@ -1493,7 +1509,8 @@ export default class BalanceBench extends BaseComponent{
 				aa.forEach(x => out.push("  " + (x.name || "?")
 					+ "   " + x.hash
 					+ "   " + (x.type || "?") + "/" + (x.subtype || "?")
-					+ "   balance " + (x.current === undefined ? "NONE" : money(x.current))
+					+ "   current " + (x.current === undefined ? "NONE" : money(x.current))
+					+ " / available " + (x.available === undefined ? "NONE" : money(x.available))
 					+ "   inferred " + x.inferred
 					+ (x.override ? " -> override " + x.override : "")
 					+ "   " + x.txns + " txns"
@@ -1539,10 +1556,27 @@ export default class BalanceBench extends BaseComponent{
 					out.push("  THE GAP IS AT THE ANCHOR ITSELF (" + dr.day + "), so it is not drift:"
 						+ " the live balance and the remembered one disagree about the same accounts"
 						+ " on the same day. Account by account:")
-					dr.perAccount.forEach(p => out.push("      " + p.name + "  " + p.hash
-						+ "   live " + (p.live === undefined ? "-" : money(p.live))
-						+ "   remembered " + (p.remembered === undefined ? "-" : money(p.remembered))
-						+ (p.gap === null ? "   (no comparison)" : "   gap " + money(p.gap))))
+					const m = v => (v === undefined || v === null ? "-" : money(v))
+					dr.perAccount.forEach(p => {
+						out.push("      " + p.name + "  " + p.hash
+							+ (p.gap === null ? "   (no comparison)" : "   gap " + money(p.gap)))
+						out.push("          live        current " + m(p.live)
+							+ "   available " + m(p.liveAvailable))
+						out.push("          remembered  current " + m(p.remembered)
+							+ "   available " + m(p.rememberedAvailable)
+							+ "   limit " + m(p.rememberedLimit)
+							+ (p.rememberedAt ? "   observed " + p.rememberedAt : ""))
+						/* THE SAME NUMBER UNDER A DIFFERENT NAME IS A FIELD FAULT, not a stale
+						   balance, and the two have different fixes. */
+						const near = (a, b) => a !== undefined && b !== undefined
+							&& a !== null && b !== null && Math.abs(a - b) < 0.005
+						if(near(p.live, p.rememberedAvailable))out.push("          <- the LIVE current"
+							+ " equals the REMEMBERED available: this is a wrong FIELD, not a stale"
+							+ " balance")
+						if(near(p.liveAvailable, p.remembered))out.push("          <- the LIVE"
+							+ " available equals the REMEMBERED current: the two sides are reading"
+							+ " different fields")
+					})
 				}
 			}
 			out.push("")

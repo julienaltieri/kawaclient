@@ -639,7 +639,8 @@ test("a gap at the anchor is named as an anchor disagreement, not as drift", asy
 	expect(chk.gap).toBeCloseTo(1700, 4)
 	const txt = ref.current.report()
 	expect(txt).toMatch(/THE GAP IS AT THE ANCHOR ITSELF/)
-	expect(txt).toMatch(/live .* remembered .* gap/)
+	expect(txt).toMatch(/live {8}current .* available/)
+	expect(txt).toMatch(/remembered {2}current .* available .* limit/)
 })
 
 test("no stored history is reported as no history, never as agreement", async () => {
@@ -694,4 +695,24 @@ test("every account is named, with which reading claims it and whether it moves"
 	//the fixture moves money on both accounts, so neither is silently in the anchor alone
 	audit.filter(a => a.inTile).forEach(a => expect(a.txns).toBeGreaterThan(0))
 	expect(ref.current.report()).toMatch(/ACCOUNTS  \(tile = Core.accountTypeOf/)
+})
+
+test("the same number under a different name is called a FIELD fault, not a stale balance", async () => {
+	/* "They disagree" is not yet a diagnosis. Both sides store a current AND an available and they
+	   are different quantities - available subtracts pending holds. If one side's current equals the
+	   other side's available then nothing is stale and nothing has drifted: a field is being read
+	   wrong, which is a different fix and a much smaller one. */
+	let ref = await mount()
+	const now = ref.current.today()
+	const walk = reconstruct(ref.current.ledger(), now, ref.current.anchor(),
+		new Date(now.getTime() - 20*24*3600*1000))
+	//the remembered series carries the LIVE number in its `available` slot, and something else as
+	//`current` - exactly the shape of a swapped field
+	const truth = walk.map(p => ({accountHash: CHECKING, date: p.date.toISOString(),
+		current: p.value + 1700, available: p.value, limit: undefined}))
+	ApiCaller.getBalanceHistory = () => Promise.resolve(truth)
+	ref = await mount()
+	const txt = ref.current.report()
+	expect(txt).toMatch(/the LIVE current equals the REMEMBERED available/)
+	expect(txt).toMatch(/this is a wrong FIELD, not a stale balance/)
 })
