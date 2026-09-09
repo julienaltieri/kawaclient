@@ -1836,12 +1836,16 @@ test("a week is still held to a narrower radius than a month", () => {
    ================================================================================================= */
 //a plain ledger record: groupByStream reads these five fields and nothing else, and building a real
 //GenericTransaction here would drag in the evaluator and a master stream this test has no use for
-const evTxn = (d, amt, stream, acct, id, pair) => ({categorized: true, date: d, amount: amt,
+const evTxn = (d, amt, stream, acct, id, pair, desc) => ({categorized: true, date: d, amount: amt,
 	streamAllocation: [{streamId: stream, amount: amt}],
 	userInstitutionAccountId: acct || "chk", transactionId: id,
 	//a card repayment is a PAIR - one leg on checking, one on the card - and that pairing is what
 	//links the two accounts. A fixture without it describes an unlinked card.
-	pairedTransferTransactionId: pair})
+	pairedTransferTransactionId: pair,
+	/* AND A REPAYMENT SAYS SO. Real repayment legs are described "card bill", "Payment", "AUTOPAY";
+	   the linker requires one end to say something of the sort, so a fixture with no description at
+	   all is not testing that gate, it is failing it. */
+	description: desc || (stream === "ccpay" ? "Card Payment" : stream)})
 const evStream = (id, name, amt, period) => ({id: id, name: name,
 	getPreferredPeriod: () => period || "monthly",
 	getExpectedAmountAtDateByPeriod: () => amt})
@@ -2880,4 +2884,32 @@ test("a card that stopped being used is not repaid for ever", () => {
 	const soon = new Date(Date.UTC(2025, 9, 25))
 	expect(cardRepaymentForecast(txns, "rh", sched, soon, new Date(Date.UTC(2025, 10, 25)),
 		{chargedOn: () => 50}).length).toBeGreaterThan(0)
+})
+
+test("an amount that matches but says nothing is not paired", () => {
+	/* The wording condition is load-bearing and is narrowed rather than removed. Two transactions of
+	   the same size a few days apart, one leaving checking and one arriving on a card, are not
+	   automatically a repayment - a refund is also an arrival, and so is anything else that happens
+	   to coincide. Something has to say it is a payment. */
+	const txns = []
+	for(let w = 0; w < 10; w++){
+		const pay = new Date(Date.UTC(2026, 0, 9 + w*7))
+		txns.push(evTxn(pay, -400, "misc", "chk", "s" + w, undefined, "Wire to Vendor"))
+		txns.push(evTxn(pay, 400, "misc", "rh", "r" + w, undefined, "Adjustment"))
+	}
+	const lk = accountLinks(txns, ["rh"], ["chk"])
+	expect(Object.keys(lk.links).length).toBe(0)
+	//and it says what it turned down, so a missing word is evidence rather than an absence
+	expect(lk.rejected.length).toBeGreaterThan(0)
+	expect(lk.rejected[0].pair).toMatch(/Wire to Vendor/)
+})
+
+test("a refund is never mistaken for a repayment", () => {
+	const txns = []
+	for(let w = 0; w < 10; w++){
+		const d = new Date(Date.UTC(2026, 0, 9 + w*7))
+		txns.push(evTxn(d, -220, "food", "chk", "s" + w, undefined, "Card Payment"))
+		txns.push(evTxn(d, 220, "food", "rh", "r" + w, undefined, "Refund: Amazon"))
+	}
+	expect(Object.keys(accountLinks(txns, ["rh"], ["chk"]).links).length).toBe(0)
 })

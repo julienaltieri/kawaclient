@@ -1051,12 +1051,26 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 
 	   Each side is consumed once, so two repayments of the same size in one week match two arrivals
 	   rather than one of them twice, and the nearest in time wins. */
-	/* A REFUND IS ALSO AN ARRIVAL, and it is the one thing that can be mistaken for a repayment: a
-	   returned item of the same size as an unrelated outflow, a few days apart, would pair. Excluded
-	   by what it says it is - this is the only place a description is read, and it is used to rule a
-	   candidate OUT rather than to let one in, which is the way round that cannot silently drop a
-	   real repayment for being worded unexpectedly. */
-	const looksRefund = t => /refund|return|reversal|cashback|reward/i.test(t.description || "");
+	/* THE DESCRIPTION STILL HAS TO AGREE, and the gate is NARROWED rather than removed.
+
+	   The backend's transfer rule requires wording on both legs, and card repayments fail it because
+	   they are described "card bill" and "Payment" rather than "transfer". The temptation is to drop
+	   the wording test and pair on the two accounts alone - but that condition is load-bearing
+	   somewhere it has not been traced, and a pairing has consequences well beyond this forecast.
+
+	   So the vocabulary is EXTENDED to the words a card repayment actually uses, and the requirement
+	   stays. One leg is enough - banks label the two ends differently, and demanding both is part of
+	   why nothing matched - but something has to say this is a payment.
+
+	   A refund is an arrival too, and is the one thing that can be mistaken for a repayment: a
+	   returned item the same size as an unrelated outflow a few days earlier would pair, inventing a
+	   repayment and deleting a real outflow at once. It is ruled out by name. */
+	const PAYMENT = /payment|pmt|autopay|auto\s*pay|bill\s*pay|card\s*bill|statement|transfer|zelle|withdrawal/i;
+	const REFUND = /refund|return|reversal|cashback|reward|credit\s*adj/i;
+	const says = t => String(t.description || "");
+	const looksRefund = t => REFUND.test(says(t));
+	const looksPayment = t => PAYMENT.test(says(t)) && !looksRefund(t);
+	const rejected = {};
 	const arrivals = txns.filter(t => cards.indexOf(t.userInstitutionAccountId) > -1
 		&& t.amount > 0 && !paired[t.transactionId] && !looksRefund(t))
 		.map(t => ({t: t, used: false}));
@@ -1072,6 +1086,13 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 			if(gap < bestGap){bestGap = gap; hit = r}
 		});
 		if(!hit)return;
+		//neither end called itself a payment: recorded rather than paired, so the vocabulary this
+		//gate is missing shows up as evidence instead of as an absence
+		if(!looksPayment(t) && !looksPayment(hit.t)){
+			const k = says(t) + "  <>  " + says(hit.t);
+			rejected[k] = (rejected[k] || 0) + 1;
+			return;
+		}
 		hit.used = true;
 		add(hit.t, t);
 	});
@@ -1080,7 +1101,10 @@ export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 	//how many were told to us versus worked out, so a bad reconstruction is visible as a number
 	const stored = Object.keys(paired).length/2;
 	return {links: links, repayments: repayments, legIds: legIds,
-		stored: stored, rebuilt: repayments.length - stored};
+		stored: stored, rebuilt: repayments.length - stored,
+		//what matched on amount and date but on no wording either side
+		rejected: Object.keys(rejected).sort((a, b) => rejected[b] - rejected[a])
+			.slice(0, 8).map(k => ({pair: k, n: rejected[k]}))};
 }
 
 /* PHASE 4 - THE SCHEDULE OF A LINKED CARD, and how it has been behaving.

@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b44 - the rule, tested client-side";
+export const BENCH_VERSION = "b45 - narrow the wording gate, do not remove it";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1039,6 +1039,9 @@ export default class BalanceBench extends BaseComponent{
 				+ lkAll.stored + " stored pairs, " + lkAll.rebuilt + " reconstructed)"
 				+ "   linked cards: " + Object.keys(lkAll.links).length
 				+ " of " + this.credit().length)
+			//amount and date agreed but no wording did: the vocabulary the gate is missing
+			;(lkAll.rejected || []).forEach(r => out.push("      not paired (x" + r.n
+				+ "), no payment wording: " + r.pair))
 			out.push("card settlements identified before the window: " + st.length
 				+ "   payment streams excluded: " + (a.excluded || 0))
 			const r7 = this.rolling(7)
