@@ -38,9 +38,9 @@ often, in what shape, and for how much — and how sure it is of each.
 Owning it in one place is the point. Prediction is currently spread through whatever needs it, so every
 consumer has its own opinion and none of them can be improved without moving the others.
 
-Three properties make this different from what exists today.
+Three things define the scope.
 
-**It is a module, not a layer of the balance view.** Everything it needs comes in as arguments and
+**A module that owns prediction for one stream.** Everything it needs comes in as arguments and
 everything it decides comes out as a value. It holds no opinion about balances, no reference to a
 chart, and no knowledge of which reading it is being asked for. That is what makes it testable on its
 own and replaceable without touching what draws.
@@ -80,24 +80,6 @@ distance — so the module owns it rather than answering whatever it is asked.
 
 **A spread stream still produces events.** "Continuous" is a shape, not an absence of events; how a
 spread is expressed in a schedule is a §3 question and is deliberately left open here.
-
-### Why v2 rather than repair
-
-The current model reaches the right answer often enough to be useful and cannot say *why* often
-enough to be improved. Each rule was added against a case that was visibly wrong; the rules now
-interact, and a change that fixes one row moves four others for reasons nobody can trace in advance.
-Recent worked examples, kept here as evidence of the failure mode rather than as problems to fix:
-
-| what happened | what it cost |
-|---|---|
-| a shape read from 6 debit purchases while 229 were on a card | a weekly stream forecast as one monthly lump |
-| "movements per turn" counted per calendar month regardless of the stream | every semimonthly stream forecast with two steps instead of one |
-| a shape averaged across a change in the declared amount | the old arrangement's day predicted for the new arrangement's money |
-| card-routed streams claiming 30% more than the card was charged | the residual pinned at zero, so the card cannot vary |
-
-None of these were detected by a test. All were found by reading one row at a time.
-
----
 
 ## What this module owns, and what it does not
 
