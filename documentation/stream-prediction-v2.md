@@ -1,14 +1,29 @@
 # Stream prediction v2
 
-> **A SPECIFICATION UNDER REVIEW. Nothing here is built, and nothing here is a solution.**
+> **THE SPECIFICATION FOR v2. It grows as decisions are made; nothing here is built yet.**
 >
-> This document states the goal and decomposes it into sub-problems. Each section says what the
-> problem *is*, what it takes in, what it must hand back, what makes it hard, and how we will know it
-> is solved. It deliberately does **not** say how. Methods are argued one stage at a time, after the
-> problem each is meant to solve has been agreed.
+> This is where v2 is specified, and it is written to be added to. Today it carries the goal and the
+> decomposition — for each stage, what the problem *is*, what it takes in, what it must hand back, what
+> makes it hard, and how we will know it is solved.
+>
+> **Each stage then gains its approach, its constraints and its acceptance criteria as those are
+> agreed**, and the stage's status line says which of those it has. Methods are argued one stage at a
+> time and written down here when settled: the sequencing is deliberate, the absence of methods today
+> is a consequence of it, and neither is a limit on what this document covers.
 >
 > **It is not wired to the balance view until the exit criteria are met, by Julien's judgment.** The
 > existing model keeps running until then.
+
+### How to read a stage
+
+| line | what it means |
+|---|---|
+| **status** | how far this stage has got: *problem stated* → *approach agreed* → *built* → *audited* |
+| **the question** | what the stage decides, in one sentence |
+| **in / out** | its interface. Stable once agreed, because the stage after it depends on this |
+| the body | what makes it hard, and the evidence behind that |
+| **approach** | the method, once chosen. Absent until then rather than guessed |
+| **solved when** | the acceptance criterion. Written before the method, on purpose |
 
 ---
 
@@ -97,6 +112,8 @@ the as-of date, and the module must be provably a pure function of that instant.
 
 ## §1 — Which account is this stream's
 
+**Status:** problem stated. Approach not yet chosen.
+
 **The question.** For a stream and its transactions, name the account its money leaves. Where the
 stream genuinely lives on two, say so — but treat that as the exception it is, not as the general
 case.
@@ -128,6 +145,8 @@ rule split can be shown to be two real bills rather than one noisy one.
 
 ## §2 — How often does it happen
 
+**Status:** problem stated. Approach not yet chosen.
+
 **The question.** Establish the stream's natural frequency.
 
 **In:** the stream's declared period and the history of that declaration; the transactions assigned in
@@ -155,6 +174,8 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 ---
 
 ## §3 — What shape does it take within a cycle
+
+**Status:** problem stated. Approach not yet chosen.
 
 **The question.** Given a known, non-yearly frequency, say how the money is distributed inside one
 cycle.
@@ -185,6 +206,8 @@ and drift is never read as multiplicity.
 ---
 
 ## §4 — How much, and when exactly
+
+**Status:** problem stated. Approach not yet chosen.
 
 **The question.** For a stream with a known frequency and shape, produce the amounts and the days.
 
@@ -218,6 +241,8 @@ says how wide the range is instead of asserting a number.
 
 ## §5 — Yearly streams
 
+**Status:** problem stated. Approach not yet chosen.
+
 **The question.** A yearly declaration gives an amount per year and no rhythm. Infer the rest.
 
 **Why it is genuinely different.** Every other stream has a declaration that constrains it. A yearly
@@ -241,6 +266,8 @@ spent stops being forecast.
 ---
 
 ## §6 — Streams split between a card and checking
+
+**Status:** problem stated. Approach not yet chosen.
 
 **The question.** Handle the exception §1 identified: one stream, genuinely two accounts.
 
