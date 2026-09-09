@@ -67,7 +67,32 @@ export function monthlyExpectationAt(stream, when, periodName){
    directly; BY AMOUNT carries the cases that would otherwise have no answer at all. Where both exist
    they agree, and disagreement is itself informative - it means the declared amount and the ledger
    describe different arrangements. */
-export function eventsPerTurn(txns, expectedPerTurn){
+/* A TURN IS THE STREAM'S OWN PERIOD, and it was always a calendar month.
+
+   "Movements per turn" decides how many steps a forecast draws in one cycle, so measuring it per
+   MONTH doubles it for anything paid twice a month and multiplies it by four for anything weekly. A
+   semimonthly wage of one cheque per half-month measured 2.1 movements per turn - correct per month,
+   wrong per turn - and the forecast drew two steps every half-month: $6,887 on the 14th and $950 on
+   the 18th against one clean $7,837.
+
+   The period is the caller's to supply, because only the caller knows whether the declaration or the
+   detected cycle is the right turn to count against. Absent one, this behaves exactly as it did. */
+export const TURN_DAYS = {weekly: 7, biweekly: 14, semimonthly: 15.22, monthly: 30.44,
+	bimonthly: 60.88, quarterly: 91.3, biyearly: 182.6, yearly: 365};
+
+export function turnKeyOf(date, period){
+	const d = new Date(date);
+	if(!period || period === "monthly")return d.getUTCFullYear() + "-" + d.getUTCMonth();
+	if(period === "semimonthly")
+		return d.getUTCFullYear() + "-" + d.getUTCMonth() + "-" + (d.getUTCDate() <= 15 ? 0 : 1);
+	if(period === "yearly")return String(d.getUTCFullYear());
+	if(period === "biyearly")return d.getUTCFullYear() + "-" + (d.getUTCMonth() < 6 ? 0 : 1);
+	const days = TURN_DAYS[period];
+	if(!days)return d.getUTCFullYear() + "-" + d.getUTCMonth();
+	return String(Math.floor(d.getTime()/(days*DAY)));
+}
+
+export function eventsPerTurn(txns, expectedPerTurn, period){
 	const list = (txns || []).filter(t => Math.abs(t.amount) > 0.005);
 	if(!list.length)return null;
 
@@ -75,8 +100,7 @@ export function eventsPerTurn(txns, expectedPerTurn){
 	let byCount = null;
 	const turns = {};
 	list.forEach(t => {
-		const d = new Date(t.date);
-		const key = d.getUTCFullYear() + "-" + d.getUTCMonth();
+		const key = turnKeyOf(t.date, period);
 		(turns[key] = turns[key] || []).push(Math.abs(t.amount));
 	});
 	const keys = Object.keys(turns);
@@ -2105,6 +2129,7 @@ export function buildModel(input){
 	const built = buildForecastInputs({terminals: modelled, byStream: byStream,
 		since: since, sinceShape: sinceShape, until: asOf, covered: covered,
 		shapeFromRouted: input.shapeFromRouted,
+		turnAwareEvents: input.turnAwareEvents,
 		routingOverride: part ? part.routingOverride : null,
 		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
 
@@ -2473,6 +2498,9 @@ export function buildForecastInputs(opts){
 	   the model both ways against the same month. Default is the shipping behaviour, so nothing
 	   changes for anyone who does not ask. */
 	const shapeFromRouted = opts.shapeFromRouted === undefined ? true : opts.shapeFromRouted;
+	//OFF until it is priced, like every mechanism since b51 - a switch under measurement defaults to
+	//the side being measured
+	const turnAware = opts.turnAwareEvents === true;
 	/* A SECOND, LONGER WINDOW - FOR DATES ONLY, and used only where the short one is empty.
 
 	   The short lookback exists because AMOUNTS go stale: a rent from two years ago is a different
@@ -2555,7 +2583,13 @@ export function buildForecastInputs(opts){
 		/* HOW MANY MOVEMENTS A TURN TAKES, reconciled against the declaration - see eventsPerTurn.
 		   Measured on the same transactions the shape is drawn from, so the two describe one stream. */
 		const a = expectationAt(s, until || new Date());
-		events[s.id] = eventsPerTurn(use, a);
+		/* THE DECLARED PERIOD IS THE TURN, where the caller asks for it. `a` is a MONTHLY figure, so
+		   the by-amount estimator is given the same period's worth of money - otherwise it reconciles
+		   a month's declaration against a half-month's typical movement and doubles again. */
+		const turns = turnAware ? period : null;
+		const perTurn = turnAware && TURN_DAYS[period]
+			? a*(TURN_DAYS[period]/TURN_DAYS.monthly) : a;
+		events[s.id] = eventsPerTurn(use, perTurn, turns);
 		/* A YEARLY EXPENSE SPREADS ITS REMAINDER AND IS NOT GIVEN A DAY.
 
 		   Hobby mdm is $250 a year and arrives whenever the hobby needs something. It landed in one

@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b72 - the cycle shows the transactions it was read from";
+export const BENCH_VERSION = "b73 - a turn is the stream's own period";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -395,6 +395,7 @@ export default class BalanceBench extends BaseComponent{
 			shapeFromRouted: variant === "base" ? false : undefined,
 			noPartition: variant === "base" || variant === "shape",
 			drawdownFromOwnAccount: variant === "draw",
+			turnAwareEvents: variant === "turn",
 			startingMonth: reportingConfig.startingMonth,
 			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
 
@@ -1437,7 +1438,8 @@ export default class BalanceBench extends BaseComponent{
 			["baseline (covered-account shapes, no split)", of("base")],
 			["+ shape from the routed account", of("shape")],
 			["+ a stream paid two ways is two streams   <- shipping", of(null)],
-			["+ a budget draws down wherever it was spent", of("draw")]
+			["+ a budget draws down wherever it was spent", of("draw")],
+			["+ a turn is the stream's own period, not always a month", of("turn")]
 		]
 		return this._variants
 	}

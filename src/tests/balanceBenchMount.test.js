@@ -499,7 +499,7 @@ test("the mechanism ladder scores three models against the same window", async (
 	   a ladder whose lines are all the same number would attribute a regression to nothing. */
 	const ref = await mount()
 	const v = ref.current.variants()
-	expect(v.length).toBe(4)
+	expect(v.length).toBe(5)
 	v.forEach(row => {
 		expect(typeof row[0]).toBe("string")
 		expect(row[1] === null || typeof row[1] === "number").toBe(true)

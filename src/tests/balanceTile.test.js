@@ -22,7 +22,8 @@ import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CL
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
 	buildModel, eventsPerTurn, accountLinks, cardSchedule, cardRepaymentForecast,
 	shareOfDayDetail, cardSpend,
-	buildForecastInputs, partitionStreams, observedSeries, BALANCE_SOURCES} from '../processors/BankBalance'
+	buildForecastInputs, partitionStreams, observedSeries, BALANCE_SOURCES,
+	turnKeyOf} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -3464,4 +3465,35 @@ test("a cycle that spoke with one voice ROUTES the stream, not just stops the sp
 	//and without the partition step at all, the old answer is the one the window gives
 	const whole = buildModel(Object.assign({}, opts, {noPartition: true}))
 	expect(whole.routing.gym).toBe("chk")
+})
+
+test("a turn is the stream's own period, not always a calendar month", () => {
+	/* "Movements per turn" decides how many steps a forecast draws in one cycle, and it was measured
+	   per calendar MONTH regardless of the stream. A semimonthly wage of one cheque per half-month
+	   measured 2.1 movements per turn - right per month, wrong per turn - and the forecast drew two
+	   steps every half-month against one clean payment. */
+	const txns = []
+	for(let m = 0; m < 8; m++){
+		txns.push({date: new Date(Date.UTC(2026, m, 14)), amount: 7837})
+		txns.push({date: new Date(Date.UTC(2026, m, 29)), amount: 7837})
+	}
+	//counted per month, two cheques a month look like two movements a turn
+	expect(eventsPerTurn(txns, 15674)).toBeCloseTo(2, 1)
+	//counted per HALF month, which is what semimonthly means, it is one
+	/* Counted per HALF month, which is what semimonthly means, it is one. Not exactly one: February
+	   has no 29th, so that cheque rolls into 1 March and shares a half with the 14th - a real
+	   collision, and the estimator is right to see it. */
+	expect(eventsPerTurn(txns, 7837, "semimonthly")).toBeLessThan(1.2)
+	//a weekly stream is four movements a month and one a week
+	const weekly = []
+	for(let w = 0; w < 20; w++)
+		weekly.push({date: new Date(Date.UTC(2026, 0, 5 + w*7)), amount: -230})
+	expect(eventsPerTurn(weekly, -996)).toBeGreaterThan(3)
+	//a 7-day bucket does not align to calendar weeks, so one week in fifteen catches two - close
+	//enough to one that the forecast draws a single step, which is the whole point
+	expect(eventsPerTurn(weekly, -230, "weekly")).toBeLessThan(1.2)
+	//and a monthly stream is unchanged either way, which is why nothing regressed
+	const monthly = []
+	for(let m = 0; m < 8; m++)monthly.push({date: new Date(Date.UTC(2026, m, 3)), amount: -1700})
+	expect(eventsPerTurn(monthly, -1700, "monthly")).toBeCloseTo(eventsPerTurn(monthly, -1700), 6)
 })
