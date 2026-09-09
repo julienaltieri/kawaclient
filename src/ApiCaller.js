@@ -22,6 +22,7 @@ const API = {
 	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
 	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
 	getBalanceHistory: 							AppConfig.serverURL + "/api" + "/getBalanceHistory",
+	saveFixture: 								AppConfig.serverURL + "/api" + "/saveFixture",
 	bankRemoveItem: 							AppConfig.serverURL + "/api" + "/bankRemoveItem",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
 	getSupportedInstitutions:  					AppConfig.serverURL + "/api" + "/getSupportedInstitutions",
@@ -326,6 +327,15 @@ class ApiCaller{
 	//The REMEMBERED balance series. Today's live figure arrives with the accounts instead - this only
 	//has whatever has accumulated since balance capture went in, so a caller must treat an empty
 	//answer as "no history yet" rather than as "no money".
+	//development only: asks the LOCAL server to write the bench fixture into the test folder
+	saveFixture(fixture){
+		const request = new Request(API.saveFixture,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({fixture: fixture})
+		})
+		return this.sendRequest(request)
+	}
+
 	getBalanceHistory(startDate, endDate){
 		const request = new Request(API.getBalanceHistory,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},

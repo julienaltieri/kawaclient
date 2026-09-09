@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b75 - the portfolio dumps to a fixture";
+export const BENCH_VERSION = "b76 - the fixture is written where the tests read it";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1625,25 +1625,44 @@ export default class BalanceBench extends BaseComponent{
 		}
 	}
 
-	//written to a file rather than the clipboard: a portfolio is megabytes, and it is meant to be
-	//committed next to the tests that read it
+	/* WRITTEN WHERE THE TESTS READ IT, by the local server.
+
+	   A browser cannot write to disk, so a download lands in Downloads and has to be moved by hand
+	   every time - which means it is done once, goes stale, and the tests quietly run against a
+	   portfolio from three weeks ago. The local server can write the file, so it does.
+
+	   The download stays as the fallback for a client not talking to a local server. It is worse in
+	   exactly the way described above, so it says so instead of looking like a success. */
 	saveFixture(){
+		const say = m => this.updateState({copied: m},
+			() => setTimeout(() => this.updateState({copied: null}), 3200))
+		let f = null
+		try{f = this.fixture()}
+		catch(e){return say("could not build the fixture: " + (e && e.message))}
+		say("writing " + f.transactions.length + " transactions...")
+		ApiCaller.saveFixture(f).then(r => {
+			if(r && r.saved)return say(r.transactions + " transactions written to " + r.path)
+			this.downloadFixture(f, (r && r.error) || "the server did not write it")
+		}).catch(e => this.downloadFixture(f, (e && e.message) || "the server refused"))
+	}
+
+	downloadFixture(f, why){
 		try{
-			const f = this.fixture()
 			const blob = new Blob([JSON.stringify(f)], {type: "application/json"})
 			const url = URL.createObjectURL(blob)
 			const a = document.createElement("a")
 			a.href = url
-			a.download = "portfolio-" + dayKey(new Date()) + ".json"
+			a.download = "portfolio.json"
 			document.body.appendChild(a)
 			a.click()
 			document.body.removeChild(a)
 			setTimeout(() => URL.revokeObjectURL(url), 4000)
-			this.updateState({copied: f.transactions.length + " transactions saved"},
-				() => setTimeout(() => this.updateState({copied: null}), 2600))
+			this.updateState({copied: "downloaded instead (" + why
+				+ ") - move it to client/src/tests/fixtures/portfolio.json"},
+				() => setTimeout(() => this.updateState({copied: null}), 6000))
 		}catch(e){
 			this.updateState({copied: "save failed: " + (e && e.message)},
-				() => setTimeout(() => this.updateState({copied: null}), 2600))
+				() => setTimeout(() => this.updateState({copied: null}), 4000))
 		}
 	}
 
