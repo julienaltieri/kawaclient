@@ -812,7 +812,12 @@ export default class MoneyFlowEngine {
 		this.nudgeT0 = 0; this.nudgePump = 0;
 		this.reduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-		this.onResize = () => this.rebuild();
+		//deferred a frame for the same reason as BalanceChart: rebuilding inside the callback resizes
+		//the observed host, and the re-entrant delivery surfaces as an uncaught overlay error
+		this.onResize = () => {
+			if(this._roFrame)return;
+			this._roFrame = requestAnimationFrame(() => {this._roFrame = 0; this.rebuild()});
+		};
 		if(typeof ResizeObserver!=="undefined"){
 			this.ro = new ResizeObserver(this.onResize); this.ro.observe(host);
 		} else window.addEventListener("resize",this.onResize);

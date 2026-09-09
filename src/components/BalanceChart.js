@@ -277,11 +277,29 @@ export default class BalanceChart extends BaseComponent{
 			.catch(() => this.updateState({remembered: []}))
 		this.wireOnce()
 		if(typeof ResizeObserver !== "undefined"){
-			this.ro = new ResizeObserver(() => {if(this.measure())this.paint()})
+			/* DEFERRED A FRAME, because measuring and then painting inside the callback resizes the
+			   thing being observed. The browser sees a second resize it has no frame left to deliver
+			   and raises "ResizeObserver loop completed with undelivered notifications" - benign in
+			   itself, and CRA's overlay puts it over the whole app.
+
+			   A frame is enough: the paint lands in the NEXT one, so the observation that follows is
+			   a fresh delivery rather than a re-entrant one. Coalesced too, so a burst of resizes
+			   paints once. */
+			this.ro = new ResizeObserver(() => {
+				if(this.roFrame)return
+				this.roFrame = requestAnimationFrame(() => {
+					this.roFrame = 0
+					if(this.measure())this.paint()
+				})
+			})
 			if(this.host.current)this.ro.observe(this.host.current)
 		}
 	}
-	componentWillUnmount(){if(this.ro)this.ro.disconnect()}
+	componentWillUnmount(){
+		if(this.roFrame)cancelAnimationFrame(this.roFrame)
+		this.roFrame = 0
+		if(this.ro)this.ro.disconnect()
+	}
 	componentDidUpdate(){
 		this.paint()
 		/* THE AUDIT HOOK. The parent gets what actually posted that day and what the forecast expected
