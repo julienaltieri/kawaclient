@@ -225,15 +225,22 @@ and drift is never read as multiplicity.
 
 ---
 
-## §4 — How much, and when exactly
+## §4 — How much money moves
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** For a stream with a known frequency and shape, produce the amounts and the days.
+**The question.** For a stream whose frequency and shape are already known, how much money moves at
+each movement those two have placed?
+
+**Timing is not decided here.** §2 said how often and on what schedule; §3 said where inside the cycle
+the movement falls. Between them the *when* is settled, and this stage only sizes what lands there.
+Keeping that boundary is what stops a good amount rule quietly moving a date, which is how v1's stages
+grew into each other.
 
 **In:** everything decided in §1–§3, plus the declaration and the transaction history.
 
-**Out:** the money the stream places on each day of the cycle ahead, per account, with a confidence.
+**Out:** an amount for each movement the shape placed, per account, with a confidence on the
+amount.
 
 **Which source owns the amount is DELIBERATELY LEFT OPEN, and will be decided case by case.** The
 declaration is what the user *intends*; the ledger is what actually happened. They disagree constantly
