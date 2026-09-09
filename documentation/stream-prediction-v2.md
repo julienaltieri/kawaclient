@@ -68,18 +68,32 @@ reconstructing it.
 | `account` | which account it moves out of |
 | `confidence.date` | how sure the module is about *when* |
 | `confidence.amount` | how sure the module is about *how much* |
+| `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** |
+| `basis.shape` | which shape was identified, and on what evidence |
+| `basis.amount` | which method produced the amount |
 
 **Confidence is per dimension, because the two fail independently.** Rent is certain in both. A card
 statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be
 confident about size and have no idea when. Collapsing those into one number throws away the half the
 consumer needs.
 
-**The horizon is a module setting, not a caller's argument.** How far ahead a schedule stays meaningful
-is a property of the model — a weekly stream and a yearly one do not become unpredictable at the same
-distance — so the module owns it rather than answering whatever it is asked.
+**Every prediction says how it was arrived at.** Not the reasoning — a label. "The timing came from
+the declaration", "the amount came from the trailing mean", "this is a spread and here is the evidence
+for it". Two predictions of $1,700 on the 6th are not the same claim when one is a stated rent and the
+other is an average of four scattered charges, and a consumer choosing whether to lean on a number
+needs to know which it is holding.
+
+**The horizon is how far ahead the schedule runs.** A prediction has a distance beyond which it stops
+being worth making: the module emits events up to that distance and no further, rather than continuing
+to produce increasingly speculative ones.
+
+**And the horizon is the module's own setting.** How far ahead a schedule stays meaningful is a
+property of the prediction — a weekly stream and a yearly one do not become unpredictable at the same
+distance — so it is decided inside rather than supplied by whoever is asking.
 
 **A spread stream still produces events.** "Continuous" is a shape, not an absence of events; how a
-spread is expressed in a schedule is a §3 question and is deliberately left open here.
+spread is expressed as a list of events is a question about shape, and is deliberately left open
+here.
 
 ## What this module owns, and what it does not
 
@@ -159,8 +173,8 @@ seven days. *On what schedule* is where in the calendar those fall, which is wha
 predictable rather than merely a rate. A stream can have a clean rate and no schedule at all; that is a
 real answer and this stage has to be able to give it.
 
-**In:** the stream's declared period and the history of that declaration; the transactions assigned in
-§1.
+**In:** the stream's declared period and the history of that declaration; the transactions belonging
+to the stream on the account it was mapped to.
 
 **Out:** a frequency, and whether it came from the declaration or from the ledger.
 
@@ -173,8 +187,8 @@ clean one.
 envelope*: it states an amount per year, and it does not state a rhythm. The stream may well **have**
 one — a yearly budget charged every month has a perfectly good rhythm — but it has to be inferred
 rather than read, and the arithmetic relating that yearly figure to the size of one movement is unlike
-every other case. §5 is where both are worked out. This stage's only job for a yearly stream is to
-hand it on correctly labelled.
+every other case. Both are worked out where yearly streams are treated as their own case, below. This
+stage's only job for a yearly stream is to hand it on correctly labelled.
 
 **The open questions.** When does the ledger get to contradict a non-yearly declaration — never, or
 under some evidential threshold? What about a declaration that was true and has stopped being true?
@@ -192,7 +206,8 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 **The question.** Given a known, non-yearly frequency, what shape does the money movement have
 within the cycle?
 
-**In:** the frequency from §2, the transactions from §1, the declaration history.
+**In:** the stream's timing, its transactions on the account it was mapped to, and the history of its
+declared amount.
 
 **Out:** one of a small set of shapes, plus the parameters of whichever it is, plus how confident.
 
@@ -205,7 +220,8 @@ within the cycle?
 | **multi-lump** | several distinct events, each with its own day and size | utilities: water on the 4th, electricity on the 18th |
 
 **Multi-lump is the one that is currently missing**, and it is not the same thing as a split across
-accounts (§6). Two bills on the *same* account, on different days, are one stream with two lumps.
+accounts, which is treated separately below. Two bills on the *same* account, on different days, are
+one stream with two lumps.
 
 **Two things make it hard.** *Drift is not multiplicity* — an event that moves a few days is one lump,
 not several, and telling those apart is the difference between one step of $7,837 and two steps of
@@ -227,12 +243,12 @@ moves at each movement those two have placed.
 It is a prediction and not a lookup, which is why it carries a confidence: the amount that will move
 next is being forecast from a declaration and a history that disagree, not read off a record.
 
-**Timing is not predicted here.** §2 interpreted the timing; §3 said where inside the cycle the
-movement falls. Between them the *when* is settled, and this stage predicts only the amount that lands
-there. Keeping that boundary is what stops a good amount rule quietly moving a date, which is how v1's
-stages grew into each other.
+**Timing is not predicted here.** The stream's timing and its shape together have already settled
+*when* the money moves; this stage predicts only *how much* moves then. Keeping that boundary is what
+stops a good amount rule quietly moving a date.
 
-**In:** everything decided in §1–§3, plus the declaration and the transaction history.
+**In:** the stream's account, timing and shape, plus its declared amount and its transaction
+history.
 
 **Out:** an amount for each movement the shape placed, per account, with a confidence on the
 amount.
@@ -257,7 +273,7 @@ says how wide the range is instead of asserting a number.
 ---
 
 > **At this point the module should predict every non-yearly stream well, on the account it belongs
-> to.** That is the first real checkpoint, and §5 and §6 should not begin before it is met.
+> to.** That is the first real checkpoint. The two cases below should not begin before it is met.
 
 ---
 
@@ -297,11 +313,12 @@ stream has one, and a budget that is not being spent stops being forecast.
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** Handle the exception §1 identified: one stream, genuinely two accounts.
+**The question.** One stream that genuinely moves money through two accounts — a card and a checking
+account — rather than one. How is it predicted?
 
-**Why it is last.** It is a *composition* of everything above — each side has its own frequency, its
-own shape and its own amount — so it cannot be specified before those are settled, and it is rare
-enough that getting it wrong is cheap compared with getting §1–§4 wrong.
+**Why it is last.** It is a *composition* of everything above — each side has its own timing, its own
+shape and its own amount — so it cannot be specified before those are settled, and it is rare enough
+that getting it wrong is cheap compared with getting the ordinary case wrong.
 
 **What it must guarantee.** That the two halves sum to one stream and never to two. The declared
 amount is one number; a split that gives each side the whole of it doubles the stream, which is worse
@@ -324,7 +341,7 @@ demonstrably the data's and not the model's.
 
 **And "as good as possible" is judged by agreement, stream by stream, against the captured portfolio.**
 Julien audits each stream in the fixture and asks whether the module's decision is the one he would
-have made. That is the measure, and it is deliberately not a percentage: stages 1 to 3 are
+have made. That is the measure, and it is deliberately not a percentage: mapping, timing and shape are
 classifications with no dollar error, so an accuracy score cannot price them at all, and a model that
 agrees with its owner about every stream is the thing actually being built.
 
@@ -360,14 +377,15 @@ not re-opened by accident.
 
 | question | answer |
 |---|---|
-| Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached — see §4. |
+| Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
 | Does it predict, or also explain? | **Predict only.** Explanation is a debugging need and gets built when there is something to debug. |
 
 ## Still open
 
-1. **How a spread stream appears in an event schedule.** A §3 question, and the one place the output
+1. **How a spread stream appears in an event schedule.** A question about shape, and the one place the
+   output
    contract and the shape taxonomy have to meet.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
