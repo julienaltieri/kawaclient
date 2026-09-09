@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b50 - the cycle column is the detected one";
+export const BENCH_VERSION = "b51 - a shape is read from the account the money leaves";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1002,6 +1002,26 @@ export default class BalanceBench extends BaseComponent{
 		   These are now read off the forecast itself, by asking it what it puts on each day of a
 		   month. That cannot disagree with the picture, because it IS the picture. */
 		const mdl = a && a.model
+		/* HOW A STREAM IS ACTUALLY PAID, over the whole ledger rather than the model's window.
+		   "Routing chose the card" says which side won; it does not say by how much, and a stream
+		   split 95/5 and one split 55/45 are different problems wearing the same label. Counted from
+		   the full ledger because this is a fact about the past, not a model input. */
+		const allLegs = this.byStream()
+		const cardsNow = this.credit(), chkNow = this.spending()
+		const splitOf = id => {
+			const out = {card: 0, checking: 0, cardAmt: 0, checkingAmt: 0, other: 0}
+			;(allLegs[id] || []).forEach(x => {
+				if(cardsNow.indexOf(x.accountHash) > -1){out.card++; out.cardAmt += x.amount}
+				else if(chkNow.indexOf(x.accountHash) > -1){out.checking++; out.checkingAmt += x.amount}
+				else out.other++
+			})
+			const n = out.card + out.checking
+			out.n = n
+			out.cardShare = n ? out.card/n : 0
+			const gross = Math.abs(out.cardAmt) + Math.abs(out.checkingAmt)
+			out.cardShareByAmount = gross ? Math.abs(out.cardAmt)/gross : 0
+			return out
+		}
 		//the same model, in a reading where card-routed streams are visible - they are hidden from the
 		//checking view because that money has not moved through it, which makes their row unreadable
 		const asCard = mdl ? Object.assign({}, mdl, {covers: () => true}) : null
@@ -1083,6 +1103,7 @@ export default class BalanceBench extends BaseComponent{
 				cycle:(p && p.cycle && p.cycle !== declared)
 					? p.cycle + " (declared " + declared + ")" : declared,
 				detected:(p && p.cycle) || null, declared:declared, expected:perCycle,
+				split:splitOf(s.id),
 				onCard:(p && p.onCard) || null, promoted:!!(p && p.promoted),
 				instalment:(p && p.instalment) || 0,
 				surface:(det && det.surface) || 0,
@@ -1155,6 +1176,11 @@ export default class BalanceBench extends BaseComponent{
 		const out = [r.name + "   " + BENCH_VERSION,
 			"class      " + (r.onCard ? "card " + r.onCard : "checking")
 				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""),
+			"paid       " + (r.split && r.split.n
+				? Math.round(r.split.cardShare*100) + "% by card (" + r.split.card + " of "
+					+ r.split.n + " transactions, " + Math.round(r.split.cardShareByAmount*100)
+					+ "% of the money)"
+				: "one account only"),
 			"cycle      " + r.cycle + "   predicted day " + r.day
 				+ "   top day carries " + Math.round((r.spread || 0)*100) + "%",
 			"amount     expects " + money(r.expected) + "   predicts " + money(r.amount),
@@ -1244,6 +1270,11 @@ export default class BalanceBench extends BaseComponent{
 					(r.gain*100).toFixed(0) + "%"]))
 				//a card-routed stream is read on its card, and whether it promoted to an instalment
 				//is the difference between a lump being named into a statement and being averaged
+				if(r.split && r.split.card && r.split.checking)
+					out.push("      paid " + Math.round(r.split.cardShare*100) + "% by card ("
+						+ r.split.card + " of " + r.split.n + " transactions, "
+						+ Math.round(r.split.cardShareByAmount*100) + "% of the money)"
+						+ " - routing chose " + (r.onCard ? "the card" : "checking"))
 				if(r.onCard)out.push("      charged to a card"
 					+ (r.promoted ? " · INSTALMENT " + money(r.instalment) + " per turn"
 						: " · not an instalment, so it is only in the card's average"))
@@ -1367,6 +1398,13 @@ export default class BalanceBench extends BaseComponent{
 							{" — transactions " + (r.detail.flowAccuracy*100).toFixed(0) + "%"}
 							{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
 								+ " on " + r.detail.worstDay : ""}
+						</Line> : null}
+						{r.split && r.split.card && r.split.checking ? <Line>
+							{"paid " + Math.round(r.split.cardShare*100) + "% by card ("
+								+ r.split.card + " of " + r.split.n + " transactions, "
+								+ Math.round(r.split.cardShareByAmount*100) + "% of the money)"
+								+ " — routing chose "
+								+ (r.onCard ? "the card" : "checking")}
 						</Line> : null}
 						<Line>{money(r.surface)} $·days
 							{r.onCard ? " · charged to a card"

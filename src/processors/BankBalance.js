@@ -2098,16 +2098,39 @@ export function buildForecastInputs(opts){
 	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
 	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {}, settled = {};
 	const promoted = {}, instalment = {};
+
+	/* ROUTING IS DECIDED FIRST, because a stream's SHAPE has to be read from the account its money
+	   actually leaves.
+
+	   `sliced` is the transactions on the accounts this reading covers, and the shape was built from
+	   it - right for a stream that lives on a covered account, wrong for one that does not. Groceries
+	   charged to a card most of the time, with a handful of debit purchases among them, had its
+	   rhythm read off the handful: six debit transactions outvoted seventy-eight card ones and a
+	   weekly stream came out as a single monthly event.
+
+	   Routing already answers this and needs nothing new. It follows the leg that LEAVES, and it is
+	   computed from `seen` and the direction - both available before any shape is. */
 	terminals.forEach(s => {
 		const all = byStream[s.id] || [];
 		seen[s.id] = all.filter(x => (!until || x.date < until) && (!since || x.date >= since));
+		const a0 = expectationAt(s, until || new Date());
+		dir[s.id] = a0 < 0 ? -1 : (a0 > 0 ? 1 : 0);
+	});
+	const routing = accountRoutingOf(seen, id => dir[id]);
+
+	terminals.forEach(s => {
+		const all = byStream[s.id] || [];
 		sliced[s.id] = seen[s.id].filter(x => covered.indexOf(x.accountHash) > -1);
 		const period = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly";
-		let use = sliced[s.id];
+		/* the account the money leaves, first - the same set as `sliced` for anything on a covered
+		   account, and the right set for anything that is not */
+		const home = routing[s.id];
+		let use = home ? seen[s.id].filter(x => x.accountHash === home) : sliced[s.id];
+		if(!use.length)use = sliced[s.id];
 		shapeFrom[s.id] = "recent";
 		if(!use.length && wide){
 			use = all.filter(x => (!until || x.date < until) && x.date >= wide
-				&& covered.indexOf(x.accountHash) > -1);
+				&& (home ? x.accountHash === home : covered.indexOf(x.accountHash) > -1));
 			if(use.length)shapeFrom[s.id] = "older";
 		}
 		/* AND FINALLY, WHEREVER ELSE IT LIVES. A stream that runs entirely through a credit card has
@@ -2222,9 +2245,7 @@ export function buildForecastInputs(opts){
 			});
 		}
 		settled[s.id] = done;
-		dir[s.id] = a < 0 ? -1 : (a > 0 ? 1 : 0);
 	});
 	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,
-		settled: settled, promoted: promoted, instalment: instalment,
-		routing: accountRoutingOf(seen, id => dir[id])};
+		settled: settled, promoted: promoted, instalment: instalment, routing: routing};
 }

@@ -1688,6 +1688,48 @@ test("without the filters the same stream smears - which is what the app was doi
 	expect(loose.shapes.sav.weights[14]).toBeLessThan(0.75)
 })
 
+test("a stream mostly charged to a card takes its shape from the card, not from the stray debits", () => {
+	/* THE FILTER ABOVE IS RIGHT FOR A STREAM THAT LIVES ON A COVERED ACCOUNT AND WRONG FOR ONE THAT
+	   DOES NOT, and groceries do not. Nearly every grocery is charged to the card; a handful are put
+	   on the debit card. Filtering to the covered accounts left only the handful, so fifteen card
+	   purchases spread across the month were outvoted by three debits that happened to fall on the
+	   20th, and a roughly weekly stream was drawn as one lump on the 20th.
+
+	   Routing already knows which account the money leaves. The shape is read from THAT account. */
+	const s1 = {id: "food", name: "Groceries", getPreferredPeriod: () => "monthly",
+		getExpectedAmountAtDateByPeriod: () => -700}
+	const legs = []
+	for(let m = 3; m <= 5; m++){
+		[2, 9, 16, 23, 30].forEach(d =>
+			legs.push({date: new Date(Date.UTC(2026, m, d)), amount: -140, accountHash: "visa"}))
+		legs.push({date: new Date(Date.UTC(2026, m, 20)), amount: -90, accountHash: "chk"})
+	}
+	const built = buildForecastInputs({terminals: [s1], byStream: {food: legs},
+		since: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 6, 1)),
+		covered: ["chk"]})
+	//the money leaves the card, so that is where the rhythm is read
+	expect(built.routing.food).toBe("visa")
+	const w = built.shapes.food.weights
+	//the three debits no longer own the month
+	expect(w[19]).toBeLessThan(0.3)
+	//and the five days it is actually charged on carry it
+	expect(w[1] + w[8] + w[15] + w[22] + w[29]).toBeGreaterThan(0.7)
+})
+
+test("a stream with nothing on its routed account still falls back rather than going blank", () => {
+	//the fallback matters more than the fix: an empty shape is a stream that silently stops existing
+	const s1 = {id: "rent", name: "Rent", getPreferredPeriod: () => "monthly",
+		getExpectedAmountAtDateByPeriod: () => -1700}
+	const legs = []
+	for(let m = 3; m <= 5; m++)
+		legs.push({date: new Date(Date.UTC(2026, m, 1)), amount: -1700, accountHash: "chk"})
+	const built = buildForecastInputs({terminals: [s1], byStream: {rent: legs},
+		since: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 6, 1)),
+		covered: ["chk"]})
+	expect(built.routing.rent).toBe("chk")
+	expect(built.shapes.rent.weights[0]).toBeCloseTo(1, 6)
+})
+
 /* =================================================================================================
    ONE MODEL. The tile drew one forecast, the bench scored another, and the audit table explained a
    third. Five sessions went on the consequences. The components now choose a question and draw the

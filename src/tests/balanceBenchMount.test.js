@@ -73,6 +73,14 @@ beforeEach(() => {
 			[{streamId: "ccpay", amount: 261}], CARD, undefined, undefined, "r" + w, "r" + w,
 			"s" + w))
 	}
+	/* groceries bought BOTH ways - mostly on the card, occasionally on the debit card. That is a real
+	   pattern and it is what makes a stream ambiguous: routing has to pick one account and the split
+	   says how lopsided the choice was. */
+	for(let i = 0; i < 6; i++){
+		txns.push(new GenericTransaction(d(160 - i*25).toISOString(), -35, "groceries on debit",
+			[{streamId: "food", amount: -35}], CHECKING, undefined, undefined,
+			"gd" + i, "gd" + i))
+	}
 	for(let m = 0; m < 6; m++){
 		txns.push(new GenericTransaction(d(170 - m*30).toISOString(), 5100, "pay",
 			[{streamId: "base", amount: 5100}], CHECKING, undefined, undefined, "p" + m, "p" + m))
@@ -121,12 +129,16 @@ test("a linked card is found through the pairing and given a weekly schedule", a
 	//four weekly bills of $261 is about $1,130 a month, predicted from the purchases that produce it
 	expect(Math.abs(a.settleMonthly)).toBeGreaterThan(700)
 	expect(Math.abs(a.settleMonthly)).toBeLessThan(1600)
-	//AND IT DOES NOT MOVE WITH THE STREAM WINDOW. The settlement has its own six-month sample
-	//because a card bill is a variable quantity, so selecting a different lookback for the streams
-	//must not change what the card is predicted to cost. It used to: the widest window divided a
-	//fixed set of settlements by fifty-six years of months and predicted almost nothing.
-	const all = ref.current.analyse(new Date(0))
-	expect(all.settleMonthly).toBeCloseTo(a.settleMonthly, 6)
+	/* AND IT SURVIVES EVERY LOOKBACK. The card's statement is composed from the card's own streams
+	   now, so a different stream window legitimately moves it - what must NOT happen is the collapse
+	   this originally guarded against, where the widest window predicted almost nothing. The
+	   residual is measured as a gap rather than as a multiplier for exactly that reason: where the
+	   streams say little it carries the whole difference. */
+	ref.current.windows(ref.current.today()).forEach(w => {
+		const alt = ref.current.analyse(w[1])
+		expect(Math.abs(alt.settleMonthly)).toBeGreaterThan(700)
+		expect(Math.abs(alt.settleMonthly)).toBeLessThan(1600)
+	})
 })
 
 /* The three things asked for on the bench, exercised for real: a rolling 7-day score that rebuilds
@@ -384,4 +396,21 @@ test("the cycle column is what was DETECTED, and says so when it disagrees", asy
 			expect(r.cycle).toContain("declared " + r.declared)
 		}
 	})
+})
+
+test("a stream paid two ways reports the split, not just which side won", async () => {
+	/* "Routing chose the card" says which side won and not by how much, and a stream split 95/5 is a
+	   different problem from one split 55/45 wearing the same label. */
+	const ref = await mount()
+	const rows = ref.current.rows().filter(r => r.split && r.split.card && r.split.checking)
+	expect(rows.length).toBeGreaterThan(0)
+	rows.forEach(r => {
+		expect(r.split.n).toBe(r.split.card + r.split.checking)
+		expect(r.split.cardShare).toBeGreaterThan(0)
+		expect(r.split.cardShare).toBeLessThan(1)
+		//routing must have picked the side that carries more of the money
+		const wonCard = !!r.onCard
+		expect(wonCard).toBe(r.split.cardShareByAmount >= 0.5)
+	})
+	expect(ref.current.report()).toMatch(/% by card \(/)
 })
