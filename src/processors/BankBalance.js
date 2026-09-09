@@ -266,6 +266,123 @@ export function reconstruct(txns, now, balanceNow, from){
 	return out.reverse();
 }
 
+
+/* ---- AN OBSERVED BALANCE IS NOT A RECONSTRUCTED ONE, AND IT WINS ------------------------------------
+   reconstruct() derives the past: it takes ONE number and subtracts transactions back from it. That
+   makes it exactly as good as the transaction record and no better, and it fails in a way nothing
+   inside it can see - a single transaction the ledger has not received yet displaces EVERY earlier
+   point by that amount, and the curve stays perfectly self-consistent while being uniformly wrong.
+
+   That is not hypothetical. A $1,699.50 cheque posted at the bank and had not reached our store at the
+   next read; the live balance already knew about it and the ledger did not, so a whole month of
+   history sat $1,699.50 low and dipped below zero on days the account had thousands in it.
+
+   A CLOSING BALANCE IS OBSERVED. The bank states it, it cannot drift, and it does not care whether we
+   have every transaction. So where one exists for a day, it IS that day's value - not a candidate to
+   be averaged with the walk, not a check on it. The walk's job shrinks to filling the gaps between
+   observations, which is the one thing it is good at over short spans.
+
+   TWO ANCHORS, EACH CORRECT FOR ITS OWN SEGMENT.
+
+     * Days at or before the newest observation are anchored to the OBSERVATIONS. Each gap is walked
+       backwards from the nearest observation to its right, so an ingestion gap can only distort the
+       days inside one gap rather than all of history.
+     * Days after the newest observation are anchored to the LIVE balance, which is the only thing
+       that knows about money that moved since the last refresh.
+
+   The two segments meet at the newest observation, and where money has moved that we have no
+   transaction for, they do not agree. THAT DISCONTINUITY IS REAL and is reported rather than smoothed:
+   it is precisely the money the bank has seen and we have not, and it disappears by itself at the next
+   refresh. Hiding it would put the error back into every historical point, which is the bug this
+   exists to fix.
+
+   FALLS BACK COMPLETELY. With no observations at all this is reconstruct(), point for point, so a
+   provider that carries no balances and a history older than our first snapshot both keep working.
+
+   Every point says where it came from, because "the bank said so" and "we inferred it" are different
+   claims and a reader auditing a surprising number needs to know which one they are looking at. */
+export const BALANCE_SOURCES = {observed: "observed", filled: "walked between observations",
+	live: "walked from the live balance"};
+
+export function observedSeries(txns, now, liveBalance, from, observed){
+	const byDay = {};
+	const today = dayKey(now);
+	(txns || []).forEach(t => {
+		const k = dayKey(t.date);
+		if(k <= today)byDay[k] = (byDay[k] || 0) + t.amount;
+	});
+
+	//the observations that fall in the drawn span, newest last
+	const obs = {};
+	Object.keys(observed || {}).forEach(k => {
+		if(observed[k] === undefined || observed[k] === null || isNaN(observed[k]))return;
+		obs[k] = observed[k];
+	});
+	const days = [];
+	for(let d = new Date(now); d >= from; d = new Date(d.getTime() - DAY))days.push(new Date(d));
+	days.reverse();                                    //oldest first, which is the drawing order
+
+	const inSpan = Object.keys(obs).filter(k => k <= today).sort();
+	const newest = inSpan.length ? inSpan[inSpan.length - 1] : null;
+
+	/* THE LIVE SEGMENT, walked back from today exactly as it always was - and stopping at the newest
+	   observation rather than running through it. */
+	const value = {}, source = {};
+	let bal = liveBalance;
+	for(let i = days.length - 1; i >= 0; i--){
+		const k = dayKey(days[i]);
+		if(newest && k < newest)break;
+		value[k] = bal;
+		source[k] = BALANCE_SOURCES.live;
+		bal -= (byDay[k] || 0);
+	}
+
+	/* THE OBSERVED SEGMENT. Each observation is placed as itself; each gap is walked backwards from
+	   the observation to its right, so no gap can contaminate another. */
+	if(newest){
+		let anchorKey = null, running = 0;
+		for(let i = days.length - 1; i >= 0; i--){
+			const k = dayKey(days[i]);
+			if(k > newest)continue;
+			if(obs[k] !== undefined){
+				value[k] = obs[k];
+				source[k] = BALANCE_SOURCES.observed;
+				anchorKey = k;
+				running = obs[k];
+				continue;
+			}
+			if(anchorKey === null){       //no observation at or after this day inside the span
+				value[k] = obs[newest];
+				source[k] = BALANCE_SOURCES.filled;
+				continue;
+			}
+			running -= (byDay[dayKey(days[i + 1])] || 0);
+			value[k] = running;
+			source[k] = BALANCE_SOURCES.filled;
+		}
+	}
+
+	/* WHAT THE BANK HAS SEEN AND WE HAVE NOT. The live walk and the observations disagree at the
+	   newest observation by exactly the transactions missing from the ledger since it was taken. */
+	let unreconciled = 0;
+	if(newest){
+		let live = liveBalance;
+		for(let i = days.length - 1; i >= 0; i--){
+			const k = dayKey(days[i]);
+			if(k === newest){live = live; break}
+			live -= (byDay[k] || 0);
+		}
+		unreconciled = live - obs[newest];
+	}
+
+	const out = days.map(d => {
+		const k = dayKey(d);
+		return {date: new Date(d), value: value[k], actual: true, source: source[k]};
+	});
+	return {points: out, newestObservation: newest, observations: inSpan.length,
+		unreconciled: unreconciled};
+}
+
 /* ---- THE FUTURE -----------------------------------------------------------------------------------
    Each terminal's monthly expectation spread over the days of the month in the proportions its own
    histogram gives, summed, and accumulated forward from today's balance. */

@@ -21,7 +21,7 @@ import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CL
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
 	buildModel, eventsPerTurn, accountLinks, cardSchedule, cardRepaymentForecast,
 	shareOfDayDetail, cardSpend,
-	buildForecastInputs, partitionStreams} from '../processors/BankBalance'
+	buildForecastInputs, partitionStreams, observedSeries, BALANCE_SOURCES} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -3267,4 +3267,101 @@ test("a switch under measurement is OFF by default - the tile must not ship what
 	expect(shipped.expectedFor(shipped.terminals[0], opts.asOf)).toBeCloseTo(-12000/n, 4)
 	expect(asked.expectedFor(asked.terminals[0], opts.asOf)).toBeCloseTo(-7000/n, 4)
 	expect(n).toBeGreaterThan(1)
+})
+
+/* =================================================================================================
+   AN OBSERVED BALANCE IS NOT A RECONSTRUCTED ONE, AND IT WINS.
+
+   reconstruct() takes ONE number and subtracts transactions back from it, so it is exactly as good as
+   the transaction record and no better - and it fails invisibly. A single transaction the ledger has
+   not received displaces EVERY earlier point by that amount while the curve stays perfectly
+   self-consistent. That is not hypothetical: a $1,699.50 cheque posted at the bank and had not reached
+   our store, so a month of history sat $1,699.50 low and went below zero on days the account had
+   thousands in it.
+   ================================================================================================= */
+const oDay = n => new Date(Date.UTC(2026, 8, n))
+const oTxn = (n, amount) => ({date: oDay(n), amount: amount})
+const at = (r, n) => r.points.filter(p => dayKey(p.date) === dayKey(oDay(n)))[0]
+
+test("with no observations at all it IS reconstruct, point for point", () => {
+	//the fallback is the whole safety of this: old history and balance-less providers must still work
+	const txns = [oTxn(6, -500), oTxn(8, 1200)]
+	const now = oDay(10), from = oDay(3)
+	const r = observedSeries(txns, now, 3000, from, {})
+	const plain = reconstruct(txns, now, 3000, from)
+	expect(r.points.length).toBe(plain.length)
+	r.points.forEach((p, i) => {
+		expect(dayKey(p.date)).toBe(dayKey(plain[i].date))
+		expect(p.value).toBeCloseTo(plain[i].value, 9)
+		expect(p.source).toBe(BALANCE_SOURCES.live)
+	})
+	expect(r.unreconciled).toBe(0)
+})
+
+test("a transaction the ledger has not received no longer displaces the whole history", () => {
+	/* THE BUG, EXACTLY. The bank has taken $1,699.50 and told us the balance; the transaction has not
+	   arrived. Walking back from the live figure alone takes every earlier day down with it. */
+	const txns = [oTxn(6, -500)]
+	const now = oDay(9), from = oDay(3)
+	const live = 692                                  //already reduced by the cheque
+	const observed = {}
+	;[3, 4, 5, 6, 7].forEach(n => {
+		observed[dayKey(oDay(n))] = n <= 5 ? 2891.50 : 2391.50
+	})
+	const naive = reconstruct(txns, now, live, from)
+	const naiveAt5 = naive.filter(p => dayKey(p.date) === dayKey(oDay(5)))[0]
+	expect(naiveAt5.value).toBeCloseTo(1192, 4)       //$1,699.50 below the truth
+
+	const r = observedSeries(txns, now, live, from, observed)
+	expect(at(r, 5).value).toBeCloseTo(2891.50, 4)    //the bank's own number
+	expect(at(r, 5).source).toBe(BALANCE_SOURCES.observed)
+	//and the money the bank has seen and we have not is NAMED rather than smeared over the past
+	expect(r.unreconciled).toBeCloseTo(-1699.50, 4)
+	expect(r.newestObservation).toBe(dayKey(oDay(7)))
+})
+
+test("today still comes from the live balance - it is the only thing that knows about the cheque", () => {
+	const txns = [oTxn(6, -500)]
+	const r = observedSeries(txns, oDay(9), 692, oDay(3), {[dayKey(oDay(7))]: 2391.50})
+	expect(at(r, 9).value).toBeCloseTo(692, 4)
+	expect(at(r, 9).source).toBe(BALANCE_SOURCES.live)
+	//and the days between the newest observation and today are walked from the live end
+	expect(at(r, 8).source).toBe(BALANCE_SOURCES.live)
+})
+
+test("each gap is walked from the observation to its RIGHT, so one gap cannot contaminate another", () => {
+	/* The walk is only trusted over the span between two things the bank actually said. An ingestion
+	   gap in one week must not bend the week before it. */
+	const txns = [oTxn(5, -100), oTxn(6, -900), oTxn(8, -100)]
+	const observed = {[dayKey(oDay(4))]: 5000, [dayKey(oDay(7))]: 4000}
+	const r = observedSeries(txns, oDay(9), 3800, oDay(2), observed)
+	expect(at(r, 4).value).toBeCloseTo(5000, 4)
+	expect(at(r, 7).value).toBeCloseTo(4000, 4)
+	//the 6th is walked back from the 7th: 4000 - (nothing on the 7th) = 4000 ... minus the 7th's own
+	expect(at(r, 6).source).toBe(BALANCE_SOURCES.filled)
+	//the 5th is 4000 back over the 6th's -900
+	expect(at(r, 5).value).toBeCloseTo(4900, 4)
+	/* AND THE DAYS BEFORE THE 4th ARE WALKED FROM THE 4th - the $900 gap on the 6th, which sits in a
+	   different segment, does not reach them. */
+	expect(at(r, 3).value).toBeCloseTo(5000, 4)
+	expect(at(r, 3).source).toBe(BALANCE_SOURCES.filled)
+})
+
+test("every point says where it came from, because inferred and stated are different claims", () => {
+	const r = observedSeries([oTxn(6, -500)], oDay(9), 692, oDay(3),
+		{[dayKey(oDay(5))]: 2891.50, [dayKey(oDay(7))]: 2391.50})
+	const kinds = {}
+	r.points.forEach(p => {kinds[p.source] = (kinds[p.source] || 0) + 1})
+	expect(kinds[BALANCE_SOURCES.observed]).toBe(2)
+	expect(kinds[BALANCE_SOURCES.filled]).toBeGreaterThan(0)
+	expect(kinds[BALANCE_SOURCES.live]).toBeGreaterThan(0)
+	r.points.forEach(p => expect(typeof p.value).toBe("number"))
+})
+
+test("an observation older than the whole window changes nothing about the window", () => {
+	//the span asked for is the span drawn: an observation outside it must not silently anchor it
+	const r = observedSeries([oTxn(6, -500)], oDay(9), 692, oDay(5), {})
+	expect(r.observations).toBe(0)
+	expect(r.points.length).toBe(5)
+	expect(r.points.every(p => p.source === BALANCE_SOURCES.live)).toBe(true)
 })
