@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b51 - a shape is read from the account the money leaves";
+export const BENCH_VERSION = "b52 - a stream paid two ways is two streams";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -300,11 +300,21 @@ export default class BalanceBench extends BaseComponent{
 
 		const settleActual = repayments.map(x => ({date: x.date, amount: x.amount,
 			accountHash: x.checking}))
+		const partKey = model.meta.partitionKey || (id => id)
 		const perStream = {}, actualByStream = {}
 		forecastTerminals.forEach(t => {
 			perStream[t.id] = flowsOf(run([t], false, false))
 			const act = {}
-			;(t.id === "__settlement__" ? settleActual : (actualLedger[t.id] || [])).forEach(x => {
+			/* THE ACTUALS ARE PARTITIONED BY THE MODEL'S OWN RULE, not by a second copy of it. A
+			   stream paid two ways is forecast as two, so its transactions have to be scored as two -
+			   and the moment this side decides which leg belongs to which partition, there are two
+			   answers to that question and they will drift apart. `partitionKey` IS the model's
+			   assignment, handed out rather than reimplemented. */
+			const src = t.partitionOf
+				? (actualLedger[t.partitionOf] || []).filter(x =>
+					partKey(t.partitionOf, x.accountHash) === t.id)
+				: (actualLedger[t.id] || [])
+			;(t.id === "__settlement__" ? settleActual : src).forEach(x => {
 				if(x.date < open || x.date > close || !covers(x.accountHash))return
 				/* A REPAYMENT LEG IS THE CARD'S, NOT THIS STREAM'S. It is taken out of the forecast as
 				   a transaction, so it has to leave the actuals the same way - otherwise the stream it
@@ -1079,7 +1089,11 @@ export default class BalanceBench extends BaseComponent{
 				confident: h ? h.confident : null,
 				share: total ? Math.abs(big/total) : 0}
 		}
-		this._rows = cardRows.concat(this.terminals().filter(s => !dropped[s.id]).map(s => {
+		/* THE MODEL'S TERMINALS, NOT THE DECLARED ONES. A stream paid two ways is forecast as two
+		   streams, so it is audited as two rows - reading the declared list back would show one row
+		   for a thing the model no longer has, scored against a forecast nothing produced. */
+		const rowStreams = (mdl && mdl.terminals) || this.terminals()
+		this._rows = cardRows.concat(rowStreams.filter(s => !dropped[s.id]).map(s => {
 			const declared = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly"
 			const perCycle = monthlyExpectationAt(s, now, declared)
 			const p = probe(s)
@@ -1103,7 +1117,9 @@ export default class BalanceBench extends BaseComponent{
 				cycle:(p && p.cycle && p.cycle !== declared)
 					? p.cycle + " (declared " + declared + ")" : declared,
 				detected:(p && p.cycle) || null, declared:declared, expected:perCycle,
-				split:splitOf(s.id),
+				split:splitOf(s.partitionOf || s.id),
+				partOf:s.partitionOf || null, partAccount:s.partitionAccount || null,
+				partShare:s.partitionShare || 0,
 				onCard:(p && p.onCard) || null, promoted:!!(p && p.promoted),
 				instalment:(p && p.instalment) || 0,
 				surface:(det && det.surface) || 0,
@@ -1176,6 +1192,10 @@ export default class BalanceBench extends BaseComponent{
 		const out = [r.name + "   " + BENCH_VERSION,
 			"class      " + (r.onCard ? "card " + r.onCard : "checking")
 				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""),
+			"partition  " + (r.partOf
+				? "this row is one side of a split - " + Math.round(r.partShare*100)
+					+ "% of the budget, on " + r.partAccount
+				: "whole stream"),
 			"paid       " + (r.split && r.split.n
 				? Math.round(r.split.cardShare*100) + "% by card (" + r.split.card + " of "
 					+ r.split.n + " transactions, " + Math.round(r.split.cardShareByAmount*100)

@@ -1915,14 +1915,31 @@ export function buildModel(input){
 	   stream that carries both repayments and ordinary spending keeps the ordinary spending. */
 	const spendingOnly = linked.length
 		? past.filter(t => !link.legIds[t.transactionId]) : past;
-	const byStream = groupByStream(spendingOnly, terminals.map(s => s.id), id => dir[id]);
+	const wholeStreams = groupByStream(spendingOnly, terminals.map(s => s.id), id => dir[id]);
+
+	/* PARTITION BEFORE ANYTHING IS DERIVED FROM THE LEGS. A partition is an ordinary stream, so it
+	   has to exist before the first thing that describes one - otherwise every derivation below needs
+	   to know about partitions, which is the two-models fault again in a new place. */
+	const accountNames = {};
+	(input.accounts || []).forEach(a => {accountNames[a.hash] = a.name});
+	const part = input.noPartition ? null : partitionStreams(terminals, wholeStreams, {
+		asOf: asOf, accountNames: accountNames, directionOf: id => dir[id],
+		expectationAt: (st, when, per) => st.getExpectedAmountAtDateByPeriod(when, per) || 0,
+		minShare: input.partitionMinShare, minCount: input.partitionMinCount});
+	const modelled = part ? part.terminals : terminals;
+	const byStream = part ? part.byStream : wholeStreams;
+	const partitionKey = part ? part.keyOf : (id => id);
+	//a partition inherits its parent's direction, and a new id needs one of its own
+	modelled.forEach(s => {
+		if(dir[s.id] === undefined)dir[s.id] = dir[s.partitionOf];
+	});
 
 	/* the long window for DATES. A year, because a stream's day survives a change of price but not a
 	   change of arrangement, and a year is the reporting cycle the declarations themselves are set
 	   against. */
 	const sinceShape = input.sinceShape
 		|| new Date(Date.UTC(asOf.getUTCFullYear() - 1, asOf.getUTCMonth(), asOf.getUTCDate()));
-	const built = buildForecastInputs({terminals: terminals, byStream: byStream,
+	const built = buildForecastInputs({terminals: modelled, byStream: byStream,
 		since: since, sinceShape: sinceShape, until: asOf, covered: covered,
 		expectationAt: (st, d) => monthlyExpectationAt(st, d, periodName)});
 
@@ -1958,7 +1975,7 @@ export function buildModel(input){
 	const monthsSeen = Math.max(1, (asOf - since)/(30.44*DAY));
 	const monthsLeft = Math.max(1, 12 - Math.round((asOf - cycleFrom)/(30.44*DAY)));
 	const observed = {}, spentSince = {};
-	terminals.forEach(t => {
+	modelled.forEach(t => {
 		let v = 0;
 		(built.sliced[t.id] || []).forEach(x => {v += x.amount});
 		observed[t.id] = v/monthsSeen;
@@ -2024,12 +2041,12 @@ export function buildModel(input){
 	   The charges a statement is made of are the card account's own streams, asked day by day through
 	   a reading in which they are visible. They are hidden from the checking view on purpose, because
 	   that money has not moved through it, and this is the one place that needs them. */
-	const cardOpts = {terminals: terminals, shapes: built.shapes, routing: built.routing,
+	const cardOpts = {terminals: modelled, shapes: built.shapes, routing: built.routing,
 		covers: () => true, expectedFor: expectedFor, excludeIds: excludeIds,
 		periodName: periodName, settled: built.settled};
 	const chargedOn = (hash, d) => {
 		let sum = 0;
-		terminals.forEach(t => {
+		modelled.forEach(t => {
 			if(built.routing[t.id] !== hash)return;
 			const v = shareOfDay(t, d, cardOpts);
 			if(v < 0)sum += -v;                          //charges only; a refund is not a charge
@@ -2063,7 +2080,7 @@ export function buildModel(input){
 	const settles = null;
 
 	/* Everything forecast() and contributionsOn() read, and nothing either of them has to assemble. */
-	return {terminals: terminals, shapes: built.shapes, routing: built.routing, covers: covers,
+	return {terminals: modelled, shapes: built.shapes, routing: built.routing, covers: covers,
 		expectedFor: expectedFor, excludeIds: excludeIds, extraFlow: extraFlow, settles: settles,
 		settled: built.settled,
 		settlementDay: input.settlementDay || null, periodName: periodName,
@@ -2073,9 +2090,152 @@ export function buildModel(input){
 			links: link.links, linked: linked, repayments: link.repayments,
 			legIds: link.legIds, chargedOn: chargedOn,
 			cycleStart: cycleFrom,
+			partitionKey: partitionKey, partitions: part ? part.report : {},
+			wholeStreams: wholeStreams, declaredTerminals: terminals,
 			sliced: built.sliced, seen: built.seen, byStream: byStream, observed: observed,
 			spentSince: spentSince, monthsLeft: monthsLeft, monthsSeen: monthsSeen,
 			settlementEvents: extraFlow}};
+}
+
+/* ---- A STREAM PAID TWO WAYS IS TWO STREAMS --------------------------------------------------------
+   Utilities is water and electricity. Water is paid by transfer from checking, electricity is charged
+   to the card, and they are one stream because they are one category. Routing had to pick a side, so
+   half the stream was described by the other half's rhythm: 12 of 24 transactions and 32% of the money
+   on the card, all of it forecast as one monthly charge on the 2nd against a real payment on the 4th.
+
+   Neither side was wrong. They are different bills with different dates on different accounts, and
+   averaging them produces a date neither of them keeps.
+
+   So they are separated, and each partition is an ordinary stream from that point on - same shape
+   detection, same cycle test, same classification, same tiering. Nothing here is a special case
+   downstream; the partitioning happens before any of it, and everything after sees a longer list of
+   terminals.
+
+   THE DECLARED BUDGET IS SPLIT, WHICH IS WHAT STOPS IT COUNTING TWICE. One stream declares $225 a
+   month, and after the split the partitions declare $153 and $72 - never $225 each. The shares are
+   the observed division of the money and sum to 1 by construction.
+
+   THREE GATES, because a split is only worth having when both sides can carry a forecast of their own:
+
+     SHARE      the smallest partition holds at least 25% of the money. Below that the minor side is
+                noise around a stream that has one home, and splitting it builds a shape out of
+                scraps.
+     COUNT      at least three transactions on each side. Isolated transactions do not make a
+                partition - one stray card payment of a checking bill is an anecdote, and three is
+                already the threshold this model uses elsewhere before it will believe a date.
+     RECENCY    the shares are weighted towards recent cycles, half-life two, because how a bill is
+                paid today predicts the next one and how it was paid last spring does not. A stream
+                that has just moved onto the card crosses 25% within two cycles instead of waiting for
+                the year to average out, and one that has just moved off it falls below as fast.
+
+   AND ONE OVERRIDE. If every transaction in the last complete cycle went to one account, that account
+   takes the whole stream regardless of what the window says - a payment method that has changed has
+   changed, and the history is describing an arrangement that no longer exists. It needs two
+   transactions to speak, and it does not apply to long-period streams, where one cycle is one event
+   and proves nothing either way.
+
+   Accounts that qualify on neither gate are folded into the largest partition rather than dropped, so
+   the money still adds up and no leg goes missing. */
+export const PARTITION_MIN_SHARE = 0.25;
+export const PARTITION_MIN_COUNT = 3;
+export const PARTITION_HALF_LIFE_DAYS = 2*30.44;
+
+export function partitionStreams(terminals, byStream, opts){
+	const o = opts || {};
+	const asOf = o.asOf || new Date();
+	const names = o.accountNames || {};
+	const minShare = o.minShare === undefined ? PARTITION_MIN_SHARE : o.minShare;
+	const minCount = o.minCount === undefined ? PARTITION_MIN_COUNT : o.minCount;
+	const halfLife = o.halfLife === undefined ? PARTITION_HALF_LIFE_DAYS : o.halfLife;
+	const dirOf = o.directionOf || (() => 0);
+	const expectationAt = o.expectationAt || (() => 0);
+
+	/* THE LAST COMPLETE CYCLE - the calendar month before the one asOf sits in. A month still running
+	   says nothing about how a bill gets paid, because the bill may not have arrived yet. */
+	const cycEnd = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
+	const cycStart = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - 1, 1));
+
+	const out = [], grouped = {}, report = {}, assign = {};
+	terminals.forEach(s => {
+		const legs = byStream[s.id] || [];
+		const dir = dirOf(s.id);
+		/* THE LEG THAT LEAVES, the same rule routing uses - a transfer's arriving leg describes the
+		   account it lands in, not the one being forecast. */
+		let use = dir ? legs.filter(x => (x.amount < 0 ? -1 : 1) === dir) : [];
+		if(!use.length && !dir)use = legs.filter(x => x.amount < 0);
+		if(!use.length)use = legs;
+
+		const raw = {}, weighted = {}, count = {};
+		let rawTotal = 0, weightedTotal = 0;
+		use.forEach(x => {
+			if(!x.accountHash)return;
+			const age = Math.max(0, (asOf - x.date)/DAY);
+			const w = Math.pow(0.5, age/halfLife);
+			const m = Math.abs(x.amount);
+			raw[x.accountHash] = (raw[x.accountHash] || 0) + m;
+			weighted[x.accountHash] = (weighted[x.accountHash] || 0) + m*w;
+			count[x.accountHash] = (count[x.accountHash] || 0) + 1;
+			rawTotal += m; weightedTotal += m*w;
+		});
+		const hashes = Object.keys(raw);
+		const shareOf = h => weightedTotal ? weighted[h]/weightedTotal : 0;
+		hashes.sort((a, b) => shareOf(b) - shareOf(a));
+
+		const qualifying = hashes.filter(h => shareOf(h) >= minShare && count[h] >= minCount);
+
+		//the override: one cycle, spoken with one voice
+		const period = s.getPreferredPeriod ? s.getPreferredPeriod() : "monthly";
+		const recent = use.filter(x => x.date >= cycStart && x.date < cycEnd && x.accountHash);
+		let unanimous = null;
+		if(!LONG_PERIODS[period] && recent.length >= 2){
+			const only = recent[0].accountHash;
+			if(recent.every(x => x.accountHash === only))unanimous = only;
+		}
+
+		const keep = (unanimous || qualifying.length < 2) ? [] : qualifying;
+		report[s.id] = {shares: {}, rawShares: {}, counts: count, split: keep.length > 1,
+			partitions: keep, unanimous: unanimous, minShare: minShare, minCount: minCount};
+		hashes.forEach(h => {
+			report[s.id].shares[h] = shareOf(h);
+			report[s.id].rawShares[h] = rawTotal ? raw[h]/rawTotal : 0;
+		});
+
+		if(keep.length < 2){
+			out.push(s);
+			grouped[s.id] = legs;
+			assign[s.id] = () => s.id;
+			return;
+		}
+
+		/* THE SHARES ARE RENORMALISED OVER THE PARTITIONS THAT SURVIVED, so they sum to 1 and the
+		   declared budget is divided rather than duplicated. The folded-in remainder rides with the
+		   largest partition, which is where its money already mostly is. */
+		let kept = 0;
+		keep.forEach(h => {kept += weighted[h]});
+		const share = {};
+		keep.forEach(h => {share[h] = kept ? weighted[h]/kept : 1/keep.length});
+		const biggest = keep[0];
+		const home = h => (keep.indexOf(h) > -1 ? h : biggest);
+		const idOf = h => s.id + "@" + h;
+		assign[s.id] = h => idOf(home(h));
+
+		keep.forEach(h => {
+			const frac = share[h];
+			const label = names[h] || "account";
+			out.push({
+				id: idOf(h), name: s.name + " \u00b7 " + label,
+				partitionOf: s.id, partitionAccount: h, partitionShare: frac,
+				getPreferredPeriod: () => period,
+				getExpectedAmountAtDateByPeriod: (when, per) => expectationAt(s, when, per)*frac
+			});
+			grouped[idOf(h)] = [];
+		});
+		legs.forEach(x => {grouped[idOf(home(x.accountHash))].push(x)});
+	});
+
+	const keyOf = (streamId, accountHash) =>
+		(assign[streamId] ? assign[streamId](accountHash) : streamId);
+	return {terminals: out, byStream: grouped, keyOf: keyOf, report: report};
 }
 
 export function buildForecastInputs(opts){

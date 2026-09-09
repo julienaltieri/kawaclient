@@ -21,7 +21,7 @@ import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CL
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
 	buildModel, eventsPerTurn, accountLinks, cardSchedule, cardRepaymentForecast,
 	shareOfDayDetail, cardSpend,
-	buildForecastInputs} from '../processors/BankBalance'
+	buildForecastInputs, partitionStreams} from '../processors/BankBalance'
 import {accumulate, asShape, asWeights, consolidate, detectCycle, concentration, CYCLES}
 	from '../processors/AmountHistogram'
 
@@ -2298,10 +2298,16 @@ test("a spending stream split across a card and the current account is NOT a car
 	const m = buildModel({transactions: txns, terminals: [st, pay], covered: ["chk"],
 		cards: ["visa"], asOf: new Date(Date.UTC(2026, 6, 1)),
 		until: new Date(Date.UTC(2026, 6, 31)), since: new Date(Date.UTC(2026, 2, 1))})
-	/* Groceries route to the CARD, so they do not appear in the checking reading directly - that
-	   money has not moved through it. They arrive inside the repayment, which is what the card's
-	   charge forecast is built from. */
-	expect(m.routing.food).toBe("visa")
+	/* Groceries are bought BOTH ways here - $140 on the card and $90 on the debit card, every week -
+	   so the stream partitions, and each side is forecast where its money actually leaves. The card
+	   side does not appear in the checking reading directly: that money has not moved through it, and
+	   it arrives inside the repayment, which is what the card's charge forecast is built from. */
+	expect(m.routing["food@visa"]).toBe("visa")
+	expect(m.routing["food@chk"]).toBe("chk")
+	//and the budget is DIVIDED between them, never handed to both
+	const share = m.terminals.filter(t => t.partitionOf === "food")
+		.reduce((sum, t) => sum + t.partitionShare, 0)
+	expect(share).toBeCloseTo(1, 6)
 	let charged = 0
 	for(let d = 1; d <= 31; d++)
 		charged += m.meta.chargedOn("visa", new Date(Date.UTC(2026, 6, d)))
@@ -2954,4 +2960,179 @@ test("a refund is never mistaken for a repayment", () => {
 		txns.push(evTxn(d, 220, "food", "rh", "r" + w, undefined, "Refund: Amazon"))
 	}
 	expect(Object.keys(accountLinks(txns, ["rh"], ["chk"]).links).length).toBe(0)
+})
+
+/* =================================================================================================
+   A STREAM PAID TWO WAYS IS TWO STREAMS.
+
+   Utilities is water and electricity: water by transfer from checking, electricity on the card. One
+   stream, because one category - so routing picked a side and described half the stream with the
+   other half's rhythm. It predicted one charge on the 2nd against a real payment on the 4th, and the
+   two bills it is made of keep different dates on different accounts.
+
+   The partition happens before anything is derived from the legs, so each side is an ORDINARY stream
+   from that point on: same shape, same cycle test, same tiering. What has to be pinned here is when
+   it fires and when it must not - a split built out of scraps is worse than a stream with one home.
+   ================================================================================================= */
+const partLeg = (date, amount, hash) => ({date: date, amount: amount, accountHash: hash})
+const partStream = (id, name, amount, period) => ({id: id, name: name,
+	getPreferredPeriod: () => period || "monthly",
+	getExpectedAmountAtDateByPeriod: () => amount})
+const PART_ASOF = new Date(Date.UTC(2026, 8, 1))
+const runPart = (stream, legs, opts) => partitionStreams([stream], {[stream.id]: legs},
+	Object.assign({asOf: PART_ASOF, accountNames: {chk: "Checking", visa: "Visa"},
+		directionOf: () => -1,
+		expectationAt: (st, when, per) => st.getExpectedAmountAtDateByPeriod(when, per)}, opts || {}))
+
+//water from checking on the 4th, electricity on the card on the 18th, six months of each
+const utilities = () => {
+	const legs = []
+	for(let m = 2; m <= 7; m++){
+		legs.push(partLeg(new Date(Date.UTC(2026, m, 4)), -153, "chk"))
+		legs.push(partLeg(new Date(Date.UTC(2026, m, 18)), -72, "visa"))
+	}
+	return legs
+}
+
+test("a stream genuinely paid two ways becomes two streams", () => {
+	const p = runPart(partStream("util", "Utilities", -225), utilities())
+	expect(p.terminals.length).toBe(2)
+	const ids = p.terminals.map(t => t.id).sort()
+	expect(ids).toEqual(["util@chk", "util@visa"])
+	//each side keeps only its own legs, so each gets its own date rather than the average of two
+	expect(p.byStream["util@chk"].every(x => x.accountHash === "chk")).toBe(true)
+	expect(p.byStream["util@visa"].every(x => x.accountHash === "visa")).toBe(true)
+	expect(p.byStream["util@chk"].length + p.byStream["util@visa"].length).toBe(12)
+})
+
+test("the declared budget is DIVIDED between the partitions, never handed to both", () => {
+	//the whole point of the gate: two streams must not become two budgets
+	const p = runPart(partStream("util", "Utilities", -225), utilities())
+	const when = PART_ASOF
+	let sum = 0
+	p.terminals.forEach(t => {sum += t.getExpectedAmountAtDateByPeriod(when, "monthly")})
+	expect(sum).toBeCloseTo(-225, 6)
+	//and roughly in proportion to the money that actually goes each way
+	const chk = p.terminals.filter(t => t.partitionAccount === "chk")[0]
+	expect(chk.getExpectedAmountAtDateByPeriod(when, "monthly")).toBeLessThan(-140)
+	expect(chk.getExpectedAmountAtDateByPeriod(when, "monthly")).toBeGreaterThan(-165)
+})
+
+test("a minor side below a quarter of the money does not split the stream", () => {
+	/* SHARE GATE. Groceries charged to the card with the odd debit purchase is one stream with one
+	   home; splitting it builds a shape out of scraps and forecasts a date from three transactions. */
+	const legs = []
+	for(let m = 2; m <= 7; m++){
+		for(let d = 3; d <= 24; d += 7)legs.push(partLeg(new Date(Date.UTC(2026, m, d)), -140, "visa"))
+		legs.push(partLeg(new Date(Date.UTC(2026, m, 20)), -40, "chk"))
+	}
+	const p = runPart(partStream("food", "Groceries", -600), legs)
+	expect(p.terminals.length).toBe(1)
+	expect(p.report.food.split).toBe(false)
+	//and no leg is lost - the minor side rides with the stream it belongs to
+	expect(p.byStream.food.length).toBe(legs.length)
+})
+
+test("isolated transactions do not make a partition, however big they are", () => {
+	/* COUNT GATE. Two large payments on the other account clear a quarter of the money easily and are
+	   still an anecdote: there is no rhythm in two points, and the split would invent one. */
+	const legs = []
+	for(let m = 2; m <= 7; m++)legs.push(partLeg(new Date(Date.UTC(2026, m, 4)), -300, "chk"))
+	legs.push(partLeg(new Date(Date.UTC(2026, 6, 9)), -700, "visa"))
+	legs.push(partLeg(new Date(Date.UTC(2026, 7, 11)), -700, "visa"))
+	const p = runPart(partStream("ins", "Insurance", -300), legs)
+	expect(p.report.ins.shares.visa).toBeGreaterThan(0.25)   //it clears the share gate
+	expect(p.report.ins.counts.visa).toBe(2)                 //and fails on count
+	expect(p.terminals.length).toBe(1)
+})
+
+test("a stream that has just moved to the card splits sooner than the year would allow", () => {
+	/* RECENCY. Eleven months on checking and two on the card is 15% of the money flat, and 25% once
+	   the recent cycles are the ones that count - which is the truth about the next bill. */
+	const legs = []
+	for(let m = -6; m <= 5; m++)legs.push(partLeg(new Date(Date.UTC(2026, m, 6)), -200, "chk"))
+	;[5, 6, 7].forEach(m => legs.push(partLeg(new Date(Date.UTC(2026, m, 21)), -200, "visa")))
+	const p = runPart(partStream("gym", "Gym", -200), legs)
+	expect(p.report.gym.rawShares.visa).toBeLessThan(0.25)     //flat, it does not qualify
+	expect(p.report.gym.shares.visa).toBeGreaterThan(0.25)     //weighted towards now, it does
+	expect(p.terminals.length).toBe(2)
+})
+
+test("a cycle that spoke with one voice overrides the split - the arrangement has changed", () => {
+	/* THE OVERRIDE. Half the year on each account, and then every payment last month on the card.
+	   The history is describing an arrangement that no longer exists, so it stops being consulted. */
+	const legs = []
+	for(let m = 0; m <= 5; m++)legs.push(partLeg(new Date(Date.UTC(2026, m, 6)), -200, "chk"))
+	for(let m = 3; m <= 6; m++)legs.push(partLeg(new Date(Date.UTC(2026, m, 21)), -200, "visa"))
+	//August, the last complete cycle before a 1 September reading: card only, twice
+	legs.push(partLeg(new Date(Date.UTC(2026, 7, 8)), -200, "visa"))
+	legs.push(partLeg(new Date(Date.UTC(2026, 7, 22)), -200, "visa"))
+	const p = runPart(partStream("gym", "Gym", -200), legs)
+	expect(p.report.gym.unanimous).toBe("visa")
+	expect(p.terminals.length).toBe(1)
+	expect(p.terminals[0].id).toBe("gym")
+})
+
+test("one cycle of a YEARLY stream is one event and overrides nothing", () => {
+	//the exclusion the override needs: a yearly bill paid once, by card, has not told you anything
+	const legs = []
+	for(let m = 0; m <= 6; m++){
+		legs.push(partLeg(new Date(Date.UTC(2026, m, 6)), -200, "chk"))
+		legs.push(partLeg(new Date(Date.UTC(2026, m, 21)), -200, "visa"))
+	}
+	legs.push(partLeg(new Date(Date.UTC(2026, 7, 8)), -200, "visa"))
+	legs.push(partLeg(new Date(Date.UTC(2026, 7, 22)), -200, "visa"))
+	const p = runPart(partStream("hob", "Hobby", -200, "yearly"), legs)
+	expect(p.report.hob.unanimous).toBe(null)
+	expect(p.terminals.length).toBe(2)
+})
+
+test("a third account too small to stand alone is folded in, not dropped", () => {
+	//the money has to add up: a leg that qualifies for no partition still happened
+	const legs = utilities()
+	legs.push(partLeg(new Date(Date.UTC(2026, 5, 9)), -30, "amex"))
+	const p = runPart(partStream("util", "Utilities", -225), legs)
+	expect(p.terminals.length).toBe(2)
+	let n = 0
+	p.terminals.forEach(t => {n += p.byStream[t.id].length})
+	expect(n).toBe(legs.length)
+	//and it is routed by the same rule the model will ask about later
+	expect(p.keyOf("util", "amex")).toBe("util@chk")
+	expect(p.keyOf("util", "visa")).toBe("util@visa")
+})
+
+test("an unsplit stream answers keyOf with its own id, so one caller covers both cases", () => {
+	const legs = []
+	for(let m = 2; m <= 7; m++)legs.push(partLeg(new Date(Date.UTC(2026, m, 4)), -153, "chk"))
+	const p = runPart(partStream("rent", "Rent", -153), legs)
+	expect(p.keyOf("rent", "chk")).toBe("rent")
+	expect(p.keyOf("rent", "visa")).toBe("rent")
+})
+
+test("the partitions are forecast separately end to end, and still sum to one budget", () => {
+	/* THROUGH buildModel, because the partition is only worth having if everything downstream treats
+	   a partition as an ordinary stream - shape, cycle, day and all. Water lands on the 4th and
+	   electricity on the 18th, and the forecast has to show BOTH, which one averaged stream cannot. */
+	const st = evStream("util", "Utilities", -225)
+	const txns = []
+	for(let m = 2; m <= 7; m++){
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 4)), -153, "util", "chk", "w" + m))
+		txns.push(evTxn(new Date(Date.UTC(2026, m, 18)), -72, "util", "visa", "e" + m))
+	}
+	const m = buildModel({transactions: txns, terminals: [st], covered: ["chk", "visa"],
+		cards: ["visa"], asOf: new Date(Date.UTC(2026, 8, 1)),
+		until: new Date(Date.UTC(2026, 8, 30)), since: new Date(Date.UTC(2026, 2, 1))})
+	const parts = m.terminals.filter(t => t.partitionOf === "util")
+	expect(parts.length).toBe(2)
+	const on = (t, d) => shareOfDay(t, new Date(Date.UTC(2026, 8, d)), m)
+	const water = parts.filter(t => t.partitionAccount === "chk")[0]
+	const power = parts.filter(t => t.partitionAccount === "visa")[0]
+	//each keeps its own day
+	expect(Math.abs(on(water, 4))).toBeGreaterThan(Math.abs(on(water, 18)))
+	expect(Math.abs(on(power, 18))).toBeGreaterThan(Math.abs(on(power, 4)))
+	//and the month still totals one budget, not two
+	let total = 0
+	for(let d = 1; d <= 30; d++)parts.forEach(t => {total += on(t, d)})
+	expect(total).toBeGreaterThan(-260)
+	expect(total).toBeLessThan(-190)
 })

@@ -534,6 +534,72 @@ first time a subscription moves to a different card. A stream with no history is
 the safer error, since it then lands on its own day rather than a fortnight later, and the trough it
 contributes to arrives early rather than not at all.
 
+### A SHAPE IS READ FROM THE ACCOUNT THE MONEY LEAVES
+
+Routing decides where a stream lives. Its **shape** — which days of the month it lands on — used to be
+read from a different set: the transactions on the accounts the current reading covers. For a stream
+that lives on a covered account those are the same set. For one that does not, they are the leftovers.
+
+Groceries is charged to the card almost every time, with the occasional purchase on the debit card.
+The shape was built from the occasional ones:
+
+| | transactions | what the shape was read from |
+|---|---|---|
+| card | 78 | — |
+| checking | 6 | all of it |
+
+Six debit purchases outvoted seventy-eight card ones, and a stream declared weekly came out as a
+single monthly lump. Not a cycle-detection failure: the detector was handed six points and did the
+right thing with them.
+
+Routing already answers this, and it needed nothing new — it follows the leg that **leaves**. It is now
+computed **first**, from the windowed legs and the stream's direction, both of which exist before any
+shape does, and each shape is read from the account routing named. The covered-account set remains the
+fallback, so a stream with nothing on its routed account keeps a shape rather than going blank.
+
+### A STREAM PAID TWO WAYS IS TWO STREAMS
+
+Utilities is water and electricity. Water is paid by transfer from checking on the 4th; electricity is
+charged to the card on the 18th. They are one stream because they are one **category**, and routing has
+to pick a side — so half the stream was described by the other half's rhythm, and the forecast put one
+charge on the 2nd against a real payment on the 4th.
+
+Neither side was wrong. They are different bills with different counterparties on different accounts,
+and averaging them produces a date **neither of them keeps**. So they are separated, and each partition
+is an ordinary stream from that point on: same shape, same cycle test, same classification, same
+tiering. Nothing downstream is a special case, because the partitioning happens before any of it and
+everything after sees a longer list of terminals.
+
+**The declared budget is divided, which is what stops it counting twice.** One stream declares $225 a
+month; after the split the partitions declare $153 and $72 — never $225 each. The shares are the
+observed division of the money and sum to 1 by construction. The bench audits the partitions as
+separate rows for the same reason: a row for a stream the model no longer has would be scored against
+a forecast nothing produced.
+
+Three gates, because a split is only worth having when both sides can carry a forecast of their own:
+
+| gate | rule | what it protects against |
+|---|---|---|
+| **share** | the smallest partition holds ≥ 25% of the money | a shape built out of scraps |
+| **count** | ≥ 3 transactions on each side | one stray card payment of a checking bill |
+| **recency** | shares weighted towards recent cycles, half-life 2 | last spring deciding this month's bill |
+
+The recency weight moves in both directions, which is the point of doing it as a weight rather than a
+rule: a stream that has just moved onto the card crosses 25% within two cycles instead of waiting for
+the year to average out, and one that has just moved off it falls below as fast.
+
+**And one override.** If every transaction in the last complete cycle went to one account, that account
+takes the whole stream regardless of what the window says — a payment method that has changed *has
+changed*, and the history is describing an arrangement that no longer exists. It needs two transactions
+to speak, and it does not apply to long-period streams, where one cycle is one event and proves nothing
+either way.
+
+Accounts qualifying on neither gate are **folded into the largest partition rather than dropped**, so
+the money still adds up and no leg goes missing. `partitionKey(streamId, accountHash)` is the single
+assignment used by both the forecast and the scoring — handed out, never reimplemented, because the
+moment the bench decides for itself which leg belongs to which partition there are two answers to that
+question and they drift apart.
+
 ---
 
 ## §8 "Can I buy the plane tickets?" is the question, so the view must take X

@@ -29,6 +29,7 @@ const MASTER_JSON = {id: "master", name: "Master", period: "monthly", isRoot: tr
 	{id: "rec", name: "Recurring", period: "monthly", children: [
 		leaf("rent", "Rent", -1700),
 		leaf("food", "Food", -600),
+		leaf("util", "Utilities", -225),
 		leaf("ccpay", "Credit Card Payments", 0, {period: "yearly"})]}
 ]}
 
@@ -80,6 +81,16 @@ beforeEach(() => {
 		txns.push(new GenericTransaction(d(160 - i*25).toISOString(), -35, "groceries on debit",
 			[{streamId: "food", amount: -35}], CHECKING, undefined, undefined,
 			"gd" + i, "gd" + i))
+	}
+	/* UTILITIES IS TWO BILLS UNDER ONE NAME - water paid by transfer from checking, electricity
+	   charged to the card. Same category, different counterparties, different dates, different
+	   accounts, and one declared budget of $225 covering both. */
+	for(let m = 0; m < 6; m++){
+		txns.push(new GenericTransaction(d(175 - m*30).toISOString(), -153, "city water",
+			[{streamId: "util", amount: -153}], CHECKING, undefined, undefined,
+			"uw" + m, "uw" + m))
+		txns.push(new GenericTransaction(d(172 - m*30).toISOString(), -72, "electric co",
+			[{streamId: "util", amount: -72}], CARD, undefined, undefined, "ue" + m, "ue" + m))
 	}
 	for(let m = 0; m < 6; m++){
 		txns.push(new GenericTransaction(d(170 - m*30).toISOString(), 5100, "pay",
@@ -408,9 +419,58 @@ test("a stream paid two ways reports the split, not just which side won", async 
 		expect(r.split.n).toBe(r.split.card + r.split.checking)
 		expect(r.split.cardShare).toBeGreaterThan(0)
 		expect(r.split.cardShare).toBeLessThan(1)
-		//routing must have picked the side that carries more of the money
-		const wonCard = !!r.onCard
-		expect(wonCard).toBe(r.split.cardShareByAmount >= 0.5)
+		/* ROUTING MUST HAVE PICKED THE SIDE THAT CARRIES MORE OF THE MONEY - but only where routing
+		   was the thing that decided. On a row that is one side of a split there was no contest: the
+		   partition IS a side, and its account is a fact rather than a winner. */
+		if(r.partOf)expect(r.split.cardShareByAmount).toBeGreaterThan(0)
+		else expect(!!r.onCard).toBe(r.split.cardShareByAmount >= 0.5)
 	})
 	expect(ref.current.report()).toMatch(/% by card \(/)
+})
+
+test("a stream paid two ways is audited as two rows, and its money is not counted twice", async () => {
+	/* THE BENCH READS THE MODEL'S TERMINALS, not the declared ones. Utilities is water from checking
+	   and electricity on the card; the model forecasts it as two streams, so showing one row would be
+	   auditing a thing the model no longer has - scored against a forecast nothing produced. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const parts = a.model.terminals.filter(t => t.partitionOf === "util")
+	expect(parts.length).toBe(2)
+	expect(parts.map(t => t.partitionAccount).sort()).toEqual([CARD, CHECKING].sort())
+
+	const rows = ref.current.rows()
+	parts.forEach(t => expect(rows.filter(r => r.id === t.id).length).toBe(1))
+	expect(rows.filter(r => r.id === "util").length).toBe(0)
+
+	//one budget, divided - the failure this gate exists for is two rows each claiming $225
+	let declared = 0
+	parts.forEach(t => {declared += t.getExpectedAmountAtDateByPeriod(ref.current.today(), "monthly")})
+	expect(declared).toBeCloseTo(-225, 4)
+
+	/* AND THE ACTUALS ARE DIVIDED THE SAME WAY. Each transaction is scored against exactly one
+	   partition: a leg counted twice inflates the surface of both rows, and a leg counted nowhere
+	   makes a real payment look unpredicted. */
+	const seen = {}
+	let n = 0
+	parts.forEach(t => {
+		const act = a.detail[t.id]
+		expect(act).toBeTruthy()
+		Object.keys(act.act).forEach(k => {
+			if(Math.abs(act.act[k]) < 0.005)return
+			expect(seen[k]).toBeUndefined()
+			seen[k] = t.id
+			n++
+		})
+	})
+	expect(n).toBeGreaterThan(0)
+})
+
+test("the rows the bench audits are exactly the streams the model forecasts", async () => {
+	//the structural version: no row may exist that the forecast has never heard of
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const known = {}
+	a.model.terminals.forEach(t => {known[t.id] = true})
+	ref.current.rows().filter(r => !/^__card__/.test(r.id))
+		.forEach(r => expect(known[r.id]).toBe(true))
 })
