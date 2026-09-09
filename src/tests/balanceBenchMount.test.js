@@ -18,7 +18,8 @@ import {render, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceBench from '../components/BalanceBench'
-import {shareOfDay} from '../processors/BankBalance'
+import {shareOfDay, reconstruct, dayKey} from '../processors/BankBalance'
+import ApiCaller from '../ApiCaller'
 
 const HIST = (amount) => [{startDate: new Date("2000-01-01"), amount: amount}]
 const leaf = (id, name, amount, extra = {}) => Object.assign(
@@ -48,6 +49,8 @@ beforeEach(() => {
 			savingAccounts: [], preferredCurrency: "USD", userPreferences: {}
 		}
 	})
+	//no remembered series unless a test supplies one
+	ApiCaller.getBalanceHistory = () => Promise.resolve([])
 	Core.getAccountsWithBalances = () => Promise.resolve([
 		{hash: CHECKING, name: "Checking", type: "depository", subtype: "checking", current: 8000},
 		{hash: CARD, name: "Visa", type: "credit", subtype: "credit card", current: 900}
@@ -558,4 +561,63 @@ test("a card row's copy payload carries its whole argument, not a subset", async
 	expect(st).toMatch(/partition  /)
 	expect(st).toMatch(/paid       /)
 	expect(st).not.toMatch(/each statement/)
+})
+
+/* =================================================================================================
+   THE ACTUALS CURVE IS A WALK, AND A WALK CAN BE WRONG.
+
+   Everything the bench scores is measured against the reconstruction, and the reconstruction hangs
+   off ONE number: today's live balance, minus the transactions since. A single missing or duplicated
+   transaction therefore displaces every point before it by a constant, and no part of the curve can
+   report that - it agrees with itself perfectly all the way back.
+
+   The stored snapshots are what the bank actually said on each day, and nothing was reading them.
+   ================================================================================================= */
+test("the reconstruction is checked against what the bank actually said", async () => {
+	//a series that agrees with the walk exactly: no drift, and the bench says so
+	let ref = await mount()
+	const now = ref.current.today()
+	const walk = reconstruct(ref.current.ledger(), now, ref.current.anchor(),
+		new Date(now.getTime() - 20*24*3600*1000))
+	const truth = walk.map(p => ({accountHash: CHECKING, date: p.date.toISOString(),
+		current: p.value}))
+	ApiCaller.getBalanceHistory = () => Promise.resolve(truth)
+	ref = await mount()
+	const clean = ref.current.driftVsRemembered()
+	expect(clean).toBeTruthy()
+	expect(clean.rows.length).toBeGreaterThan(5)
+	expect(Math.abs(clean.worst.gap)).toBeLessThan(0.01)
+})
+
+test("a transaction the ledger never saw shows up as a CONSTANT offset, not a wobble", async () => {
+	/* THE SIGNATURE THAT NAMES THE FAULT. Money that moved but is not in the ledger displaces every
+	   point before it by the same amount and leaves every point after it untouched - so a flat step
+	   in this column is a missing transaction on that day, and a gap that grows is a whole category
+	   of movement the ledger never sees. Those have different cures. */
+	let ref = await mount()
+	const now = ref.current.today()
+	const walk = reconstruct(ref.current.ledger(), now, ref.current.anchor(),
+		new Date(now.getTime() - 20*24*3600*1000))
+	const cut = new Date(now.getTime() - 10*24*3600*1000)
+	const truth = walk.map(p => ({accountHash: CHECKING, date: p.date.toISOString(),
+		current: p.value + (p.date <= cut ? 250 : 0)}))
+	ApiCaller.getBalanceHistory = () => Promise.resolve(truth)
+	ref = await mount()
+	const d = ref.current.driftVsRemembered()
+	expect(d).toBeTruthy()
+	expect(d.worst.gap).toBeCloseTo(250, 4)
+	const older = d.rows.filter(r => new Date(r.day + "T00:00:00.000Z") <= cut)
+	const newer = d.rows.filter(r => new Date(r.day + "T00:00:00.000Z") > cut)
+	expect(older.length).toBeGreaterThan(0)
+	expect(newer.length).toBeGreaterThan(0)
+	older.forEach(r => expect(r.gap).toBeCloseTo(250, 4))     //constant, not growing
+	newer.forEach(r => expect(Math.abs(r.gap)).toBeLessThan(0.01))
+	expect(ref.current.report()).toMatch(/RECONSTRUCTION vs REMEMBERED BALANCES/)
+})
+
+test("no stored history is reported as no history, never as agreement", async () => {
+	//an empty answer means "snapshots have not accumulated yet" and must not read as a clean bill
+	const ref = await mount()
+	expect(ref.current.driftVsRemembered()).toBe(null)
+	expect(ref.current.report()).toMatch(/no stored history covering this window yet/)
 })

@@ -3,6 +3,7 @@ import BaseComponent from './BaseComponent';
 import styled from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
+import ApiCaller from '../ApiCaller.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildModel,
 	groupByStream, dayLabel, TIERS, cycleStartOf, accountLinks, cardSchedule,
@@ -35,7 +36,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b56 - the copy payload carries the whole argument";
+export const BENCH_VERSION = "b57 - the reconstruction is checked against remembered balances";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -108,12 +109,66 @@ const Btn = styled.button`
 export default class BalanceBench extends BaseComponent{
 	constructor(props){
 		super(props)
-		this.state = {accounts:null, copied:null, open:null}
+		this.state = {accounts:null, copied:null, open:null, remembered:null}
 	}
 	componentDidMount(){
 		Core.getAccountsWithBalances()
 			.then(a => this.updateState({accounts:a||[]}))
 			.catch(() => this.updateState({accounts:[]}))
+		/* THE REMEMBERED SERIES, which nothing has been reading. The reconstruction hangs off ONE
+		   number - today's live balance - and every earlier point is that number minus the
+		   transactions since. So a single missing or duplicated transaction displaces the whole
+		   segment before it by a constant, and the curve is wrong in a way no part of it can report.
+
+		   The stored snapshots are what the bank actually said on each day. They only accumulate
+		   going forward, so an empty answer means "no history yet" and not "no money" - but wherever
+		   they overlap the window they are ground truth the walk can be checked against. */
+		const now = new Date()
+		const from = new Date(now.getTime() - 400*DAY)
+		ApiCaller.getBalanceHistory(from.toISOString(), now.toISOString())
+			.then(r => this.updateState({remembered: (r && (r.balances || r)) || []}))
+			.catch(() => this.updateState({remembered: []}))
+	}
+
+	/* WHERE THE WALK PARTS COMPANY WITH WHAT THE BANK SAID.
+
+	   Reported minus reconstructed, per day, over the spending accounts. Anchored at today by
+	   construction, so today is always zero and the interesting number is how far back the agreement
+	   survives. A CONSTANT offset before some date is a missing or duplicated transaction on that
+	   date; a drift that grows steadily is a whole category of movement the ledger never sees. */
+	driftVsRemembered(){
+		const snaps = this.state.remembered
+		if(!snaps || !snaps.length)return null
+		const keep = this.spending()
+		if(!keep.length)return null
+		const byDay = {}
+		snaps.forEach(x => {
+			const h = x.accountHash
+			if(keep.indexOf(h) < 0 || isNaN(x.current))return
+			const k = dayKey(new Date(x.date))
+			if(!byDay[k])byDay[k] = {}
+			byDay[k][h] = x.current           //one per account per day; the later one wins
+		})
+		const now = this.today()
+		const walk = reconstruct(this.ledger(), now, this.anchor(),
+			new Date(now.getTime() - 400*DAY))
+		const seen = {}
+		walk.forEach(p => {seen[dayKey(p.date)] = p.value})
+		const rows = []
+		Object.keys(byDay).sort().forEach(k => {
+			//only days where EVERY spending account reported, or the sum is not comparable
+			const got = Object.keys(byDay[k])
+			if(got.length !== keep.length)return
+			if(seen[k] === undefined)return
+			let reported = 0
+			got.forEach(h => {reported += byDay[k][h]})
+			rows.push({day: k, reported: reported, walked: seen[k], gap: reported - seen[k]})
+		})
+		if(!rows.length)return null
+		let worst = rows[0]
+		rows.forEach(r => {if(Math.abs(r.gap) > Math.abs(worst.gap))worst = r})
+		return {rows: rows, worst: worst, first: rows[0], last: rows[rows.length - 1],
+			partial: Object.keys(byDay).length - rows.length}
 	}
 
 	/* ---- the same inputs the tile uses ----------------------------------------------------------- */
@@ -1349,6 +1404,33 @@ export default class BalanceBench extends BaseComponent{
 				+ (h.accuracy*100).toFixed(0) + "%").join("   "))
 			out.push(dayKey(a.open) + " to " + dayKey(a.close)
 				+ "   lookback since " + dayKey(a.since))
+			/* THE ACTUALS CURVE, AGAINST WHAT THE BANK ACTUALLY SAID.
+
+			   Everything above is scored against the reconstruction, and the reconstruction is one
+			   live balance walked backwards over the transactions. If that walk is wrong the whole
+			   reading is measured against a wrong line - so it is checked first, and against the only
+			   independent record there is. */
+			const dr = this.driftVsRemembered()
+			out.push("")
+			if(!dr){
+				out.push("RECONSTRUCTION vs REMEMBERED BALANCES: no stored history covering this"
+					+ " window yet (snapshots only accumulate going forward)")
+			}else{
+				out.push("RECONSTRUCTION vs REMEMBERED BALANCES  (reported - walked back from today)")
+				out.push("  " + dr.rows.length + " days compared, " + dr.first.day + " to "
+					+ dr.last.day + (dr.partial ? "   (" + dr.partial
+						+ " days skipped: not every spending account reported)" : ""))
+				out.push("  worst  " + dr.worst.day + "   reported " + money(dr.worst.reported)
+					+ "   walked " + money(dr.worst.walked) + "   gap " + money(dr.worst.gap))
+				const near = dr.rows.filter(r => Math.abs(r.gap) > 1)
+				out.push("  " + near.length + " of " + dr.rows.length
+					+ " days disagree by more than $1"
+					+ (near.length ? "   first at " + near[near.length - 1].day : ""))
+				dr.rows.slice(-14).forEach(r => out.push("      " + r.day
+					+ "   reported " + money(r.reported) + "   walked " + money(r.walked)
+					+ "   gap " + money(r.gap)))
+			}
+			out.push("")
 			/* WHAT EACH MECHANISM IS WORTH, on this month. Nested: each line adds one thing to the
 			   line above, so the step between two lines is that mechanism's price. */
 			out.push("")
