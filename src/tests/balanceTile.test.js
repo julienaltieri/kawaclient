@@ -16,6 +16,7 @@ import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
+import ApiCaller from '../ApiCaller'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
 	inferSettlements, cardCycles, cardSettlementForecast, contributionsOn, shareOfDay, dayKey,
@@ -46,6 +47,12 @@ let master, txns, accounts, rentDay
 const d = n => new Date(Date.now() - n * 24 * 3600 * 1000)
 
 beforeEach(() => {
+	/* NO NETWORK FROM A TEST. The tile fetches the remembered balance series on mount, and an
+	   unstubbed call reaches ApiCaller, fails, and takes Core.globalState down with it - which shows
+	   up as an unrelated test failing on userData three tests later. Empty is also the case worth
+	   defaulting to: it is the reader with no stored history, and the picture must be right for them.
+	*/
+	ApiCaller.getBalanceHistory = () => Promise.resolve([])
 	master = new CompoundStream(MASTER_JSON)
 	Core.globalState = Object.assign({}, Core.globalState, {
 		userData: {
@@ -3364,4 +3371,69 @@ test("an observation older than the whole window changes nothing about the windo
 	expect(r.observations).toBe(0)
 	expect(r.points.length).toBe(5)
 	expect(r.points.every(p => p.source === BALANCE_SOURCES.live)).toBe(true)
+})
+
+/* =================================================================================================
+   THE TILE DRAWS OBSERVATIONS WHERE THEY EXIST.
+
+   This is the wiring, which is where a correct function gets called with the wrong argument and
+   nothing fails at build time. What must hold end to end: a stored balance the bank actually reported
+   beats the walk, a day where only some accounts reported is NOT an observation, and a reader with no
+   stored history sees exactly what they saw before.
+   ================================================================================================= */
+const withHistory = async (rows) => {
+	ApiCaller.getBalanceHistory = () => Promise.resolve(rows)
+	const ref = React.createRef()
+	await act(async () => {render(<BalanceChart ref={ref} stream={master} transactions={txns}/>)})
+	return ref
+}
+
+test("a remembered balance beats the walk, and the tile says which it drew", async () => {
+	const ref = await withHistory([])
+	const plain = ref.current.series("this").past
+	const day = plain[Math.max(0, plain.length - 4)]
+	const k = dayKey(day.date)
+	//the bank says this day was $9,000 - a long way from whatever the walk made of it
+	const ref2 = await withHistory([{accountHash: CHECKING, date: day.date.toISOString(),
+		current: 9000}])
+	const drawn = ref2.current.series("this").past.filter(p => dayKey(p.date) === k)[0]
+	expect(drawn.value).toBeCloseTo(9000, 4)
+	expect(drawn.source).toBe(BALANCE_SOURCES.observed)
+	//and the day it did NOT report is filled by the walk, not invented
+	const other = ref2.current.series("this").past.filter(p => dayKey(p.date) !== k)
+	expect(other.every(p => p.source !== BALANCE_SOURCES.observed)).toBe(true)
+})
+
+test("with no stored history the tile is unchanged, point for point", async () => {
+	/* THE FALLBACK IS THE SAFETY OF THE WHOLE CHANGE. History older than the stored series, and any
+	   provider that carries no balances, must draw exactly as before. */
+	const ref = await withHistory([])
+	const past = ref.current.series("this").past
+	expect(past.length).toBeGreaterThan(5)
+	expect(past.every(p => p.source === BALANCE_SOURCES.live)).toBe(true)
+	const anchor = ref.current.anchor()
+	expect(past[past.length - 1].value).toBeCloseTo(anchor, 6)
+})
+
+test("a day where only SOME covered accounts reported is not an observation", async () => {
+	/* A sum missing one account is a different quantity from a sum containing it. Comparing the two
+	   invents a step on the day an account started being observed - so a partial day is no
+	   observation at all and the walk fills it, which is what the walk is for. */
+	const ref = await withHistory([])
+	const past = ref.current.series("this").past
+	const day = past[Math.max(0, past.length - 3)]
+	//SAVINGS is not in the spending reading at all, so this reports nothing about it
+	const ref2 = await withHistory([{accountHash: SAVINGS, date: day.date.toISOString(),
+		current: 50000}])
+	const drawn = ref2.current.series("this").past.filter(p => dayKey(p.date) === dayKey(day.date))[0]
+	expect(drawn.source).not.toBe(BALANCE_SOURCES.observed)
+	expect(drawn.value).toBeCloseTo(day.value, 6)
+})
+
+test("a failing history call leaves the tile drawing, not blank", async () => {
+	//fire and forget: the picture must not depend on a call that can fail
+	ApiCaller.getBalanceHistory = () => Promise.reject(new Error("nope"))
+	const ref = React.createRef()
+	await act(async () => {render(<BalanceChart ref={ref} stream={master} transactions={txns}/>)})
+	expect(ref.current.series("this").past.length).toBeGreaterThan(5)
 })

@@ -6,7 +6,8 @@ import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {AccountTypes} from '../Bank';
-import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
+import ApiCaller from '../ApiCaller.js';
+import {observedSeries, forecast, trough, peak, eventsIn, dayKey, buildModel,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
 
@@ -259,6 +260,21 @@ export default class BalanceChart extends BaseComponent{
 		Core.getAccountsWithBalances().then(accounts =>
 			this.updateState({accounts:accounts||[], loaded:true}, () => this.paint()))
 			.catch(() => this.updateState({accounts:[], loaded:true}))
+		/* THE REMEMBERED BALANCES, which are what the past is actually anchored to.
+
+		   They are written by the same refresh that writes the transactions, from the same accounts
+		   response, so a snapshot and the ledger are consistent BY CONSTRUCTION. The live balance is
+		   not: it is fetched now, and the ledger is whatever the last tick stored. That difference is
+		   the whole bug - a cheque the bank had taken and our store had not received put every day of
+		   the past below where it belonged.
+
+		   Fire and forget. The picture draws without them, in exactly the shape it always did, so a
+		   user with no stored history or a failing call loses nothing. */
+		const back = new Date(Date.now() - 400*DAY)
+		ApiCaller.getBalanceHistory(back.toISOString(), new Date().toISOString())
+			.then(r => this.updateState({remembered: (r && (r.balances || r)) || []},
+				() => this.paint()))
+			.catch(() => this.updateState({remembered: []}))
 		this.wireOnce()
 		if(typeof ResizeObserver !== "undefined"){
 			this.ro = new ResizeObserver(() => {if(this.measure())this.paint()})
@@ -358,6 +374,40 @@ export default class BalanceChart extends BaseComponent{
 	covered(){
 		const spend = this.spendingHashes()
 		return this.source() === NETTED ? spend.concat(this.creditHashes()) : spend
+	}
+
+	/* WHAT THE BANK SAID THIS READING WAS WORTH, PER DAY.
+
+	   Only days where EVERY covered account reported: a sum missing one account is not the same
+	   quantity as a sum containing it, and silently comparing the two would invent a step on the day
+	   an account started or stopped being observed. A partial day is therefore no observation at all,
+	   and the walk fills it - which is what the walk is for.
+
+	   Signed the way the reading is: the netted view subtracts a card's balance, because Plaid signs
+	   money owed POSITIVE. */
+	observedByDay(){
+		const snaps = this.state.remembered
+		if(!snaps || !snaps.length)return {}
+		const spend = this.spendingHashes(), cards = this.creditHashes()
+		const netted = this.source() === NETTED
+		const want = netted ? spend.concat(cards) : spend
+		if(!want.length)return {}
+		const seen = {}
+		snaps.forEach(x => {
+			if(want.indexOf(x.accountHash) < 0 || isNaN(x.current))return
+			const k = dayKey(new Date(x.date))
+			if(!seen[k])seen[k] = {}
+			seen[k][x.accountHash] = x.current
+		})
+		const out = {}
+		Object.keys(seen).forEach(k => {
+			const got = Object.keys(seen[k])
+			if(got.length !== want.length)return         //partial day: not this quantity
+			let v = 0
+			got.forEach(h => {v += (cards.indexOf(h) > -1 ? -seen[k][h] : seen[k][h])})
+			out[k] = v
+		})
+		return out
 	}
 
 	//the anchor. Plaid signs a card's current balance POSITIVE for money owed, which is why the
@@ -537,13 +587,18 @@ export default class BalanceChart extends BaseComponent{
 	allSeries(){
 		const src = this.source(), txns = this.props.transactions, acc = this.state.accounts
 		const basis = this.state.basis
+		/* THE REMEMBERED SERIES IS AN INPUT, so it belongs in the key. It arrives on its own call,
+		   after the accounts, and a key that ignores it hands back the walk that was computed before
+		   it landed - for the life of the component. The picture would be correct only for a reader
+		   whose balance history happened to arrive first. */
+		const mem = this.state.remembered
 		const k = this._seriesKey
 		if(this._series && k && k.src === src && k.txns === txns && k.acc === acc
-			&& k.basis === basis)return this._series
+			&& k.basis === basis && k.mem === mem)return this._series
 		const out = {}
 		WHENS.forEach(o => {out[o[0]] = this.computeSeries(o[0])})
 		this._series = out
-		this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis}
+		this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, mem: mem}
 		return out
 	}
 	series(when){return this.allSeries()[when || this.state.when]}
@@ -556,7 +611,21 @@ export default class BalanceChart extends BaseComponent{
 		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
 		   the one balance that is actually known, so a past window is a slice of that walk rather
 		   than a separate calculation from a guessed opening figure. */
-		let past = reconstruct(txns, now, bal, win.from)
+		/* OBSERVED WHERE THE BANK SAID SO, WALKED ONLY TO FILL THE GAPS.
+
+		   reconstruct() is as good as the transaction record and no better, and it fails invisibly:
+		   one transaction the ledger has not received displaces EVERY earlier point by that amount
+		   while the curve stays perfectly self-consistent. observedSeries() anchors each day at or
+		   before the newest observation to the observations themselves, walking each gap back from
+		   the observation to ITS RIGHT so an ingestion gap can only bend the days inside that gap.
+
+		   With no observations it returns reconstruct() point for point, so nothing regresses for a
+		   reader whose history predates the stored series. */
+		const seen = this.observedByDay()
+		const built = observedSeries(txns, now, bal, win.from, seen)
+		this._unreconciled = built.unreconciled
+		this._observedCount = built.observations
+		let past = built.points
 		if(win.to)past = past.filter(p => p.date <= win.to)
 
 		const live = win.fwd ? this.model(now, new Date(now.getTime() + win.fwd*DAY)) : null

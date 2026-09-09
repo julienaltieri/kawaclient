@@ -24,6 +24,7 @@ import {render, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart from '../components/BalanceChart'
+import ApiCaller from '../ApiCaller'
 import {buildModel, forecast} from '../processors/BankBalance'
 
 const HIST = a => [{startDate: new Date("2000-01-01"), amount: a}]
@@ -68,6 +69,12 @@ const addSecondCard = () => {
 }
 
 beforeEach(() => {
+	/* NO NETWORK FROM A TEST. The tile fetches the remembered balance series on mount, and an
+	   unstubbed call reaches ApiCaller, fails, and takes Core.globalState down with it - which shows
+	   up as an unrelated test failing on userData three tests later. Empty is also the case worth
+	   defaulting to: it is the reader with no stored history, and the picture must be right for them.
+	*/
+	ApiCaller.getBalanceHistory = () => Promise.resolve([])
 	const master = new CompoundStream(MASTER_JSON)
 	Core.globalState = Object.assign({}, Core.globalState, {
 		userData: {
