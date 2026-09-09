@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b46 - the residual is a gap, not a multiplier";
+export const BENCH_VERSION = "b47 - the card row is scored, and it is dated";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -335,7 +335,8 @@ export default class BalanceBench extends BaseComponent{
 		const reportSettlements = reportLinks.repayments
 		const cardName = (this.state.accounts || []).reduce((m, x) => {m[x.hash] = x.name; return m}, {})
 		const cardIdOf = h => "__card__" + h
-		const cardRows = cards.map(h => ({id: cardIdOf(h), name: "Card · " + (cardName[h] || h)}))
+		const cardRows = cards.map(h => ({id: cardIdOf(h), hash: h,
+			name: "Card · " + (cardName[h] || h)}))
 		cards.forEach(h => {
 			perStream[cardIdOf(h)] = {}
 			actualByStream[cardIdOf(h)] = {}
@@ -401,7 +402,8 @@ export default class BalanceBench extends BaseComponent{
 		   that moved nothing and WAS predicted has no denominator of its own, so it is scored against
 		   the size of the mistake - which lands it at zero rather than at infinity. */
 		const gain = {}
-		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).forEach(t => {
+		forecastTerminals.concat([{id: CARD_ID, name: "Card settlement"}]).concat(cardRows)
+			.forEach(t => {
 			let p = 0, a = 0, err = 0, own = 0
 			for(let k = 0; k < dayKeys.length; k++){
 				if(k){
@@ -948,9 +950,22 @@ export default class BalanceBench extends BaseComponent{
 		const cardRows = ((a && a.cardRows) || []).map(c => {
 			const d = (a.detail || {})[c.id] || null
 			const pred = d ? d.predTotal : 0
-			return {name: c.name, id: c.id, surface: (d && d.surface) || 0,
-				cycle: "per cycle", expected: pred, tier: 3, day: "posted + rate",
-				amount: pred, spread: 0, gain: (a.gain || {})[c.id] || 0,
+			const sch = ((a && a.cards) || {})[c.hash] || {}
+			/* A REPAYMENT IS A DATED EVENT. It lands once per cycle on a schedule the model fitted -
+			   "spread, no single event" was the opposite of what the card model establishes. Dated
+			   where the schedule locked to a weekday or a day of the month, drifting where it did
+			   not. The AMOUNT is what is estimated here, never the day. */
+			const locked = !!(sch.schedule && (sch.schedule.every || sch.schedule.monthDay))
+			const per = (sch.events || []).length
+			const each = per ? pred/Math.max(1, Math.round(30.44/(sch.intervalDays || 30.44))) : pred
+			return {name: c.name, id: c.id, hash: c.hash, surface: (d && d.surface) || 0,
+				cycle: sch.intervalDays ? "every " + Math.round(sch.intervalDays) + "d" : "per cycle",
+				expected: pred, tier: locked ? 1 : 3,
+				day: sch.schedule && sch.schedule.every
+					? "every " + sch.schedule.every + "d"
+					: (sch.schedule && sch.schedule.monthDay
+						? "day " + sch.schedule.monthDay : "unscheduled"),
+				amount: each, spread: locked ? 1 : 0, gain: (a.gain || {})[c.id] || 0,
 				sort: Math.abs((d && d.actTotal) || pred), detail: d}
 		})
 		const dropped = {}

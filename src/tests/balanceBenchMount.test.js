@@ -256,7 +256,9 @@ test("the predicted day is named by the cycle's phase, not the day of the month"
 	   named after a day number and a semimonthly one after a phase it does not have - it read
 	   correctly on the 14th only because 14 falls in the first half of the month. */
 	const ref = await mount()
-	const rows = ref.current.rows().filter(r => r.tier && r.tier < 3 && r.day !== "-")
+	//stream rows only: a card row's day is its repayment schedule, not a cycle phase
+	const rows = ref.current.rows().filter(r => r.tier && r.tier < 3 && r.day !== "-"
+		&& !/^__card__/.test(r.id || ""))
 	rows.forEach(r => {
 		//a weekday name, or "day N" / "day N & M" with N inside a month
 		expect(r.day).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)( A| B)?$|^day \d+( & \d+)?$/)
@@ -284,5 +286,21 @@ test("a repayment is scored on the card row and nowhere else", async () => {
 		const d = a.detail[t.id]
 		if(!d)return
 		expect(Math.abs(d.actTotal)).toBeLessThan(1)
+	})
+})
+
+test("a card row is scored and dated like any other", async () => {
+	/* It was printing 0% forever because the per-card rows were never in the loop that computes a
+	   score, and "spread - no single event" because the tier was hardcoded - which is the opposite of
+	   what the card model establishes. A repayment lands once per cycle on a fitted schedule. */
+	const ref = await mount()
+	const cards = ref.current.rows().filter(r => /^__card__./.test(r.id || ""))
+	expect(cards.length).toBeGreaterThan(0)
+	const live = cards.filter(r => Math.abs(r.expected) > 1)
+	expect(live.length).toBeGreaterThan(0)
+	live.forEach(r => {
+		expect(r.gain).not.toBe(0)                       //scored, not a placeholder
+		expect(r.tier).toBe(1)                           //dated: it has a schedule
+		expect(r.day).toMatch(/^every \d+d$|^day \d+$/)
 	})
 })
