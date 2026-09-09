@@ -193,12 +193,12 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 
 ---
 
-## §3 — What shape does it take within a cycle
+## §3 — What shape does money movement have within the cycle
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** Given a known, non-yearly frequency, say how the money is distributed inside one
-cycle.
+**The question.** Given a known, non-yearly frequency, what shape does the money movement have
+within the cycle?
 
 **In:** the frequency from §2, the transactions from §1, the declaration history.
 
