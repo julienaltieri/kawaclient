@@ -122,7 +122,7 @@ Two of these belong to the account. Two do not, and the distinction matters when
 | | |
 |---|---|
 | **pass-through** | Repayment ÷ the charges in its statement window. Describes whether the balance is cleared in full. |
-| **rate** | Average daily charges. Describes how the card is used. |
+| **rate** | The daily GAP the streams miss: `max(0, charged − what the streams said) / days observed`, over the trailing 90 days. Not an average of charges — a residual. Zero means the streams already account for the card. |
 
 These two are **empirical summaries, not settings**. Nothing about the account fixes them; they are
 what the last few statements happened to look like, and they exist for one purpose only — to say
@@ -135,8 +135,9 @@ something about charges that have not been observed yet.
 ```
 close        = repayment date − offset
 observed     = charges already recorded in (previous close, close]
-unobserved   = rate × days between today and close        → zero once close has passed
-repayment    ≈ (observed + unobserved) × pass-through
+planned      = the card's own streams, summed day by day from today to close
+residual     = rate × days between today and close        → zero once close has passed
+repayment    ≈ (observed + planned + residual) × pass-through
 ```
 
 **`observed` is arithmetic on transactions already in hand.** The derived quantities apply only to
@@ -156,7 +157,7 @@ what is left over. A rate is an average and cannot represent a single large char
 | **Several physical cards on one account, repaid on the same day** | Several repayments, one statement. They belong together; the interval between them is not a cycle. |
 | **Several cards on one account, repaid on different days** | Two schedules interleave on one account. A single interval and offset describe neither. |
 | **A card that returns no repayment leg on the card side** | Only the checking-side transaction exists, so the pair is incomplete and the link cannot be established from it alone. |
-| **A card that stops being used** | History remains complete and a schedule projected from the last repayment keeps producing repayments that will not happen. |
+| ~~**A card that stops being used**~~ **— fixed.** No events are produced once the card has been idle for `max(60, 3 × interval)` days. Kept here for the reasoning. | History remains complete and a schedule projected from the last repayment keeps producing repayments that will not happen. |
 | **A card carrying a balance** | Pass-through below 1: the repayment covers only part of the statement. Normal, and not an error to correct. |
 | **A purchase feed that is incomplete** | Charges are under-counted, so pass-through rises to compensate and can exceed 1. A pass-through above 1 is a statement about the data, not about the card. |
 | **One statement dominated by a single large charge** | Statement totals vary severalfold, and no rate describes them. |

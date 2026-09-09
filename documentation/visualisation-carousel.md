@@ -9,9 +9,10 @@ between with a pager underneath. The [macro graph](macro-graph.md) is page one a
 [money flow](money-flow.md) is page two and the [bank balance](bank-balance.md) is page three. The
 container exists because of them rather than because one chart needed a frame.
 
-Page three is the one that does not take an analysis: its window is 7/15/30 days centred on today,
-which is not an observation period, and it anchors on the live account balance rather than on anything
-the analysis computed. Every page is still the same height, and the macro graph is what sets it.
+Page three is the one that does not take an analysis: its window is a calendar month — this one or
+last — rather than an observation period, and it anchors on the bank's own balances rather than on
+anything the analysis computed. (The 7/15/30-day ladder was removed; the past is anchored on stored
+daily observations and only walked to fill gaps — `bank-balance.md` §2f.) Every page is still the same height, and the macro graph is what sets it.
 
 `ChartCarousel` ([`ChartCarousel.js`](../src/components/ChartCarousel.js)) is the caller.
 `Deck` ([`Deck.js`](../src/components/Deck.js)) is the mechanism, shared with the Amazon charge deck —

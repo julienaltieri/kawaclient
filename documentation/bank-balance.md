@@ -1,9 +1,11 @@
 # Bank balance, to date and ahead
 
-> **EXPLORATORY. Nothing here is built.** This is a spec being reasoned about, not a description of a
-> system, and it is the roadmap case that `context.md`'s rule 6 admits: the decisions live here as they
-> are made, so the reasoning sits next to the mechanism it will become. Every section is a proposal
-> until it ships, and each one is deleted from this framing and rewritten as fact when it does.
+> **MOSTLY BUILT.** §0-§10 describe shipped behaviour. The two Roadmap sections at the bottom are the
+> exception and say so in their own headers.
+>
+> Where a section is superseded it carries a pointer at the top rather than being deleted, because the
+> argument that was wrong is usually the fastest way to understand why the replacement is shaped as it
+> is. §2 is the worked case: its reasoning against the forwards walk turned out to apply to itself.
 >
 > It was anticipated before it was specified: `ChartCarousel.js` names "a balance-to-date and its
 > forecast" as a page that would follow the macro graph.
@@ -93,8 +95,8 @@ transaction path already does the same thing a few lines above.
 
 There are now two sources, and they answer different questions:
 
-- **Live** — `Core.getAccountsWithBalances()`, straight off the aggregator. This is the anchor the
-  reconstruction hangs from, and for *now* it is the one to trust.
+- **Live** — `Core.getAccountsWithBalances()`, straight off the aggregator. The one to trust for
+  *now*, and — see §2f — precisely the wrong thing to anchor the past to.
 - **Remembered** — `ApiCaller.getBalanceHistory()`, the stored series. It only accumulates going
   forward, so a caller must read an empty answer as "no history yet", never as "no money".
 
@@ -162,8 +164,9 @@ the trough goal 1 is about.** With $12,000 in savings behind $3,200 in checking,
 near its floor, the rent is drawn against money that is not there to pay it, and the tile answers "can
 I buy the plane tickets" with a confident yes it has no basis for.
 
-So the reading is the **spending account** — the depository accounts whose `subtype` says they are for
-spending — and there are exactly **two** readings:
+So the reading is the **spending account** — the accounts `Core.accountTypeOf` calls checking, which
+is Plaid's type first and the user's own override last (see `account-types.md`, which owns this rule).
+`subtype` is no longer consulted anywhere in the balance path — and there are exactly **two** readings:
 
 | entry | what it is | when it appears |
 |---|---|---|
@@ -174,15 +177,18 @@ spending — and there are exactly **two** readings:
 turned one control into a file browser for a question that has two answers. A savings balance is
 neither of them: folded into the spending account it hides the trough, and on its own it is not a
 runway — nothing is forecast against it and no decision is taken from it. It is simply not what this
-picture is about. Where no `subtype` names a spending account, every depository account counts, so a
-reader with one account never gets an empty chart over a taxonomy detail.
+picture is about. **There is no longer a fallback to every depository account.** It was removed deliberately: it
+overruled the user, handing somebody who had marked their only current account as savings the runway
+anyway. An empty chart is the better failure, because it does not contradict what the reader just
+said.
 
 Because the account and the reading are the same question — *which money am I looking at* — they are
 **one control**, and the title stays two tappable words on a phone.
 
 **Per-account forecasting follows from this.** Once the balance on screen can be one account, the
 forecast has to know which account each stream lands on, or the rent gets forecast against savings.
-`accountRoutingOf` therefore returns the **account a stream's money actually landed on** rather than a
+`accountRoutingOf` therefore returns the **account a stream's money actually LEFT** — the leg matching
+the stream's declared direction, and with nothing declared, the outgoing one rather than a
 card/not-card boolean, and the forecast takes a `covers(accountHash)` predicate so one rule serves all
 three cases — a single account, several combined, or the netted position.
 
@@ -416,7 +422,7 @@ The first draft of this rule said "a staircase, not a slope", reasoning that mon
 a ramp is false on every day between them. That is right about rent and wrong about groceries — and the
 app already knows which is which, so neither assumption is needed.
 
-`ReportingCore.getFrequencyHistogramAtDate(date)` bins every transaction of a stream by where it fell
+`histogramOf` (over `AmountHistogram.js`) bins every transaction of a stream by where it fell
 within its sub-period, **weighted by amount rather than by count**, aggregated across every period in
 the observation window, normalised, and rotated so the calendar's start sits at index zero. It is
 already the answer to "when in a month does this stream's money actually move", measured rather than
@@ -453,11 +459,20 @@ The past is a staircase for the same reason and comes out as one for free: a tra
 
 ## §7 The invariants, for whenever the tests come
 
-- at `t = now`, the curve equals the reported balance (§2);
-- the past series changes only at transaction dates, by exactly that transaction's amount;
-- the future series changes only at expectation dates, by exactly that expectation;
-- past and future meet at `now` with no discontinuity (§4);
-- with no expectations at all, the future is flat — never drifting, never trending;
+- at `t = now`, the curve equals **the freshest thing that observed it** — the stored balance for
+  today where one exists, and the live reported figure otherwise (§2f). It was "the reported balance"
+  and the change is deliberate;
+- the past series changes at transaction dates by exactly that transaction's amount, **and at one
+  other place**: the newest observation, where it may step by `unreconciled` — money the bank has seen
+  and the ledger has not (§2f). A test asserting no such step asserts the bug;
+- the future series changes only at expectation dates, by exactly that expectation, **plus
+  `extraFlow`** — the card repayment, which is arithmetic on posted charges rather than an
+  expectation;
+- past and future meet at `now` **with a discontinuity of exactly `unreconciled`, and no other**. The
+  past ends observation-anchored; the future starts from the live anchor. Zero is the normal case and
+  the seam is only open while the bank knows something we do not;
+- with no expectations at all the future is flat **for a portfolio with no linked card**. One linked
+  card gives a stepped future from posted charges alone;
 - **a card payment moves §1a and does not move §1b** — the one invariant that says the credit-card
   timing has actually been removed rather than merely hidden;
 - **a card purchase moves §1b on its own date, and §1a not at all**, which is the same statement read
@@ -465,16 +480,22 @@ The past is a staircase for the same reason and comes out as one for free: a tra
 - the reported trough is the minimum of the series actually drawn, and its date is a date in it —
   trivial, and worth asserting, because a trough computed off a different array than the one on screen
   is the kind of thing that stays right until the day it does not;
-- **every predicted movement comes from a TERMINAL stream, and the settlement is the only exception**
-  — see below.
+- **every predicted movement comes from a TERMINAL stream or a PARTITION of one, and the card
+  repayment is the only exception** — see below.
 
 ### §7a Every prediction comes from a terminal stream
 
 `CompoundStream.getExpectedAmountAtDateByPeriod` is **defined** as the sum of its active children, so a
 parent has no amount of its own: asking a compound and asking its leaves is the same question, and
-reading both double-counts. `forecast()` therefore walks `getAllTerminalStreams()` and never once looks
-upward. This is the same rule the money-flow adapter follows for the same reason, where it is written
-as "a second author for the same quantity".
+reading both double-counts. `forecast()` therefore walks the **leaves** and never once looks upward.
+This is the same rule the money-flow adapter follows for the same reason, where it is written as "a
+second author for the same quantity".
+
+**It walks `opts.terminals`, not `getAllTerminalStreams()` directly**, and since the partition those
+are not the same list. `buildModel` hands it the terminals *after* `partitionStreams`, so a stream paid
+two ways appears as two virtual leaves — `"util@chk"` and `"util@visa"` — that are not members of
+`getAllTerminalStreams()` at all. The no-double-counting rule survives intact, because the partition
+DIVIDES the declared budget between the halves rather than giving it to both.
 
 The stronger reason is specific to this view: **the shape only exists at the leaves.** Measured on the
 real portfolio, as the number of days carrying 80% of a stream's money:
@@ -618,8 +639,17 @@ the period machinery and rotates the result; this view bins by day-of-month acro
 its window is days centred on today rather than an analysis period. Forcing one to answer the other's
 calendar question would be a worse duplication than the one removed.
 
-**The single exception is the card settlement.** It is not a stream and no `expAmountHistory` backs it:
-it is a *re-timing* of streams that were already forecast at their own dates, moved to the day the
+**The single exception is the card repayment**, and it is no longer a re-timing. The `settles`
+mechanism this paragraph described is dead — `buildModel` sets `const settles = null` and never
+populates it, so both branches that read it are unreachable. What ships is `extraFlow`: per linked
+card, `observed + planned + residual` scaled by pass-through, which is *arithmetic on posted card
+transactions* rather than a redistribution of forecast streams. See `credit-cards.md`.
+
+The paragraph below is kept because the argument still holds for why a card's money cannot be left on
+its purchase dates — only the mechanism changed.
+
+The superseded description: it was a *re-timing* of streams that were already forecast at their own
+dates, moved to the day the
 money actually leaves the current account. That is precisely why it exists only in the account reading
 and is absent from the true one — and why the §7 conservation check means anything, since the two
 readings can only sum alike if the settlement moves money rather than creating it.
@@ -646,7 +676,7 @@ belongs to the account the money left. Where no leg matches the expected directi
 so a stream with a surprising sign is still placed somewhere rather than nowhere.
 
 **Which streams are on the card is MEASURED, not declared.** `accountRoutingOf()` looks at where each
-stream's own transactions actually landed and routes it where the majority of its money went. A
+stream's own transactions actually left, and routes it where the majority of that money went. A
 hand-kept list would be a second author for a fact the ledger already states, and it goes stale the
 first time a subscription moves to a different card. A stream with no history is treated as direct —
 the safer error, since it then lands on its own day rather than a fortnight later, and the trough it
@@ -1594,9 +1624,10 @@ Still open, in the order they are worth doing:
 
 - **§8 "what if I spend X today"** has no gesture. The drag that would have carried it became the
   cursor (§10f), so the input needs somewhere else to live. This is the largest gap against goal 1.
-- **The stored series is not read yet.** `getBalanceHistory` exists end to end and the view still
-  anchors on the live figure alone, because on day one there is no history to read. Once a few weeks
-  have accumulated, §2a's drift test becomes possible — and that comparison is the best evidence the
+- ~~**The stored series is not read yet.**~~ **Done** — see §2f. The view anchors the past on the
+  stored observations and walks only to fill the gaps; the live figure now answers "what is it now"
+  and nothing else. What remains open is that history predating the first snapshot can only ever be
+  walked. The drift comparison it made possible is the best evidence the
   categorisation is complete.
 - **Posted versus available** is unresolved: both are now stored, and the view uses `current`.
 - **The parked streams** (`Option Exercise` at 0.01 against $10,582 of real movement, `Investments` at
@@ -1612,7 +1643,13 @@ Still open, in the order they are worth doing:
 > **This section is the scoped exception to Rule 5** (see [`context.md`](context.md), process note 6).
 > It records decisions taken in conversation for work built in phases. Each phase's entry is deleted
 > as it lands, its mechanism moving up into the body above and leaving one line in the log at the
-> bottom of this file. Nothing here describes what the code does today.
+> bottom of this file.
+>
+> **Phases 0, 3, 4 and 5 have since SHIPPED** and are described as fact in the sections above — the
+> link from paired transactions (`accountLinks`), both repayment legs leaving the stream ledger, the
+> per-card schedule (`cardSchedule`) and the repayment as an event on checking (`cardRepaymentForecast`
+> into `extraFlow`). Read them for what the code does. What follows is kept for the reasoning, and for
+> Phases 1 and 2, which have not.
 
 ### Why the current shape is wrong
 
@@ -1692,9 +1729,17 @@ for a stream whose cycle is a year.
 
 The largest change, and the one that removes the most code rather than adding it.
 
-Delete the synthetic settlement pseudo-stream, the `extraFlow` mechanism and the stream exclusion
-list. A card account is described in its own right, and its repayment appears in the checking
-account's forecast as a **connection between two accounts**.
+> **DO NOT FOLLOW THIS PARAGRAPH LITERALLY.** It was written before Phase 5 shipped, and `extraFlow`
+> turned out to be the right carrier rather than the thing to remove: the repayment IS delivered as an
+> `extraFlow` entry today. Deleting it deletes the card repayment.
+
+Delete the synthetic settlement pseudo-stream and the stream exclusion list. `extraFlow` stays, and is
+now what carries the repayment. A card account is described in its own right, and its repayment appears
+in the checking account's forecast as a **connection between two accounts**.
+
+*(As shipped: the pseudo-stream is gone — `settles` is permanently `null`. `excludeIds` survives as an
+always-empty object threaded into `forecast` and `contributionsOn`, because a repayment now leaves the
+ledger as a TRANSACTION rather than as an excluded stream.)*
 
 **Repayment identification collapses into the pairing.** The present implementation reconstructs the
 link with four rungs of inference — a stream whose legs straddle the two accounts, exact-amount

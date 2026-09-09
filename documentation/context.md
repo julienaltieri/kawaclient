@@ -156,6 +156,7 @@ Recorded so far:
 | [`debugging-the-picture.md`](debugging-the-picture.md) | How to find out what a drawn thing is actually doing: the four levels of instrument, the order to reach for them in, and the catalogue of ways a measurement lied. Read before debugging anything visual. |
 | [`header-row-drawer.md`](header-row-drawer.md) | Why the progress ring leaves the stream header row on a phone and returns as a drawer: the width it recovers, why the chart is cropped rather than resized, the gesture, and the traps found getting there. |
 | [`authentication.md`](authentication.md) | How you get into Kawa and stay in: the Cognito proxy login, why a session dies after an hour, what the credentials are worth if they leak, and the roadmap for refresh tokens and biometric unlock. |
+| [`bank-balance.md`](bank-balance.md) | Page three: the balance to date and ahead. The largest document here and the one under active change — read §2f first, it supersedes §2. |
 | [`account-types.md`](account-types.md) | The two notions of account type — what the aggregator reports and what the user sets in Settings — how the second overrides the first, where each is stored, and which parts of the app read which. |
 | [`credit-cards.md`](credit-cards.md) | How a credit card account behaves and how it is linked to the checking account that funds it: the two situations depending on what is connected, the link through paired transactions, and what can be said about a statement in each. |
 

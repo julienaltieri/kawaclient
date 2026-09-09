@@ -623,6 +623,10 @@ export default class BalanceChart extends BaseComponent{
 		   reader whose history predates the stored series. */
 		const seen = this.observedByDay()
 		const built = observedSeries(txns, now, bal, win.from, seen)
+		/* KEPT, NOT READ HERE. The gap between what the bank has seen and what the ledger has is
+		   surfaced by the bench (driftVsRemembered), which is where it can be argued about against the
+		   per-account numbers. The tile shows it as what it is: a step in the line at the newest
+		   observation. */
 		this._unreconciled = built.unreconciled
 		this._observedCount = built.observations
 		let past = built.points
