@@ -227,12 +227,15 @@ test("the table describes the forecast, not a second opinion of it", async () =>
 	rows.forEach(r => {
 		const st = ref.current.terminals().filter(x => x.id === r.id)[0]
 		if(!st)return
+		/* A CARD-ROUTED STREAM IS READ ON ITS CARD. Its money does not move through the checking
+		   account, so the checking reading is zero and the row reports the CHARGE instead. */
+		const opts = r.onCard ? Object.assign({}, a.model, {covers: () => true}) : a.model
 		//whatever the row claims the forecast puts on a day, the forecast must actually put there
 		let total = 0, big = 0
 		for(let d = 1; d <= 31; d++){
 			const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), d))
 			if(at.getUTCMonth() !== now.getUTCMonth())break
-			const v = shareOfDay(st, at, a.model)
+			const v = shareOfDay(st, at, opts)
 			total += v
 			if(Math.abs(v) > Math.abs(big))big = v
 		}
@@ -303,4 +306,22 @@ test("a card row is scored and dated like any other", async () => {
 		expect(r.tier).toBe(1)                           //dated: it has a schedule
 		expect(r.day).toMatch(/^every \d+d$|^day \d+$/)
 	})
+})
+
+test("a card-routed stream reports what it charges, not zero", async () => {
+	/* Its money reaches the checking account inside a repayment, so the checking reading is right to
+	   show nothing - and a row reading "predicts $0, 100% accurate" is then true and unreadable. It
+	   is neither predicted nor accurate; it is on a card. */
+	const ref = await mount()
+	const rows = ref.current.rows().filter(r => r.onCard)
+	expect(rows.length).toBeGreaterThan(0)
+	rows.forEach(r => {
+		//named to a real card, and carrying the charge it forecasts there
+		expect(ref.current.credit()).toContain(r.onCard)
+		expect(typeof r.promoted).toBe("boolean")
+	})
+	//at least one of them actually forecasts something, or the card has nothing to compose from
+	expect(rows.some(r => Math.abs(r.amount) > 1)).toBe(true)
+	//and the report says which card, rather than leaving a zero to be misread
+	expect(ref.current.report()).toMatch(/charged to a card/)
 })

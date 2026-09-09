@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b47 - the card row is scored, and it is dated";
+export const BENCH_VERSION = "b48 - a card-routed stream reports its charge";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -648,8 +648,22 @@ export default class BalanceBench extends BaseComponent{
 			//how much of the charges the streams account for at all
 			const mdl = this.analyse() && this.analyse().model
 			const routed = mdl ? this.terminals().filter(t => mdl.routing[t.id] === h) : []
-			out.push("  streams routed to this card: "
-				+ (routed.length ? routed.map(t => t.name).join(", ") : "none categorised"))
+			out.push("  streams charged to this card, and what each is expected to add per month:")
+			if(!routed.length)out.push("    (none categorised to it)")
+			routed.forEach(t => {
+				const now2 = this.today()
+				const opts = Object.assign({}, mdl, {covers: () => true})
+				let sum = 0
+				for(let d = 1; d <= 31; d++){
+					const at = new Date(Date.UTC(now2.getUTCFullYear(), now2.getUTCMonth(), d))
+					if(at.getUTCMonth() !== now2.getUTCMonth())break
+					sum += shareOfDay(t, at, opts)
+				}
+				const prom = (mdl.meta.promoted || {})[t.id]
+				out.push("    " + t.name.slice(0, 26).padEnd(26) + money(sum).padStart(10)
+					+ (prom ? "   instalment " + money((mdl.meta.instalment || {})[t.id])
+						: "   " + ((mdl.shapes[t.id] || {}).spreadReason || "")))
+			})
 			out.push("")
 			out.push("  rate basis                        $/day    implies per statement")
 
@@ -981,6 +995,9 @@ export default class BalanceBench extends BaseComponent{
 		   These are now read off the forecast itself, by asking it what it puts on each day of a
 		   month. That cannot disagree with the picture, because it IS the picture. */
 		const mdl = a && a.model
+		//the same model, in a reading where card-routed streams are visible - they are hidden from the
+		//checking view because that money has not moved through it, which makes their row unreadable
+		const asCard = mdl ? Object.assign({}, mdl, {covers: () => true}) : null
 		const probe = s => {
 			if(!mdl)return null
 			const y = now.getUTCFullYear(), m = now.getUTCMonth()
@@ -996,6 +1013,30 @@ export default class BalanceBench extends BaseComponent{
 			//a day counts as "live" when it carries a real share, not a rounding crumb
 			const live = days.filter(v => Math.abs(v) > Math.abs(total)*0.02).length
 			const h = mdl.shapes[s.id]
+			/* ON A CARD. Its money reaches the checking account inside a repayment, so the checking
+			   reading is right to show nothing - and a row reading "predicts $0, 100%" is then true
+			   and unreadable. What it actually forecasts is a CHARGE, so that is what is shown, with
+			   the card it lands on. */
+			const onCard = this.credit().indexOf(mdl.routing[s.id]) > -1
+			if(onCard && !total){
+				let c = 0, cBig = 0, cDay = 0, cDays = []
+				for(let d = 1; d <= 31; d++){
+					const at2 = new Date(Date.UTC(y, m, d))
+					if(at2.getUTCMonth() !== m)break
+					const v = shareOfDay(s, at2, asCard)
+					cDays.push(v); c += v
+					if(Math.abs(v) > Math.abs(cBig)){cBig = v; cDay = d}
+				}
+				const cLive = cDays.filter(v => Math.abs(v) > Math.abs(c)*0.02).length
+				const at3 = new Date(Date.UTC(y, m, cDay || 1))
+				return {total: c, big: cBig, bigDay: cDay, live: cLive, onCard: mdl.routing[s.id],
+					phase: h && h.cycle && h.cycle.phaseOf ? h.cycle.phaseOf(at3) : (cDay - 1),
+					cycle: h && h.cycle ? h.cycle.name : "monthly",
+					spreadReason: h ? h.spreadReason : null,
+					promoted: !!(mdl.meta.promoted || {})[s.id],
+					instalment: (mdl.meta.instalment || {})[s.id],
+					share: c ? Math.abs(cBig/c) : 0}
+			}
 			/* dayLabel takes the cycle's PHASE, not the day of the month, and they only coincide for
 			   a monthly cycle. Passing the calendar day named a weekly stream after a day number and
 			   a semimonthly one after a phase it does not have; it read correctly on the 14th purely
@@ -1003,6 +1044,8 @@ export default class BalanceBench extends BaseComponent{
 			const at = new Date(Date.UTC(y, m, bigDay || 1))
 			const phase = h && h.cycle && h.cycle.phaseOf ? h.cycle.phaseOf(at) : (bigDay - 1)
 			return {total: total, big: big, bigDay: bigDay, phase: phase, live: live,
+				promoted: !!(mdl.meta.promoted || {})[s.id],
+				instalment: (mdl.meta.instalment || {})[s.id],
 				cycle: h && h.cycle ? h.cycle.name : "monthly",
 				spreadReason: h ? h.spreadReason : null,
 				confident: h ? h.confident : null,
@@ -1023,6 +1066,8 @@ export default class BalanceBench extends BaseComponent{
 				: (p.spreadReason ? "spread by budget"
 					: (tier === TIERS.spread ? "spread" : dayLabel(p.cycle, p.phase)))
 			return {name:s.name, id:s.id, cycle:declared, expected:perCycle,
+				onCard:(p && p.onCard) || null, promoted:!!(p && p.promoted),
+				instalment:(p && p.instalment) || 0,
 				surface:(det && det.surface) || 0,
 				tier:tier, day:day,
 				amount:(p ? (tier === TIERS.spread ? p.total : p.big) : 0),
@@ -1118,6 +1163,11 @@ export default class BalanceBench extends BaseComponent{
 				out.push(line(["  " + r.name, money(r.surface), r.cycle, money(r.expected),
 					(r.spread*100).toFixed(0) + "%", r.day, money(r.amount),
 					(r.gain*100).toFixed(0) + "%"]))
+				//a card-routed stream is read on its card, and whether it promoted to an instalment
+				//is the difference between a lump being named into a statement and being averaged
+				if(r.onCard)out.push("      charged to a card"
+					+ (r.promoted ? " · INSTALMENT " + money(r.instalment) + " per turn"
+						: " · not an instalment, so it is only in the card's average"))
 				//the arithmetic behind a surprising score, for the rows where it is worth seeing
 				if(r.detail && r.gain < 0.9 && (Math.abs(r.detail.predTotal) > 1
 						|| Math.abs(r.detail.actTotal) > 1)){
@@ -1262,7 +1312,9 @@ export default class BalanceBench extends BaseComponent{
 					<Line>{money(r.surface)} $·days · {r.cycle} · expects {money(r.expected)}
 						· predicts {money(r.amount)} on {r.day}
 						{r.tier && r.tier < 3
-							? " · top day carries " + (r.spread*100).toFixed(0) + "%" : ""}</Line>
+							? " · top day carries " + (r.spread*100).toFixed(0) + "%" : ""}
+						{r.onCard ? " · CHARGED TO A CARD"
+							+ (r.promoted ? ", instalment " + money(r.instalment) : "") : ""}</Line>
 					{this.state.open === r.name ? this.drawStream(r.id) : null}
 					{r.detail && this.state.open === r.name ? <Line>
 						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}
