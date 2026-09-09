@@ -534,3 +534,28 @@ test("a card repaid more than it was charged is called out, not quietly forecast
 	//the mount fixture settles exactly what it buys, so the two agree within a statement
 	expect(Math.abs(cp.paid - cp.charged)).toBeLessThan(cp.charged*0.5)
 })
+
+test("a card row's copy payload carries its whole argument, not a subset", async () => {
+	/* THE COPY BUTTON IS THE DEBUG SURFACE. The statement arithmetic was put in the report body and
+	   the row was copied instead, so the diagnosis it exists to deliver never arrived. And a card row
+	   is not a stream: it has no partition, no split and no account it is "paid by" - it IS an
+	   account - so those lines were meaningless on the largest row in the reading. */
+	const ref = await mount()
+	const card = ref.current.rows().filter(r => r.hash)[0]
+	expect(card).toBeTruthy()
+	const txt = ref.current.rowDebug(card)
+	expect(txt).toMatch(/card settlement for /)
+	expect(txt).not.toMatch(/partition  /)
+	expect(txt).not.toMatch(/paid       /)
+	expect(txt).toMatch(/each statement, as the three terms/)
+	expect(txt).toMatch(/posted .* planned .* residual .* actual/)
+	expect(txt).toMatch(/rate = \(charged .* streams said /)
+	expect(txt).toMatch(/in this window: charged .* repaid /)
+
+	//and an ordinary stream keeps the three lines that do mean something about it
+	const stream = ref.current.rows().filter(r => !r.hash)[0]
+	const st = ref.current.rowDebug(stream)
+	expect(st).toMatch(/partition  /)
+	expect(st).toMatch(/paid       /)
+	expect(st).not.toMatch(/each statement/)
+})

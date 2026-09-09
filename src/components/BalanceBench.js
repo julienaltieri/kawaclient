@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b55 - the rate is a difference, and both halves are printed";
+export const BENCH_VERSION = "b56 - the copy payload carries the whole argument";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -1293,27 +1293,45 @@ export default class BalanceBench extends BaseComponent{
 	//everything needed to argue about one row, as text
 	rowDebug(r){
 		const d = r.detail || {}
-		const out = [r.name + "   " + BENCH_VERSION,
-			"class      " + (r.onCard ? "card " + r.onCard : "checking")
-				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""),
-			"partition  " + (r.partOf
+		/* THE COPY PAYLOAD IS THE DEBUG SURFACE, so it carries the whole argument for the row and not
+		   a subset of it. The card's statement arithmetic went into the report body and the row was
+		   copied instead, so the diagnosis it was built to deliver never arrived.
+
+		   A CARD ROW IS NOT A STREAM. It has no partition, no split and no account it is "paid by" -
+		   it IS an account - so those three lines said "checking", "whole stream" and "one account
+		   only" about the largest row in the reading, all three meaningless and one of them wrong. */
+		const isCard = !!r.hash
+		const out = [r.name + "   " + BENCH_VERSION]
+		if(isCard){
+			out.push("class      card settlement for " + r.hash + "   (not a stream: this row IS an"
+				+ " account, and its actual is what really left checking)")
+		}else{
+			out.push("class      " + (r.onCard ? "card " + r.onCard : "checking")
+				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""))
+			out.push("partition  " + (r.partOf
 				? "this row is one side of a split - " + Math.round(r.partShare*100)
 					+ "% of the budget, on " + r.partAccount
-				: "whole stream"),
-			"paid       " + (r.split && r.split.n
+				: "whole stream"))
+			out.push("paid       " + (r.split && r.split.n
 				? Math.round(r.split.cardShare*100) + "% by card (" + r.split.card + " of "
 					+ r.split.n + " transactions, " + Math.round(r.split.cardShareByAmount*100)
 					+ "% of the money)"
-				: "one account only"),
-			"cycle      " + r.cycle + "   predicted day " + r.day
-				+ "   top day carries " + Math.round((r.spread || 0)*100) + "%",
-			"amount     expects " + money(r.expected) + "   predicts " + money(r.amount),
-			"score      " + Math.round((r.gain || 0)*100) + "%   surface " + money(r.surface)
-				+ " $-days",
-			"predicted  " + money(d.predTotal || 0) + "   " + (d.predDays || "nothing"),
-			"actual     " + money(d.actTotal || 0) + "   " + (d.actDays || "nothing"),
-			"worst gap  " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : ""),
-			"transactions " + Math.round((d.flowAccuracy || 0)*100) + "%"]
+				: "one account only"))
+		}
+		out.push("cycle      " + r.cycle + "   predicted day " + r.day
+			+ "   top day carries " + Math.round((r.spread || 0)*100) + "%")
+		out.push("amount     expects " + money(r.expected) + "   predicts " + money(r.amount))
+		out.push("score      " + Math.round((r.gain || 0)*100) + "%   surface " + money(r.surface)
+			+ " $-days")
+		out.push("predicted  " + money(d.predTotal || 0) + "   " + (d.predDays || "nothing"))
+		out.push("actual     " + money(d.actTotal || 0) + "   " + (d.actDays || "nothing"))
+		out.push("worst gap  " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : ""))
+		out.push("transactions " + Math.round((d.flowAccuracy || 0)*100) + "%")
+		if(isCard){
+			out.push("")
+			out.push("each statement, as the three terms it is made of:")
+			this.statementLines(r.hash).forEach(l => out.push(l.replace(/^ {6}/, "  ")))
+		}
 		return out.join("\n")
 	}
 
