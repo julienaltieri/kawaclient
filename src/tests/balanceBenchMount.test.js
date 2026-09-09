@@ -729,3 +729,19 @@ test("the same number under a different name is called a FIELD fault, not a stal
 	expect(txt).toMatch(/the LIVE current equals the REMEMBERED available/)
 	expect(txt).toMatch(/this is a wrong FIELD, not a stale balance/)
 })
+
+test("the expanded row on screen IS the copy payload, not a second account of it", async () => {
+	/* Two authors for one explanation drift, and these did: the four questions and the card's
+	   statement arithmetic reached the clipboard and never reached the screen, while the screen kept
+	   prose the payload had dropped. Whatever is worth copying is worth reading. */
+	const ref = await mount()
+	const row = ref.current.rows().filter(x => !x.hash)[0]
+	const payload = ref.current.rowDebug(row)
+	//the version stamp is the first line and belongs to the copy, not the screen
+	const NL = String.fromCharCode(10)
+	const onScreen = payload.split(NL).slice(1).join(NL).trim()
+	expect(onScreen.length).toBeGreaterThan(40)
+	expect(payload).toContain(onScreen)
+	expect(onScreen).toMatch(/1\. WHICH ACCOUNT/)
+	expect(onScreen).not.toMatch(/^b\d+ -/)
+})

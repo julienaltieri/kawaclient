@@ -37,9 +37,10 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b67 - a card row is scored on the card, and says how it got there";
+export const BENCH_VERSION = "b68 - the screen and the copy button say the same thing";
 
 const DAY = 86400000;
+const NL = String.fromCharCode(10);
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
 
 const Wrap = styled.div`
@@ -87,6 +88,15 @@ const Small = styled.span`
 const Head = styled.div`
 	font-size:${DS.fontSize.little}rem; font-weight:600; margin-top:${DS.spacing.s}rem;
 	color:${props => DS.getStyle().bodyTextSecondary};
+`
+/* The payload as it is copied: preformatted, wrapping, and scrollable sideways rather than pushing
+   the page - a row is read on a phone. */
+const Payload = styled.pre`
+	margin: 6px 0 2px 0;
+	white-space: pre-wrap;
+	overflow-x: auto;
+	font: 400 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+	opacity: 0.85;
 `
 const Bar = styled.div`display:flex; gap:${DS.spacing.xxs}rem; margin:${DS.spacing.xs}rem 0;`
 /* the picture belongs INSIDE the row it explains, not in a panel elsewhere with its own selector -
@@ -1859,28 +1869,15 @@ export default class BalanceBench extends BaseComponent{
 						<Cell>{r.cycle}{r.day && r.day !== "-" ? " · " + r.day : ""}</Cell>
 						<CellR>{money(r.amount)}</CellR>
 					</Cols>
+					{/* ONE AUTHOR FOR THE EXPLANATION. The expanded row was hand-built JSX and the copy
+					    button called rowDebug(), so the two drifted: the four questions and the card's
+					    statement arithmetic reached the clipboard and never reached the screen, and the
+					    screen kept prose the payload had dropped. Whatever is worth copying is worth
+					    reading, and there is no version of this where they should differ - so the row
+					    RENDERS the payload. */}
 					{this.state.open === r.name ? <React.Fragment>
 						{this.drawStream(r.id)}
-						{r.detail ? <Line>
-							{"predicted " + money(r.detail.predTotal) + ": "
-								+ (r.detail.predDays || "nothing")}
-							{" — actual " + money(r.detail.actTotal) + ": "
-								+ (r.detail.actDays || "nothing")}
-							{" — transactions " + (r.detail.flowAccuracy*100).toFixed(0) + "%"}
-							{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
-								+ " on " + r.detail.worstDay : ""}
-						</Line> : null}
-						{r.split && r.split.card && r.split.checking ? <Line>
-							{"paid " + Math.round(r.split.cardShare*100) + "% by card ("
-								+ r.split.card + " of " + r.split.n + " transactions, "
-								+ Math.round(r.split.cardShareByAmount*100) + "% of the money)"
-								+ " — routing chose "
-								+ (r.onCard ? "the card" : "checking")}
-						</Line> : null}
-						<Line>{money(r.surface)} $·days
-							{r.onCard ? " · charged to a card"
-								+ (r.promoted ? ", instalment " + money(r.instalment)
-									: ", not an instalment") : ""}</Line>
+						<Payload>{this.rowDebug(r).split(NL).slice(1).join(NL).trim()}</Payload>
 						<Bar onClick={e => e.stopPropagation()}>
 							<Btn type="button" onClick={() => this.copy(this.rowDebug(r))}>
 								Copy row</Btn>
