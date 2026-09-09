@@ -110,27 +110,40 @@ the as-of date, and the module must be provably a pure function of that instant.
 
 ---
 
-## §1 — Which account is this stream's
+## §1 — Which account does this stream move money through
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** For a stream and its transactions, name the account its money leaves. Where the
-stream genuinely lives on two, say so — but treat that as the exception it is, not as the general
-case.
+**The question.** For a stream and its transactions, name the account the stream moves money
+**through**. Money may **leave** it — an expense — or **enter** it — income, a refund, a
+reimbursement. Both are the stream touching that account, and the answer is the account, not the
+direction.
+
+Where the stream genuinely moves money through two accounts, say so — but treat that as the exception
+it is, not as the general case.
 
 **In:** the stream, its transactions, the account list with types, the set of account pairings
 (card ↔ the account that repays it).
 
-**Out:** one account per stream, or — for the exceptional case — a partition with a share each.
-Plus the evidence: how much of the money and how many of the transactions are on each side.
+**Out:** one account per stream, or — for the exceptional case — a partition with a share each. Plus
+the direction the stream moves money in, and how much of the money and how many of the transactions
+are on each side.
+
+**Direction is reported, not used to choose.** A wage and a rent both belong wholly to the checking
+account they pass through; that they pass in opposite directions is a fact about the stream, and it
+matters to the consumer drawing a balance. It is not what decides which account is the stream's.
 
 **Two things make it hard.**
 
-*Transfers between a user's own accounts are not spending.* A card repayment leaves checking and
-arrives on the card; it is one movement seen twice, and counting it as either an outflow or an inflow
-is wrong. These pairs must be identified and removed before anything else is measured, and identifying
-them is itself uncertain — the two legs are described differently by different banks, and a refund
-looks like an arrival too.
+*Transfers between a user's own accounts are neither spending nor income.* A card repayment leaves
+checking and arrives on the card; it is one movement seen twice, and counting it as either an outflow
+or an inflow is wrong. These pairs must be identified and removed before anything else is measured, and
+identifying them is itself uncertain — the two legs are described differently by different banks, and a
+refund looks like an arrival too.
+
+*Direction is where a transfer is caught, which is the one place it does work.* Both legs of a transfer
+carry the same stream and point opposite ways; that is the signature. Outside that, a stream's direction
+describes it rather than places it.
 
 *"Which account" and "how much of it" are different questions.* A stream 98% on a card and 2% on
 debit has one home and a rounding error. A stream 68/32 has two bills under one name — water by
@@ -138,8 +151,9 @@ transfer, electricity by card — with different counterparties and different da
 be split; the second must not be averaged. Where the boundary sits is an open question, not a settled
 one.
 
-**Solved when:** every stream is assigned, no repayment leg is counted as spending, and a stream the
-rule split can be shown to be two real bills rather than one noisy one.
+**Solved when:** every stream is assigned to the account it moves money through, whichever way it
+moves; no transfer leg is counted as spending or as income; and a stream the rule split can be shown to
+be two real bills rather than one noisy one.
 
 ---
 
@@ -147,7 +161,13 @@ rule split can be shown to be two real bills rather than one noisy one.
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** Establish the stream's natural frequency.
+**The question.** How often does this stream actually move money, and on what schedule should the
+next movement be expected?
+
+That is one question with two halves and both are needed. *How often* is a rate — twice a month, every
+seven days. *On what schedule* is where in the calendar those fall, which is what makes a date
+predictable rather than merely a rate. A stream can have a clean rate and no schedule at all; that is a
+real answer and this stage has to be able to give it.
 
 **In:** the stream's declared period and the history of that declaration; the transactions assigned in
 §1.
