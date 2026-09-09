@@ -1662,10 +1662,18 @@ export function cardRepaymentForecast(transactions, cardHash, sched, from, to, o
 			const ahead = Math.max(0, (close.getTime() - openAt)/DAY);
 			const unobserved = planned + rate*ahead;
 			const spend = observed + unobserved;
+			/* THE THREE TERMS, CARRIED SEPARATELY. A statement is fact plus what the streams say
+			   plus what they are known to miss, and the three fail in different ways: `observed` too
+			   small is a posting lag, `planned` too small is a budget, and a `residual` of zero when
+			   the card is under-predicted means the streams have CLAIMED the difference without
+			   spending it. Summed into one number, all three look identical from the report. */
 			if(spend > 1)events.push({date: new Date(when), card: cardHash, close: close,
 				amount: -spend*sched.passThrough,
 				observed: -observed*sched.passThrough,
-				unobserved: -unobserved*sched.passThrough, rate: rate});
+				unobserved: -unobserved*sched.passThrough,
+				planned: -planned*sched.passThrough,
+				residual: -rate*ahead*sched.passThrough,
+				ahead: ahead, rate: rate});
 		}
 		prevClose = close;
 		when = nextAfter(when);
@@ -1973,6 +1981,7 @@ export function buildModel(input){
 	   A LONG-PERIOD BUDGET SPREADS ITS REMAINDER, not its twelfth. $10,000 a year with $6,000 gone
 	   has $4,000 left; dividing the whole budget by twelve forecasts money already spent, twice over
 	   by December. Clamped in the direction of spending: an exhausted budget is done, not reversed. */
+	const drawFromOwn = input.drawdownFromOwnAccount !== false;
 	const monthsSeen = Math.max(1, (asOf - since)/(30.44*DAY));
 	const monthsLeft = Math.max(1, 12 - Math.round((asOf - cycleFrom)/(30.44*DAY)));
 	const observed = {}, spentSince = {};
@@ -1985,9 +1994,23 @@ export function buildModel(input){
 		   with no upper bound of its own (shapes and observed both get theirs from
 		   buildForecastInputs' `until`), so without it the law would rest on a single slice thirty
 		   lines above rather than on each derivation being independently safe. */
+		/* A BUDGET IS DRAWN DOWN BY WHAT WAS SPENT, WHEREVER IT WAS SPENT.
+
+		   `covered` is the accounts this READING is about; it is not "the stream's own money". For a
+		   card-routed stream none of its spending is on a covered account, so nothing was ever
+		   subtracted and `left` stayed at the full budget every month for ever. Gembah declares
+		   $10,000 a year and contributed $1,880 a month to the card statement whether or not a dollar
+		   of it moved.
+
+		   That is the same confusion b51 fixed for shapes, in a second place. The money that draws a
+		   budget down is the money the stream spent - on the card, on checking, anywhere - and the
+		   as-of law is kept by the window, not by the account list. */
+		const drawdownHome = drawFromOwn ? built.routing[t.id] : null;
 		(byStream[t.id] || []).forEach(x => {
-			if(x.date >= cycleFrom && x.date < asOf
-				&& covered.indexOf(x.accountHash) > -1)w += x.amount;
+			if(x.date < cycleFrom || x.date >= asOf)return;
+			const mine = drawdownHome ? x.accountHash === drawdownHome
+				: covered.indexOf(x.accountHash) > -1;
+			if(mine)w += x.amount;
 		});
 		spentSince[t.id] = w;
 	});
@@ -2069,7 +2092,8 @@ export function buildModel(input){
 					if(!extraFlow[k])extraFlow[k] = {amount: 0, name: "Card repayment", parts: []};
 					extraFlow[k].amount += e.amount;
 					extraFlow[k].parts.push({card: e.card, amount: e.amount,
-						posted: e.observed, planned: e.unobserved, projected: 0,
+						posted: e.observed, planned: e.planned, projected: e.residual,
+						rate: e.rate, ahead: e.ahead,
 						name: "Card repayment"
 							+ (linked.length > 1 ? " \u00b7 " + (cardName[e.card] || "card") : "")});
 				});

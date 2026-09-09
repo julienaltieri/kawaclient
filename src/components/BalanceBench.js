@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b53 - the mechanisms are scored one at a time";
+export const BENCH_VERSION = "b54 - a statement is three terms, and a budget draws down";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -236,6 +236,7 @@ export default class BalanceBench extends BaseComponent{
 			settlementDay: this.settlementDay(),
 			shapeFromRouted: variant === "base" ? false : undefined,
 			noPartition: variant === "base" || variant === "shape",
+			drawdownFromOwnAccount: variant === "draw",
 			startingMonth: reportingConfig.startingMonth,
 			startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
 
@@ -1206,9 +1207,45 @@ export default class BalanceBench extends BaseComponent{
 		this._variants = [
 			["baseline (covered-account shapes, no split)", of("base")],
 			["+ shape from the routed account", of("shape")],
-			["+ a stream paid two ways is two streams", of(null)]
+			["+ a stream paid two ways is two streams   <- shipping", of(null)],
+			["+ a budget draws down wherever it was spent", of("draw")]
 		]
 		return this._variants
+	}
+
+	/* A STATEMENT IS THREE TERMS, and the report showed their sum.
+
+	   The card is 85% of the dollar-day surface, and "predicted -$1,625, actual -$2,075" cannot say
+	   which half of the model is wrong. Fact, budget and residual fail in different ways and have
+	   different cures:
+
+	     posted     what has already hit the card. Too small means a posting lag, not a model fault.
+	     planned    what the card's own streams say is still to come before the statement closes.
+	     residual   what those streams are KNOWN to miss - the trailing gap between what the card was
+	                actually charged and what they claimed over the same days.
+
+	   A residual of zero on an under-predicted card is the diagnosis worth seeing: it means the
+	   streams have already claimed the difference without spending it, so the gap that should have
+	   carried it measured nothing. */
+	statementLines(hash){
+		const a = this.analyse()
+		const ev = (a && a.model && a.model.meta && a.model.meta.settlementEvents) || {}
+		const id = "__card__" + hash
+		const act = (a && a.detail && a.detail[id] && a.detail[id].act) || {}
+		const out = []
+		Object.keys(ev).sort().forEach(k => {
+			;(ev[k].parts || []).forEach(p => {
+				if(p.card !== hash)return
+				out.push("      " + k.slice(5)
+					+ "  posted " + money(p.posted || 0)
+					+ " + planned " + money(p.planned || 0)
+					+ " + residual " + money(p.projected || 0)
+					+ (p.ahead ? " (" + money(-(p.rate || 0)) + "/d x " + Math.round(p.ahead) + "d)" : "")
+					+ "  =  " + money(p.amount || 0)
+					+ "   actual " + money(act[k] || 0))
+			})
+		})
+		return out
 	}
 
 	//everything needed to argue about one row, as text
@@ -1341,6 +1378,8 @@ export default class BalanceBench extends BaseComponent{
 						+ (r.detail.flowAccuracy*100).toFixed(0) + "%"
 						+ "   worst gap " + money(r.detail.worst)
 						+ (r.detail.worstDay ? " on " + r.detail.worstDay : ""))
+					//and for a card, the three terms each statement was made of
+					if(r.hash)this.statementLines(r.hash).forEach(l => out.push(l))
 				}
 			})
 			out.push("")

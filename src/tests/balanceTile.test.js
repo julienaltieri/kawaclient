@@ -3207,3 +3207,35 @@ test("with both switches off the model is the one that scored 54.7%", () => {
 	expect(w[3]).toBeGreaterThan(0.9)
 	expect(w[17]).toBeLessThan(0.05)
 })
+
+test("a statement's three terms are separable, not one number in three fields", () => {
+	/* THE CARD IS 85% OF THE SURFACE and its row said "predicted x, actual y", which cannot say which
+	   half of the model is wrong. Where the streams say NOTHING about a card, the whole of the
+	   unobserved half must appear as RESIDUAL and none of it as planned - and a residual of zero on
+	   an under-predicted card is then a diagnosis rather than a silence. */
+	const txns = []
+	for(let w = 0; w < 12; w++){
+		const pay = new Date(Date.UTC(2026, 4 + (w >> 2), 3 + (w % 4)*7))
+		for(let i = 0; i < 3; i++)
+			txns.push(evTxn(new Date(pay.getTime() - (5 - i)*86400000), -100, "misc", "visa",
+				"c" + w + "-" + i))
+		txns.push(evTxn(pay, -300, "ccpay", "chk", "p" + w, "r" + w))
+		txns.push(evTxn(pay, 300, "ccpay", "visa", "r" + w, "p" + w))
+	}
+	const asOf = new Date(Date.UTC(2026, 7, 1))
+	const lk = accountLinks(txns, ["visa"], ["chk"])
+	const sched = cardSchedule(txns.filter(t => new Date(t.date) < asOf), "visa", lk.repayments)
+	//the streams say nothing about this card at all
+	const ev = cardRepaymentForecast(txns.filter(t => new Date(t.date) < asOf), "visa", sched,
+		asOf, new Date(Date.UTC(2026, 7, 28)), {chargedOn: () => 0})
+	expect(ev.length).toBeGreaterThan(0)
+	ev.forEach(e => {
+		expect(e.observed + e.planned + e.residual).toBeCloseTo(e.amount, 4)
+		//nothing was planned, because nothing was said
+		expect(e.planned).toBeCloseTo(0, 9)
+	})
+	//and the future statements are carried entirely by the measured gap
+	const ahead = ev.filter(e => Math.abs(e.observed) < 0.005)
+	expect(ahead.length).toBeGreaterThan(0)
+	ahead.forEach(e => expect(Math.abs(e.residual)).toBeGreaterThan(1))
+})

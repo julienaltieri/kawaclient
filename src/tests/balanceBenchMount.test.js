@@ -480,7 +480,7 @@ test("the mechanism ladder scores three models against the same window", async (
 	   a ladder whose lines are all the same number would attribute a regression to nothing. */
 	const ref = await mount()
 	const v = ref.current.variants()
-	expect(v.length).toBe(3)
+	expect(v.length).toBe(4)
 	v.forEach(row => {
 		expect(typeof row[0]).toBe("string")
 		expect(row[1] === null || typeof row[1] === "number").toBe(true)
@@ -492,4 +492,25 @@ test("the mechanism ladder scores three models against the same window", async (
 	expect(base.model.terminals.length).toBe(shape.model.terminals.length)
 	expect(full.model.terminals.length).toBeGreaterThan(shape.model.terminals.length)
 	expect(ref.current.report()).toMatch(/MECHANISMS, added one at a time/)
+})
+
+test("a card statement is reported as its three terms, and they add up to it", async () => {
+	/* THE CARD IS 85% OF THE SURFACE, and "predicted x, actual y" cannot say which half of the model
+	   is wrong. Fact, budget and residual fail differently and have different cures, so the sum is
+	   not enough - and if the three do not reconstitute the number, the breakdown is decoration. */
+	const ref = await mount()
+	const a = ref.current.analyse()
+	const ev = a.model.meta.settlementEvents || {}
+	let checked = 0
+	Object.keys(ev).forEach(k => {
+		;(ev[k].parts || []).forEach(p => {
+			expect(p.posted + p.planned + p.projected).toBeCloseTo(p.amount, 4)
+			checked++
+		})
+	})
+	expect(checked).toBeGreaterThan(0)
+	const cards = ref.current.credit()
+	const lines = ref.current.statementLines(cards[0])
+	expect(lines.length).toBeGreaterThan(0)
+	lines.forEach(l => expect(l).toMatch(/posted .* planned .* residual .* actual/))
 })
