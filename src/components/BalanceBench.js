@@ -35,7 +35,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b48 - a card-routed stream reports its charge";
+export const BENCH_VERSION = "b49 - one number, two axes, scannable rows";
 
 const DAY = 86400000;
 const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
@@ -67,6 +67,13 @@ const Tier = styled.div`
 	font-size:${DS.fontSize.little}rem; white-space:nowrap; align-self:start;
 	color:${props => props.$t === 3 ? DS.getStyle().bodyTextSecondary : DS.getStyle().bodyText};
 `
+/* the two scannable columns: what the model thinks this stream IS, and what it predicts */
+const Cols = styled.div`
+	grid-column:1 / -1; display:grid; grid-template-columns:1fr auto; gap:0.5rem;
+	font-size:${DS.fontSize.little}rem; color:${props => DS.getStyle().bodyTextSecondary};
+`
+const Cell = styled.div`overflow-wrap:anywhere;`
+const CellR = styled.div`text-align:right; font-family:Barlow,sans-serif; white-space:nowrap;`
 const Line = styled.div`
 	grid-column:1 / -1; font-size:${DS.fontSize.little}rem;
 	color:${props => DS.getStyle().bodyTextSecondary};
@@ -706,11 +713,11 @@ export default class BalanceBench extends BaseComponent{
 
 	   Each origin rebuilds the model at that date, which makes every one of them genuinely out of
 	   sample - the as-of law does that for free, and is why this is only a few lines. */
-	rolling(daysAhead){
-		const key = "rolling" + daysAhead
+	rolling(daysAhead, since){
+		const key = "rolling" + daysAhead + "|" + (since ? since.getTime() : "d")
 		this._cache = this._cache || {}
 		if(this._cache[key] !== undefined)return this._cache[key]
-		const a = this.analyse()
+		const a = this.analyse(since)
 		if(!a){this._cache[key] = null; return null}
 		const now = this.today()
 		const record = reconstruct(this.ledger(), now, this.anchor(), a.open)
@@ -727,7 +734,7 @@ export default class BalanceBench extends BaseComponent{
 				const m = buildModel({transactions: this.props.transactions,
 					terminals: this.terminals(), accounts: this.state.accounts || [],
 					covered: keep, cards: cards, fallback: keep[0],
-					asOf: asOf, until: until, settlementDay: this.settlementDay(),
+					asOf: asOf, until: until, since: since, settlementDay: this.settlementDay(),
 					startingMonth: reportingConfig.startingMonth,
 					startingDay: prefs.reportingStartingDay || reportingConfig.startingDay})
 				fc = forecast(Object.assign({now: asOf, balanceNow: record[i].value,
@@ -1079,13 +1086,75 @@ export default class BalanceBench extends BaseComponent{
 		return this._rows
 	}
 	//grouped, because a list of eighty-seven is audited a tier at a time
+	/* THE HORIZON AND THE LOOKBACK ARE THE TWO AXES, and everything else that was on the tile was a
+	   number nobody chose. The horizon says how far ahead the forecast is being asked to see; the
+	   lookback says how much history it was built from. One accuracy, and the two knobs that move it.
+
+	   `month` is the original measure - one forecast made on the first day and marked over the whole
+	   month. The others re-forecast from many mornings and score the days that followed, which is
+	   what the tile is actually read for. */
+	horizons(){return [["7d", 7], ["14d", 14], ["30d", 30], ["month", null]]}
+	horizon(){return this.state.roll === undefined ? 7 : this.state.roll}
+	lookback(){
+		const list = this.windows(this.today())
+		const i = this.state.look === undefined ? 0 : this.state.look
+		return list[Math.min(i, list.length - 1)]
+	}
+	score(){
+		const since = this.lookback()[1]
+		const days = this.horizon()
+		if(days === null){const a = this.analyse(since); return a ? a.accuracy : null}
+		const r = this.rolling(days, since)
+		return r ? r.accuracy : null
+	}
+
+	/* GROUPED BY THE ACCOUNT THE MONEY LEAVES, not by how regular it is. The tier says how a stream
+	   behaves and is on the row already; the account says which of two forecasts it belongs to, which
+	   is the thing that has to be audited one side at a time.
+
+	   AMBIGUOUS is its own group and not a mistake to hide: a stream with legs on both a checking and
+	   a card account is being paid two ways, and the routing has to pick one. That choice is worth
+	   seeing rather than discovering later as a stream that vanished from the reading it was in. */
 	groups(){
-		const by = {1:[], 2:[], 3:[], 0:[]}
-		this.rows().forEach(r => by[r.tier].push(r))
-		return [[1, "TIER 1  dated - same day, same amount", by[1]],
-			[2, "TIER 2  drifting - same amount, moving day", by[2]],
-			[3, "TIER 3  spread - no single event", by[3]],
-			[0, "TOO LITTLE HISTORY  spread by fallback - still forecast", by[0]]]
+		const cards = this.credit(), keep = this.spending()
+		const mdl = (this.analyse() || {}).model
+		const seen = (mdl && mdl.meta && mdl.meta.seen) || {}
+		const where = r => {
+			if(/^__card__/.test(r.id || ""))return "card"
+			const legs = seen[r.id] || []
+			let onChk = false, onCard = false
+			legs.forEach(x => {
+				if(cards.indexOf(x.accountHash) > -1)onCard = true
+				else if(keep.indexOf(x.accountHash) > -1)onChk = true
+			})
+			if(onChk && onCard)return "both"
+			if(onCard)return "card"
+			if(onChk)return "checking"
+			return r.onCard ? "card" : "checking"
+		}
+		const by = {checking:[], card:[], both:[]}
+		this.rows().forEach(r => by[where(r)].push(r))
+		return [["checking", "CHECKING ACCOUNT", by.checking],
+			["card", "CARD ACCOUNT", by.card],
+			["both", "BOTH - routing had to choose", by.both]]
+	}
+
+	//everything needed to argue about one row, as text
+	rowDebug(r){
+		const d = r.detail || {}
+		const out = [r.name + "   " + BENCH_VERSION,
+			"class      " + (r.onCard ? "card " + r.onCard : "checking")
+				+ "   tier " + r.tier + (r.promoted ? "   INSTALMENT " + money(r.instalment) : ""),
+			"cycle      " + r.cycle + "   predicted day " + r.day
+				+ "   top day carries " + Math.round((r.spread || 0)*100) + "%",
+			"amount     expects " + money(r.expected) + "   predicts " + money(r.amount),
+			"score      " + Math.round((r.gain || 0)*100) + "%   surface " + money(r.surface)
+				+ " $-days",
+			"predicted  " + money(d.predTotal || 0) + "   " + (d.predDays || "nothing"),
+			"actual     " + money(d.actTotal || 0) + "   " + (d.actDays || "nothing"),
+			"worst gap  " + money(d.worst || 0) + (d.worstDay ? " on " + d.worstDay : ""),
+			"transactions " + Math.round((d.flowAccuracy || 0)*100) + "%"]
+		return out.join("\n")
 	}
 
 	report(){
@@ -1237,92 +1306,67 @@ export default class BalanceBench extends BaseComponent{
 
 	render(){
 		if(!this.state.accounts)return <Wrap>Reading balances…</Wrap>
-		let a, groups, err = null
-		try{a = this.analyse(); groups = this.groups()}
+		let groups, score = null, err = null
+		try{score = this.score(); groups = this.groups()}
 		catch(e){err = (e && e.message) + " | " + (e && e.stack)}
 		if(err)return <Wrap><Line>{err}</Line></Wrap>
+		const look = this.lookback()
 		return <Wrap>
-			{/* BOTH numbers, both named. One of them was read as the other, and a metric everything
-			    else is benchmarked against cannot afford that ambiguity - accuracy reaches 100% when
-			    the forecast is perfect, error reaches 0%. */}
+			{/* ONE NUMBER AND THE TWO KNOBS THAT MOVE IT. Everything else that used to sit here was a
+			    figure nobody had chosen to look at, and a tile of numbers that are all equally
+			    prominent is a tile nobody reads. */}
 			<Score>
-				<Big>{a ? (a.accuracy*100).toFixed(1) + "%" : "—"}<Small> balance accuracy</Small></Big>
-				<Note>transactions {a ? (a.flowAccuracy*100).toFixed(1) + "%" : "—"}
-					{a ? " · bias " + (a.bias > 0 ? "+" : "") + (a.bias*100).toFixed(1) + "%" : ""}</Note>
-				<Note>surface {a ? money(a.surface) : "—"} of {a ? money(a.area) : "—"} $·days</Note>
-				<Note>{a ? dayKey(a.open) + " to " + dayKey(a.close) : ""}
-					{a ? " · " + a.days + " settled days" : ""}</Note>
-				<Note>{this.prior() ? "prior month " + (this.prior().accuracy*100).toFixed(1) + "%" : ""}</Note>
-				<Note style={{fontWeight:600}}>{this.rolling(7)
-					? "rolling 7-day " + (this.rolling(7).accuracy*100).toFixed(1) + "% · "
-						+ this.rolling(7).origins + " mornings"
-					: ""}</Note>
-				<Note>{a && a.horizon ? "one shot, truncated: " + a.horizon.map(h => "+" + h.days + "d "
-					+ (h.accuracy*100).toFixed(0) + "%").join("  ") : ""}</Note>
+				<Big>{score === null ? "—" : (score*100).toFixed(1) + "%"}
+					<Small> balance accuracy</Small></Big>
+				<Bar>
+					{this.horizons().map(h => <Btn key={h[0]} type="button"
+						style={this.horizon() === h[1] ? {fontWeight:600, borderStyle:"solid"} : null}
+						onClick={() => this.updateState({roll:h[1]})}>{h[0]}</Btn>)}
+				</Bar>
+				<Bar>
+					{this.windows(this.today()).map((w, i) => <Btn key={w[0]} type="button"
+						style={look[0] === w[0] ? {fontWeight:600, borderStyle:"solid"} : null}
+						onClick={() => this.updateState({look:i})}>{w[0]}</Btn>)}
+				</Bar>
 				<Note>{BENCH_VERSION}</Note>
-				<Note>{a && a.cardTotal ? "card payments in window " + money(a.cardTotal)
-					+ " · attributed " + money(a.cardAttributed)
-					+ (Math.abs(a.cardTotal - a.cardAttributed) > 1
-						? " · UNATTRIBUTED " + money(a.cardTotal - a.cardAttributed)
-						: " · all attributed") : ""}</Note>
-				<Note>{a ? "card settlements matched: " + (a.settlements || []).length
-					+ " · excluded: " + (a.excluded || 0)
-					+ " · modelled " + money(a.settleMonthly || 0) + "/mo" : ""}</Note>
-				{this.cardLines().map(c => <Note key={c.hash}>
-					{c.linked ? "" : "NOT LINKED · "}
-					{c.name}: {c.matched} statements from {c.legs} paired repayments
-					{c.perStatement > 1.2 ? " · " + c.perStatement.toFixed(1) + " per statement" : ""}
-					· every
-					{" " + c.interval}d · closes {c.lag}d before payment · clears
-					{" " + Math.round(c.ratio*100)}%
-					{c.fit === null ? " · offset not fitted"
-						: " · spread " + Math.round(c.fit*100) + "%"}
-				</Note>)}
-			</Score>
-			<Score>
-				<Note style={{fontWeight:600}}>next card payment, as of today</Note>
-				{this.nextPayments().map(c => <Note key={c.hash}>
-					{c.when
-						? c.name + ": " + money(c.amount) + " on " + c.when + " · "
-							+ money(c.posted) + " posted + " + money(c.projected) + " projected · "
-							+ Math.round((c.known || 0)*100) + "% already fact · closes " + c.close
-							+ (c.daysToClose ? " (" + c.daysToClose + "d open)" : " (shut)")
-						: c.name + ": no next payment modelled"}
-				</Note>)}
-			</Score>
-			<Score>
-				<Note>lookback windows, same forecast, same month:</Note>
-				{this.scoreboard().map(w => <Note key={w.name}>
-					{w.name.padEnd(7)} {w.accuracy === null ? "—"
-						: (w.accuracy*100).toFixed(1) + "%"} {" · since " + dayKey(w.since)}
-				</Note>)}
 			</Score>
 			<Bar>
 				<Btn type="button" onClick={() => this.copy()}>{this.state.copied || "Copy report"}</Btn>
-				<Btn type="button" onClick={() => this.copy(this.cardExport())}>
-					{this.state.copied === "cards" ? "Copied" : "Copy card export"}</Btn>
+				<Btn type="button" onClick={() => this.copy(this.cardExport())}>Copy card export</Btn>
 			</Bar>
 			{(groups||[]).map(g => g[2].length ? <div key={g[0]}>
 				<Head>{g[1]}</Head>
 				{g[2].map((r,i) => <Row key={i}
 						onClick={() => this.updateState({open: this.state.open === r.name ? null : r.name})}
 						style={{cursor:"pointer"}}>
+					{/* SCANNABLE: a name, a score, what it thinks the stream IS. The prose that used to
+					    live here made every row the same width and none of them comparable. */}
 					<Name>{r.name}</Name>
-					<Tier $t={r.tier}>{(r.gain*100).toFixed(0) + "%"}</Tier>
-					<Line>{money(r.surface)} $·days · {r.cycle} · expects {money(r.expected)}
-						· predicts {money(r.amount)} on {r.day}
-						{r.tier && r.tier < 3
-							? " · top day carries " + (r.spread*100).toFixed(0) + "%" : ""}
-						{r.onCard ? " · CHARGED TO A CARD"
-							+ (r.promoted ? ", instalment " + money(r.instalment) : "") : ""}</Line>
-					{this.state.open === r.name ? this.drawStream(r.id) : null}
-					{r.detail && this.state.open === r.name ? <Line>
-						{"predicted " + money(r.detail.predTotal) + ": " + (r.detail.predDays || "nothing")}
-						{" — actual " + money(r.detail.actTotal) + ": " + (r.detail.actDays || "nothing")}
-						{" — transactions " + (r.detail.flowAccuracy*100).toFixed(0) + "%"}
-						{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
-							+ " on " + r.detail.worstDay : ""}
-					</Line> : null}
+					<Tier $t={r.tier}>{Math.round((r.gain || 0)*100) + "%"}</Tier>
+					<Cols>
+						<Cell>{r.cycle}{r.day && r.day !== "-" ? " · " + r.day : ""}</Cell>
+						<CellR>{money(r.amount)}</CellR>
+					</Cols>
+					{this.state.open === r.name ? <React.Fragment>
+						{this.drawStream(r.id)}
+						{r.detail ? <Line>
+							{"predicted " + money(r.detail.predTotal) + ": "
+								+ (r.detail.predDays || "nothing")}
+							{" — actual " + money(r.detail.actTotal) + ": "
+								+ (r.detail.actDays || "nothing")}
+							{" — transactions " + (r.detail.flowAccuracy*100).toFixed(0) + "%"}
+							{r.detail.worstDay ? " — worst gap " + money(r.detail.worst)
+								+ " on " + r.detail.worstDay : ""}
+						</Line> : null}
+						<Line>{money(r.surface)} $·days
+							{r.onCard ? " · charged to a card"
+								+ (r.promoted ? ", instalment " + money(r.instalment)
+									: ", not an instalment") : ""}</Line>
+						<Bar onClick={e => e.stopPropagation()}>
+							<Btn type="button" onClick={() => this.copy(this.rowDebug(r))}>
+								Copy row</Btn>
+						</Bar>
+					</React.Fragment> : null}
 				</Row>)}
 			</div> : null)}
 		</Wrap>

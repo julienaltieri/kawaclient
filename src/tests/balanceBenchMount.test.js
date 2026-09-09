@@ -325,3 +325,47 @@ test("a card-routed stream reports what it charges, not zero", async () => {
 	//and the report says which card, rather than leaving a zero to be misread
 	expect(ref.current.report()).toMatch(/charged to a card/)
 })
+
+test("the tile is one number and the two axes that move it", async () => {
+	/* Everything else that used to sit there was a figure nobody had chosen to look at, and a tile
+	   where every number is equally prominent is a tile nobody reads. */
+	const ref = await mount()
+	//the horizon changes the number, and "month" is the original single-shot measure
+	const seven = ref.current.score()
+	ref.current.updateState({roll: null})
+	const month = ref.current.score()
+	expect(typeof seven).toBe("number")
+	expect(typeof month).toBe("number")
+	expect(seven).not.toBe(month)
+
+	//the lookback changes it too, and composes with the horizon rather than replacing it
+	ref.current.updateState({roll: 7, look: 2})
+	expect(ref.current.lookback()[0]).not.toBe(ref.current.windows(ref.current.today())[0][0])
+	expect(typeof ref.current.score()).toBe("number")
+	ref.current.updateState({roll: 7, look: 0})
+})
+
+test("rows are grouped by the account the money leaves", async () => {
+	const ref = await mount()
+	const g = ref.current.groups()
+	expect(g.map(x => x[0])).toEqual(["checking", "card", "both"])
+	const all = g.reduce((x, y) => x + y[2].length, 0)
+	expect(all).toBe(ref.current.rows().length)          //every row lands in exactly one group
+	//the card's own rows are on the card side
+	const cardIds = g[1][2].map(r => r.id)
+	ref.current.rows().filter(r => /^__card__/.test(r.id || ""))
+		.forEach(r => expect(cardIds).toContain(r.id))
+})
+
+test("a row can be copied on its own", async () => {
+	//the collapsed row is scannable and says little; the argument needs the rest of it
+	const ref = await mount()
+	const r = ref.current.rows().filter(x => x.detail)[0]
+	const text = ref.current.rowDebug(r)
+	expect(text.indexOf(r.name)).toBe(0)
+	expect(text).toMatch(/class /)
+	expect(text).toMatch(/cycle /)
+	expect(text).toMatch(/predicted /)
+	expect(text).toMatch(/actual /)
+	expect(text).toMatch(/worst gap/)
+})
