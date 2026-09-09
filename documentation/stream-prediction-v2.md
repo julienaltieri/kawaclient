@@ -29,8 +29,14 @@
 
 ## The goal
 
-**Given a stream and its transactions, say what that stream will do next — on which account, how
-often, in what shape, and for how much — and be honest about how sure that is.**
+Several features of Kawa rely on predicting future transactions. **This is the module that owns that
+prediction for a given stream.**
+
+Given a stream and its transactions, it says what that stream will do next — on which account, how
+often, in what shape, and for how much — and how sure it is of each.
+
+Owning it in one place is the point. Prediction is currently spread through whatever needs it, so every
+consumer has its own opinion and none of them can be improved without moving the others.
 
 Three properties make this different from what exists today.
 
@@ -110,12 +116,12 @@ the as-of date, and the module must be provably a pure function of that instant.
 
 ---
 
-## §1 — Which account does a stream relate to
+## §1 — Mapping accounts to streams
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** This is a **stream ↔ account association**: given a stream and its transactions,
-which account is that stream related to?
+**The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
+transactions, which account is that stream related to?
 
 Money may **leave** that account — an expense — or **enter** it — income, a refund, a
 reimbursement. Both are the stream related to that account, and the association is the answer, not the
@@ -159,12 +165,12 @@ be two real bills rather than one noisy one.
 
 ---
 
-## §2 — How often does it happen
+## §2 — Interpreting the timing
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** How often does this stream actually move money, and on what schedule should the
-next movement be expected?
+**The question.** Interpret the stream's **timing**: how often does it actually move money, and on
+what schedule should the next movement be expected?
 
 That is one question with two halves and both are needed. *How often* is a rate — twice a month, every
 seven days. *On what schedule* is where in the calendar those fall, which is what makes a date
@@ -229,17 +235,20 @@ and drift is never read as multiplicity.
 
 ---
 
-## §4 — How much money moves
+## §4 — Predicting the amount that moves
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** For a stream whose frequency and shape are already known, how much money moves at
-each movement those two have placed?
+**The question.** For a stream whose timing and shape are already known, **predict** how much money
+moves at each movement those two have placed.
 
-**Timing is not decided here.** §2 said how often and on what schedule; §3 said where inside the cycle
-the movement falls. Between them the *when* is settled, and this stage only sizes what lands there.
-Keeping that boundary is what stops a good amount rule quietly moving a date, which is how v1's stages
-grew into each other.
+It is a prediction and not a lookup, which is why it carries a confidence: the amount that will move
+next is being forecast from a declaration and a history that disagree, not read off a record.
+
+**Timing is not predicted here.** §2 interpreted the timing; §3 said where inside the cycle the
+movement falls. Between them the *when* is settled, and this stage predicts only the amount that lands
+there. Keeping that boundary is what stops a good amount rule quietly moving a date, which is how v1's
+stages grew into each other.
 
 **In:** everything decided in §1–§3, plus the declaration and the transaction history.
 
