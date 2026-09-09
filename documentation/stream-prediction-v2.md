@@ -131,11 +131,11 @@ be two real bills rather than one noisy one.
 
 ---
 
-## §2 — Interpreting the timing
+## §2 — Determining the timing
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** Interpret the stream's **timing**: how often does it actually move money, and on
+**The question.** Determine the stream's **timing**: how often does it actually move money, and on
 what schedule should the next movement be expected?
 
 That is one question with two halves and both are needed. *How often* is a rate — twice a month, every
@@ -169,12 +169,12 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 
 ---
 
-## §3 — What shape does money movement have within the cycle
+## §3 — Determining what shape the money movements have during a cycle
 
 **Status:** problem stated. Approach not yet chosen.
 
-**The question.** Given a known, non-yearly frequency, what shape does the money movement have
-within the cycle?
+**The question.** For a stream whose timing is known and is not yearly, determine what shape the
+money movements have during a cycle.
 
 **In:** the stream's timing, its transactions on the account it was mapped to, and the history of its
 declared amount.
