@@ -37,7 +37,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b71 - the share is of the account it chose";
+export const BENCH_VERSION = "b72 - the cycle shows the transactions it was read from";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -1586,6 +1586,12 @@ export default class BalanceBench extends BaseComponent{
 		]
 	}
 
+	//the transactions a stream's shape was actually built from, as the model kept them
+	shapeSourceOf(id){
+		const a = this.analyse()
+		return ((a && a.model && a.model.meta.shapeSource) || {})[id] || null
+	}
+
 	//everything needed to argue about one row, as text
 	rowDebug(r){
 		const d = r.detail || {}
@@ -1600,6 +1606,30 @@ export default class BalanceBench extends BaseComponent{
 		const out = [r.name + "   " + BENCH_VERSION]
 		this.rowAnswers(r).forEach(x => out.push(x.key + ": " + x.short
 			+ (x.long ? "  \u2014 " + x.long : "")))
+		/* THE EVIDENCE FOR THE CYCLE, which the `cycle` line asserts and cannot show.
+
+		   Grouped by day of month, because that is the axis the shape is binned on. Two clusters five
+		   days apart is why a paycheck comes out as two steps, and no amount of prose about
+		   events-per-turn makes that visible - the days and the mass on each of them do. */
+		const src = this.shapeSourceOf(r.id)
+		if(src && src.length){
+			const byDay = {}
+			src.forEach(x => {
+				const dd = new Date(x.date).getUTCDate()
+				if(!byDay[dd])byDay[dd] = {n: 0, sum: 0, when: []}
+				byDay[dd].n++
+				byDay[dd].sum += x.amount
+				byDay[dd].when.push(dayKey(x.date).slice(5) + " " + money(x.amount))
+			})
+			let mass = 0
+			Object.keys(byDay).forEach(dd => {mass += Math.abs(byDay[dd].sum)})
+			out.push("shape read from " + src.length + " transaction(s), by day of month:")
+			Object.keys(byDay).sort((x, y) => Number(x) - Number(y)).forEach(dd => {
+				out.push("  day " + dd + "  " + byDay[dd].n + " tx  " + money(byDay[dd].sum) + "  "
+					+ Math.round(100*Math.abs(byDay[dd].sum)/(mass || 1)) + "% of the mass  \u00b7 "
+					+ byDay[dd].when.join(", "))
+			})
+		}
 		out.push("score " + Math.round((r.gain || 0)*100) + "% \u00b7 surface " + money(r.surface)
 			+ " $-days" + (r.onCard && !r.hash ? " (on the card)" : ""))
 		out.push("pred  " + money(d.predTotal || 0) + " \u00b7 " + (d.predDays || "nothing"))

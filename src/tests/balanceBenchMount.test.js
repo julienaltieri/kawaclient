@@ -809,3 +809,25 @@ test("the account share is of the account it CHOSE, not the card regardless", as
 			: 1 - r.split.cardShareByAmount)))
 	})
 })
+
+test("the cycle line shows the transactions it was read from, not just a count", async () => {
+	/* "semimonthly detected from 17 transactions" asserts a measurement and shows none of it, so a
+	   reader who disagrees with the shape has nothing to disagree WITH. Which days, how many, and how
+	   much mass on each - that is the evidence for the cycle, the events-per-turn and every day the
+	   forecast puts money on. */
+	const ref = await mount()
+	const row = ref.current.rows().filter(r => !r.hash && r.legs > 2)[0]
+	expect(row).toBeTruthy()
+	const src = ref.current.shapeSourceOf(row.id)
+	expect(src.length).toBeGreaterThan(2)
+	const txt = ref.current.rowDebug(row)
+	expect(txt).toMatch(/shape read from \d+ transaction\(s\), by day of month:/)
+	expect(txt).toMatch(/day \d+ {2}\d+ tx {2}.*% of the mass/)
+	//every transaction the shape used is accounted for in the breakdown, none invented
+	const shown = (txt.match(/^ {2}day \d+ {2}(\d+) tx/gm) || [])
+		.reduce((n, l) => n + Number(l.match(/(\d+) tx/)[1]), 0)
+	expect(shown).toBe(src.length)
+	//and the mass shares add to a hundred
+	const shares = (txt.match(/(\d+)% of the mass/g) || []).map(x => Number(x.match(/\d+/)[0]))
+	expect(shares.reduce((a, b) => a + b, 0)).toBeGreaterThan(97)
+})

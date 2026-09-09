@@ -2296,7 +2296,8 @@ export function buildModel(input){
 		settled: built.settled,
 		settlementDay: input.settlementDay || null, periodName: periodName,
 		meta: {since: since, sinceShape: sinceShape, asOf: asOf, until: until,
-			events: built.events, shapeFrom: built.shapeFrom, cards: cardModel,
+			events: built.events, shapeFrom: built.shapeFrom, shapeSource: built.shapeSource,
+			cards: cardModel,
 			cardRate: cardRate,
 			promoted: built.promoted, instalment: built.instalment,
 			links: link.links, linked: linked, repayments: link.repayments,
@@ -2488,6 +2489,7 @@ export function buildForecastInputs(opts){
 	const wide = opts.sinceShape;
 	const expectationAt = opts.expectationAt || ((s, d) => monthlyExpectationAt(s, d, "monthly"));
 	const shapes = {}, sliced = {}, seen = {}, dir = {}, events = {}, shapeFrom = {}, settled = {};
+	const shapeSource = {};
 	const promoted = {}, instalment = {};
 
 	/* ROUTING IS DECIDED FIRST, because a stream's SHAPE has to be read from the account its money
@@ -2571,6 +2573,13 @@ export function buildForecastInputs(opts){
 		   bonus that genuinely lands on one date should be allowed to say so. */
 		const longOutflow = LONG_PERIODS[period] && a < 0;
 		const longInflow = LONG_PERIODS[period] && a > 0;
+		/* THE TRANSACTIONS THE SHAPE WAS BUILT FROM, kept.
+
+		   "detected semimonthly from 17 transactions" asserts a measurement and shows none of it, so a
+		   reader who disagrees with the shape has nothing to disagree WITH. Which 17, on which days,
+		   for how much - that is the whole evidence for the cycle, the events-per-turn and every day
+		   the forecast puts money on. It is a reference to rows already in memory, not a copy. */
+		shapeSource[s.id] = use;
 		shapes[s.id] = histogramOf(use, {prefer: period, events: events[s.id],
 			direction: a < 0 ? -1 : (a > 0 ? 1 : 0)});
 		shapes[s.id].spreadReason = null;
@@ -2653,5 +2662,6 @@ export function buildForecastInputs(opts){
 		settled[s.id] = done;
 	});
 	return {shapes: shapes, sliced: sliced, seen: seen, events: events, shapeFrom: shapeFrom,
-		settled: settled, promoted: promoted, instalment: instalment, routing: routing};
+		settled: settled, promoted: promoted, instalment: instalment, routing: routing,
+		shapeSource: shapeSource};
 }
