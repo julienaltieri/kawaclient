@@ -2783,18 +2783,35 @@ test("a paired repayment links the card to the account that funds it", () => {
 	expect(lk.repayments[0].checking).toBe("chk")
 })
 
-test("an unpaired repayment links nothing, and the card is left as an ordinary outflow", () => {
-	const txns = linkedCard(false)
+test("a repayment with no stored pairing is reconstructed from the two accounts", () => {
+	/* Aggregators do not tag a card repayment as a transfer, so the stored pairing is usually empty
+	   for exactly these transactions. What a repayment IS does not change: an amount leaving a
+	   checking account and the same amount arriving on a credit account within a few days. */
+	const lk = accountLinks(linkedCard(false), ["rh"], ["chk"])
+	expect(lk.links.rh).toBe("chk")
+	expect(lk.repayments.length).toBe(16)
+	expect(Object.keys(lk.legIds).length).toBe(32)
+})
+
+test("a card whose charges are invisible links nothing, and stays an ordinary outflow", () => {
+	/* The genuinely unlinked case: the card is not connected, so only the money leaving checking is
+	   visible. There is no statement to reconstruct and nothing to reconstruct it from. */
+	const txns = []
+	for(let w = 0; w < 16; w++){
+		const pay = new Date(Date.UTC(2026, 0, 9 + w*7))
+		txns.push(evTxn(pay, -320, "ccpay", "chk", "s" + w))
+	}
 	const lk = accountLinks(txns, ["rh"], ["chk"])
 	expect(Object.keys(lk.links).length).toBe(0)
 	expect(Object.keys(lk.legIds).length).toBe(0)
 
-	const m = modelFor(txns)
+	const pay = evStream("ccpay", "Credit Card Payments", -1400)
+	const m = buildModel({transactions: txns, terminals: [pay], covered: ["chk"], cards: ["rh"],
+		asOf: new Date(Date.UTC(2026, 3, 1)), until: new Date(Date.UTC(2026, 3, 30)),
+		since: new Date(Date.UTC(2026, 0, 1))})
 	expect(m.meta.linked).toEqual([])
-	//nothing is synthesised for it
 	expect(m.extraFlow).toBe(null)
-	//and its repayment is still in the ledger, forecast as the ordinary outflow it is
-	const pay = m.terminals.filter(t => t.id === "ccpay")[0]
+	//it stays in the ledger and is forecast as the ordinary outflow it is
 	let out = 0
 	for(let d = 1; d <= 30; d++)out += shareOfDay(pay, new Date(Date.UTC(2026, 3, d)), m)
 	expect(out).toBeLessThan(-100)

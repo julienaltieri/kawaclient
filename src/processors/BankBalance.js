@@ -1006,36 +1006,69 @@ const MED = xs => {const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.
    forecasts use to take repayments out of their stream histories, so that neither side counts a
    transfer as spending.
    ================================================================================================== */
-export function accountLinks(transactions, cardHashes, checkingHashes){
+export function accountLinks(transactions, cardHashes, checkingHashes, opts){
 	const cards = cardHashes || [], checking = checkingHashes || [];
-	const byId = {};
-	(transactions || []).forEach(t => {if(t.transactionId)byId[t.transactionId] = t});
+	const windowDays = (opts || {}).windowDays === undefined ? 4 : (opts || {}).windowDays;
+	const txns = transactions || [];
+	const links = {}, repayments = [], legIds = {};
 
-	const links = {}, repayments = [], legIds = {}, seen = {};
-	(transactions || []).forEach(t => {
-		const pid = t.pairedTransferTransactionId;
-		if(!pid)return;
-		const other = byId[pid];
-		if(!other)return;                                  //the other leg is out of the fetched range
-		const key = [String(t.transactionId), String(pid)].sort().join("|");
-		if(seen[key])return;
-		seen[key] = true;
-
-		const aIsCard = cards.indexOf(t.userInstitutionAccountId) > -1;
-		const bIsCard = cards.indexOf(other.userInstitutionAccountId) > -1;
-		const aIsChk = checking.indexOf(t.userInstitutionAccountId) > -1;
-		const bIsChk = checking.indexOf(other.userInstitutionAccountId) > -1;
-		let cardLeg = null, chkLeg = null;
-		if(aIsCard && bIsChk){cardLeg = t; chkLeg = other}
-		else if(bIsCard && aIsChk){cardLeg = other; chkLeg = t}
-		else return;                                       //not a card repayment
-
+	const add = (cardLeg, chkLeg) => {
 		links[cardLeg.userInstitutionAccountId] = chkLeg.userInstitutionAccountId;
 		repayments.push({date: new Date(chkLeg.date), amount: chkLeg.amount,
 			card: cardLeg.userInstitutionAccountId, checking: chkLeg.userInstitutionAccountId});
-		legIds[t.transactionId] = true;
-		legIds[pid] = true;
+		if(chkLeg.transactionId)legIds[chkLeg.transactionId] = true;
+		if(cardLeg.transactionId)legIds[cardLeg.transactionId] = true;
+	};
+
+	/* THE STORED PAIRING FIRST, where there is one. It is a statement that these two transactions are
+	   the two halves of one transfer, and nothing beats being told. */
+	const byId = {};
+	txns.forEach(t => {if(t.transactionId)byId[t.transactionId] = t});
+	const seen = {}, paired = {};
+	txns.forEach(t => {
+		const pid = t.pairedTransferTransactionId;
+		if(!pid)return;
+		const other = byId[pid];
+		if(!other)return;
+		const key = [String(t.transactionId), String(pid)].sort().join("|");
+		if(seen[key])return;
+		seen[key] = true;
+		const aCard = cards.indexOf(t.userInstitutionAccountId) > -1;
+		const bCard = cards.indexOf(other.userInstitutionAccountId) > -1;
+		const aChk = checking.indexOf(t.userInstitutionAccountId) > -1;
+		const bChk = checking.indexOf(other.userInstitutionAccountId) > -1;
+		if(aCard && bChk){add(t, other); paired[t.transactionId] = paired[pid] = true}
+		else if(bCard && aChk){add(other, t); paired[t.transactionId] = paired[pid] = true}
 	});
+
+	/* AND WHERE IT IS ABSENT, THE PAIR IS RECONSTRUCTED - by the same rule a pairing IS.
+
+	   Aggregators do not tag a card repayment as a transfer, so the stored pairing is usually empty
+	   for exactly the transactions this needs. That does not change what a repayment is: an amount
+	   leaving a checking account and the same amount arriving on a credit account, within a few days.
+	   Matching on that is reconstructing the pair, not guessing at one - it uses only the two accounts
+	   and the two amounts, and no stream, category or budget is consulted.
+
+	   Each side is consumed once, so two repayments of the same size in one week match two arrivals
+	   rather than one of them twice, and the nearest in time wins. */
+	const arrivals = txns.filter(t => cards.indexOf(t.userInstitutionAccountId) > -1
+		&& t.amount > 0 && !paired[t.transactionId]).map(t => ({t: t, used: false}));
+	txns.filter(t => checking.indexOf(t.userInstitutionAccountId) > -1
+		&& t.amount < 0 && !paired[t.transactionId]).forEach(t => {
+		const want = Math.abs(t.amount);
+		let hit = null, bestGap = Infinity;
+		arrivals.forEach(r => {
+			if(r.used)return;
+			if(Math.abs(r.t.amount - want) > 0.005)return;
+			const gap = Math.abs(new Date(r.t.date) - new Date(t.date))/DAY;
+			if(gap > windowDays)return;
+			if(gap < bestGap){bestGap = gap; hit = r}
+		});
+		if(!hit)return;
+		hit.used = true;
+		add(hit.t, t);
+	});
+
 	repayments.sort((a, b) => a.date - b.date);
 	return {links: links, repayments: repayments, legIds: legIds};
 }
