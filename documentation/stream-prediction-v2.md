@@ -111,13 +111,15 @@ portfolio he audited, with no error budget.
 
 ## §2 — Determining the cycle
 
-**The question.** Determine the stream's **cycle**: how often does it actually move money — twice a
-month, every seven days, once a year.
+**The question.** Determine the stream's **cycle**: how often its pattern resets — twice a month,
+every seven days, once a year — not how often money moves within it. Utilities billed to two services
+twice a month is a monthly cycle carrying two events, not a semi-monthly one; how many events land
+inside a cycle is what shape determines, not this stage.
 
 **In:** the stream's declared period and the history of that declaration; the transactions belonging
 to the stream on the account it was mapped to.
 
-**Out:** a cycle, and whether it came from the declaration or from the ledger.
+**Out:** a `Period` (`src/Time.js`), and whether it came from the declaration or from the ledger.
 
 **The declaration always wins for a non-yearly stream.** It is a statement of fact by the person
 receiving the money, and transactions are noisy in ways a declaration is not — a cheque moved off a
@@ -129,8 +131,13 @@ a yearly figure to the size of one movement is unlike every other case — and h
 entirely in Special case: yearly streams. This stage's only job for a yearly stream is to hand it on
 correctly labelled.
 
-**The open questions.** What about a declaration that was true and has stopped being true? And which
-window is the cycle read from, given a declaration whose amount has changed?
+**A cycle change is read from its most recent chunk.** If a stream's declared cycle changes, the
+determination is made from the most recent coherent chunk of that cycle, not blended across the
+change. Nothing captures a cycle-change event on the stream today, so in practice this case does not
+yet arise — when it does, this is the rule.
+
+**The open question.** What about a declaration that was true and has stopped being true, with no
+formal change recorded?
 
 **Solved when:** every non-yearly stream's cycle matches its declaration exactly — yearly streams are
 excepted, and solved where they are specified — validated by Julien against the captured portfolio.
