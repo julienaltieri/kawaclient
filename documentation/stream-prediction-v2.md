@@ -66,7 +66,7 @@ between them.
 
 ## What this module owns, and what it does not
 
-**Owns:** the behaviour of a single stream — its account, its rhythm, its shape, its amount, and the
+**Owns:** the behaviour of a single stream — its account, its cycle, its shape, its amount, and the
 uncertainty on each.
 
 **Does not own: anything that consumes a prediction.** That belongs to whatever feature needs it.
@@ -146,7 +146,7 @@ real answer and this stage has to be able to give it.
 **In:** the stream's declared period and the history of that declaration; the transactions belonging
 to the stream on the account it was mapped to.
 
-**Out:** a frequency, and whether it came from the declaration or from the ledger.
+**Out:** a cycle, and whether it came from the declaration or from the ledger.
 
 **The default is the declaration, because it is a statement of fact by the person receiving the
 money.** Transactions are noisy in ways a declaration is not — a cheque moved off a Sunday, a month
@@ -154,17 +154,17 @@ with a correction in it, a bank that posts late. Inference from a noisy signal s
 clean one.
 
 **Yearly is the exception, and it is the whole of the difficulty.** A yearly declaration is a *budget
-envelope*: it states an amount per year, and it does not state a rhythm. The stream may well **have**
-one — a yearly budget charged every month has a perfectly good rhythm — but it has to be inferred
+envelope*: it states an amount per year, and it does not state a cycle. The stream may well **have**
+one — a yearly budget charged every month has a perfectly good cycle — but it has to be inferred
 rather than read, and the arithmetic relating that yearly figure to the size of one movement is unlike
 every other case. Both are worked out where yearly streams are treated as their own case, below. This
 stage's only job for a yearly stream is to hand it on correctly labelled.
 
 **The open questions.** When does the ledger get to contradict a non-yearly declaration — never, or
 under some evidential threshold? What about a declaration that was true and has stopped being true?
-And which window is the frequency read from, given a declaration whose amount has changed?
+And which window is the cycle read from, given a declaration whose amount has changed?
 
-**Solved when:** a stream's frequency matches what its owner would say without hesitation, and the
+**Solved when:** a stream's cycle matches what its owner would say without hesitation, and the
 cases where the ledger and the declaration disagree are enumerated rather than averaged.
 
 ---
@@ -248,11 +248,11 @@ says how wide the range is instead of asserting a number.
 **It is a special case because a yearly stream carries more uncertainty than the rest.** Everything
 that follows is why, and what to do about it.
 
-**The question.** A yearly declaration states an amount per year. What rhythm does the stream
+**The question.** A yearly declaration states an amount per year. What cycle does the stream
 actually have, and how does that yearly figure become the size of one movement?
 
-**Why it is genuinely different — and it is not that the rhythm is missing.** A yearly stream can
-be as regular as any other; a yearly budget charged every month is a monthly rhythm wearing a yearly
+**Why it is genuinely different — and it is not that the cycle is missing.** A yearly stream can
+be as regular as any other; a yearly budget charged every month is a monthly cycle wearing a yearly
 declaration. What differs is **the arithmetic between the declaration and a movement**. Everywhere else
 the declared figure IS roughly what moves each time, so the amount is read. Here it is an envelope over
 a year, and the size of one movement has to be derived from it — divided, drawn down, or ignored
@@ -271,7 +271,7 @@ covering all of them is unlikely to be the answer.
 Whether draw-down is measured, and against which transactions, is unresolved — a card-routed stream's
 spending is not on the account being predicted.
 
-**Solved when:** each named scenario is recognised from its history, the rhythm is found where the
+**Solved when:** each named scenario is recognised from its history, the cycle is found where the
 stream has one, and a budget that is not being spent stops being forecast.
 
 ---

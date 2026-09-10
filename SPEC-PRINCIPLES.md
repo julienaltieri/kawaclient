@@ -140,7 +140,28 @@ constructions, a two-column table with the second column paraphrasing the first 
 > sentences arriving at the same claim. *"Simplify or delete. If you keep, no repetitions please."* It
 > became one sentence.
 
-### 12. Simplify until the sentence carries the idea and nothing else
+### 12. One concept, one word — everywhere in the document
+
+A concept gets a name and keeps it. Synonyms dilute the meaning: each near-miss word carries a
+slightly different connotation, so a reader cannot tell whether two passages are describing the same
+thing or two related things, and an implementer has to guess. The consistent word is also the shorter
+read, because nothing has to be re-identified.
+
+Prose synonyms are the ones that slip through, because varying the word feels like good writing. It
+is not; a spec is not prose. Where the concept already has a field name in the output contract, that
+name is the word.
+
+> *In practice:* one concept — how often a stream moves money — was being called *rhythm*, *frequency*
+> and *cycle* in different sections, while the field it corresponds to was named `inferredCycle`.
+> *"Replace all in the document: rhythm by cycle. Rule: keeping specific vocabulary consistent avoids
+> dilution of meaning, reduces room for errors and makes it more readable."* Ten replacements, none of
+> which changed a claim.
+
+A word is exempt only when the document defines it as covering something the other word does not —
+here *timing* is defined as cycle plus schedule, so it stays. That exemption has to be earned by a
+definition in the text, not by intent.
+
+### 13. Simplify until the sentence carries the idea and nothing else
 
 Long, hedged, self-qualifying prose is the default failure mode of a spec, and it does not read as
 careful — it reads as unclear.
@@ -152,7 +173,7 @@ careful — it reads as unclear.
 
 ## Structure
 
-### 13. An explanation belongs with the thing it explains
+### 14. An explanation belongs with the thing it explains
 
 Field tables followed by paragraphs arguing for individual fields rot immediately: the field gets
 renamed, the paragraph does not, and now two places disagree. Put the argument in a column on the
@@ -162,13 +183,13 @@ field's own row. It also forces the argument to be short enough to be worth havi
 > and arguing for it. *"Migrate all the prose about the field explanation to a third column."* Nothing
 > was cut; every argument moved onto the row it belonged to.
 
-### 14. Every stage carries In, Out, and Solved when
+### 15. Every stage carries In, Out, and Solved when
 
 Three fixed slots, in that order. In and Out make the stage's contract checkable without reading the
 prose. **Solved when** is the acceptance criterion, and it is what stops a stage being declared done
 by feel.
 
-### 15. Solved when must be falsifiable against a fixed set
+### 16. Solved when must be falsifiable against a fixed set
 
 "Works well" is not a criterion. Name the data it is judged against and the standard it has to meet on
 that data, so passing and failing are distinguishable.
@@ -178,13 +199,13 @@ that data, so passing and failing are distinguishable.
 > stream in the captured portfolio, with no error budget."* A fixed corpus, and a bar that can be
 > missed.
 
-### 16. Record what is decided and what is still open, in the document
+### 17. Record what is decided and what is still open, in the document
 
 Two standing sections. **Decided** exists so a settled question is not re-opened by accident, and each
 row states the answer, not the debate. **Still open** exists so an unanswered question is visibly
 unanswered rather than quietly assumed.
 
-### 17. The output contract's field names are decisions, and they are made in the spec
+### 18. The output contract's field names are decisions, and they are made in the spec
 
 Not "some kind of cycle field" — the name, spelled the way the code will spell it. Cross-references
 between fields use those names too, so a rename is a search-and-replace rather than an interpretation.
@@ -197,7 +218,7 @@ instead.
 > `transactionBase`. Each rename was cheap because the names lived in one table; each would have been
 > expensive after the code existed.
 
-### 18. Name the concrete type wherever one already exists
+### 19. Name the concrete type wherever one already exists
 
 Describing a value only by example leaves the reader to guess whether it is a string, an enum, or an
 object. If the codebase already has the type, cite it.
@@ -209,13 +230,13 @@ object. If the codebase already has the type, cite it.
 
 ## Process
 
-### 19. One correction, one edit, one commit
+### 20. One correction, one edit, one commit
 
 A spec under review changes many times in a session. Landing each correction as its own commit keeps
 the reasoning attached to the change, and means a decision can be found later by reading the log
 rather than by remembering the conversation.
 
-### 20. The review surface is not the document
+### 21. The review surface is not the document
 
 Reviewing a spec somewhere convenient — a rendered page, a shared view — is fine, and the edits still
 land in the file. The reviewed copy is a vessel; the document in the repository is the artefact, and
