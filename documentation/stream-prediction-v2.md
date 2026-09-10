@@ -61,7 +61,7 @@ between them.
 | `date` | when the event is expected | — |
 | `amount` | how much moves | — |
 | `account` | which account it moves through | — |
-| `confidence.date` | how sure the module is about *when* | Confidence sits on the event rather than on the prediction because it genuinely differs between events: the next movement of a drifting stream is more certain than the fifth. |
+| `confidence.date` | how sure the module is about *when* | Confidence is attached to each event because it varies from one event to the next, even under the same model: the next movement of a drifting stream is more certain than the fifth. |
 | `confidence.amount` | how sure the module is about *how much* | Separate from `confidence.date` because the two fail independently. Rent is certain in both. A card statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be confident about size and have no idea when. Collapsing those into one number throws away the half the consumer needs. |
 
 ## What this module owns, and what it does not
