@@ -184,16 +184,28 @@ transaction history.
 
 **Out:** an amount per cycle, for each `accountAllocation`, with a confidence.
 
-**Which source owns the amount is DELIBERATELY LEFT OPEN, and will be decided case by case.** The
-declaration is what the user *intends*; the ledger is what actually happened. They disagree constantly
-and neither is reliably right — a declaration goes stale, and a ledger mean is dragged by one unusual
-month. Today the declaration always wins and the ledger is used only where the declaration is silent.
+**Only the latest chunk of expectation-change history is read.** The window starts at the most recent
+change to the declared amount and everything before it is ignored, the same rule the cycle follows.
+An arrangement that has changed is two amounts overlaid, and a figure drawn across the change
+describes neither.
 
-This is not an omission to be resolved before starting. It is a decision that belongs to each case, and
-committing to one source up front would force the wrong answer onto whichever cases disagree with it.
-What this stage must do is make the choice **visible and per-case** rather than global, so that an
-account partition taking its amount from the ledger and one taking it from the declaration are both
-legible.
+**The declared amount is the base.** It is what the user intends, and it stands until the ledger has
+enough history to say otherwise.
+
+**The median replaces it once three consecutive cycles have transactions.** Counting from the latest
+change, three consecutive cycles with transactions make the median of those cycles the base. With
+fewer than three, the declaration stays.
+
+**A calibration correction moves the amount, but only in the direction the ledger actually shows.** A
+stream whose transactions sit more than 70% on one side of the expected value is out of calibration,
+and the amount moves to the median — provided the median agrees with that side.
+
+| declared | share above | median | predicted | why |
+|---|---|---|---|---|
+| $100 a month | 80% above | $120 | **$120** | the median agrees with the skew |
+| $100 a month | 80% above | $90 | **$100** | the median contradicts the skew, so nothing moves |
+
+A median that disagrees with its own skew is noise rather than a correction, and the declaration holds.
 
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
@@ -308,7 +320,7 @@ by accident.
 
 | question | answer |
 |---|---|
-| Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached. |
+| Does the declaration or the ledger own the amount? | **The declaration, until the ledger earns it.** Three consecutive cycles of transactions since the last change put the median in charge, and a calibration correction moves it only where the median agrees with the direction the transactions skew. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
 | Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams. No stage here consumes it; `accountLinks()` derives it today for whatever does. |
