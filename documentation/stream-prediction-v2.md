@@ -34,20 +34,41 @@ output contract.
 
 ## What it hands back
 
-**A schedule of the next predicted events.** Not money per day, and not a distribution — a list of
-things expected to happen, which is the form that can answer "when is the next one" without the caller
-reconstructing it.
+**One prediction per stream, carrying a schedule of the events expected from it.** Not money per day,
+and not a distribution — a list of things expected to happen, which is the form that can answer "when
+is the next one" without the caller reconstructing it.
+
+**Two levels, because the facts sit at two levels.** How the module reached its answer is one set of
+decisions about the stream, taken once. What it expects to happen is many occurrences. Flattening those
+into one row repeats the stream's decisions on every event and implies they could differ between them.
+
+**The prediction** — one per stream:
+
+| field | what it is |
+|---|---|
+| `stream` | which stream this is about |
+| `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** |
+| `basis.shape` | which shape was determined, and on what evidence |
+| `basis.amount` | which method produced the amount |
+| `events` | the schedule — zero or more of the below |
+
+**An event** — one per expected movement:
 
 | field | what it is |
 |---|---|
 | `date` | when the event is expected |
 | `amount` | how much moves |
-| `account` | which account it moves out of |
+| `account` | which account it moves through |
 | `confidence.date` | how sure the module is about *when* |
 | `confidence.amount` | how sure the module is about *how much* |
-| `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** |
-| `basis.shape` | which shape was identified, and on what evidence |
-| `basis.amount` | which method produced the amount |
+
+**Confidence sits on the event, not on the prediction**, because it can genuinely differ between them:
+the next movement of a drifting stream is more certain than the fifth. The basis does not differ that
+way — the method that produced the amount is the same method for every event it produced.
+
+**A prediction with no events is a real answer**, not an absence. A budget nobody is spending, or an
+income with no rhythm to stand on, is correctly predicted as nothing happening; the basis says which of
+those it is.
 
 **Confidence is per dimension, because the two fail independently.** Rent is certain in both. A card
 statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be
