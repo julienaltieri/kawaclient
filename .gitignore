@@ -11,6 +11,7 @@
 !/documentation/**
 !/CLAUDE.md
 !/DECISION-PRINCIPLES.md
+!/SPEC-PRINCIPLES.md
 
 # A captured portfolio is a LEDGER. The allowlist above admits everything under /src/, so it has to be
 # excluded by name or a `git add src/` commits every transaction the user has.

@@ -8,6 +8,10 @@ Working instructions for the Kawa client.
 starting work. It covers scope, correctness under uncertainty, interface judgement, design-system
 values, process and test coverage. When a call is not obvious, that file is the tie-breaker.
 
+**[SPEC-PRINCIPLES.md](SPEC-PRINCIPLES.md) — how a spec gets written.** Read it before writing or
+editing a specification: a document that states a problem, carves it into sub-problems, and records
+what is decided. Not needed for ordinary code work.
+
 **[documentation/](documentation/context.md) — how the systems work.** One file per system, with the
 rules for writing them in `context.md`. Update a system's file in the same session as the change it
 describes.
