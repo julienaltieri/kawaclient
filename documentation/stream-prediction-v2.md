@@ -132,8 +132,9 @@ past date to see what it would have predicted then.
 **The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
 transactions, **which connected account does that stream map to?**
 
-Where the stream genuinely moves money through two accounts, say so — but treat that as the exception
-it is, not as the general case.
+A stream that genuinely moves money through two connected accounts maps to both, with a share each.
+That is the exception rather than the general case: most streams have one home, and splitting one that
+does is worse than leaving it whole.
 
 **In:** the stream, its transactions, the account list with types, the set of account pairings
 (card ↔ the account that repays it).
@@ -298,8 +299,8 @@ entirely — and which of those applies depends on how the envelope is actually 
 The stakes are high because the streams are large: a $10,000 yearly budget contributes over $1,800 a
 month to a forecast whether or not a dollar of it moves.
 
-**The scenarios are not one problem**, and each has its own arithmetic. They will need enumerating and naming before any rule is
-written — a yearly bill paid once on a date, a budget drawn down in instalments, an envelope spent
+**The scenarios are not one problem**, and each has its own arithmetic. Each is named and distinguished
+before any rule is written — a yearly bill paid once on a date, a budget drawn down in instalments, an envelope spent
 erratically, an envelope that will not be spent at all, and a yearly *income*, which is a hope rather
 than a schedule and may deserve no forecast whatever. These behave differently enough that one rule
 covering all of them is unlikely to be the answer.
