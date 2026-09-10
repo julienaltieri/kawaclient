@@ -46,7 +46,7 @@ between them.
 | field | what it is | why it is there |
 |---|---|---|
 | `stream` | which stream this is about | — |
-| `timingDetermination` | where the timing came from: **the declaration**, or **inferred from the transactions** | For most streams the timing matches the declaration. Yearly streams are where it comes apart: a stream is often declared yearly out of uncertainty, and the pattern inside it only shows up in the transactions later — so an inferred timing can legitimately disagree with what was declared, and which of the two produced the schedule has to be visible. |
+| `cycleDetermination` | where the cycle came from: **the declaration**, or **inferred from the transactions** | For most streams the cycle matches the declaration. Yearly streams are where it comes apart: a stream is often declared yearly out of uncertainty, and the pattern inside it only shows up in the transactions later — so an inferred cycle can legitimately disagree with what was declared, and which of the two produced it has to be visible. |
 | `cycle` | the cycle the schedule actually runs on — monthly, semi-monthly, every seven days | The declared period and the cycle used are two different facts, and for an overridden yearly stream they disagree. Without this field the cycle that produced the events is named nowhere, and re-deriving it from the events is guesswork. |
 | `shape` | which shape was determined, and on what evidence | Some streams behave like a spread, some like one big transaction, some like a few medium ones. This field characterises which of those to expect, as the logic determined it. |
 | `inferredAmount` | the expected amount for one `cycle` — −$157 a month, −$1,700 a semi-month | The number the schedule is generated from. Stating it separately makes an event list checkable against what it was meant to add up to, instead of leaving the intended total to be recovered by summing the events. |
@@ -62,7 +62,7 @@ between them.
 | `amount` | how much moves | — |
 | `account` | which account it moves through | — |
 | `confidence.date` | how sure the module is about *when* | Confidence is attached to each event because it varies from one event to the next, even under the same model: the next movement of a drifting stream is more certain than the fifth. |
-| `confidence.amount` | how sure the module is about *how much* | Separate from `confidence.date` because the two fail independently. Rent is certain in both. A card statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be confident about size and have no idea when. Collapsing those into one number throws away the half the consumer needs. |
+| `confidence.amount` | how sure the module is about *how much* | Kept separate from `confidence.date` because date and amount fail independently: a card statement is sure to land on time but not for how much, and an erratic yearly envelope can be the opposite. |
 
 ## What this module owns, and what it does not
 
