@@ -34,13 +34,12 @@ output contract.
 
 ## What it hands back
 
-**One prediction per stream, carrying a schedule of the events expected from it.** Not money per day,
-and not a distribution — a list of things expected to happen, which is the form that can answer "when
-is the next one" without the caller reconstructing it.
+**One prediction per stream, carrying a schedule of the events expected from it.** A list of things
+expected to happen answers "when is the next one" without the caller reconstructing it.
 
-**Two levels, because the facts sit at two levels.** How the module reached its answer is one set of
-decisions about the stream, taken once. What it expects to happen is many occurrences. Flattening those
-into one row repeats the stream's decisions on every event and implies they could differ between them.
+**The answer sits at two levels.** The decisions are taken once per stream and the occurrences are many,
+so flattening them into one row would repeat each decision on every event and imply it could differ
+between them.
 
 **The prediction** — one per stream:
 
