@@ -255,6 +255,9 @@ says how wide the range is instead of asserting a number.
 
 ## §5 — Special case: yearly streams
 
+**It is a special case because a yearly stream carries more uncertainty than the rest.** Everything
+that follows is why, and what to do about it.
+
 **The question.** A yearly declaration states an amount per year. What rhythm does the stream
 actually have, and how does that yearly figure become the size of one movement?
 
