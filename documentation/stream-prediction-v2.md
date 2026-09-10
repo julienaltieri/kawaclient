@@ -130,7 +130,7 @@ past date to see what it would have predicted then.
 ## §1 — Mapping accounts to streams
 
 **The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
-transactions, which account is that stream related to?
+transactions, **which connected account does that stream map to?**
 
 Money may **leave** that account — an expense — or **enter** it — income, a refund, a
 reimbursement. Both are the stream related to that account, and the association is the answer, not the
