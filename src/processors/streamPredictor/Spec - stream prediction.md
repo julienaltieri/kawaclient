@@ -164,8 +164,9 @@ side's confidence is its own — a partition does not inherit a single verdict.
 | **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
 | **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
 
-**The open question.** How a lump or a multi-lump determines which day, or days, of the cycle it
-falls on.
+**The open questions.** How a lump or a multi-lump determines which day, or days, of the cycle it
+falls on. And which shape a fractional median names: an even number of observed cycles produces
+medians of 1.5 and 2.5, which fall between the counts the three shapes are defined on.
 
 **Solved when:** every stream in the captured portfolio is shaped correctly, validated by Julien.
 
@@ -207,12 +208,31 @@ and the amount moves to the median — provided the median agrees with that side
 
 A median that disagrees with its own skew is noise rather than a correction, and the declaration holds.
 
-**The two tests count different things.** The direction test counts *transactions*; the median is taken
-over *cycles*. Where a stream has one transaction per cycle the two populations are identical, and the
-guard can never fire — a median cannot disagree with a direction that more than 70% of its own
-population agrees on. The guard earns its place only where the populations differ: a spread or
-multi-lump stream, several transactions to a cycle. Whether the direction test should count
-transactions or cycles is not settled.
+**The direction test compares a transaction against a cycle, and against real data it does not work.**
+The test counts *transactions*; the base and the median are per *cycle*. One transaction is almost
+always smaller than the whole cycle it sits in, so for any stream with several transactions to a cycle
+every transaction reads as sitting on the same side of the base. The test returns 100% on 40 of the
+portfolio's 111 allocations — it is measuring the difference in unit, not any drift in the stream, and
+the median-agreement check is the only thing still deciding those cases.
+
+Measured on the captured portfolio: the direction test passed on 70 of 111 allocations; 49 moved the
+base, 5 were already at the median, and **16 were blocked by a disagreeing median**. Of the 21
+allocations that carry one transaction per cycle, 14 passed the direction test and **none** was
+blocked. The guard only ever does work on multi-transaction cycles.
+
+Whether the direction test should count transactions or cycles is not settled. Counting cycles compares
+like with like, which is the obvious repair — but it also makes the guard unreachable, because a median
+cannot disagree with a direction that more than 70% of its own population agrees on.
+
+**Calibration does not honour the three-cycle floor.** Step 2 requires three consecutive cycles before
+a median may replace the declaration; step 3 requires none, and reaches the same median by another
+route. In the captured portfolio that moves yearly streams off a single cycle: Credit Card Payments,
+declared 0, is calibrated to a one-cycle median of −$70,686. Either the floor belongs to both steps or
+it belongs to neither.
+
+**Nothing exempts a yearly stream from this stage.** The cycle stage hands yearly on labelled, and the
+shape stage returns nothing for it, but the amount stage predicts all 44 of them from a single bucket.
+Whether the yearly case is answered here or only where yearly streams are specified is not settled.
 
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
