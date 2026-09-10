@@ -94,36 +94,18 @@ downstream has to handle two.
 **Out:** a `partition` — an array of `accountAllocation`, one per connected account the stream's money
 moved through.
 
-| `accountAllocation` | what it is |
-|---|---|
-| `accountId` | the connected account |
-| `accountType` | **`realTime`** or **`deferred`** — checking and savings are `realTime`; credit is `deferred` |
-| `amountPercent` | that account's share of the absolute money the stream moved |
-| `transactionPercent` | that account's share of the stream's transaction count |
+| `accountAllocation` | what it is | why it is there |
+|---|---|---|
+| `accountId` | the connected account | **No primary account is named here.** Choosing one representative account is a decision that belongs to whatever needs a single answer, and it is made from these weights. Naming a primary at this layer would bury that choice in a stage that has no idea what it is for, and every caller that disagreed with it would have to undo it. |
+| `accountType` | **`realTime`** or **`deferred`** — checking and savings are `realTime`; credit is `deferred` | — |
+| `amountPercent` | that account's share of the absolute money the stream moved | **Two percentages, because they disagree and the disagreement is information.** A stream can be 98% of the money on a card and half the transactions on debit — twenty small purchases against two large ones — and which of those matters depends on the question being asked. Collapsing them into one number picks an answer on behalf of a caller that has not asked yet. **Transfer legs stay in:** a card repayment moves through two connected accounts, and both movements are real — each is attributed here like any other, and counted toward this total. Recognising the two as one movement seen twice is reconciliation, and happens downstream. |
+| `transactionPercent` | that account's share of the stream's transaction count | **Direction is not tracked separately.** A transaction's amount is already signed, so a transfer's two legs are counted like any other pair of transactions rather than cancelled or flagged — restating direction as its own field would be a second copy of a fact that can go stale. |
 
 Both percentages are taken over the partition, so each sums to 100 across the array.
 
-**Two percentages, because they disagree and the disagreement is information.** A stream can be 98% of
-the money on a card and half the transactions on debit — twenty small purchases against two large
-ones — and which of those matters depends on the question being asked. Collapsing them into one number
-picks an answer on behalf of a caller that has not asked yet.
-
-**No primary account is named here.** Choosing one representative account is a decision that belongs to
-whatever needs a single answer, and it is made from these weights. Naming a primary at this layer would
-bury that choice in a stage that has no idea what it is for, and every caller that disagreed with it
-would have to undo it.
-
-**Transfer legs stay in.** A card repayment moves through two connected accounts, and both movements
-are real: each one is attributed here like any other. Recognising the two as one movement seen twice,
-and refusing to count it as spending, is reconciliation — it happens downstream, on the output of this
-stage, and pulling it forward would make this stage depend on knowing which transfers pair.
-
-**Direction is not tracked here.** A transaction's amount is already signed, so its direction is carried
-by the number itself. Nothing at this stage branches on it, and restating it as a separate field would
-be a second copy of a fact that can go stale.
-
 **Solved when:** every stream resolves to the weighted partition of the accounts its money actually
-moved through — correct for every stream in the captured portfolio, with no error budget.
+moved through — correct for every stream in the captured portfolio, judged by Julien against the
+portfolio he audited, with no error budget.
 
 ---
 
