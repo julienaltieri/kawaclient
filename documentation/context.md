@@ -93,7 +93,29 @@ paragraph was contrasting against, which is worse than no link at all because it
 Link the file and name the symbol in the prose: the name survives edits and is greppable, the number is
 a fact with a three-week shelf life.
 
-### Rule 6 — Anything added here must be allowlisted, or it is invisible
+### Rule 6 — No cryptic references. A section carries its own meaning
+
+Never point at a passage by its position — "§2 established", "as decided above", "see step 3". Say
+what the thing IS: "the stream's timing", "the account it was mapped to", "the shape already
+determined".
+
+Two reasons, and the second is the one that bites.
+
+**A positional pointer is unreadable in place.** A reader who hits "at each movement §2 and §3 already
+placed" has to leave, find two other sections, and come back holding both. That is work the sentence
+should have done.
+
+**And it rots the moment anything moves.** Insert a paragraph, reorder two sections, split one in half,
+and every number pointing past it is now wrong — silently, because nothing checks a cross-reference.
+The document keeps rendering and starts lying.
+
+The test: **can this sentence be lifted out of the document and still mean what it means?** If not, it
+is leaning on its neighbours. Numbered headings are fine as ADDRESSES for a reader to navigate by; they
+are not a substitute for saying the thing.
+
+---
+
+### Rule 7 — Anything added here must be allowlisted, or it is invisible
 
 `client/.gitignore` is an **allowlist**: it ignores `*` and then re-includes named paths. Anything
 not explicitly re-included is silently untracked — it will look fine locally, never reach GitHub, and
