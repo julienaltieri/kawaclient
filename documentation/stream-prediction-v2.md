@@ -97,7 +97,7 @@ moved through.
 | `accountAllocation` | what it is |
 |---|---|
 | `accountId` | the connected account |
-| `accountType` | its type — checking, credit |
+| `accountType` | **`realTime`** or **`deferred`** — checking and savings are `realTime`; credit is `deferred` |
 | `amountPercent` | that account's share of the absolute money the stream moved |
 | `transactionPercent` | that account's share of the stream's transaction count |
 
