@@ -103,9 +103,62 @@ moved through.
 
 Both percentages are taken over the partition, so each sums to 100 across the array.
 
+### How it is done
+
+Implemented in `accountMapping.js`. Five steps, no thresholds and no tuning:
+
+1. **Terminal streams.** Walk the stream tree; a node carrying `expAmountHistory` is terminal, a node
+   carrying children is not. 87 of the captured portfolio's 114 nodes are terminal.
+2. **Legs.** A transaction carries no stream id. The link is its `streamAllocation` array, so one leg
+   is produced per (transaction, allocation) pair, carrying the **allocation's** amount rather than
+   the transaction's total — one transaction can split across several streams. 1,214 transactions
+   yield 1,392 legs.
+3. **Group by account**, on the leg's `userInstitutionAccountId`.
+4. **Two percentages per account**, each taken over the partition so each sums to 100:
+
+   ```
+   amountPercent      = 100 x  sum |leg.amount| on this account  /  sum |leg.amount| over all legs
+   transactionPercent = 100 x  count of legs on this account     /  count of all legs
+   ```
+
+5. **Account kind** comes from `effectiveAccountType`, which lets the user's own override win over the
+   institution's subtype. `credit` becomes `deferred`; `checking` and `savings` both become
+   `realTime`.
+
+**Every account that appears gets an entry.** No share is too small to record: a 0.1% allocation from
+one stray transaction is a real leg and stays. The old 25% gate is gone, and with it the idea that this
+stage decides which account matters.
+
+**A stream with no transactions returns an empty partition, and that is the answer.** It is not a
+failure and not an unknown to be filled in: with no legs there is nothing to apportion, so the stage
+says so and stops. 26 of the 87 come out this way.
+
+**An account id with no matching account is still emitted**, with a null kind, rather than dropped.
+A missing account is a finding worth seeing.
+
+Worked example, from the captured portfolio:
+
+```
+Groceries & Hygiene          weekly     233 legs
+  Robinhood Credit Card      deferred   89.4% of the money   90.6% of the transactions
+  X1 Credit Card ..2168      deferred    7.5%                 7.3%
+  Spending Account ..4759    realTime    3.0%                 1.7%
+  X1 Credit Card ..0441      deferred    0.1%                 0.4%   <- one stray transaction
+
+Credit Card Payments         yearly     116 legs
+  Spending Account ..4759    realTime   50.0%                50.0%   <- both legs of every
+  Robinhood Credit Card      deferred   43.8%                39.7%      repayment are counted,
+  X1 Credit Card ..2168      deferred    5.7%                 5.2%      so checking is exactly
+  X1 Credit Card ..0441      deferred    0.5%                 5.2%      half by construction
+```
+
 **Solved when:** every stream resolves to the weighted partition of the accounts its money actually
 moved through — correct for every stream in the captured portfolio, judged by Julien against the
 portfolio he audited, with no error budget.
+
+**Settled.** Julien audited all 87 partitions against the captured portfolio and accepted every one.
+The 26 streams with no transactions were accepted as correct by definition: no transactions means the
+account cannot be determined, and an empty partition is the honest answer rather than a gap.
 
 ---
 
@@ -350,6 +403,7 @@ by accident.
 | Does the declaration or the ledger own the amount? | **The declaration, until the ledger earns it.** Three consecutive cycles of transactions since the last change put the median in charge, and a calibration correction moves it only where the median agrees with the direction the transactions skew. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
+| Is a stream with no transactions a failure? | **No, it is the answer.** With no transactions the account cannot be determined, and an empty partition says exactly that. Settled while validating §1. |
 | Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams. No stage here consumes it; `accountLinks()` derives it today for whatever does. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
