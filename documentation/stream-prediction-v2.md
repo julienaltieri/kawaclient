@@ -157,37 +157,22 @@ side's confidence is its own — a partition does not inherit a single verdict.
 | **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
 | **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
 
-**Multi-lump is the one that is currently missing**, and it is not the same thing as a split across
-accounts, which is treated separately below. Two bills on the *same* account, on different days, are
-one stream with two lumps.
-
-**Two things make it hard.** *Drift is not multiplicity* — an event that moves a few days is one lump,
-not several, and telling those apart is the difference between one step of $7,837 and two steps of
-$6,887 and $950. And *the window pollutes the shape*: a stream whose arrangement changed is two shapes
-overlaid, and averaging them describes neither.
-
-**Solved when:** each of the three is identified on real streams that are unambiguously that shape,
-and drift is never read as multiplicity.
+**Solved when:** every stream in the captured portfolio is shaped correctly, validated by Julien.
 
 ---
 
 ## §4 — Predicting the amount that moves
 
 **The question.** For a stream whose cycle and shape are already known, **predict** how much money
-moves at each movement those two have placed.
+moves per cycle.
 
 It is a prediction and not a lookup, which is why it carries a confidence: the amount that will move
 next is being forecast from a declaration and a history that disagree, not read off a record.
 
-**The cycle is not predicted here.** The stream's cycle and its shape together have already settled
-*when* the money moves; this stage predicts only *how much* moves then. Keeping that boundary is what
-stops a good amount rule quietly moving a date.
+**In:** the stream's `accountAllocation` partition, cycle and shape, plus its declared amount and its
+transaction history.
 
-**In:** the stream's account, cycle and shape, plus its declared amount and its transaction
-history.
-
-**Out:** an amount for each movement the shape placed, per account, with a confidence on the
-amount.
+**Out:** an amount per cycle, for each `accountAllocation`, with a confidence.
 
 **Which source owns the amount is DELIBERATELY LEFT OPEN, and will be decided case by case.** The
 declaration is what the user *intends*; the ledger is what actually happened. They disagree constantly
@@ -196,8 +181,9 @@ month. Today the declaration always wins and the ledger is used only where the d
 
 This is not an omission to be resolved before starting. It is a decision that belongs to each case, and
 committing to one source up front would force the wrong answer onto whichever cases disagree with it.
-What this stage must do is make the choice **visible and per-case** rather than global, so that a
-stream taking its amount from the ledger and one taking it from the declaration are both legible.
+What this stage must do is make the choice **visible and per-case** rather than global, so that an
+account partition taking its amount from the ledger and one taking it from the declaration are both
+legible.
 
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
