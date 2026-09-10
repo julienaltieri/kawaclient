@@ -147,8 +147,6 @@ two weights:
 | share of the money | that account's portion of the total moved |
 | share of the transactions | that account's portion of the count |
 
-Plus the direction the stream moves money in.
-
 **Two weights, because they disagree and the disagreement is information.** A stream can be 98% of the
 money on a card and half the transactions on debit — twenty small purchases against two large ones —
 and which of those matters depends on the question being asked. Collapsing them into one number picks
@@ -164,31 +162,17 @@ fact about the accounts, established by the transfer legs the data model already
 involved in knowing it, and every stream on that card gets the same answer. Deriving it here would
 recompute one portfolio-wide fact once per stream and let two streams on the same card disagree.
 
-**Direction is reported, not used to choose.** A wage and a rent both belong wholly to the checking
-account they pass through; that they pass in opposite directions is a fact about the stream, and it
-matters to the consumer drawing a balance. It is not what decides the partition.
+**Transfer legs stay in.** A card repayment moves through two connected accounts, and both movements
+are real: each one is attributed here like any other. Recognising the two as one movement seen twice,
+and refusing to count it as spending, is reconciliation — it happens downstream, on the output of this
+stage, and pulling it forward would make this stage depend on knowing which transfers pair.
 
-**What makes it hard.**
+**Direction is not tracked here.** A transaction's amount is already signed, so its direction is carried
+by the number itself. Nothing at this stage branches on it, and restating it as a separate field would
+be a second copy of a fact that can go stale.
 
-*Transfers between a user's own accounts are neither spending nor income.* A card repayment leaves
-checking and arrives on the card; it is one movement seen twice, and counting it as either an outflow
-or an inflow is wrong. These pairs must be identified and removed before anything else is measured, and
-identifying them is itself uncertain — the two legs are described differently by different banks, and a
-refund looks like an arrival too.
-
-*Direction is where a transfer is caught, which is the one place it does work.* Both legs of a transfer
-carry the same stream and point opposite ways; that is the signature. Outside that, a stream's direction
-describes it rather than places it.
-
-*A partition does not say what the split means.* A stream 98% on a card and 2% on debit has one home
-and a rounding error. A stream 68/32 has two bills under one name — water by transfer, electricity by
-card — with different counterparties and different dates. Both come out of this stage as partitions
-with weights; whether a split is material enough to forecast as two separate things is decided where
-that matters, not here.
-
-**Solved when:** every transaction is attributed to a connected account, whichever way its money moves;
-no transfer leg is counted as spending or as income; and each stream's weights sum to one across its
-partition.
+**Solved when:** every stream resolves to the weighted partition of the accounts its money actually
+moved through — correct for every stream in the captured portfolio, with no error budget.
 
 ---
 
