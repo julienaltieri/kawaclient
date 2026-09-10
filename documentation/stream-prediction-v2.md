@@ -44,66 +44,24 @@ into one row repeats the stream's decisions on every event and implies they coul
 
 **The prediction** — one per stream:
 
-| field | what it is |
-|---|---|
-| `stream` | which stream this is about |
-| `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** |
-| `basis.shape` | which shape was determined, and on what evidence |
-| `basis.amount` | which method produced the amount |
-| `basedOn` | the transactions this prediction was derived from, by id |
-| `events` | the schedule — zero or more of the below |
+| field | what it is | why it is there |
+|---|---|---|
+| `stream` | which stream this is about | — |
+| `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** | Two predictions of $1,700 on the 6th are not the same claim when one is a stated rent and the other is an average of four scattered charges, and a consumer choosing whether to lean on a number needs to know which it is holding. |
+| `basis.shape` | which shape was determined, and on what evidence | A label rather than the reasoning: "this is a spread, and here is the evidence for it". |
+| `basis.amount` | which method produced the amount | A label rather than the reasoning: "the amount came from the trailing mean". The basis sits on the prediction rather than on the event because it does not differ between them — the method that produced the amount is the same method for every event it produced. |
+| `basedOn` | the transactions this prediction was derived from, by id | What makes a prediction auditable. A number with no account of what it was read from can only be agreed with or disagreed with; the transactions behind it can be argued about. It also settles the most common disagreement, which is not "is this rule right" but "did it look at what I think it looked at" — a shape read from four transactions when the stream has two hundred is a different problem from a wrong rule, and the two are indistinguishable without this. **By id, not by copy:** the caller supplied the ledger and still holds it, so identifiers are enough to resolve them and a copy would duplicate a large object for no gain. An id that no longer resolves is then a broken audit trail rather than a silent one, which is the right failure. |
+| `events` | the schedule — zero or more of the below | **Zero events is a real answer**, not an absence: a budget nobody is spending, or an income with no rhythm to stand on, is correctly predicted as nothing happening, and the basis says which of those it is. A spread stream still produces events — "continuous" is a shape, not an absence of them, though how a spread is expressed as a list is deliberately left open here. **The list runs to a horizon and stops:** beyond some distance a prediction is not worth making, so the module emits nothing further rather than increasingly speculative events. **The horizon is the module's own setting**, because how far ahead a schedule stays meaningful is a property of the prediction — a weekly stream and a yearly one do not become unpredictable at the same distance — not something the caller supplies. |
 
 **An event** — one per expected movement:
 
-| field | what it is |
-|---|---|
-| `date` | when the event is expected |
-| `amount` | how much moves |
-| `account` | which account it moves through |
-| `confidence.date` | how sure the module is about *when* |
-| `confidence.amount` | how sure the module is about *how much* |
-
-**`basedOn` is what makes a prediction auditable.** A number with no account of what it was read from
-can only be agreed with or disagreed with; the transactions behind it can be argued about. It is also
-the thing that settles the most common disagreement, which is not "is this rule right" but "did it look
-at what I think it looked at" — a stream whose shape was read from four transactions when it has two
-hundred is a different problem from one whose rule is wrong, and the two are indistinguishable without
-this.
-
-**By id, not by copy.** The caller supplied the ledger and still holds it, so identifiers are enough to
-resolve them and a copy would duplicate a large object for no gain. It does mean an id that no longer
-resolves is a broken audit trail rather than a silent one, which is the right failure.
-
-**Confidence sits on the event, not on the prediction**, because it can genuinely differ between them:
-the next movement of a drifting stream is more certain than the fifth. The basis does not differ that
-way — the method that produced the amount is the same method for every event it produced.
-
-**A prediction with no events is a real answer**, not an absence. A budget nobody is spending, or an
-income with no rhythm to stand on, is correctly predicted as nothing happening; the basis says which of
-those it is.
-
-**Confidence is per dimension, because the two fail independently.** Rent is certain in both. A card
-statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be
-confident about size and have no idea when. Collapsing those into one number throws away the half the
-consumer needs.
-
-**Every prediction says how it was arrived at.** Not the reasoning — a label. "The timing came from
-the declaration", "the amount came from the trailing mean", "this is a spread and here is the evidence
-for it". Two predictions of $1,700 on the 6th are not the same claim when one is a stated rent and the
-other is an average of four scattered charges, and a consumer choosing whether to lean on a number
-needs to know which it is holding.
-
-**The horizon is how far ahead the schedule runs.** A prediction has a distance beyond which it stops
-being worth making: the module emits events up to that distance and no further, rather than continuing
-to produce increasingly speculative ones.
-
-**And the horizon is the module's own setting.** How far ahead a schedule stays meaningful is a
-property of the prediction — a weekly stream and a yearly one do not become unpredictable at the same
-distance — so it is decided inside rather than supplied by whoever is asking.
-
-**A spread stream still produces events.** "Continuous" is a shape, not an absence of events; how a
-spread is expressed as a list of events is a question about shape, and is deliberately left open
-here.
+| field | what it is | why it is there |
+|---|---|---|
+| `date` | when the event is expected | — |
+| `amount` | how much moves | — |
+| `account` | which account it moves through | — |
+| `confidence.date` | how sure the module is about *when* | Confidence sits on the event rather than on the prediction because it genuinely differs between events: the next movement of a drifting stream is more certain than the fifth. |
+| `confidence.amount` | how sure the module is about *how much* | Separate from `confidence.date` because the two fail independently. Rent is certain in both. A card statement is certain in its date and uncertain in its amount. An erratic yearly envelope may be confident about size and have no idea when. Collapsing those into one number throws away the half the consumer needs. |
 
 ## What this module owns, and what it does not
 
