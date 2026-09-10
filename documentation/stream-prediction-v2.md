@@ -27,8 +27,8 @@ carries a **basis** saying how it was arrived at. How much further it should acc
 settled here — a fuller explanation is a debugging need, and gets built when there is something to
 debug.
 
-Each stage below carries a **status**, and gains its approach and its acceptance criteria as those are
-agreed.
+Each of the six below is a sub-problem to solve for, and each will carry its own logic and its own
+output contract.
 
 ---
 
@@ -98,8 +98,6 @@ past date to see what it would have predicted then.
 
 ## §1 — Mapping accounts to streams
 
-**Status:** problem stated. Approach not yet chosen.
-
 **The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
 transactions, which account is that stream related to?
 
@@ -147,8 +145,6 @@ be two real bills rather than one noisy one.
 
 ## §2 — Determining the timing
 
-**Status:** problem stated. Approach not yet chosen.
-
 **The question.** Determine the stream's **timing**: how often does it actually move money, and on
 what schedule should the next movement be expected?
 
@@ -185,8 +181,6 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 
 ## §3 — Determining what shape the money movements have during a cycle
 
-**Status:** problem stated. Approach not yet chosen.
-
 **The question.** For a stream whose timing is known and is not yearly, determine what shape the
 money movements have during a cycle.
 
@@ -218,8 +212,6 @@ and drift is never read as multiplicity.
 ---
 
 ## §4 — Predicting the amount that moves
-
-**Status:** problem stated. Approach not yet chosen.
 
 **The question.** For a stream whose timing and shape are already known, **predict** how much money
 moves at each movement those two have placed.
@@ -263,8 +255,6 @@ says how wide the range is instead of asserting a number.
 
 ## §5 — Special case: yearly streams
 
-**Status:** problem stated. Approach not yet chosen.
-
 **The question.** A yearly declaration states an amount per year. What rhythm does the stream
 actually have, and how does that yearly figure become the size of one movement?
 
@@ -294,8 +284,6 @@ stream has one, and a budget that is not being spent stops being forecast.
 ---
 
 ## §6 — Streams split between a card and checking
-
-**Status:** problem stated. Approach not yet chosen.
 
 **The question.** One stream that genuinely moves money through two accounts — a card and a checking
 account — rather than one. How is it predicted?
