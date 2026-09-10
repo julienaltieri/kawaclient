@@ -358,6 +358,7 @@ ${section('empty', 'No transactions', empty)}
 	var store = null;             //the db namespace, once (and if) it resolves
 	var validated = {};           //streamId -> true
 	var writing = false, pending = false;
+	var localDirty = false;       //true from this tab's first click on; see onSnapshot below
 
 	function paint(){
 		var n = 0;
@@ -394,16 +395,28 @@ ${section('empty', 'No transactions', empty)}
 		if(!store){ return; }
 		if(writing){ pending = true; return; }
 		writing = true;
+		//A HUNG PROMISE MUST NOT WEDGE FUTURE SAVES. Nothing in this contract promises set()
+		//always settles (a stalled permission prompt is exactly the shape that would not), and a
+		//writing flag that never clears turns every click after the first into a silent no-op.
+		var settled = false;
+		var clear = function(){
+			if(settled)return;
+			settled = true;
+			writing = false;
+			if(pending){ pending = false; save(); }
+		};
+		setTimeout(clear, 8000);
 		store.doc(DOC).set({validated: validated, updatedAt: new Date().toISOString()})
 			.catch(function(){ dbnote.hidden = false; })
-			.then(function(){
-				writing = false;
-				if(pending){ pending = false; save(); }
-			});
+			.then(clear);
 	}
 
 	boxes.forEach(function(b){
 		b.addEventListener('change', function(){
+			//ONCE THE READER HAS TOUCHED A BOX, THIS TAB'S STATE IS THE TRUTH. See the onSnapshot
+			//handler below for why: an unconditional overwrite from the server was the actual bug
+			//that made ticking look stuck, and this flag is what stops it happening again.
+			localDirty = true;
 			var id = b.getAttribute('data-sid');
 			if(b.checked)validated[id] = true; else delete validated[id];
 			paint();
@@ -428,12 +441,25 @@ ${section('empty', 'No transactions', empty)}
 			if(!db){ dbnote.hidden = false; return; }
 			store = db;
 			store.doc(DOC).onSnapshot(function(snap){
+				//THE BUG THIS GUARDS AGAINST: this fires again on the server's own confirmation of
+				//OUR write, and can also deliver a snapshot taken before a write that is still in
+				//flight. Applying it unconditionally meant a slow or dropped save for box 2 let the
+				//next event revert box 2 - and, on the very same overwrite, re-assert box 1 as
+				//permanently checked. Once this tab has an edit of its own, only THIS tab decides
+				//what its checkboxes show; a snapshot from elsewhere is merged in, never replacing.
 				var d = snap && snap.data ? snap.data() : null;
-				if(d && d.validated && typeof d.validated === 'object'){
-					validated = d.validated;
-					try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
-					paint();
+				if(!d || !d.validated || typeof d.validated !== 'object')return;
+				if(localDirty){
+					var merged = false;
+					Object.keys(d.validated).forEach(function(id){
+						if(!(id in validated)){ validated[id] = true; merged = true; }
+					});
+					if(merged)paint();
+					return;
 				}
+				validated = d.validated;
+				try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
+				paint();
 			}, function(){ dbnote.hidden = false; });
 		}).catch(function(){ dbnote.hidden = false; });
 	}else{
