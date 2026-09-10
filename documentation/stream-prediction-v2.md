@@ -109,15 +109,10 @@ portfolio he audited, with no error budget.
 
 ---
 
-## §2 — Determining the timing
+## §2 — Determining the cycle
 
-**The question.** Determine the stream's **timing**: how often does it actually move money, and on
-what schedule should the next movement be expected?
-
-That is one question with two halves and both are needed. *How often* is a rate — twice a month, every
-seven days. *On what schedule* is where in the calendar those fall, which is what makes a date
-predictable rather than merely a rate. A stream can have a clean rate and no schedule at all; that is a
-real answer and this stage has to be able to give it.
+**The question.** Determine the stream's **cycle**: how often does it actually move money — twice a
+month, every seven days, once a year.
 
 **In:** the stream's declared period and the history of that declaration; the transactions belonging
 to the stream on the account it was mapped to.
@@ -129,12 +124,10 @@ money.** Transactions are noisy in ways a declaration is not — a cheque moved 
 with a correction in it, a bank that posts late. Inference from a noisy signal should not overrule a
 clean one.
 
-**Yearly is the exception, and it is the whole of the difficulty.** A yearly declaration is a *budget
-envelope*: it states an amount per year, and it does not state a cycle. The stream may well **have**
-one — a yearly budget charged every month has a perfectly good cycle — but it has to be inferred
-rather than read, and the arithmetic relating that yearly figure to the size of one movement is unlike
-every other case. Both are worked out where yearly streams are treated as their own case, below. This
-stage's only job for a yearly stream is to hand it on correctly labelled.
+**Yearly is the exception.** It behaves differently from every other cycle — the arithmetic connecting
+a yearly figure to the size of one movement is unlike every other case — and how is worked out
+entirely in Special case: yearly streams. This stage's only job for a yearly stream is to hand it on
+correctly labelled.
 
 **The open questions.** When does the ledger get to contradict a non-yearly declaration — never, or
 under some evidential threshold? What about a declaration that was true and has stopped being true?
@@ -147,10 +140,10 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 
 ## §3 — Determining what shape the money movements have during a cycle
 
-**The question.** For a stream whose timing is known and is not yearly, determine what shape the
+**The question.** For a stream whose cycle is known and is not yearly, determine what shape the
 money movements have during a cycle.
 
-**In:** the stream's timing, its transactions on the account it was mapped to, and the history of its
+**In:** the stream's cycle, its transactions on the account it was mapped to, and the history of its
 declared amount.
 
 **Out:** one of a small set of shapes, plus the parameters of whichever it is, plus how confident.
@@ -179,17 +172,17 @@ and drift is never read as multiplicity.
 
 ## §4 — Predicting the amount that moves
 
-**The question.** For a stream whose timing and shape are already known, **predict** how much money
+**The question.** For a stream whose cycle and shape are already known, **predict** how much money
 moves at each movement those two have placed.
 
 It is a prediction and not a lookup, which is why it carries a confidence: the amount that will move
 next is being forecast from a declaration and a history that disagree, not read off a record.
 
-**Timing is not predicted here.** The stream's timing and its shape together have already settled
+**The cycle is not predicted here.** The stream's cycle and its shape together have already settled
 *when* the money moves; this stage predicts only *how much* moves then. Keeping that boundary is what
 stops a good amount rule quietly moving a date.
 
-**In:** the stream's account, timing and shape, plus its declared amount and its transaction
+**In:** the stream's account, cycle and shape, plus its declared amount and its transaction
 history.
 
 **Out:** an amount for each movement the shape placed, per account, with a confidence on the
@@ -257,7 +250,7 @@ stream has one, and a budget that is not being spent stops being forecast.
 **The question.** One stream that genuinely moves money through two accounts — a card and a checking
 account — rather than one. How is it predicted?
 
-**Why it is last.** It is a *composition* of everything above — each side has its own timing, its own
+**Why it is last.** It is a *composition* of everything above — each side has its own cycle, its own
 shape and its own amount — so it cannot be specified before those are settled, and it is rare enough
 that getting it wrong is cheap compared with getting the ordinary case wrong.
 
@@ -282,7 +275,7 @@ demonstrably the data's and not the model's.
 
 **And "as good as possible" is judged by agreement, stream by stream, against the captured portfolio.**
 Julien audits each stream in the fixture and asks whether the module's decision is the one he would
-have made. That is the measure, and it is deliberately not a percentage: mapping, timing and shape are
+have made. That is the measure, and it is deliberately not a percentage: mapping, cycle and shape are
 classifications with no dollar error, so an accuracy score cannot price them at all, and a model that
 agrees with its owner about every stream is the thing actually being built.
 

@@ -157,9 +157,13 @@ name is the word.
 > dilution of meaning, reduces room for errors and makes it more readable."* Ten replacements, none of
 > which changed a claim.
 
-A word is exempt only when the document defines it as covering something the other word does not —
-here *timing* is defined as cycle plus schedule, so it stays. That exemption has to be earned by a
-definition in the text, not by intent.
+A word is exempt only when the document defines it as covering something the other word does not, and
+that claim gets checked, not assumed. *Timing* was first kept as an umbrella over *cycle* plus
+*schedule* — until the schedule half turned out not to be a real output of that stage at all, just an
+example carried over from an earlier draft. *"Confirming that what we care about is the cycle — more
+precise than timing."* Once the exemption was checked, it did not hold, and *timing* was replaced too.
+
+An earned exemption still has to be re-earned every time the document changes under it.
 
 ### 13. Simplify until the sentence carries the idea and nothing else
 
