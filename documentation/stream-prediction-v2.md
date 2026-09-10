@@ -69,13 +69,7 @@ between them.
 **Owns:** the behaviour of a single stream — its account, its rhythm, its shape, its amount, and the
 uncertainty on each.
 
-**Does not own: anything that CONSUMES a prediction.** Drawing it, aggregating it across streams,
-reconciling it against what happened, scoring it, or acting on it are all downstream of this module and
-belong to whatever feature needs them. The test is direction: if it takes a prediction as input, it is
-not here.
-
-That boundary holds whatever the consumers turn out to be, so it does not need editing each time one is
-added.
+**Does not own: anything that consumes a prediction.** That belongs to whatever feature needs it.
 
 **Takes as given:** the account list with types, the transaction ledger, the stream's declaration
 (amount and period, with its history), and an **as-of date**. Nothing else.
