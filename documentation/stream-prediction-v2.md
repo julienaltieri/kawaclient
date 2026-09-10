@@ -283,7 +283,7 @@ stream has one, and a budget that is not being spent stops being forecast.
 
 ---
 
-## §6 — Streams split between a card and checking
+## §6 — Special case: streams split across two accounts
 
 **The question.** One stream that genuinely moves money through two accounts — a card and a checking
 account — rather than one. How is it predicted?
