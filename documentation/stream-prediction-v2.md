@@ -132,10 +132,6 @@ past date to see what it would have predicted then.
 **The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
 transactions, **which connected account does that stream map to?**
 
-Money may **leave** that account — an expense — or **enter** it — income, a refund, a
-reimbursement. Both are the stream related to that account, and the association is the answer, not the
-direction.
-
 Where the stream genuinely moves money through two accounts, say so — but treat that as the exception
 it is, not as the general case.
 
@@ -150,7 +146,7 @@ are on each side.
 account they pass through; that they pass in opposite directions is a fact about the stream, and it
 matters to the consumer drawing a balance. It is not what decides which account is the stream's.
 
-**Two things make it hard.**
+**What makes it hard.**
 
 *Transfers between a user's own accounts are neither spending nor income.* A card repayment leaves
 checking and arrives on the card; it is one movement seen twice, and counting it as either an outflow
