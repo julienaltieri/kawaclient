@@ -20,9 +20,13 @@ import fs from 'fs';
 import path from 'path';
 import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THRESHOLD_PERCENT}
 	from './buildAuditPage';
+import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
+	from './buildCycleAuditPage';
+import {determineCycle} from './cycleDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
+const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
 
 //`describe.skip` rather than a failing require, so the suite passes on a machine with no capture
@@ -130,5 +134,97 @@ suite('StreamPredictor §1 - account mapping, against the captured portfolio', (
 			+ ' streams with a tail <' + TAIL_THRESHOLD_PERCENT + '% (' + summary.tailAllocations
 			+ ' allocations) | ' + summary.unknownAccountAllocations + ' unknown-account allocations');
 		console.log('AUDIT PAGE: ' + OUT + ' (' + fs.statSync(OUT).size + ' bytes)');
+	});
+});
+
+/* ==================================================================================================
+   §2, RUN OVER THE SAME 87 STREAMS.
+
+   THE RULE UNDER TEST IS THAT THERE IS NO INFERENCE. determineCycle takes no transactions, so every
+   stream must come back sourced from its declaration; a 'ledger' answer would mean the stage had
+   grown an opinion nobody specified, and the assertion is written to FAIL on that rather than to
+   tolerate it.
+
+   THE PAGE IS WHERE THE REAL QUESTION LIVES. Whether a declaration is TRUE is not something an
+   assertion can decide - it needs the ledger next to it and a person reading both - so the test
+   asserts the invariants and prints the evidence.
+   ================================================================================================== */
+const YEARLY_DECLARATIONS = {yearly: true, biyearly: true};
+
+suite('StreamPredictor §2 - cycle determination, against the captured portfolio', () => {
+	let portfolio, predictor, rows, streams, cycles, enriched, summary;
+
+	beforeAll(() => {
+		// eslint-disable-next-line global-require
+		const {StreamPredictor} = require('./index');
+		portfolio = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+		predictor = new StreamPredictor(portfolio);
+		rows = predictor.mapAllAccounts();
+		streams = predictor.terminalStreams();
+		cycles = streams.map(s => ({stream: s, cycle: determineCycle(s)}));
+		enriched = enrichCycles(rows);
+		summary = summarizeCycles(enriched);
+	});
+
+	test('every one of the 87 terminal streams gets a period name', () => {
+		expect(streams.length).toBe(87);
+		const nameless = cycles.filter(c => c.cycle.periodName === null).map(c => c.stream.name);
+		if(nameless.length)console.log('STREAMS WITH NO DECLARED PERIOD: ' + nameless.join(', '));
+		expect(nameless).toEqual([]);
+	});
+
+	/* THE DECLARATION WINS OUTRIGHT AND THE LEDGER IS NOT CONSULTED. Loosening this to "usually
+	   declaration" would delete the only thing §2 currently promises. */
+	test('every cycle is sourced from the declaration, never from the ledger', () => {
+		const inferred = cycles.filter(c => c.cycle.cycleDetermination !== 'declaration')
+			.map(c => c.stream.name + ' -> ' + c.cycle.cycleDetermination);
+		if(inferred.length)console.log('CYCLES NOT SOURCED FROM THE DECLARATION:\n  ' + inferred.join('\n  '));
+		expect(inferred).toEqual([]);
+	});
+
+	test('isYearly is true exactly for the streams declaring yearly or biyearly', () => {
+		const disagree = cycles.filter(c => c.cycle.isYearly !== !!YEARLY_DECLARATIONS[c.stream.period])
+			.map(c => c.stream.name + ' declared ' + c.stream.period + ' but isYearly='
+				+ c.cycle.isYearly);
+		if(disagree.length)console.log('isYearly DISAGREES WITH THE DECLARATION:\n  ' + disagree.join('\n  '));
+		expect(disagree).toEqual([]);
+		expect(cycles.filter(c => c.cycle.isYearly).length)
+			.toBe(streams.filter(s => YEARLY_DECLARATIONS[s.period]).length);
+	});
+
+	test('writes the cycle audit page from the real results', () => {
+		const html = buildCycleAuditPage(rows, {
+			version: portfolio.version,
+			capturedAt: portfolio.capturedAt,
+			transactionCount: portfolio.transactions.length
+		});
+		fs.writeFileSync(OUT_CYCLE, html, 'utf8');
+
+		expect(html.startsWith('<!doctype html>')).toBe(true);
+		expect(html.trim().endsWith('</html>')).toBe(true);
+		expect(fs.statSync(OUT_CYCLE).size).toBeGreaterThan(20000);
+
+		/* SAME ASSERTION AS §1's, AND FOR THE SAME REASON. The shell writes its script from inside a
+		   template literal, which silently eats one level of backslash: a "\n" meant for the emitted
+		   string arrives as a real line break, every checkbox on the page stops working, and the
+		   markup stays perfectly well-formed while every other assertion here still passes. */
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBeGreaterThan(0);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+		});
+
+		//every stream lands in exactly one group, so the four counts must still add up to 87
+		expect(summary.yearly + summary.sparse + summary.matched + summary.nolegs)
+			.toBe(summary.total);
+
+		console.log('§2 CYCLE DETERMINATION: ' + summary.total + ' terminal streams | '
+			+ summary.yearly + ' yearly (deferred) | ' + summary.sparse + ' mostly-empty cycles (>'
+			+ (EMPTY_CYCLE_THRESHOLD * 100).toFixed(0) + '% empty) | ' + summary.matched
+			+ ' cycle carries the movements | ' + summary.nolegs + ' with zero transactions | '
+			+ summary.totalLegs + ' legs | ' + summary.fromLedger + ' sourced from the ledger | '
+			+ summary.unknownCycle + ' with an unrecognised period');
+		console.log('CYCLE AUDIT PAGE: ' + OUT_CYCLE + ' (' + fs.statSync(OUT_CYCLE).size + ' bytes)');
 	});
 });

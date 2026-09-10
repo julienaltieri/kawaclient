@@ -10,7 +10,14 @@
    THE TWO THRESHOLDS ARE CONSTANTS AND THEY ARE PRINTED. A marked row whose rule is buried in the
    source is a row the reader cannot argue with; the header states the number, so disagreeing with
    the threshold is a thing the reader can do.
+
+   THE PAGE ITSELF - the checkbox, the filter, the counter, the grouping and every line of CSS -
+   lives in auditShell.js, because §1 through §4 are four readings of the same 87 streams and the
+   tick that stopped responding had to be fixed once rather than four times. What stays here is only
+   what §1 knows: what a partition is and which of them are worth looking at first.
    ================================================================================================== */
+
+import {renderAuditPage, esc} from './auditShell';
 
 /* A stream can be 98% of the money on a card and half the transactions on debit. Ten points is where
    that stops being rounding and starts being two different stories about the same stream. */
@@ -19,10 +26,6 @@ export const DIVERGENCE_THRESHOLD_POINTS = 10;
 /* No share gate collapses a partition - a 0.1% allocation is a real leg and stays visible - but a
    single stray transaction should READ as a stray at a glance rather than as a home for the money. */
 export const TAIL_THRESHOLD_PERCENT = 1;
-
-const esc = s => String(s === null || s === undefined ? '' : s)
-	.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-	.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const pct = n => (Number.isFinite(n) ? n.toFixed(1) : String(n));
 
@@ -132,29 +135,23 @@ const partitionTable = r => {
 		+ '<tbody>' + r.allocations.map(allocationRow).join('') + '</tbody></table></div>';
 };
 
-const streamCard = r => {
-	const search = [r.name, r.id, r.period]
+const streamCard = r => ({
+	id: r.id,
+	name: r.name,
+	search: [r.name, r.id, r.period]
 		.concat(r.allocations.map(a => a.accountName || a.accountId))
-		.join(' ').toLowerCase();
-	const flagged = r.allocations.some(a => a.diverges);
-	return '<article class="stream' + (flagged ? ' has-diverge' : '') + '" data-search="' + esc(search) + '">'
-		+ '<header class="sh">'
-		+ '<input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
-		+ ' aria-label="mark this partition validated" title="mark this partition validated">'
-		+ '<h3 class="sname">' + esc(r.name) + '</h3>'
-		+ '<span class="period">' + esc(r.period === undefined || r.period === null ? 'no period' : r.period) + '</span>'
-		+ '<span class="legs"><span class="num">' + r.legCount + '</span> legs</span>'
-		+ '<code class="sid">' + esc(r.id) + '</code>'
-		+ '</header>'
-		+ partitionTable(r) + '</article>';
-};
+		.join(' '),
+	meta: [
+		{cls: 'period', value: r.period === undefined || r.period === null ? 'no period' : r.period},
+		{cls: 'legs', value: r.legCount, label: 'legs'},
+		{cls: 'sid', value: r.id}
+	],
+	flagged: r.allocations.some(a => a.diverges),
+	body: partitionTable(r)
+});
 
-const section = (key, title, list) => '<section class="group group-' + key + '" data-group="' + key + '">'
-	+ '<h2><span class="gtitle">' + esc(title) + '</span>'
-	+ '<span class="gcount"><span class="num shown">' + list.length + '</span>'
-	+ '<span class="of" hidden> of <span class="num">' + list.length + '</span></span></span></h2>'
-	+ '<div class="cards">' + list.slice().sort(byEvidence).map(streamCard).join('') + '</div>'
-	+ '<p class="gempty" hidden>nothing matches the filter</p></section>';
+const group = (key, title, list) =>
+	({key: key, title: title, cards: list.slice().sort(byEvidence).map(streamCard)});
 
 /* `rows` is exactly what StreamPredictor.mapAllAccounts() returned; `meta` carries the fixture facts
    the header states and the account list the hashes are resolved against. Nothing else is read. */
@@ -163,291 +160,31 @@ export function buildAuditPage(rows, meta){
 	const enriched = enrich(rows, m.accountsByHash);
 	const s = summarize(enriched);
 
-	const split = enriched.filter(r => r.allocations.length > 1);
-	const single = enriched.filter(r => r.allocations.length === 1);
-	const empty = enriched.filter(r => r.allocations.length === 0);
+	const metaLine = [
+		{value: s.total, label: 'streams'},
+		{value: s.totalLegs, label: 'legs'},
+		{value: m.transactionCount, label: 'txns'},
+		{value: s.divergentStreams, label: 'diverge >' + DIVERGENCE_THRESHOLD_POINTS + 'pts',
+			flag: true, dim: s.divergentAllocations},
+		{value: s.tailStreams, label: 'tail <' + TAIL_THRESHOLD_PERCENT + '%',
+			dim: s.tailAllocations}
+	];
+	if(s.unknownAccountAllocations)
+		metaLine.push({value: s.unknownAccountAllocations, label: 'unknown account', flag: true});
 
-	return `<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Account mapping audit</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
-<style>
-:root{
-	--paper:#F4F5F7; --surface:#FFFFFF; --sunk:#E9EBF0;
-	--ink:#14171C; --ink-soft:#4A5160; --ink-faint:#79808F;
-	--rule:#D4D8E0; --accent:#2E4A7D; --accent-soft:#5C7AB0;
-	--flag:#8A6520; --flag-bg:#F6EDDA;
-	--realtime:#3A6153; --realtime-bg:#E3ECE7;
-	--deferred:#7A4A5E; --deferred-bg:#F3E6EA;
-	--sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-	--mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
-}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-	--paper:#131619; --surface:#1A1E24; --sunk:#22272F;
-	--ink:#DFE3EA; --ink-soft:#A7AEBC; --ink-faint:#79808F;
-	--rule:#2E343E; --accent:#9DB8E4; --accent-soft:#5C7AB0;
-	--flag:#D2AC63; --flag-bg:#2B2418;
-	--realtime:#8CB6A4; --realtime-bg:#1B2724;
-	--deferred:#C99BAC; --deferred-bg:#2A1E23;
-}}
-:root[data-theme="dark"]{
-	--paper:#131619; --surface:#1A1E24; --sunk:#22272F;
-	--ink:#DFE3EA; --ink-soft:#A7AEBC; --ink-faint:#79808F;
-	--rule:#2E343E; --accent:#9DB8E4; --accent-soft:#5C7AB0;
-	--flag:#D2AC63; --flag-bg:#2B2418;
-	--realtime:#8CB6A4; --realtime-bg:#1B2724;
-	--deferred:#C99BAC; --deferred-bg:#2A1E23;
-}
-*{box-sizing:border-box}
-[hidden]{display:none !important}
-html{color-scheme:light dark}
-body{margin:0;background:var(--paper);color:var(--ink);
-	font:400 14px/1.45 var(--sans);-webkit-text-size-adjust:100%;overflow-x:hidden}
-.num,code,.mask,.sid{font-family:var(--mono);font-variant-numeric:tabular-nums}
-
-/* THE HEADER IS ONE LINE, because the split / one-account / no-transaction counts it used to repeat
-   are already printed on each group's own heading, and a second copy of them cost half a phone
-   screen before the first stream was visible. What survives here is only what is stated nowhere
-   else. */
-header.top{position:sticky;top:0;z-index:10;background:var(--surface);
-	border-bottom:1px solid var(--rule);padding:7px 14px 8px}
-.meta{margin:0;color:var(--ink-faint);font-size:11.5px;line-height:1.5}
-.meta b{color:var(--ink);font-weight:600;font-size:12.5px}
-.meta .num{color:var(--ink-soft);font-weight:500}
-.meta .num.f{color:var(--flag)}
-.meta .dim{color:var(--ink-faint);opacity:.75}
-.meta .cap{float:right;color:var(--ink-faint);font-family:var(--mono);font-size:10.5px;
-	margin-left:8px;cursor:help}
-.bar-row{display:flex;gap:6px;align-items:stretch;margin-top:7px}
-.bar-row #q{margin-top:0;flex:1;min-width:0}
-#only{font:500 11px var(--sans);color:var(--ink-soft);background:var(--paper);
-	border:1px solid var(--rule);border-radius:6px;padding:0 9px;cursor:pointer;white-space:nowrap}
-#only[aria-pressed="true"]{color:var(--surface);background:var(--accent);border-color:var(--accent)}
-.prog{display:flex;align-items:center;font-family:var(--mono);font-size:11.5px;
-	color:var(--ink-faint);white-space:nowrap;padding:0 2px}
-.prog .num{color:var(--ink-soft)}
-#copy{font:500 11px var(--sans);color:var(--ink-soft);background:var(--paper);
-	border:1px solid var(--rule);border-radius:6px;padding:0 9px;cursor:pointer;white-space:nowrap}
-#copy.done{color:var(--realtime);border-color:var(--realtime)}
-
-/* THE TICK IS THE AUDIT'S OUTPUT, so it sits before the name rather than after the partition:
-   the reader's eye lands on it first on the way down a list of 87. Unchecked is the resting
-   state and carries no claim - a stream is not "wrong" until the reader says so by leaving it.
-
-   IT IS A PLAIN NATIVE CHECKBOX. A faked one - the input hidden at opacity 0 with a styled
-   sibling standing in for it - is a thing that can stop responding, and this one did. There is
-   nothing here for the browser to get wrong. */
-.okbox{flex:0 0 auto;width:17px;height:17px;margin:0;cursor:pointer;
-	accent-color:var(--realtime);-webkit-tap-highlight-color:transparent}
-.okbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.stream.done{background:var(--sunk)}
-.stream.done .sname{color:var(--ink-soft)}
-
-#q{margin-top:7px;width:100%;font:400 13px var(--sans);color:var(--ink);
-	background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:7px 10px}
-#q:focus{outline:2px solid var(--accent-soft);outline-offset:-1px;border-color:var(--accent-soft)}
-
-main{padding:14px 14px 48px;max-width:1000px;margin:0 auto}
-.group{margin:0 0 26px}
-.group h2{display:flex;align-items:baseline;gap:8px;margin:0 0 8px;font-size:12px;
-	font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft)}
-.gcount{font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
-.gempty{margin:0;padding:10px 12px;color:var(--ink-faint);font-size:12px;
-	border:1px dashed var(--rule);border-radius:6px}
-
-.cards{border:1px solid var(--rule);border-radius:7px;overflow:hidden;background:var(--surface)}
-.group-split .cards{box-shadow:0 1px 3px rgba(20,23,28,.10)}
-.group-empty .cards{background:var(--sunk)}
-.stream{padding:9px 12px 10px;border-top:1px solid var(--rule)}
-.stream:first-child{border-top:0}
-.sh{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 9px;margin-bottom:6px}
-.sname{margin:0;font-size:13.5px;font-weight:600;letter-spacing:-.005em}
-.period{font-size:10.5px;color:var(--ink-soft);background:var(--sunk);border-radius:4px;padding:1px 5px}
-.legs{font-size:11px;color:var(--ink-faint)}
-.legs .num{color:var(--ink-soft);font-size:11.5px}
-.sid{font-size:10px;color:var(--ink-faint);margin-left:auto;word-break:break-all}
-
-.partwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table.part{border-collapse:collapse;width:100%;min-width:430px}
-.part th{font-size:9.5px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;
-	color:var(--ink-faint);text-align:left;padding:0 8px 3px 0;border-bottom:1px solid var(--rule)}
-.part th.c-num{text-align:right}
-.part td{padding:5px 8px 5px 0;border-bottom:1px solid var(--rule);vertical-align:top}
-.part tr:last-child td{border-bottom:0}
-.c-num{text-align:right;width:88px}
-.c-kind{width:76px}
-.c-flag{width:88px;text-align:right}
-
-.acct{font-size:12.5px;color:var(--ink)}
-.mask{color:var(--ink-faint);font-size:11px}
-.missing{color:var(--flag);font-style:italic}
-.kind{display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;white-space:nowrap}
-.kind-realTime{color:var(--realtime);background:var(--realtime-bg)}
-.kind-deferred{color:var(--deferred);background:var(--deferred-bg)}
-.kind-unknown{color:var(--ink-faint);background:var(--sunk)}
-.c-num .num{display:block;font-size:12.5px;color:var(--ink)}
-.bar{display:block;height:3px;margin-top:3px;background:var(--sunk);border-radius:2px;overflow:hidden}
-.bar-fill{display:block;height:100%;border-radius:2px}
-.fill-amount{background:var(--accent)}
-.fill-txn{background:var(--accent-soft)}
-
-.alloc.diverges{background:var(--flag-bg)}
-.alloc.diverges td:first-child{box-shadow:inset 2px 0 0 var(--flag)}
-.flag{display:inline-block;font-family:var(--mono);font-size:10.5px;color:var(--flag);
-	border:1px solid var(--flag);border-radius:4px;padding:0 4px;white-space:nowrap}
-.alloc.tail .acct,.alloc.tail .c-num .num{color:var(--ink-faint)}
-.alloc.tail .kind{opacity:.6}
-.alloc.tail td:first-child{box-shadow:inset 2px 0 0 var(--rule)}
-.alloc.tail.diverges td:first-child{box-shadow:inset 2px 0 0 var(--flag)}
-.tailmark{display:inline-block;font-family:var(--mono);font-size:10px;
-	color:var(--ink-faint);margin-left:5px;letter-spacing:.04em}
-.nopart{font-size:11.5px;color:var(--ink-faint)}
-
-@media (max-width:520px){
-	.sid{margin-left:0;width:100%}
-	main{padding:12px 10px 40px}
-	header.top{padding:9px 10px 10px}
-}
-</style>
-</head><body>
-<header class="top">
-	<p class="meta"><b>Account mapping &sect;1</b>
-		&middot; <span class="num">${s.total}</span> streams
-		&middot; <span class="num">${s.totalLegs}</span> legs
-		&middot; <span class="num">${esc(m.transactionCount)}</span> txns
-		&middot; <span class="num f">${s.divergentStreams}</span> diverge &gt;${DIVERGENCE_THRESHOLD_POINTS}pts
-			<span class="dim">(${s.divergentAllocations})</span>
-		&middot; <span class="num">${s.tailStreams}</span> tail &lt;${TAIL_THRESHOLD_PERCENT}%
-			<span class="dim">(${s.tailAllocations})</span>${s.unknownAccountAllocations
-		? '\n\t\t&middot; <span class="num f">' + s.unknownAccountAllocations + '</span> unknown account'
-		: ''}
-		<span class="cap" title="${esc(m.version)} &mdash; captured ${esc(m.capturedAt)}">${esc(String(m.capturedAt || '').slice(0, 10))}</span></p>
-	<div class="bar-row">
-		<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
-		<button id="only" type="button" aria-pressed="false">unvalidated</button>
-		<span id="prog" class="prog"><span class="num" id="pn">0</span>/<span class="num">${s.total}</span></span>
-		<button id="copy" type="button" title="copy the streams still unticked">copy rejects</button>
-	</div>
-</header>
-<main>
-${section('split', 'Split across accounts', split)}
-${section('single', 'One account', single)}
-${section('empty', 'No transactions', empty)}
-</main>
-<script>
-(function(){
-	/* ONE CLICK TOUCHES ONE CARD. The version before this re-asserted the checked state of all 87 boxes from
-	   a shared object every time any one of them changed, so a single bad or stale entry anywhere
-	   fought every subsequent click and the whole grid read as frozen. A change handler has no
-	   business writing to controls the reader did not touch. */
-	var KEY = 'kawa.audit.accountMapping.v1';
-	var q = document.getElementById('q');
-	var only = document.getElementById('only');
-	var pn = document.getElementById('pn');
-	var copy = document.getElementById('copy');
-	var boxes = [].slice.call(document.querySelectorAll('.okbox'));
-	var groups = [].slice.call(document.querySelectorAll('.group')).map(function(g){
-		return {cards: [].slice.call(g.querySelectorAll('.stream')),
-			shown: g.querySelector('.shown'), of: g.querySelector('.of'),
-			empty: g.querySelector('.gempty')};
+	return renderAuditPage({
+		title: 'Account mapping',
+		phase: '§1',
+		storageKey: 'kawa.audit.accountMapping.v1',
+		metaLine: metaLine,
+		capturedAt: String(m.capturedAt || '').slice(0, 10),
+		versionTitle: String(m.version || '') + ' — captured ' + String(m.capturedAt || ''),
+		groups: [
+			group('split', 'Split across accounts', enriched.filter(r => r.allocations.length > 1)),
+			group('single', 'One account', enriched.filter(r => r.allocations.length === 1)),
+			group('empty', 'No transactions', enriched.filter(r => r.allocations.length === 0))
+		]
 	});
-
-	function read(){
-		try{
-			var v = JSON.parse(localStorage.getItem(KEY) || '{}');
-			return (v && typeof v === 'object') ? v : {};
-		}catch(e){ return {}; }
-	}
-	function write(v){
-		try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){}
-	}
-
-	function count(){
-		var n = 0;
-		for(var i = 0; i < boxes.length; i++)if(boxes[i].checked)n++;
-		pn.textContent = n;
-		return n;
-	}
-
-	function apply(){
-		var t = q.value.trim().toLowerCase();
-		var hideDone = only.getAttribute('aria-pressed') === 'true';
-		groups.forEach(function(g){
-			var n = 0;
-			g.cards.forEach(function(c){
-				var hit = (!t || c.getAttribute('data-search').indexOf(t) !== -1)
-					&& !(hideDone && c.classList.contains('done'));
-				c.hidden = !hit;
-				if(hit)n++;
-			});
-			g.shown.textContent = n;
-			g.of.hidden = !t && !hideDone;
-			g.empty.hidden = n !== 0;
-		});
-	}
-
-	//restore, once, at load. After this nothing writes to a checkbox except the reader.
-	var saved = read();
-	boxes.forEach(function(b){
-		var card = b.closest('.stream');
-		if(saved[b.getAttribute('data-sid')]){
-			b.checked = true;
-			if(card)card.classList.add('done');
-		}
-		b.addEventListener('change', function(){
-			var v = read();
-			var id = b.getAttribute('data-sid');
-			if(b.checked)v[id] = true; else delete v[id];
-			write(v);
-			if(card)card.classList.toggle('done', b.checked);
-			count();
-			if(only.getAttribute('aria-pressed') === 'true')apply();
-		});
-	});
-	count();
-
-	only.addEventListener('click', function(){
-		only.setAttribute('aria-pressed', only.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
-		apply();
-	});
-	q.addEventListener('input', apply);
-
-	/* THE UNTICKED STREAMS ARE THE RESULT OF THE AUDIT, so there is a button that hands them over as
-	   text. Nothing here reaches a server, which is the point: the page keeps working when no viewer
-	   is listening, and the reader decides when the verdicts leave the browser. */
-	var NL = String.fromCharCode(10), TAB = String.fromCharCode(9);
-	copy.addEventListener('click', function(){
-		var lines = [];
-		boxes.forEach(function(b){
-			if(b.checked)return;
-			var card = b.closest('.stream');
-			if(!card)return;
-			var name = card.querySelector('.sname');
-			lines.push((name ? name.textContent : '?') + TAB + b.getAttribute('data-sid'));
-		});
-		var text = lines.length
-			? 'unvalidated (' + lines.length + ' of ' + boxes.length + '):' + NL + lines.join(NL)
-			: 'all ' + boxes.length + ' partitions validated';
-		var done = function(){
-			copy.textContent = 'copied ' + lines.length;
-			copy.classList.add('done');
-			setTimeout(function(){ copy.textContent = 'copy rejects'; copy.classList.remove('done'); }, 2000);
-		};
-		if(navigator.clipboard && navigator.clipboard.writeText){
-			navigator.clipboard.writeText(text).then(done, function(){ window.prompt('unvalidated streams', text); });
-		}else{
-			window.prompt('unvalidated streams', text);
-		}
-	});
-
-	apply();
-})();
-</script>
-</body></html>`;
 }
 
 export default buildAuditPage;
