@@ -207,12 +207,19 @@ and the amount moves to the median — provided the median agrees with that side
 
 A median that disagrees with its own skew is noise rather than a correction, and the declaration holds.
 
+**The two tests count different things.** The direction test counts *transactions*; the median is taken
+over *cycles*. Where a stream has one transaction per cycle the two populations are identical, and the
+guard can never fire — a median cannot disagree with a direction that more than 70% of its own
+population agrees on. The guard earns its place only where the populations differ: a spread or
+multi-lump stream, several transactions to a cycle. Whether the direction test should count
+transactions or cycles is not settled.
+
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
 adopt, or ordinary variance to keep. Discarding and keeping are both wrong some of the time.
 
-**Solved when:** the amount is right for streams whose amount is knowable, and for the rest the module
-says how wide the range is instead of asserting a number.
+**Solved when:** every stream's amount comes out of these three steps, and Julien agrees with every
+single one of them.
 
 ---
 
