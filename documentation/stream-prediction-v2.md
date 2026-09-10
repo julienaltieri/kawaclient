@@ -50,6 +50,7 @@ into one row repeats the stream's decisions on every event and implies they coul
 | `basis.timing` | whether the timing was **taken from the declaration** or **inferred from the transactions** |
 | `basis.shape` | which shape was determined, and on what evidence |
 | `basis.amount` | which method produced the amount |
+| `basedOn` | the transactions this prediction was derived from, by id |
 | `events` | the schedule — zero or more of the below |
 
 **An event** — one per expected movement:
@@ -61,6 +62,17 @@ into one row repeats the stream's decisions on every event and implies they coul
 | `account` | which account it moves through |
 | `confidence.date` | how sure the module is about *when* |
 | `confidence.amount` | how sure the module is about *how much* |
+
+**`basedOn` is what makes a prediction auditable.** A number with no account of what it was read from
+can only be agreed with or disagreed with; the transactions behind it can be argued about. It is also
+the thing that settles the most common disagreement, which is not "is this rule right" but "did it look
+at what I think it looked at" — a stream whose shape was read from four transactions when it has two
+hundred is a different problem from one whose rule is wrong, and the two are indistinguishable without
+this.
+
+**By id, not by copy.** The caller supplied the ledger and still holds it, so identifiers are enough to
+resolve them and a copy would duplicate a large object for no gain. It does mean an id that no longer
+resolves is a broken audit trail rather than a silent one, which is the right failure.
 
 **Confidence sits on the event, not on the prediction**, because it can genuinely differ between them:
 the next movement of a drifting stream is more certain than the fifth. The basis does not differ that
