@@ -16,3 +16,7 @@
 # A captured portfolio is a LEDGER. The allowlist above admits everything under /src/, so it has to be
 # excluded by name or a `git add src/` commits every transaction the user has.
 /src/tests/fixtures/*.json
+
+# The generated §1 audit page embeds every account name and partition in the captured ledger. The
+# allowlist above admits everything under /src/, so it has to be excluded by name.
+/src/processors/streamPredictor/audit-account-mapping.html
