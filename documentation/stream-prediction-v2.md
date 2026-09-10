@@ -89,8 +89,7 @@ transactions, **which connected accounts did its money move through, and in what
 one; a stream paid two ways is a partition of two. There is no separate exceptional shape, so nothing
 downstream has to handle two.
 
-**In:** the stream, its transactions, the account list with types, the set of account pairings
-(card ↔ the account that repays it).
+**In:** the stream, its transactions, the account list with types.
 
 **Out:** a `partition` — an array of `accountAllocation`, one per connected account the stream's money
 moved through.
@@ -113,11 +112,6 @@ picks an answer on behalf of a caller that has not asked yet.
 whatever needs a single answer, and it is made from these weights. Naming a primary at this layer would
 bury that choice in a stage that has no idea what it is for, and every caller that disagreed with it
 would have to undo it.
-
-**The pairing comes in; this module does not derive it.** Which checking account repays which card is a
-fact about the accounts, established by the transfer legs the data model already pairs — no stream is
-involved in knowing it, and every stream on that card gets the same answer. Deriving it here would
-recompute one portfolio-wide fact once per stream and let two streams on the same card disagree.
 
 **Transfer legs stay in.** A card repayment moves through two connected accounts, and both movements
 are real: each one is attributed here like any other. Recognising the two as one movement seen twice,
@@ -345,7 +339,7 @@ by accident.
 | Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
-| Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams, and arrives as an input. `accountLinks()` derives it today from the paired transfer legs. |
+| Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams. No stage here consumes it; `accountLinks()` derives it today for whatever does. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
