@@ -116,9 +116,7 @@ belong to whatever feature needs them. The test is direction: if it takes a pred
 not here.
 
 That boundary holds whatever the consumers turn out to be, so it does not need editing each time one is
-added. One case is worth naming because it looks like an exception and is not: a card statement is
-assembled from the streams charged to that card, so this module supplies the streams and the consumer
-computes the statement.
+added.
 
 **Takes as given:** the account list with types, the transaction ledger, the stream's declaration
 (amount and period, with its history), and an **as-of date**. Nothing else.
