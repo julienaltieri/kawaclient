@@ -119,22 +119,21 @@ to the stream on the account it was mapped to.
 
 **Out:** a cycle, and whether it came from the declaration or from the ledger.
 
-**The default is the declaration, because it is a statement of fact by the person receiving the
-money.** Transactions are noisy in ways a declaration is not — a cheque moved off a Sunday, a month
-with a correction in it, a bank that posts late. Inference from a noisy signal should not overrule a
-clean one.
+**The declaration always wins for a non-yearly stream.** It is a statement of fact by the person
+receiving the money, and transactions are noisy in ways a declaration is not — a cheque moved off a
+Sunday, a month with a correction in it, a bank that posts late. A noisy signal never overrules a clean
+one; the ledger is not consulted at all once a non-yearly declaration exists.
 
 **Yearly is the exception.** It behaves differently from every other cycle — the arithmetic connecting
 a yearly figure to the size of one movement is unlike every other case — and how is worked out
 entirely in Special case: yearly streams. This stage's only job for a yearly stream is to hand it on
 correctly labelled.
 
-**The open questions.** When does the ledger get to contradict a non-yearly declaration — never, or
-under some evidential threshold? What about a declaration that was true and has stopped being true?
-And which window is the cycle read from, given a declaration whose amount has changed?
+**The open questions.** What about a declaration that was true and has stopped being true? And which
+window is the cycle read from, given a declaration whose amount has changed?
 
-**Solved when:** a stream's cycle matches what its owner would say without hesitation, and the
-cases where the ledger and the declaration disagree are enumerated rather than averaged.
+**Solved when:** every non-yearly stream's cycle matches its declaration exactly — yearly streams are
+excepted, and solved where they are specified — validated by Julien against the captured portfolio.
 
 ---
 
@@ -143,18 +142,20 @@ cases where the ledger and the declaration disagree are enumerated rather than a
 **The question.** For a stream whose cycle is known and is not yearly, determine what shape the
 money movements have during a cycle.
 
-**In:** the stream's cycle, its transactions on the account it was mapped to, and the history of its
-declared amount.
+**In:** the stream's cycle, its `accountAllocation` partition, and the history of its declared
+amount.
 
-**Out:** one of a small set of shapes, plus the parameters of whichever it is, plus how confident.
+**Out:** for each `accountAllocation`, one of a small set of shapes, the pattern that shape returns, and
+a confidence. A stream split across two accounts can have a different shape on each side, and each
+side's confidence is its own — a partition does not inherit a single verdict.
 
 **Three shapes are known to exist and must be told apart.**
 
-| shape | what it looks like | worked example |
-|---|---|---|
-| **lump** | one event, on a day it keeps | rent, on the 1st |
-| **spread** | continuous, no single event | groceries, all week |
-| **multi-lump** | several distinct events, each with its own day and size | utilities: water on the 4th, electricity on the 18th |
+| shape | what it looks like | pattern returned | worked example |
+|---|---|---|---|
+| **lump** | one event, on a day it keeps | day *X* of the cycle | rent, on the 1st — day 1 |
+| **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
+| **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
 
 **Multi-lump is the one that is currently missing**, and it is not the same thing as a split across
 accounts, which is treated separately below. Two bills on the *same* account, on different days, are
