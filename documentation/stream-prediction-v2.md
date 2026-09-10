@@ -1,7 +1,7 @@
 # Stream prediction v2
 
-> **THE SPECIFICATION FOR v2. Nothing here is built.** It is not wired to the balance view until the
-> exit criteria are met, by Julien's judgment; the existing model keeps running until then.
+> **THE SPECIFICATION FOR v2. Nothing here is built.** No consumer adopts it until the exit criteria
+> are met, by Julien's judgment; whatever predicts today keeps doing so, unchanged, until then.
 
 ---
 
@@ -337,8 +337,8 @@ without reaching for anything else. It has no dependency on the chart, the bench
 - a stage that fires can be shown to fire for the right reason, and a rule that changes nothing is
   removed rather than kept.
 
-**It is not connected to the bank balance prediction until Julien judges these met.** The current
-model stays in place, unchanged, throughout.
+**No consumer adopts it until Julien judges these met.** Whatever predicts today keeps doing so,
+unchanged, throughout.
 
 ---
 
