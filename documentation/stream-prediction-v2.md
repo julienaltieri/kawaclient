@@ -164,6 +164,9 @@ side's confidence is its own — a partition does not inherit a single verdict.
 | **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
 | **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
 
+**The open question.** How a lump or a multi-lump determines which day, or days, of the cycle it
+falls on.
+
 **Solved when:** every stream in the captured portfolio is shaped correctly, validated by Julien.
 
 ---
