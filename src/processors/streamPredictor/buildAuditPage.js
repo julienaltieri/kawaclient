@@ -139,6 +139,8 @@ const streamCard = r => {
 	const flagged = r.allocations.some(a => a.diverges);
 	return '<article class="stream' + (flagged ? ' has-diverge' : '') + '" data-search="' + esc(search) + '">'
 		+ '<header class="sh">'
+		+ '<label class="ok" title="mark this partition validated">'
+		+ '<input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"><span class="okmark"></span></label>'
 		+ '<h3 class="sname">' + esc(r.name) + '</h3>'
 		+ '<span class="period">' + esc(r.period === undefined || r.period === null ? 'no period' : r.period) + '</span>'
 		+ '<span class="legs"><span class="num">' + r.legCount + '</span> legs</span>'
@@ -220,6 +222,31 @@ header.top{position:sticky;top:0;z-index:10;background:var(--surface);
 .meta .dim{color:var(--ink-faint);opacity:.75}
 .meta .cap{float:right;color:var(--ink-faint);font-family:var(--mono);font-size:10.5px;
 	margin-left:8px;cursor:help}
+.bar-row{display:flex;gap:6px;align-items:stretch;margin-top:7px}
+.bar-row #q{margin-top:0;flex:1;min-width:0}
+#only{font:500 11px var(--sans);color:var(--ink-soft);background:var(--paper);
+	border:1px solid var(--rule);border-radius:6px;padding:0 9px;cursor:pointer;white-space:nowrap}
+#only[aria-pressed="true"]{color:var(--surface);background:var(--accent);border-color:var(--accent)}
+.prog{display:flex;align-items:center;font-family:var(--mono);font-size:11.5px;
+	color:var(--ink-faint);white-space:nowrap;padding:0 2px}
+.prog .num{color:var(--ink-soft)}
+.dbnote{margin:5px 0 0;font-size:10.5px;color:var(--flag)}
+
+/* THE TICK IS THE AUDIT'S OUTPUT, so it sits before the name rather than after the partition:
+   the reader's eye lands on it first on the way down a list of 87. Unchecked is the resting
+   state and carries no claim - a stream is not "wrong" until the reader says so by leaving it. */
+.ok{flex:0 0 auto;display:inline-flex;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.okbox{position:absolute;opacity:0;width:0;height:0}
+.okmark{display:block;width:17px;height:17px;border:1.5px solid var(--rule);border-radius:5px;
+	background:var(--surface);position:relative}
+.okmark::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;
+	border:solid var(--surface);border-width:0 2px 2px 0;transform:rotate(42deg);opacity:0}
+.okbox:checked + .okmark{background:var(--realtime);border-color:var(--realtime)}
+.okbox:checked + .okmark::after{opacity:1}
+.okbox:focus-visible + .okmark{outline:2px solid var(--accent);outline-offset:2px}
+.stream.done{background:var(--sunk)}
+.stream.done .sname{color:var(--ink-soft)}
+
 #q{margin-top:7px;width:100%;font:400 13px var(--sans);color:var(--ink);
 	background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:7px 10px}
 #q:focus{outline:2px solid var(--accent-soft);outline-offset:-1px;border-color:var(--accent-soft)}
@@ -299,7 +326,12 @@ table.part{border-collapse:collapse;width:100%;min-width:430px}
 		? '\n\t\t&middot; <span class="num f">' + s.unknownAccountAllocations + '</span> unknown account'
 		: ''}
 		<span class="cap" title="${esc(m.version)} &mdash; captured ${esc(m.capturedAt)}">${esc(String(m.capturedAt || '').slice(0, 10))}</span></p>
-	<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
+	<div class="bar-row">
+		<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
+		<button id="only" type="button" aria-pressed="false">unvalidated</button>
+		<span id="prog" class="prog"><span class="num" id="pn">0</span>/<span class="num">${s.total}</span></span>
+	</div>
+	<p id="dbnote" class="dbnote" hidden>Not saved &mdash; ticks stay in this browser only.</p>
 </header>
 <main>
 ${section('split', 'Split across accounts', split)}
@@ -309,27 +341,104 @@ ${section('empty', 'No transactions', empty)}
 <script>
 (function(){
 	var q = document.getElementById('q');
+	var only = document.getElementById('only');
+	var pn = document.getElementById('pn');
+	var dbnote = document.getElementById('dbnote');
+	var boxes = [].slice.call(document.querySelectorAll('.okbox'));
 	var groups = [].slice.call(document.querySelectorAll('.group')).map(function(g){
 		return {cards: [].slice.call(g.querySelectorAll('.stream')),
 			shown: g.querySelector('.shown'), of: g.querySelector('.of'),
 			empty: g.querySelector('.gempty')};
 	});
+
+	/* THE PAGE IS CORRECT BEFORE ANY STORE ANSWERS. Everything renders unticked, the viewer can
+	   tick, and a store - if one ever resolves - only ever adds what it already knew. A page that
+	   waited for the network would show 87 blank partitions to anyone opening it from a file. */
+	var DOC = 'audit/accountMapping';
+	var store = null;             //the db namespace, once (and if) it resolves
+	var validated = {};           //streamId -> true
+	var writing = false, pending = false;
+
+	function paint(){
+		var n = 0;
+		boxes.forEach(function(b){
+			var on = !!validated[b.getAttribute('data-sid')];
+			b.checked = on;
+			b.closest('.stream').classList.toggle('done', on);
+			if(on)n++;
+		});
+		pn.textContent = n;
+		apply();
+	}
+
 	function apply(){
 		var t = q.value.trim().toLowerCase();
+		var hideDone = only.getAttribute('aria-pressed') === 'true';
 		groups.forEach(function(g){
 			var n = 0;
 			g.cards.forEach(function(c){
-				var hit = !t || c.getAttribute('data-search').indexOf(t) !== -1;
+				var hit = (!t || c.getAttribute('data-search').indexOf(t) !== -1)
+					&& !(hideDone && c.classList.contains('done'));
 				c.hidden = !hit;
 				if(hit)n++;
 			});
 			g.shown.textContent = n;
-			g.of.hidden = !t;
+			g.of.hidden = !t && !hideDone;
 			g.empty.hidden = n !== 0;
 		});
 	}
+
+	//one document, rewritten whole; the viewer is one person and the last tick is the truth
+	function save(){
+		try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
+		if(!store){ return; }
+		if(writing){ pending = true; return; }
+		writing = true;
+		store.doc(DOC).set({validated: validated, updatedAt: new Date().toISOString()})
+			.catch(function(){ dbnote.hidden = false; })
+			.then(function(){
+				writing = false;
+				if(pending){ pending = false; save(); }
+			});
+	}
+
+	boxes.forEach(function(b){
+		b.addEventListener('change', function(){
+			var id = b.getAttribute('data-sid');
+			if(b.checked)validated[id] = true; else delete validated[id];
+			paint();
+			save();
+		});
+	});
+
+	only.addEventListener('click', function(){
+		only.setAttribute('aria-pressed', only.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+		apply();
+	});
 	q.addEventListener('input', apply);
-	apply();
+
+	try{
+		var local = JSON.parse(localStorage.getItem(DOC) || '{}');
+		if(local && typeof local === 'object')validated = local;
+	}catch(e){}
+	paint();
+
+	if(window.claude && window.claude.use){
+		window.claude.use('db').then(function(db){
+			if(!db){ dbnote.hidden = false; return; }
+			store = db;
+			store.doc(DOC).onSnapshot(function(snap){
+				var d = snap && snap.data ? snap.data() : null;
+				if(d && d.validated && typeof d.validated === 'object'){
+					validated = d.validated;
+					try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
+					paint();
+				}
+			}, function(){ dbnote.hidden = false; });
+		}).catch(function(){ dbnote.hidden = false; });
+	}else{
+		dbnote.hidden = false;
+	}
 })();
 </script>
 </body></html>`;
