@@ -139,8 +139,8 @@ const streamCard = r => {
 	const flagged = r.allocations.some(a => a.diverges);
 	return '<article class="stream' + (flagged ? ' has-diverge' : '') + '" data-search="' + esc(search) + '">'
 		+ '<header class="sh">'
-		+ '<label class="ok" title="mark this partition validated">'
-		+ '<input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"><span class="okmark"></span></label>'
+		+ '<input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
+		+ ' aria-label="mark this partition validated" title="mark this partition validated">'
 		+ '<h3 class="sname">' + esc(r.name) + '</h3>'
 		+ '<span class="period">' + esc(r.period === undefined || r.period === null ? 'no period' : r.period) + '</span>'
 		+ '<span class="legs"><span class="num">' + r.legCount + '</span> legs</span>'
@@ -230,20 +230,20 @@ header.top{position:sticky;top:0;z-index:10;background:var(--surface);
 .prog{display:flex;align-items:center;font-family:var(--mono);font-size:11.5px;
 	color:var(--ink-faint);white-space:nowrap;padding:0 2px}
 .prog .num{color:var(--ink-soft)}
-.dbnote{margin:5px 0 0;font-size:10.5px;color:var(--flag)}
+#copy{font:500 11px var(--sans);color:var(--ink-soft);background:var(--paper);
+	border:1px solid var(--rule);border-radius:6px;padding:0 9px;cursor:pointer;white-space:nowrap}
+#copy.done{color:var(--realtime);border-color:var(--realtime)}
 
 /* THE TICK IS THE AUDIT'S OUTPUT, so it sits before the name rather than after the partition:
    the reader's eye lands on it first on the way down a list of 87. Unchecked is the resting
-   state and carries no claim - a stream is not "wrong" until the reader says so by leaving it. */
-.ok{flex:0 0 auto;display:inline-flex;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.okbox{position:absolute;opacity:0;width:0;height:0}
-.okmark{display:block;width:17px;height:17px;border:1.5px solid var(--rule);border-radius:5px;
-	background:var(--surface);position:relative}
-.okmark::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;
-	border:solid var(--surface);border-width:0 2px 2px 0;transform:rotate(42deg);opacity:0}
-.okbox:checked + .okmark{background:var(--realtime);border-color:var(--realtime)}
-.okbox:checked + .okmark::after{opacity:1}
-.okbox:focus-visible + .okmark{outline:2px solid var(--accent);outline-offset:2px}
+   state and carries no claim - a stream is not "wrong" until the reader says so by leaving it.
+
+   IT IS A PLAIN NATIVE CHECKBOX. A faked one - the input hidden at opacity 0 with a styled
+   sibling standing in for it - is a thing that can stop responding, and this one did. There is
+   nothing here for the browser to get wrong. */
+.okbox{flex:0 0 auto;width:17px;height:17px;margin:0;cursor:pointer;
+	accent-color:var(--realtime);-webkit-tap-highlight-color:transparent}
+.okbox:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .stream.done{background:var(--sunk)}
 .stream.done .sname{color:var(--ink-soft)}
 
@@ -330,8 +330,8 @@ table.part{border-collapse:collapse;width:100%;min-width:430px}
 		<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
 		<button id="only" type="button" aria-pressed="false">unvalidated</button>
 		<span id="prog" class="prog"><span class="num" id="pn">0</span>/<span class="num">${s.total}</span></span>
+		<button id="copy" type="button" title="copy the streams still unticked">copy rejects</button>
 	</div>
-	<p id="dbnote" class="dbnote" hidden>Not saved &mdash; ticks stay in this browser only.</p>
 </header>
 <main>
 ${section('split', 'Split across accounts', split)}
@@ -340,10 +340,15 @@ ${section('empty', 'No transactions', empty)}
 </main>
 <script>
 (function(){
+	/* ONE CLICK TOUCHES ONE CARD. The version before this re-asserted the checked state of all 87 boxes from
+	   a shared object every time any one of them changed, so a single bad or stale entry anywhere
+	   fought every subsequent click and the whole grid read as frozen. A change handler has no
+	   business writing to controls the reader did not touch. */
+	var KEY = 'kawa.audit.accountMapping.v1';
 	var q = document.getElementById('q');
 	var only = document.getElementById('only');
 	var pn = document.getElementById('pn');
-	var dbnote = document.getElementById('dbnote');
+	var copy = document.getElementById('copy');
 	var boxes = [].slice.call(document.querySelectorAll('.okbox'));
 	var groups = [].slice.call(document.querySelectorAll('.group')).map(function(g){
 		return {cards: [].slice.call(g.querySelectorAll('.stream')),
@@ -351,25 +356,21 @@ ${section('empty', 'No transactions', empty)}
 			empty: g.querySelector('.gempty')};
 	});
 
-	/* THE PAGE IS CORRECT BEFORE ANY STORE ANSWERS. Everything renders unticked, the viewer can
-	   tick, and a store - if one ever resolves - only ever adds what it already knew. A page that
-	   waited for the network would show 87 blank partitions to anyone opening it from a file. */
-	var DOC = 'audit/accountMapping';
-	var store = null;             //the db namespace, once (and if) it resolves
-	var validated = {};           //streamId -> true
-	var writing = false, pending = false;
-	var localDirty = false;       //true from this tab's first click on; see onSnapshot below
+	function read(){
+		try{
+			var v = JSON.parse(localStorage.getItem(KEY) || '{}');
+			return (v && typeof v === 'object') ? v : {};
+		}catch(e){ return {}; }
+	}
+	function write(v){
+		try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){}
+	}
 
-	function paint(){
+	function count(){
 		var n = 0;
-		boxes.forEach(function(b){
-			var on = !!validated[b.getAttribute('data-sid')];
-			b.checked = on;
-			b.closest('.stream').classList.toggle('done', on);
-			if(on)n++;
-		});
+		for(var i = 0; i < boxes.length; i++)if(boxes[i].checked)n++;
 		pn.textContent = n;
-		apply();
+		return n;
 	}
 
 	function apply(){
@@ -389,40 +390,25 @@ ${section('empty', 'No transactions', empty)}
 		});
 	}
 
-	//one document, rewritten whole; the viewer is one person and the last tick is the truth
-	function save(){
-		try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
-		if(!store){ return; }
-		if(writing){ pending = true; return; }
-		writing = true;
-		//A HUNG PROMISE MUST NOT WEDGE FUTURE SAVES. Nothing in this contract promises set()
-		//always settles (a stalled permission prompt is exactly the shape that would not), and a
-		//writing flag that never clears turns every click after the first into a silent no-op.
-		var settled = false;
-		var clear = function(){
-			if(settled)return;
-			settled = true;
-			writing = false;
-			if(pending){ pending = false; save(); }
-		};
-		setTimeout(clear, 8000);
-		store.doc(DOC).set({validated: validated, updatedAt: new Date().toISOString()})
-			.catch(function(){ dbnote.hidden = false; })
-			.then(clear);
-	}
-
+	//restore, once, at load. After this nothing writes to a checkbox except the reader.
+	var saved = read();
 	boxes.forEach(function(b){
+		var card = b.closest('.stream');
+		if(saved[b.getAttribute('data-sid')]){
+			b.checked = true;
+			if(card)card.classList.add('done');
+		}
 		b.addEventListener('change', function(){
-			//ONCE THE READER HAS TOUCHED A BOX, THIS TAB'S STATE IS THE TRUTH. See the onSnapshot
-			//handler below for why: an unconditional overwrite from the server was the actual bug
-			//that made ticking look stuck, and this flag is what stops it happening again.
-			localDirty = true;
+			var v = read();
 			var id = b.getAttribute('data-sid');
-			if(b.checked)validated[id] = true; else delete validated[id];
-			paint();
-			save();
+			if(b.checked)v[id] = true; else delete v[id];
+			write(v);
+			if(card)card.classList.toggle('done', b.checked);
+			count();
+			if(only.getAttribute('aria-pressed') === 'true')apply();
 		});
 	});
+	count();
 
 	only.addEventListener('click', function(){
 		only.setAttribute('aria-pressed', only.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
@@ -430,41 +416,35 @@ ${section('empty', 'No transactions', empty)}
 	});
 	q.addEventListener('input', apply);
 
-	try{
-		var local = JSON.parse(localStorage.getItem(DOC) || '{}');
-		if(local && typeof local === 'object')validated = local;
-	}catch(e){}
-	paint();
+	/* THE UNTICKED STREAMS ARE THE RESULT OF THE AUDIT, so there is a button that hands them over as
+	   text. Nothing here reaches a server, which is the point: the page keeps working when no viewer
+	   is listening, and the reader decides when the verdicts leave the browser. */
+	var NL = String.fromCharCode(10), TAB = String.fromCharCode(9);
+	copy.addEventListener('click', function(){
+		var lines = [];
+		boxes.forEach(function(b){
+			if(b.checked)return;
+			var card = b.closest('.stream');
+			if(!card)return;
+			var name = card.querySelector('.sname');
+			lines.push((name ? name.textContent : '?') + TAB + b.getAttribute('data-sid'));
+		});
+		var text = lines.length
+			? 'unvalidated (' + lines.length + ' of ' + boxes.length + '):' + NL + lines.join(NL)
+			: 'all ' + boxes.length + ' partitions validated';
+		var done = function(){
+			copy.textContent = 'copied ' + lines.length;
+			copy.classList.add('done');
+			setTimeout(function(){ copy.textContent = 'copy rejects'; copy.classList.remove('done'); }, 2000);
+		};
+		if(navigator.clipboard && navigator.clipboard.writeText){
+			navigator.clipboard.writeText(text).then(done, function(){ window.prompt('unvalidated streams', text); });
+		}else{
+			window.prompt('unvalidated streams', text);
+		}
+	});
 
-	if(window.claude && window.claude.use){
-		window.claude.use('db').then(function(db){
-			if(!db){ dbnote.hidden = false; return; }
-			store = db;
-			store.doc(DOC).onSnapshot(function(snap){
-				//THE BUG THIS GUARDS AGAINST: this fires again on the server's own confirmation of
-				//OUR write, and can also deliver a snapshot taken before a write that is still in
-				//flight. Applying it unconditionally meant a slow or dropped save for box 2 let the
-				//next event revert box 2 - and, on the very same overwrite, re-assert box 1 as
-				//permanently checked. Once this tab has an edit of its own, only THIS tab decides
-				//what its checkboxes show; a snapshot from elsewhere is merged in, never replacing.
-				var d = snap && snap.data ? snap.data() : null;
-				if(!d || !d.validated || typeof d.validated !== 'object')return;
-				if(localDirty){
-					var merged = false;
-					Object.keys(d.validated).forEach(function(id){
-						if(!(id in validated)){ validated[id] = true; merged = true; }
-					});
-					if(merged)paint();
-					return;
-				}
-				validated = d.validated;
-				try{ localStorage.setItem(DOC, JSON.stringify(validated)); }catch(e){}
-				paint();
-			}, function(){ dbnote.hidden = false; });
-		}).catch(function(){ dbnote.hidden = false; });
-	}else{
-		dbnote.hidden = false;
-	}
+	apply();
 })();
 </script>
 </body></html>`;

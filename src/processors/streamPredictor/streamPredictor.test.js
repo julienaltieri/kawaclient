@@ -110,6 +110,18 @@ suite('StreamPredictor §1 - account mapping, against the captured portfolio', (
 		expect(html.trim().endsWith('</html>')).toBe(true);
 		expect(fs.statSync(OUT).size).toBeGreaterThan(20000);
 
+		/* THE PAGE'S OWN JAVASCRIPT MUST PARSE, and this is the assertion that was missing when a
+		   broken page shipped twice. The generator writes that script from inside a template
+		   literal, which silently eats one level of backslash: a "\n" meant for the emitted string
+		   arrives as a real line break and every checkbox on the page stops working, while the
+		   markup stays perfectly well-formed and every other assertion here still passes. */
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBeGreaterThan(0);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+		});
+
 		console.log('§1 ACCOUNT MAPPING: ' + summary.total + ' terminal streams | '
 			+ summary.split + ' split across 2+ accounts | ' + summary.single + ' single-account | '
 			+ summary.empty + ' with zero transactions | ' + summary.totalLegs + ' legs | '
