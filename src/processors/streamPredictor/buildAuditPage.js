@@ -154,9 +154,6 @@ const section = (key, title, list) => '<section class="group group-' + key + '" 
 	+ '<div class="cards">' + list.slice().sort(byEvidence).map(streamCard).join('') + '</div>'
 	+ '<p class="gempty" hidden>nothing matches the filter</p></section>';
 
-const stat = (label, value, cls) => '<div class="stat' + (cls ? ' ' + cls : '') + '">'
-	+ '<span class="sv num">' + esc(value) + '</span><span class="sl">' + esc(label) + '</span></div>';
-
 /* `rows` is exactly what StreamPredictor.mapAllAccounts() returned; `meta` carries the fixture facts
    the header states and the account list the hashes are resolved against. Nothing else is read. */
 export function buildAuditPage(rows, meta){
@@ -210,20 +207,20 @@ body{margin:0;background:var(--paper);color:var(--ink);
 	font:400 14px/1.45 var(--sans);-webkit-text-size-adjust:100%;overflow-x:hidden}
 .num,code,.mask,.sid{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
+/* THE HEADER IS ONE LINE, because the split / one-account / no-transaction counts it used to repeat
+   are already printed on each group's own heading, and a second copy of them cost half a phone
+   screen before the first stream was visible. What survives here is only what is stated nowhere
+   else. */
 header.top{position:sticky;top:0;z-index:10;background:var(--surface);
-	border-bottom:1px solid var(--rule);padding:10px 14px 12px}
-h1{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em}
-.meta{margin:3px 0 0;color:var(--ink-faint);font-size:11.5px;word-break:break-word}
-.meta .num{color:var(--ink-soft)}
-.stats{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.stat{background:var(--sunk);border:1px solid transparent;border-radius:5px;
-	padding:5px 8px;display:flex;align-items:baseline;gap:6px;min-width:0}
-.stat .sv{font-size:14px;font-weight:500;color:var(--ink)}
-.stat .sl{font-size:10.5px;color:var(--ink-faint);letter-spacing:.02em}
-.stat.k-flag{background:var(--flag-bg);border-color:var(--flag)}
-.stat.k-flag .sv{color:var(--flag)}
-.stat.k-tail .sv{color:var(--ink-faint)}
-#q{margin-top:10px;width:100%;font:400 13px var(--sans);color:var(--ink);
+	border-bottom:1px solid var(--rule);padding:7px 14px 8px}
+.meta{margin:0;color:var(--ink-faint);font-size:11.5px;line-height:1.5}
+.meta b{color:var(--ink);font-weight:600;font-size:12.5px}
+.meta .num{color:var(--ink-soft);font-weight:500}
+.meta .num.f{color:var(--flag)}
+.meta .dim{color:var(--ink-faint);opacity:.75}
+.meta .cap{float:right;color:var(--ink-faint);font-family:var(--mono);font-size:10.5px;
+	margin-left:8px;cursor:help}
+#q{margin-top:7px;width:100%;font:400 13px var(--sans);color:var(--ink);
 	background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:7px 10px}
 #q:focus{outline:2px solid var(--accent-soft);outline-offset:-1px;border-color:var(--accent-soft)}
 
@@ -291,25 +288,17 @@ table.part{border-collapse:collapse;width:100%;min-width:430px}
 </style>
 </head><body>
 <header class="top">
-	<h1>Account mapping audit &mdash; &sect;1</h1>
-	<p class="meta">fixture <span class="num">${esc(m.version)}</span>
-		&middot; captured <span class="num">${esc(m.capturedAt)}</span>
-		&middot; <span class="num">${esc(m.transactionCount)}</span> transactions
+	<p class="meta"><b>Account mapping &sect;1</b>
+		&middot; <span class="num">${s.total}</span> streams
 		&middot; <span class="num">${s.totalLegs}</span> legs
-		&middot; <span class="num">${esc(m.accountCount)}</span> accounts
-		&middot; divergence &gt; <span class="num">${DIVERGENCE_THRESHOLD_POINTS}</span> pts
-		&middot; tail &lt; <span class="num">${TAIL_THRESHOLD_PERCENT}</span>%</p>
-	<div class="stats">
-		${stat('terminal streams', s.total)}
-		${stat('split', s.split)}
-		${stat('one account', s.single)}
-		${stat('no transactions', s.empty)}
-		${stat('divergent streams', s.divergentStreams, 'k-flag')}
-		${stat('divergent allocations', s.divergentAllocations, 'k-flag')}
-		${stat('streams with a tail', s.tailStreams, 'k-tail')}
-		${stat('tail allocations', s.tailAllocations, 'k-tail')}
-		${stat('unknown-account allocations', s.unknownAccountAllocations, 'k-flag')}
-	</div>
+		&middot; <span class="num">${esc(m.transactionCount)}</span> txns
+		&middot; <span class="num f">${s.divergentStreams}</span> diverge &gt;${DIVERGENCE_THRESHOLD_POINTS}pts
+			<span class="dim">(${s.divergentAllocations})</span>
+		&middot; <span class="num">${s.tailStreams}</span> tail &lt;${TAIL_THRESHOLD_PERCENT}%
+			<span class="dim">(${s.tailAllocations})</span>${s.unknownAccountAllocations
+		? '\n\t\t&middot; <span class="num f">' + s.unknownAccountAllocations + '</span> unknown account'
+		: ''}
+		<span class="cap" title="${esc(m.version)} &mdash; captured ${esc(m.capturedAt)}">${esc(String(m.capturedAt || '').slice(0, 10))}</span></p>
 	<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
 </header>
 <main>
