@@ -130,22 +130,43 @@ past date to see what it would have predicted then.
 ## §1 — Mapping accounts to streams
 
 **The question.** This is a **classification**: mapping accounts to streams. Given a stream and its
-transactions, **which connected account does that stream map to?**
+transactions, **which connected accounts did its money move through, and in what proportion?**
 
-A stream that genuinely moves money through two connected accounts maps to both, with a share each.
-That is the exception rather than the general case: most streams have one home, and splitting one that
-does is worse than leaving it whole.
+**The answer is always a partition, never a single account.** A stream with one home is a partition of
+one; a stream paid two ways is a partition of two. There is no separate exceptional shape, so nothing
+downstream has to handle two.
 
 **In:** the stream, its transactions, the account list with types, the set of account pairings
 (card ↔ the account that repays it).
 
-**Out:** one account per stream, or — for the exceptional case — a partition with a share each. Plus
-the direction the stream moves money in, and how much of the money and how many of the transactions
-are on each side.
+**Out:** a **partition of the connected accounts** the stream's money moved through. Each part carries
+two weights:
+
+| weight | what it is |
+|---|---|
+| share of the money | that account's portion of the total moved |
+| share of the transactions | that account's portion of the count |
+
+Plus the direction the stream moves money in.
+
+**Two weights, because they disagree and the disagreement is information.** A stream can be 98% of the
+money on a card and half the transactions on debit — twenty small purchases against two large ones —
+and which of those matters depends on the question being asked. Collapsing them into one number picks
+an answer on behalf of a caller that has not asked yet.
+
+**No primary account is named here.** Choosing one representative account is a decision that belongs to
+whatever needs a single answer, and it is made from these weights. Naming a primary at this layer would
+bury that choice in a stage that has no idea what it is for, and every caller that disagreed with it
+would have to undo it.
+
+**The pairing comes in; this module does not derive it.** Which checking account repays which card is a
+fact about the accounts, established by the transfer legs the data model already pairs — no stream is
+involved in knowing it, and every stream on that card gets the same answer. Deriving it here would
+recompute one portfolio-wide fact once per stream and let two streams on the same card disagree.
 
 **Direction is reported, not used to choose.** A wage and a rent both belong wholly to the checking
 account they pass through; that they pass in opposite directions is a fact about the stream, and it
-matters to the consumer drawing a balance. It is not what decides which account is the stream's.
+matters to the consumer drawing a balance. It is not what decides the partition.
 
 **What makes it hard.**
 
@@ -159,15 +180,15 @@ refund looks like an arrival too.
 carry the same stream and point opposite ways; that is the signature. Outside that, a stream's direction
 describes it rather than places it.
 
-*"Which account" and "how much of it" are different questions.* A stream 98% on a card and 2% on
-debit has one home and a rounding error. A stream 68/32 has two bills under one name — water by
-transfer, electricity by card — with different counterparties and different dates. The first must not
-be split; the second must not be averaged. Where the boundary sits is an open question, not a settled
-one.
+*A partition does not say what the split means.* A stream 98% on a card and 2% on debit has one home
+and a rounding error. A stream 68/32 has two bills under one name — water by transfer, electricity by
+card — with different counterparties and different dates. Both come out of this stage as partitions
+with weights; whether a split is material enough to forecast as two separate things is decided where
+that matters, not here.
 
-**Solved when:** every stream is assigned to the account it moves money through, whichever way it
-moves; no transfer leg is counted as spending or as income; and a stream the rule split can be shown to
-be two real bills rather than one noisy one.
+**Solved when:** every transaction is attributed to a connected account, whichever way its money moves;
+no transfer leg is counted as spending or as income; and each stream's weights sum to one across its
+partition.
 
 ---
 
@@ -375,14 +396,15 @@ unchanged, throughout.
 
 ## Decided
 
-Four questions were open when this was first written. They are settled, and recorded here so they are
-not re-opened by accident.
+These were open while this was written. They are settled, and recorded here so they are not re-opened
+by accident.
 
 | question | answer |
 |---|---|
 | Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
+| Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams, and arrives as an input. `accountLinks()` derives it today from the paired transfer legs. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and a basis.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
