@@ -21,10 +21,11 @@ for. That is what makes it testable on its own and replaceable without touching 
 several cards. A stream relates to one of them — sometimes to two — and a balance is drawn for each. A
 prediction that says only "$1,700 on the 6th" is not usable; it must say *out of which account*.
 
-**It predicts, and only predicts.** It does not explain itself. A stream the module is unsure of is
-distinguishable from one it is sure of through the **confidence on the prediction**, not through an
-account of how the decision was reached. Where a decision needs arguing with, that is a debugging need,
-and a debugging surface is built when there is something to debug.
+**It predicts, and every prediction carries what is needed to judge it.** A stream the module is
+unsure of is distinguishable from one it is sure of through the **confidence**, and each prediction
+carries a **basis** saying how it was arrived at. How much further it should account for itself is not
+settled here — a fuller explanation is a debugging need, and gets built when there is something to
+debug.
 
 Each stage below carries a **status**, and gains its approach and its acceptance criteria as those are
 agreed.
@@ -334,8 +335,8 @@ Two consequences worth stating, because they are easy to lose:
   two is wrong and which one is the interesting question. Several of v1's rules exist because the
   ledger turned out to be right.
 - **The audit needs the module's decisions to be readable at the moment of judging.** That is a
-  debugging surface, built for the audit, and it is not the same as the module explaining itself in
-  production — see "It predicts, and only predicts".
+  debugging surface, built for the audit. It is a larger thing than the confidence and basis a
+  prediction carries, and it does not have to ship with them.
 
 **The module is self-contained.** It can be handed a portfolio and an as-of date and will answer
 without reaching for anything else. It has no dependency on the chart, the bench, or the balance walk.
@@ -363,7 +364,7 @@ not re-opened by accident.
 | Does the declaration or the ledger own the amount? | **Left open on purpose.** Decided case by case as each is reached. |
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
-| Does it predict, or also explain? | **Predict only.** Explanation is a debugging need and gets built when there is something to debug. |
+| Does it predict, or also explain? | **Predicts, plus a confidence and a basis.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
 
@@ -373,3 +374,6 @@ not re-opened by accident.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
    not a person, and comparable between streams.
+4. **How much a prediction should account for itself.** Today: a confidence and a basis label. Whether
+   that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
+   because it may need to change.
