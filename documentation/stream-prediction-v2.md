@@ -92,18 +92,22 @@ downstream has to handle two.
 **In:** the stream, its transactions, the account list with types, the set of account pairings
 (card ↔ the account that repays it).
 
-**Out:** a **partition of the connected accounts** the stream's money moved through. Each part carries
-two weights:
+**Out:** a `partition` — an array of `accountAllocation`, one per connected account the stream's money
+moved through.
 
-| weight | what it is |
+| `accountAllocation` | what it is |
 |---|---|
-| share of the money | that account's portion of the total moved |
-| share of the transactions | that account's portion of the count |
+| `accountId` | the connected account |
+| `accountType` | its type — checking, credit |
+| `amountPercent` | that account's share of the absolute money the stream moved |
+| `transactionPercent` | that account's share of the stream's transaction count |
 
-**Two weights, because they disagree and the disagreement is information.** A stream can be 98% of the
-money on a card and half the transactions on debit — twenty small purchases against two large ones —
-and which of those matters depends on the question being asked. Collapsing them into one number picks
-an answer on behalf of a caller that has not asked yet.
+Both percentages are taken over the partition, so each sums to 100 across the array.
+
+**Two percentages, because they disagree and the disagreement is information.** A stream can be 98% of
+the money on a card and half the transactions on debit — twenty small purchases against two large
+ones — and which of those matters depends on the question being asked. Collapsing them into one number
+picks an answer on behalf of a caller that has not asked yet.
 
 **No primary account is named here.** Choosing one representative account is a decision that belongs to
 whatever needs a single answer, and it is made from these weights. Naming a primary at this layer would
