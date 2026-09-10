@@ -23,7 +23,7 @@ prediction that says only "$1,700 on the 6th" is not usable; it must say *out of
 
 **It predicts, and every prediction carries what is needed to judge it.** A stream the module is
 unsure of is distinguishable from one it is sure of through the **confidence**, and each prediction
-carries a **basis** saying how it was arrived at. How much further it should account for itself is not
+carries a **record of how it was arrived at**. How much further it should account for itself is not
 settled here — a fuller explanation is a debugging need, and gets built when there is something to
 debug.
 
@@ -49,8 +49,8 @@ between them.
 | `timingDetermination` | where the timing came from: **the declaration**, or **inferred from the transactions** | For most streams the timing matches the declaration. Yearly streams are where it comes apart: a stream is often declared yearly out of uncertainty, and the pattern inside it only shows up in the transactions later — so an inferred timing can legitimately disagree with what was declared, and which of the two produced the schedule has to be visible. |
 | `cycle` | the cycle the schedule actually runs on — monthly, semi-monthly, every seven days | The declared period and the cycle used are two different facts, and for an overridden yearly stream they disagree. Without this field the cycle that produced the events is named nowhere, and re-deriving it from the events is guesswork. |
 | `shape` | which shape was determined, and on what evidence | Some streams behave like a spread, some like one big transaction, some like a few medium ones. This field characterises which of those to expect, as the logic determined it. |
-| `basis.amount` | the expected amount for one `cycle` — −$157 a month, −$1,700 a semi-month | The number the schedule is generated from. Stating it separately makes an event list checkable against what it was meant to add up to, instead of leaving the intended total to be recovered by summing the events. |
-| `basis.amountDetermination` | the method that produced that amount, from an enum whose members are not yet defined | A label rather than the reasoning: "the trailing mean". It sits on the prediction rather than on the event because it does not differ between them — the method that produced the amount is the same method for every event it produced. |
+| `inferredAmount` | the expected amount for one `cycle` — −$157 a month, −$1,700 a semi-month | The number the schedule is generated from. Stating it separately makes an event list checkable against what it was meant to add up to, instead of leaving the intended total to be recovered by summing the events. |
+| `amountDetermination` | the method that produced that amount, from an enum whose members are not yet defined | A label rather than the reasoning: "the trailing mean". It sits on the prediction rather than on the event because it does not differ between them — the method that produced the amount is the same method for every event it produced. |
 | `transactionBase` | the transactions this prediction was derived from, by id | What makes a prediction auditable. The common disagreement is not "is this rule right" but "did it look at what I think it looked at" — a shape read from four transactions when the stream has two hundred is a different problem from a wrong rule, and the two are indistinguishable without this. **By id, not by copy:** the caller holds the ledger already, and an id that no longer resolves is a broken audit trail rather than a silent one. |
 | `predictedEvents` | the schedule — an array of future events, of the shape below | The module's output is this array. Everything else on the prediction describes how the array was produced. |
 
@@ -318,8 +318,8 @@ Two consequences worth stating, because they are easy to lose:
   two is wrong and which one is the interesting question. Several of v1's rules exist because the
   ledger turned out to be right.
 - **The audit needs the module's decisions to be readable at the moment of judging.** That is a
-  debugging surface, built for the audit. It is a larger thing than the confidence and basis a
-  prediction carries, and it does not have to ship with them.
+  debugging surface, built for the audit. It is a larger thing than the confidence and the
+  determination labels a prediction carries, and it does not have to ship with them.
 
 **The module is self-contained.** It can be handed a portfolio and an as-of date and will answer
 without reaching for anything else. It has no dependency on the chart, the bench, or the balance walk.
@@ -348,7 +348,7 @@ by accident.
 | What does the module hand back? | **A schedule of predicted events** — date, amount, account, and a confidence on each of date and amount, over a horizon the module sets. |
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
 | Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams, and arrives as an input. `accountLinks()` derives it today from the paired transfer legs. |
-| Does it predict, or also explain? | **Predicts, plus a confidence and a basis.** How much further it should explain itself is deliberately not settled — see below. |
+| Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
 
@@ -358,6 +358,6 @@ by accident.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
    not a person, and comparable between streams.
-4. **How much a prediction should account for itself.** Today: a confidence and a basis label. Whether
+4. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
    that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
    because it may need to change.
