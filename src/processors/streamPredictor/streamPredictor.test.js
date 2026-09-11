@@ -23,6 +23,7 @@ import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THR
 import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
+import {cycleBuckets} from './shapeDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
@@ -48,6 +49,18 @@ suite('StreamPredictor §1 - account mapping, against the captured portfolio', (
 	test('the walk reaches 87 terminal streams and maps every one of them', () => {
 		expect(predictor.terminalStreams().length).toBe(87);
 		expect(rows.length).toBe(87);
+	});
+
+	/* PINNED TO THE CAPTURE, NOT LEFT AS A SHAPE ASSERTION. §1 does not bucket anything, so nothing
+	   downstream of it - the cycle anchor least of all - can move these five numbers. If one of them
+	   drifts, a change meant for §2-§4 has leaked upstream into the mapping, and that is exactly the
+	   failure a green suite would otherwise hide. */
+	test('the §1 numbers are the captured ones: 87 / 32 split / 29 single / 26 empty / 1392 legs', () => {
+		expect(summary.total).toBe(87);
+		expect(summary.split).toBe(32);
+		expect(summary.single).toBe(29);
+		expect(summary.empty).toBe(26);
+		expect(summary.totalLegs).toBe(1392);
 	});
 
 	/* ONE LEG PER (transaction, allocation) PAIR is the flattening `streamLedger` documents, so the
@@ -152,7 +165,7 @@ suite('StreamPredictor §1 - account mapping, against the captured portfolio', (
 const YEARLY_DECLARATIONS = {yearly: true, biyearly: true};
 
 suite('StreamPredictor §2 - cycle determination, against the captured portfolio', () => {
-	let portfolio, predictor, rows, streams, cycles, enriched, summary;
+	let portfolio, predictor, rows, streams, cycles, enriched, summary, anchor;
 
 	beforeAll(() => {
 		// eslint-disable-next-line global-require
@@ -162,8 +175,50 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		rows = predictor.mapAllAccounts();
 		streams = predictor.terminalStreams();
 		cycles = streams.map(s => ({stream: s, cycle: determineCycle(s)}));
-		enriched = enrichCycles(rows);
+		anchor = predictor.analysisAnchor();
+		enriched = enrichCycles(rows, anchor);
 		summary = summarizeCycles(enriched);
+	});
+
+	/* THE SEAM IS A DATE, SO IT IS ASSERTED AS A DATE. The capture says today is 2026-09-09 and
+	   carries no reportingStartingDay, so the analysis root is December 21st of the year before -
+	   the same date ReportingCore's getAnalysisRootDate would produce from the same config.
+
+	   CHECKED IN LOCAL FIELDS, NOT AS AN ISO STRING: the anchor is a local midnight, and east of
+	   Greenwich its ISO form reads as the 20th. */
+	test('the analysis anchor is 2025-12-21, the analysis root date for the captured instant', () => {
+		expect(anchor instanceof Date).toBe(true);
+		expect(anchor.getFullYear()).toBe(2025);
+		expect(anchor.getMonth()).toBe(11);
+		expect(anchor.getDate()).toBe(21);
+		//memoised: the same instant every time, so two stages cannot be handed two different seams
+		expect(predictor.analysisAnchor().getTime()).toBe(anchor.getTime());
+	});
+
+	/* THE BUCKETS STILL PARTITION THE LEGS. Re-phasing the lattice on the anchor moves every seam, and
+	   the one thing that must survive the move is that the buckets are contiguous and cover the legs:
+	   a leg that falls through a crack is a movement the shape and the amount never see. Asserted
+	   stream by stream and then in total, over all 87. */
+	test('every leg lands in exactly one bucket, for every stream', () => {
+		let totalLegs = 0, totalBucketed = 0;
+		const lost = [];
+		rows.forEach(r => {
+			const cycle = determineCycle(r.stream || {}).inferredCycle;
+			if(!cycle)return;
+			const legs = r.legs || [];
+			const buckets = cycleBuckets(legs, cycle, anchor);
+			const bucketed = buckets.reduce((n, b) => n + b.legs.length, 0);
+			totalLegs += legs.length;
+			totalBucketed += bucketed;
+			if(bucketed !== legs.length)lost.push(r.stream.name + ': ' + bucketed + '/' + legs.length);
+			//contiguous and strictly increasing, or "exactly one" is an accident rather than a property
+			for(let i = 1; i < buckets.length; i++)
+				expect(buckets[i].start.getTime()).toBe(buckets[i-1].end.getTime());
+			buckets.forEach(b => expect(b.end.getTime()).toBeGreaterThan(b.start.getTime()));
+		});
+		if(lost.length)console.log('LEGS OUTSIDE EVERY BUCKET:\n  ' + lost.join('\n  '));
+		expect(lost).toEqual([]);
+		expect(totalBucketed).toBe(totalLegs);
 	});
 
 	test('every one of the 87 terminal streams gets a period name', () => {
@@ -196,13 +251,16 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		const html = buildCycleAuditPage(rows, {
 			version: portfolio.version,
 			capturedAt: portfolio.capturedAt,
-			transactionCount: portfolio.transactions.length
+			transactionCount: portfolio.transactions.length,
+			anchor: anchor
 		});
 		fs.writeFileSync(OUT_CYCLE, html, 'utf8');
 
 		expect(html.startsWith('<!doctype html>')).toBe(true);
 		expect(html.trim().endsWith('</html>')).toBe(true);
 		expect(fs.statSync(OUT_CYCLE).size).toBeGreaterThan(20000);
+		//the seam the page's every count was cut on is stated on the page
+		expect(html).toContain('2025-12-21</span> cycle anchor');
 
 		/* SAME ASSERTION AS §1's, AND FOR THE SAME REASON. The shell writes its script from inside a
 		   template literal, which silently eats one level of backslash: a "\n" meant for the emitted
@@ -219,6 +277,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		expect(summary.yearly + summary.sparse + summary.matched + summary.nolegs)
 			.toBe(summary.total);
 
+		console.log('§2 CYCLE ANCHOR: ' + anchor.toString());
 		console.log('§2 CYCLE DETERMINATION: ' + summary.total + ' terminal streams | '
 			+ summary.yearly + ' yearly (deferred) | ' + summary.sparse + ' mostly-empty cycles (>'
 			+ (EMPTY_CYCLE_THRESHOLD * 100).toFixed(0) + '% empty) | ' + summary.matched

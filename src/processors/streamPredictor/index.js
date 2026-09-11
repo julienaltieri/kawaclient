@@ -13,6 +13,8 @@
    ================================================================================================== */
 
 import {streamLedger, terminalStreams, mapAccounts} from './accountMapping';
+import {createDate} from '../../Time';
+import {reportingConfig} from '../../reportingConfig';
 
 export class StreamPredictor {
 	/* THE PORTFOLIO IS THE ONLY INPUT, because everything the prediction takes as given is already in
@@ -27,6 +29,33 @@ export class StreamPredictor {
 		this.accountTypeOverrides = this.portfolio.accountTypes || {};
 		this._terminals = null;
 		this._ledger = null;
+		this._anchor = null;
+	}
+
+	/* ---- THE ONE SEAM EVERY CYCLE WALK IS PHASED ON ------------------------------------------------
+	   THE ANALYSIS ROOT DATE, AND IT IS NOT A NEW IDEA - it is the date the app has always started an
+	   analysis on, chosen because almost no transaction falls on it. A bucket lattice phased on it has
+	   seams the calendar decides; a lattice phased on a stream's own newest leg has seams the data
+	   decides, and one new transaction on a different day of the month then moves every boundary in
+	   the stream's history.
+
+	   THE CONFIG IS READ FROM src/reportingConfig.js, NOT COPIED. ReportingCore.js computes the same
+	   date from the same object, and the predictor cannot import ReportingCore because that file pulls
+	   in core.js, which needs a browser - so the config was split out rather than duplicated.
+
+	   THE YEAR IS LAST YEAR, matching getAnalysisRootDate, and it is read from `portfolio.today` when
+	   the capture carries one. Reading the wall clock instead would make the predictor a function of
+	   when it was run rather than of the instant that was captured, and the test would change answer
+	   at midnight on new year's eve. `createDate` is the same helper ReportingCore uses, so the
+	   time-of-day normalisation is identical on both sides. */
+	analysisAnchor(){
+		if(!this._anchor){
+			const captured = this.portfolio.today ? new Date(this.portfolio.today) : new Date();
+			const prefs = this.portfolio.userPreferences || {};
+			this._anchor = createDate(captured.getFullYear() - 1, reportingConfig.startingMonth - 1,
+				prefs.reportingStartingDay || reportingConfig.startingDay);
+		}
+		return this._anchor;
 	}
 
 	/* MEMOISED, because the walk is the same walk for every stage and every stream. */
@@ -66,8 +95,9 @@ export class StreamPredictor {
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------
 	   §2 cycle determination, §3 shape determination and §4 amount prediction live in their own files
 	   (cycleDetermination.js, shapeDetermination.js, amountPrediction.js) and are composed from this
-	   object: each takes a stream's legs and its declaration and hands back a decision. Nothing above
-	   this line knows they exist, which is what keeps §1 checkable on its own. */
+	   object: each takes a stream's legs, its declaration and this object's `analysisAnchor()`, and
+	   hands back a decision. Nothing above this line knows they exist, which is what keeps §1
+	   checkable on its own. */
 }
 
 export default StreamPredictor;

@@ -4,14 +4,14 @@ import dateformat from "dateformat";
 import utils from '../utils'
 import * as histogram from './AmountHistogram'
 import AppConfig from '../AppConfig'
+import {reportingConfig} from '../reportingConfig'
 
 
+/* RE-EXPORTED UNDER ITS OWN NAME, so every `import {reportingConfig} from './processors/ReportingCore.js'`
+   already written keeps working untouched. THE DEFINITION ITSELF NOW LIVES IN src/reportingConfig.js
+   because the stream predictor needs the same anchor and must never import core.js - see that file. */
+export {reportingConfig};
 
-export const reportingConfig = {
-	startingDay: 21,
-	startingMonth: 12, //december = 12
-	observationPeriod: Period.yearly, //this should be longer or equal to the longest stream's period, otherwise it doesn't make sense.
-}
 export const analysisRootDateForYear = y => createDate(y,reportingConfig.startingMonth-1,Core.getUserData().userPreferences.reportingStartingDay || reportingConfig.startingDay)
 export const getAnalysisRootDate = () => analysisRootDateForYear(new Date().getFullYear()-1);//analysis starting date is Dec 21 GMT
 

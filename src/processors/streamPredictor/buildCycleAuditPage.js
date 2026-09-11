@@ -43,14 +43,28 @@ const day = d => {
 
 const num = n => (n === null || n === undefined ? '—' : String(n));
 
+/* THE ANCHOR IS A LOCAL MIDNIGHT, NOT AN INSTANT, so it is printed in local fields. `toISOString` on
+   a local midnight east of Greenwich rolls back to the previous day and would print a seam one day
+   off the one the walk actually used - the exact confusion this header exists to remove. */
+const localDay = d => {
+	const t = d instanceof Date ? d : new Date(d);
+	if(isNaN(t.getTime()))return '?';
+	const p = n => (n < 10 ? '0' + n : String(n));
+	return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate());
+};
+
 /* THE ONE DERIVATION IN THE FILE. §2's own answer is copied through untouched; everything added to it
-   is counting, on buckets the production walk produced. */
-export function enrichCycles(rows){
+   is counting, on buckets the production walk produced.
+
+   THE ANCHOR IS THE CALLER'S, NOT THIS FILE'S. The seams the reader is looking at have to be the
+   seams §3 and §4 will use, so the page is handed StreamPredictor.analysisAnchor() and prints the
+   date in its header - a run of zeros means nothing until you can see which lattice produced it. */
+export function enrichCycles(rows, anchor){
 	return (rows || []).map(r => {
 		const stream = r.stream || {};
 		const legs = (r.legs || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
 		const cycle = determineCycle(stream);
-		const buckets = cycleBuckets(legs, cycle.inferredCycle);
+		const buckets = cycleBuckets(legs, cycle.inferredCycle, anchor);
 		const legsPerCycle = buckets.map(b => b.legs.length);
 		const emptyCycles = legsPerCycle.filter(n => n === 0).length;
 		const emptyShare = legsPerCycle.length ? emptyCycles / legsPerCycle.length : null;
@@ -157,12 +171,16 @@ const group = (key, title, list) =>
    accepted as correct-by-definition and does not need to look at again. */
 export function buildCycleAuditPage(rows, meta){
 	const m = meta || {};
-	const enriched = enrichCycles(rows);
+	const enriched = enrichCycles(rows, m.anchor);
 	const s = summarizeCycles(enriched);
 	const of = g => enriched.filter(r => r.group === g);
 
+	/* THE ANCHOR IS PRINTED BECAUSE IT DECIDES EVERY SEAM ON THE PAGE. The same 27 wage payments read
+	   as four empty cycles on one lattice and none on another, so a reader shown the counts without
+	   the date they were cut on is being shown an opinion he cannot check. */
 	const metaLine = [
 		{value: s.total, label: 'streams'},
+		...(m.anchor ? [{value: localDay(m.anchor), label: 'cycle anchor'}] : []),
 		{value: s.yearly, label: 'yearly', flag: true},
 		{value: s.sparse, label: 'mostly empty >' + (EMPTY_CYCLE_THRESHOLD * 100).toFixed(0) + '%',
 			flag: true},

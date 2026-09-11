@@ -55,7 +55,10 @@ const nullResult = accountId => ({accountId: accountId, inferredAmount: null,
 	evidence: {segmentStart: null, declaredAmount: null, cycleTotals: [], consecutiveRun: 0,
 		median: null, legsAbove: 0, legsBelow: 0, legCount: 0, directionShare: 0}});
 
-export function predictAmount(streamNode, legs, partition, cycle){
+/* THE ANCHOR IS PASSED IN, NEVER COMPUTED HERE, and it is the same one §3 was handed. §3 counts the
+   events in a cycle and §4 totals the money in it; if the two phased their lattices differently they
+   would be describing two different cycles while reporting on one stream. */
+export function predictAmount(streamNode, legs, partition, cycle, anchor){
 	const history = ((streamNode || {}).expAmountHistory) || [];
 
 	/* NO DECLARED AMOUNT IS NOT A ZERO. A stream with no history has nothing to reconcile against and
@@ -71,14 +74,18 @@ export function predictAmount(streamNode, legs, partition, cycle){
 
 	return (partition || []).map(alloc => {
 		const mine = inSegment.filter(l => l.accountId === alloc.accountId);
-		const buckets = cycleBuckets(mine, cycle);
+		const buckets = cycleBuckets(mine, cycle, anchor);
 		//signed totals, on the same convention as the declared amount: an expense is negative on both
 		const cycleTotals = buckets.map(b => b.legs.reduce((s, l) => s + (l.amount || 0), 0));
 
-		/* THE LONGEST RUN OF NON-EMPTY CYCLES ENDING AT THE MOST RECENT ONE. The walk is anchored on
-		   the newest leg, so the last bucket always carries one - the run is therefore how far back
-		   you get before the first silent cycle, and a gap anywhere in the history cannot be stepped
-		   over to reach older data that no longer describes the stream. */
+		/* THE LONGEST RUN OF NON-EMPTY CYCLES ENDING AT THE MOST RECENT ONE - how far back you get
+		   before the first silent cycle, so a gap anywhere in the history cannot be stepped over to
+		   reach older data that no longer describes the stream.
+
+		   THE LAST BUCKET IS NO LONGER GUARANTEED TO CARRY A LEG. On the old newest-leg anchor it
+		   always did, by construction; on the analysis lattice the newest cycle can be genuinely
+		   silent, and a run of 0 then means the stream has stopped moving - which is the true reading
+		   and the one that should fall through to the declared amount. */
 		let consecutiveRun = 0;
 		for(let i = buckets.length - 1; i >= 0; i--){
 			if(!buckets[i].legs.length)break;

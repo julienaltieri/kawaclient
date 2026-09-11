@@ -38,19 +38,34 @@ const median = xs => {
 	return a.length % 2 ? a[m] : (a[m-1] + a[m])/2;
 };
 
-/* ---- THE CYCLE BUCKETS, walked BACKWARDS from the most recent leg --------------------------------
-   Backwards rather than forwards from the first leg, because the recent cycles are the ones every
-   downstream reading is about and they are the ones that must land on clean boundaries; a forward
-   walk puts the accumulated remainder at the end, exactly where it does the most damage.
+/* ---- THE CYCLE BUCKETS, phased on the ANCHOR and walked BACKWARDS over the legs -------------------
+   THE LATTICE'S PHASE COMES FROM THE ANCHOR, ITS EXTENT FROM THE LEGS. The anchor is the analysis
+   root date - the one seam the whole app already agrees on, chosen because almost nothing lands on
+   it - so the seams are a property of the calendar rather than of the data. Anchoring on the stream's
+   own newest leg, as this did, made every boundary data-derived: one new transaction on a different
+   day of the month moved every seam, and with them the median events per cycle that picks the shape
+   and the median cycle total that sets the amount. Observed on a semimonthly wage whose newest leg
+   fell on the 28th: the seams landed on the 12th and the 28th, paydays straddled them, and four
+   buckets came out empty.
 
-   The anchor is the newest leg's instant plus a millisecond, so that leg sits INSIDE the newest
-   bucket rather than on its exclusive upper edge. Buckets are [start, end) and contiguous, so every
+   THE WALK IS DETERMINISTIC AND NEVER READS THE CLOCK. `nextDateFromNow` would make the same legs
+   bucket differently tomorrow, which is a test that goes flaky and a prediction that drifts for no
+   reason in the data. The lattice is stepped forward from the anchor to the first edge strictly past
+   the newest leg, then back along the same lattice past the oldest one.
+
+   Backwards for the second walk rather than forwards from the first leg, because the recent cycles
+   are the ones every downstream reading is about; a forward walk puts the accumulated remainder at
+   the end, exactly where it does the most damage. Buckets are [start, end) and contiguous, so every
    leg falls in exactly one.
+
+   NO ANCHOR FALLS BACK TO THE OLD NEWEST-LEG BEHAVIOUR - the newest leg's instant plus a millisecond,
+   so that leg sits inside the newest bucket rather than on its exclusive upper edge - so an outside
+   caller cannot be broken by the new argument. Every call inside this module passes a real anchor.
 
    EXPORTED because amountPrediction buckets the same legs with the same period and the two stages
    must not be able to disagree about where a cycle begins. A near-copy would drift the moment either
    side was edited.  */
-export function cycleBuckets(legs, cycle){
+export function cycleBuckets(legs, cycle, anchor){
 	if(!cycle)return [];
 	const list = (legs || [])
 		.filter(l => l && l.date)
@@ -59,9 +74,26 @@ export function cycleBuckets(legs, cycle){
 		.sort((a, b) => a.t - b.t);
 	if(!list.length)return [];
 
-	const oldest = list[0].t;
-	const edges = [new Date(list[list.length - 1].t + 1)];
-	let cur = edges[0], guard = 0;
+	const oldest = list[0].t, newest = list[list.length - 1].t;
+	const root = anchor === null || anchor === undefined ? null : new Date(anchor);
+	let guard = 0, top;
+	if(root && !isNaN(root.getTime())){
+		/* THE TOP EDGE IS THE FIRST LATTICE POINT STRICTLY AFTER THE NEWEST LEG, reached from the
+		   anchor - forward when the anchor is older than the history, BACK when it is newer. The
+		   backward half matters for a stream that stopped moving before the analysis root: without
+		   it the walk keeps the cycles between the last payment and the anchor, which reads as "this
+		   stream has been silent for two cycles" while saying nothing about the nine months of
+		   silence since. Dormancy is a real finding and it is not this function's to make; stopping
+		   at the legs leaves it to whatever asks the question properly. */
+		top = root;
+		while(top.getTime() <= newest && ++guard < MAX_CYCLES)top = cycle.nextDate(top);
+		let back = cycle.previousDate(top);
+		while(back.getTime() > newest && ++guard < MAX_CYCLES){top = back; back = cycle.previousDate(top)}
+	}else top = new Date(newest + 1);
+
+	const edges = [top];
+	let cur = top;
+	guard = 0;
 	do {
 		cur = cycle.previousDate(cur);
 		edges.push(cur);
@@ -100,11 +132,14 @@ function classify(med){
 	return Shape.spread;
 }
 
-export function determineShape(legs, partition, cycle){
+/* THE ANCHOR IS PASSED IN, NEVER COMPUTED HERE. §3 and §4 must bucket the same legs on the same
+   lattice, so there is one anchor - StreamPredictor.analysisAnchor() - and every stage is handed it.
+   A second computation of "the analysis root date" is a second source of truth for a seam. */
+export function determineShape(legs, partition, cycle, anchor){
 	const yearly = !!cycle && !!YEARLY[cycle.name];
 	return (partition || []).map(alloc => {
 		const mine = (legs || []).filter(l => l && l.accountId === alloc.accountId);
-		const buckets = cycleBuckets(mine, cycle);
+		const buckets = cycleBuckets(mine, cycle, anchor);
 		const eventsPerCycle = buckets.map(b => b.legs.length);
 		const med = median(eventsPerCycle);
 		//a yearly cycle is not this stage's to shape - the evidence is still gathered, so whatever
