@@ -224,10 +224,27 @@ export function detectCycle(legs, anchor, tolerance){
    match nothing - not even an identical key - so it becomes its own group, which is the correct
    answer rather than a degenerate one: a description too short to identify a merchant is evidence of
    nothing and must not swallow the others. */
+/* A CHEQUE NUMBER IS THE ONE NUMBER THAT IS NOT AN IDENTITY. getMerchantKey drops tokens that MIX
+   letters and digits, on the reasoning that those are reference codes, but a token of pure digits
+   survives - and a cheque description is exactly that: "Check paid 1035", "Check paid 1039". Day care
+   Emile grouped into nine merchants where there is one payee and a chequebook, and its split could
+   say nothing.
+
+   NARROW ON PURPOSE: the digits go only when the description says cheque. Everywhere else a trailing
+   number can be the identity - a store number, an order - and stripping them all would merge accounts
+   and merchants that are genuinely different. getMerchantKey itself is untouched, because refund
+   matching uses it to decide whether two real transactions are the same purchase. */
+const CHEQUE = /che(?:ck|que)s?/i;
+
+const groupingKey = description => {
+	const d = String(description || '');
+	return getMerchantKey(CHEQUE.test(d) ? d.replace(/[0-9]+/g, ' ') : d);
+};
+
 export function merchantGroups(legs){
 	const groups = [];
 	(legs || []).forEach(leg => {
-		const key = getMerchantKey(leg && leg.description);
+		const key = groupingKey(leg && leg.description);
 		const hit = groups.find(g => merchantKeysMatch(g.key, key));
 		if(hit)hit.legs.push(leg);
 		else groups.push({key: key, legs: [leg]});
