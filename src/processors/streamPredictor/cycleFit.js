@@ -135,17 +135,33 @@ export function fitTable(legs, anchor){
 	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor));
 }
 
-/* THE LOWEST MISFIT WINS, and ties go to the SHORTER period simply because CANDIDATE_PERIODS is in
-   ascending order and the comparison is strict - two candidates that score identically are two
-   candidates the evidence does not separate, and picking deterministically is the only thing left to
-   do honestly. A table with nothing scorable in it has no best fit and says so. */
-export function bestFit(table){
-	let best = null;
-	(table || []).forEach(f => {
-		if(!f || f.misfit === null || f.misfit === undefined)return;
-		if(!best || f.misfit < best.misfit)best = {period: f.period, misfit: f.misfit};
-	});
-	return best;
+/* HOW MUCH WORSE A SHORTER PERIOD MAY SCORE AND STILL WIN. Measured, not chosen: over the 25 streams
+   whose declaration is known-good, agreement with the declaration runs 8/25 at zero tolerance, 12/25
+   here, and 14/25 at 0.10 - but past this point the extra agreements come from streams that have no
+   cycle at all, so the number is set where the honest wins stop. */
+export const ALIAS_TOLERANCE = 0.05;
+
+/* THE SHORTEST PERIOD THAT FITS, NOT THE BEST-SCORING ONE - and the difference is the whole
+   correctness of this function.
+
+   AN INTEGER MULTIPLE OF THE TRUE PERIOD SCORES THE SAME BY CONSTRUCTION. The phase term reads the
+   k-th harmonic, where k is the median legs per bucket, so a quarter holding three evenly spaced
+   monthly rents is exactly the shape the 3rd harmonic rewards. Real numbers: Rent scores 0.020
+   monthly and 0.018 quarterly. Taking the minimum answered "quarterly" for a rent paid on the 2nd of
+   every month, and did the same to Phone, Laundry, Books, Date and Sorties - every failure was the
+   true period times n.
+
+   So the minimum only sets the bar. The answer is the SHORTEST candidate that clears it, which is the
+   rule that was asked for in the first place: the smallest period where the pattern matches itself.
+   A table with nothing scorable in it has no best fit and says so. */
+export function bestFit(table, tolerance){
+	const tol = tolerance === undefined ? ALIAS_TOLERANCE : tolerance;
+	const scorable = (table || []).filter(f => f && f.misfit !== null && f.misfit !== undefined);
+	if(!scorable.length)return null;
+	const floor = scorable.reduce((m, f) => Math.min(m, f.misfit), Infinity);
+	//CANDIDATE_PERIODS is ascending, and `table` is built in that order, so the first match is shortest
+	const pick = scorable.find(f => f.misfit <= floor + tol);
+	return pick ? {period: pick.period, misfit: pick.misfit} : null;
 }
 
 /* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------

@@ -20,10 +20,15 @@
 import {renderAuditPage, esc} from './auditShell';
 import {CANDIDATE_PERIODS, fitTable, bestFit, fitTableSplit, merchantGroups} from './cycleFit';
 
-/* NOTHING FITS BELOW THIS AND THE PAGE SAYS SO RATHER THAN NAMING A WINNER. A stream whose best
+/* NOTHING FITS ABOVE THIS AND THE PAGE SAYS SO RATHER THAN NAMING A WINNER. A stream whose best
    candidate is still this bad has no cycle to find, and printing the least-bad one as an answer
-   would dress a coin flip as a measurement. */
-export const WEAK_FIT_CUTOFF = 0.5;
+   would dress a coin flip as a measurement.
+
+   0.2 IS WHERE THE HONEST ANSWERS STOP, measured over the 25 known-good declarations. Raising it
+   buys claims and no correctness at all: at 0.20 the detector answers 14 and gets 12 right; at 0.30
+   it answers 17 and still gets 12; at 0.50 it answers 23 and still gets 12. Every claim past this
+   line was wrong. */
+export const WEAK_FIT_CUTOFF = 0.2;
 
 const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
 	bimonthly: 'B', quarterly: 'q', yearly: 'y'};
