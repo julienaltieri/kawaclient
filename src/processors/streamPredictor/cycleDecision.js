@@ -101,38 +101,71 @@ function resolveOne(d, k){
    that reaches 25/25 by declining to measure 25 times has established nothing, and a single
    agreement number cannot tell that apart from a rule that read the ledger and was right. */
 function summarizeAll(data, k){
-	var counts = {}, agrees = {}, rows = [], bad = [], agree = 0, measured = 0, i, d, r;
+	var counts = {}, agrees = {}, rows = [], bad = [], found = [];
+	var agree = 0, measured = 0, envelope = data.length > 0, i, d, r;
 	for(i = 0; i < ROUTES.length; i++){ counts[ROUTES[i]] = 0; agrees[ROUTES[i]] = 0; }
 	for(i = 0; i < data.length; i++){
 		d = data[i];
+		if(!isEnvelope(d.declared))envelope = false;
 		r = resolveOne(d, k);
 		rows.push(r);
 		counts[r.route]++;
-		if(r.measured)measured++;
+		if(r.measured){
+			measured++;
+			found.push({id: d.id, name: d.name, period: r.period, route: r.route});
+		}
 		if(r.agree){ agrees[r.route]++; agree++; }
 		else bad.push({id: d.id, name: d.name, period: r.period, declared: d.declared,
 			route: r.route, groups: d.groups});
 	}
-	var head = "agree " + agree + "/" + data.length + " " + DOT + " measured " + measured;
+	/* A COHORT OF ENVELOPES HAS NOTHING TO AGREE WITH, so its headline counts what was read off the
+	   ledger instead. Printing "agree 22/35" there would be counting the streams the rule declined
+	   to measure and calling it a score. */
+	var head = envelope
+		? "read off the ledger " + measured + "/" + data.length
+		: "agree " + agree + "/" + data.length + " " + DOT + " measured " + measured;
 	for(i = 0; i < ROUTES.length; i++)
 		if(counts[ROUTES[i]])head += " " + DOT + " " + ROUTE_LABEL[ROUTES[i]] + " " + counts[ROUTES[i]];
-	return {total: data.length, agree: agree, measured: measured, counts: counts, agrees: agrees,
-		rows: rows, bad: bad, headline: head};
+	return {total: data.length, agree: agree, measured: measured, envelope: envelope,
+		counts: counts, agrees: agrees, rows: rows, bad: bad, found: found, headline: head};
 }
+
+/* A YEARLY DECLARATION IS NOT A RHYTHM TO BE RIGHT OR WRONG ABOUT. It states an amount per year and
+   says nothing about when the money moves, so a tick or a cross against it is a verdict on a
+   question that was never asked: a real finding renders as a failure, and a stream nothing was found
+   for renders as correct. Everywhere else the declaration IS the answer to compare against, and the
+   tick is the score. */
+function isEnvelope(declared){ return declared === "yearly" || declared === "biyearly"; }
 
 function verdictOf(p, declared){
 	if(!p)return {cls: "none", text: "no pick"};
+	if(isEnvelope(declared))return {cls: "", text: p.period + " " + pct(p.misfit)};
 	var ok = p.period === declared;
 	return {cls: ok ? "ok" : "bad", text: p.period + " " + pct(p.misfit) + " "
 		+ (ok ? TICK : CROSS + " declared " + declared)};
 }
 
+/* WHAT THE PREDICTOR CHOSE, SAID FIRST AND SAID PLAINLY. The row used to open with a period and a
+   percentage and close with "declared yearly", which on a phone reads as though yearly was the
+   answer. The output comes first now, and where it came from comes second. */
 function decisionOf(r, declared){
-	if(!r.period)return {cls: "none", src: ROUTE_LABEL[r.route],
-		text: "no cycle " + DOT + " neither reading claimed one"};
+	var src = ROUTE_LABEL[r.route];
+	if(!r.period)return {cls: "none", src: src,
+		text: "chose nothing " + DOT + " neither reading claimed a cycle"};
+	var chose = "chose " + r.period;
+	var fit = (r.misfit === null || r.misfit === undefined) ? null : pct(r.misfit) + " fit";
+	if(isEnvelope(declared)){
+		if(r.route === "declared" || r.route === "capped")
+			return {cls: "none", src: src,
+				text: chose + " " + DOT + " no rhythm in the ledger, the declaration stands"};
+		return {cls: "", src: src, text: chose + " " + DOT + " " + fit + " " + DOT
+			+ " read off the ledger, against a yearly declaration"};
+	}
 	var ok = r.period === declared;
-	return {cls: ok ? "" : "bad", src: ROUTE_LABEL[r.route],
-		text: r.period + " " + pct(r.misfit) + " " + (ok ? TICK : CROSS + " declared " + declared)};
+	if(!fit)return {cls: ok ? "none" : "bad", src: src,
+		text: chose + " " + DOT + " nothing measured, the declaration stands"};
+	return {cls: ok ? "" : "bad", src: src, text: chose + " " + DOT + " " + fit + " "
+		+ (ok ? TICK + " matches the declaration" : CROSS + " declared " + declared)};
 }
 `;
 

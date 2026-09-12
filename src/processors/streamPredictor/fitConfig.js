@@ -42,6 +42,19 @@ export const FIT_CONFIG = {
 	   it silences streams that genuinely moved a handful of times. */
 	minLegsToClaim: 3,
 
+	/* HOW MUCH OF THE STREAM THE SPLIT READING HAS TO ACTUALLY SCORE. fitTableSplit combines the
+	   merchant groups that are SCORABLE at a given candidate and skips the rest, which is right -
+	   a one-leg merchant says nothing about the period and must not be counted as fitting badly -
+	   but it degenerates when almost every group is skipped. Exceptional Expense splits into 11
+	   groups, nine of them one leg; on weekly exactly one group is scorable, so the combined "split"
+	   score was that group's own score, from 2 legs of 20, reported as a confident 96.7%.
+
+	   BELOW THIS SHARE THE SPLIT READING IS UNSCORABLE, not a number. The bar is just under a
+	   quarter because a stream that is genuinely four subscriptions is plausible: if only one of the
+	   four is scorable, 25% of the legs are behind the answer and that is still worth reporting.
+	   Two legs of twenty is not. */
+	minSplitLegShare: 0.24,
+
 	/* THE FEWEST LEGS A MERCHANT GROUP MAY CARRY FOR THE SPLIT READING TO BE ALLOWED TO WIN. Renter's
 	   insurance splits 6/2 because the bank wrote the same payee two ways; a 2-leg fragment fits any
 	   period trivially, so a split containing one is not evidence and the merged reading stands. */

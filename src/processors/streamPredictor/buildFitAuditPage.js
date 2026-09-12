@@ -174,22 +174,32 @@ const radioRow = (label, name, opts) => '<div class="knob"><span class="kl">' + 
 
 const sumRow = (rt, s) => '<tr' + (s.counts[rt] ? '' : ' class="zero"') + '><td>'
 	+ esc(ROUTE_LABEL[rt]) + '</td><td class="n">' + s.counts[rt] + '</td><td class="n">'
-	+ (rt === 'declined' ? '—' : s.agrees[rt]) + '</td></tr>';
+	+ (s.envelope || rt === 'declined' ? '—' : s.agrees[rt]) + '</td></tr>';
 
-const badLine = s => s.bad.length
-	? 'differs from the declaration: '
-		+ s.bad.map(b => '<a href="#" data-goto="' + esc(b.id) + '">' + esc(b.name) + '</a> '
-			+ esc(b.period || 'no claim') + ' (declared ' + esc(b.declared) + ')').join(' · ')
-	: 'every stream matches its declaration';
+/* THE LINE UNDER THE TABLE ANSWERS A DIFFERENT QUESTION PER COHORT. Where the declaration is a
+   rhythm, what matters is where the rule and the declaration part company. Where it is a yearly
+   envelope there is nothing to part company with, so what matters is what the rule actually chose. */
+const summaryLine = s => s.envelope
+	? (s.found.length
+		? 'chose a cycle for: '
+			+ s.found.map(f => '<a href="#" data-goto="' + esc(f.id) + '">' + esc(f.name) + '</a> '
+				+ esc(f.period)).join(' · ')
+		: 'no cycle found in any of them')
+	: (s.bad.length
+		? 'differs from the declaration: '
+			+ s.bad.map(b => '<a href="#" data-goto="' + esc(b.id) + '">' + esc(b.name) + '</a> '
+				+ esc(b.period || 'no claim') + ' (declared ' + esc(b.declared) + ')').join(' · ')
+		: 'every stream matches its declaration');
 
 const panel = s => '<section class="panel"><div class="pbox">'
 	+ radioRow('cohort', 'cohort',
 		COHORTS.map((c, i) => ({v: c.key, t: c.label, on: i === 0})))
 	+ '<p class="cnote" id="cnote">' + esc(COHORTS[0].note) + '</p>'
 	+ '<p class="sumhead" id="sumhead">' + esc(s.headline) + '</p>'
-	+ '<table class="sumt"><thead><tr><th>route</th><th class="n">n</th><th class="n">matches</th></tr>'
+	+ '<table class="sumt"><thead><tr><th>route</th><th class="n">n</th>'
+	+ '<th class="n" id="matchcol">matches</th></tr>'
 	+ '</thead><tbody id="sumrows">' + ROUTES.map(rt => sumRow(rt, s)).join('') + '</tbody></table>'
-	+ '<p class="sumbad" id="sumbad">' + badLine(s) + '</p>'
+	+ '<p class="sumbad' + (s.envelope ? ' found' : '') + '" id="sumbad">' + summaryLine(s) + '</p>'
 	+ '<div class="knobs">'
 	+ '<div class="knob"><span class="kl">fit threshold</span>'
 		+ '<input type="range" id="thr" min="50" max="99" step="1" value="'
@@ -269,11 +279,25 @@ function render(){
 		n = s.counts[rt];
 		html += "<tr" + (n ? "" : " class='zero'") + "><td>" + ROUTE_LABEL[rt]
 			+ "</td><td class='n'>" + n + "</td><td class='n'>"
-			+ (rt === "declined" ? DASH : s.agrees[rt]) + "</td></tr>";
+			+ (s.envelope || rt === "declined" ? DASH : s.agrees[rt]) + "</td></tr>";
 	}
 	sumrows.innerHTML = html;
 
-	if(!s.bad.length)sumbad.textContent = "every stream matches its declaration";
+	document.getElementById("matchcol").textContent = s.envelope ? "" : "matches";
+	sumbad.className = s.envelope ? "sumbad found" : "sumbad";
+	if(s.envelope){
+		if(!s.found.length)sumbad.textContent = "no cycle found in any of them";
+		else {
+			html = "";
+			for(i = 0; i < s.found.length; i++){
+				d = s.found[i];
+				html += (i ? " " + DOT + " " : "") + "<a href='#' data-goto='" + d.id + "'>" + d.name
+					+ "</a> " + d.period;
+			}
+			sumbad.innerHTML = "chose a cycle for: " + html;
+		}
+	}
+	else if(!s.bad.length)sumbad.textContent = "every stream matches its declaration";
 	else {
 		html = "";
 		for(i = 0; i < s.bad.length; i++){
@@ -411,7 +435,9 @@ const LEGEND = '<span class="lg">the cohort tab and the three numbers below resc
 	+ '<span class="lg">scale is absolute, never rescaled per stream</span>'
 	+ '<span class="lg">the pick is the SHORTEST period over the threshold, not the tallest bar</span>'
 	+ '<span class="lg">scored on this reporting year only, from the anchor</span>'
+	+ '<span class="lg">the decision row is the predictor OUTPUT - what it chose, and where from</span>'
 	+ '<span class="lg">route both = merged and split agreed · declared = the fallback, not a measurement</span>'
+	+ '<span class="lg">a yearly declaration states an amount, not a rhythm, so nothing on that tab is ticked against it</span>'
 	+ '<span class="lg">capped = a fit was found, but longer than declared, so the declaration won</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
@@ -428,6 +454,8 @@ const CSS = `
 .sumt tr.zero{color:var(--ink-faint);opacity:.5}
 .sumbad{margin:6px 0 0;font:400 10.5px/1.45 var(--mono);color:var(--flag)}
 .sumbad a{color:var(--flag);cursor:pointer}
+.sumbad.found{color:var(--ink-soft)}
+.sumbad.found a{color:var(--accent)}
 .knobs{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:7px;
 	border-top:1px dashed var(--rule)}
 .knob{display:flex;align-items:center;gap:8px;min-width:0}

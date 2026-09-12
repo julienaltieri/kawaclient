@@ -258,11 +258,12 @@ split   monthly    79.5%  ->  shortest over 75%: bimonthly     (the 2-leg fragme
 decision           monthly    declared monthly  ✓
 ```
 
-#### The four numbers
+#### The five numbers
 
 They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
 its range on the audit page and reading what the validated cohort did. The audit page still moves the
-last three live; `trimBuckets` is part of the definition of the score rather than a gate on it.
+threshold and the two leg gates live; `trimBuckets` and `minSplitLegShare` are part of the definition
+of the score rather than gates on it.
 
 | name | value | why this value |
 |---|---|---|
@@ -270,11 +271,35 @@ last three live; `trimBuckets` is part of the definition of the score rather tha
 | `trimBuckets` | `2` | drop the 2 buckets deviating most from the median and rescore what is left, phase included, so a stream that kept its rhythm except for one doubled month reads as the rhythm it kept. It cannot invent a fit: a flat candidate has nothing to drop and scores identically at every trim — Earnin bimonthly is 79.6% at 0, 1 and 2 |
 | `minLegsToClaim` | `3` | the window is already only one reporting year; raising it silences streams that genuinely moved a handful of times |
 | `minGroupLegs` | `3` | a 2-leg fragment fits any period trivially, so a split containing one is not evidence |
+| `minSplitLegShare` | `0.24` | the split reading combines only the groups that were **scorable** and skips the rest, which degenerates when nearly every group is skipped. Below this share of the window's legs the split is reported **unscorable** rather than as a number. Just under a quarter, because a stream that is genuinely four subscriptions is plausible and one scorable group of four is still worth reporting |
 
 **The algorithm itself is no longer a setting.** Four scoring variants, a tolerance-based pick rule and
 four disagreement policies were all carried on the audit page while the choice was being made. The
 choice was made from the cohort, and they are gone with it. What stayed adjustable is arithmetic a
 different portfolio could argue with.
+
+**Worked example — why `minSplitLegShare` exists.** Medical HSA, 38 legs in the window, nine
+merchant groups. Its split table read quarterly 99.7%, and that number was two drugstore runs:
+
+```
+group                      legs   quarterly
+altierijulienumbbankhsatra   17   unscorable
+amazon                       10   unscorable
+cvs                           3   unscorable
+target                        2   100.0%
+walgreens                     2    99.3%
++ 4 groups of 1 leg           4   unscorable
+                             --
+scorable weight               4 / 38 = 11%   ->  below 24%, withheld
+```
+
+**The trim is why the big groups vanished, and that is a separate defect still open.** `trimBuckets`
+is an absolute count applied to every lattice. A quarterly lattice over one reporting year is 2-3
+buckets, so dropping 2 leaves fewer than the 2-bucket floor and the group goes unscorable — while a
+2-leg group whose counts are `1 1` has nothing deviating, drops nothing, and survives. The trim
+removes the best-evidenced groups and spares the thinnest ones. It is bounded by buckets and never by
+what share of the legs it discards; the same mechanism lets merged quarterly on Exceptional Expense
+score 77.1% after the trim threw away the bucket holding 14 of its 20 legs.
 
 #### What it reads today
 
@@ -286,23 +311,41 @@ by declining 25 times has established nothing:
 agree 25/25 · measured 12 · both 11 · via split 1 · declared 13
 ```
 
-**Yearly cohort — 35 open yearly streams with transactions.** No ground truth exists here; the
-declaration says "yearly" and means an amount. What the detector says:
+**Yearly cohort — 35 open yearly streams with transactions.** No declared ground truth exists here;
+the declaration says "yearly" and means an amount. Agreement is therefore not reported at all — the
+headline counts what was read off the ledger:
 
 ```
-agree 21/35 · measured 14 · both 8 · via merged 6 · declared 21
+read off the ledger 13/35 · both 7 · via merged 6 · declared 22
 ```
 
-The 14 it measured include `Tolls -> monthly` (3 legs, one merchant), `Business Expenses -> monthly`
-(24 legs) and `Medical HSA -> quarterly` (38 legs), which read as real findings — and also
-`Credit Card Payments -> weekly` (75 legs) and `Exceptional Expense -> quarterly` (20 legs), which do
-not: those are **envelopes spent often**, not rhythms. A lattice with many legs and few empty buckets
-scores well whether or not anything is repeating.
+**The ground truth for this cohort is Julien's**, recorded per stream id in
+`src/tests/fixtures/cycleGroundTruth.json` — beside the portfolio capture, under the same ignore rule
+because it names real streams, and in its own file so a recapture does not erase a judgement that took
+a person to make. `basis` separates a rhythm the stream really has from behaviour that merely happens
+to be regular: Returns reads bimonthly because of how the refunds arrive, not because the stream runs
+on that cycle. Both are accepted detections; only one should ever carry structural weight.
+
+The 13 it measured include `Tolls -> monthly` (3 legs, one merchant), `Business Expenses -> monthly`
+(24 legs) and `Credit Card Payments -> weekly` (75 legs, validated by hand as correct). It no longer
+claims `Medical HSA -> quarterly`: the share gate withdrew that number and the stream resolves to
+yearly, which Julien confirmed is right.
+
+`Exceptional Expense -> quarterly` (20 legs) is the one still standing that should not be. It survives
+on a merged score computed after the trim discarded the bucket holding 14 of its 20 legs — the open
+trim defect above. It is an **envelope spent erratically**, not a rhythm: a burst of ten payments in
+January followed by a thinning tail.
 
 **This is the detector's known limit and it is not calibrated away.** The score measures *regularity*,
 and a yearly envelope that is drawn down frequently is regular in the only sense the score can see.
 Separating "this yearly stream has a hidden monthly rhythm" from "this yearly stream is a pot of money
 spent whenever" is the open part of §5, not a threshold to be moved here.
+
+**A yearly declaration is never ticked against.** It states an amount and says nothing about rhythm,
+so a verdict against it would mark a real finding as a failure and a non-answer as correct. On the
+yearly cohort the audit page reports what the predictor **chose** and where it came from, and nothing
+else: `chose weekly · 97.7% fit · read off the ledger` against `chose yearly · no rhythm in the
+ledger, the declaration stands`.
 
 ---
 

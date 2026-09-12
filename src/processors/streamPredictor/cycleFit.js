@@ -266,12 +266,17 @@ export function merchantGroups(legs){
 
    Every term is combined the same way, so the combined misfit stays exactly the mean of the combined
    terms and the arithmetic on the page still adds up by hand. */
-export function fitTableSplit(legs, anchor, trim){
+export function fitTableSplit(legs, anchor, trim, minShare){
 	const groups = merchantGroups(legs).map(g => ({
 		key: g.key,
 		legCount: g.legs.length,
 		table: fitTable(g.legs, anchor, trim)
 	}));
+	/* THE DENOMINATOR IS EVERY LEG IN THE WINDOW, scorable or not, because the question this gate
+	   asks is "how much of the stream is behind this number" and a skipped group is a leg the answer
+	   did not account for. */
+	const placed = groups.reduce((n, g) => n + g.legCount, 0);
+	const share = minShare === undefined ? FIT_CONFIG.minSplitLegShare : minShare;
 
 	const table = CANDIDATE_PERIODS.map((period, i) => {
 		let weight = 0, empty = 0, occ = 0, phase = 0, buckets = 0, empties = 0;
@@ -286,6 +291,10 @@ export function fitTableSplit(legs, anchor, trim){
 			empties += f.empties;
 		});
 		if(!weight)return unscorable(period, buckets);
+		/* TOO LITTLE OF THE STREAM SCORED TO CALL THIS A READING OF THE STREAM. The arithmetic below
+		   would still produce a number, and that number would be one small group's score wearing the
+		   whole stream's name - so it is withheld rather than reported. */
+		if(placed && weight / placed < share)return unscorable(period, buckets);
 		const emptyRate = empty / weight, occupancySpread = occ / weight, phaseSpread = phase / weight;
 		return {
 			period: period,

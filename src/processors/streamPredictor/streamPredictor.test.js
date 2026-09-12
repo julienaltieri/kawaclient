@@ -439,6 +439,7 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(gt.knobs.fitThreshold).toBe(FIT_CONFIG.fitThreshold);
 		expect(gt.knobs.minLegsToClaim).toBe(FIT_CONFIG.minLegsToClaim);
 		expect(gt.knobs.minGroupLegs).toBe(FIT_CONFIG.minGroupLegs);
+		expect(gt.knobs.minSplitLegShare).toBe(FIT_CONFIG.minSplitLegShare);
 
 		const now = {};
 		sy.rows.forEach((r, i) => { now[yearlyData[i].id] = r; });
