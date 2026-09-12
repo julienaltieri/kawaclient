@@ -22,6 +22,12 @@
 
    THE BUCKETS COME FROM cycleBuckets(), THE PRODUCTION WALK. A detector that cut its own cycles with
    its own calendar arithmetic would be scoring its own lattice rather than the one §3 and §4 use.
+
+   THIS FILE IS AN OBSERVER AND DECIDES NOTHING. It reports what each candidate period costs, how the
+   legs group by merchant, and how long the stream has been quiet. It does not choose a period, does
+   not know what a threshold is, and does not know that yearly streams are special - every one of
+   those is business logic and lives in cycleDecision.js. The pick rule used to live here as
+   `bestFit`, which meant the rule existed twice; it is gone.
    ================================================================================================== */
 
 import {Period} from '../../Time';
@@ -171,28 +177,6 @@ function fitScore(legs, period, anchor, trim){
    every bar after it under the wrong axis label. */
 export function fitTable(legs, anchor, trim){
 	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor, trim));
-}
-
-/* THE SHORTEST PERIOD THAT FITS, NOT THE BEST-SCORING ONE - and the difference is the whole
-   correctness of this function.
-
-   AN INTEGER MULTIPLE OF THE TRUE PERIOD SCORES THE SAME BY CONSTRUCTION. The phase term reads the
-   k-th harmonic, where k is the median legs per bucket, so a quarter holding three evenly spaced
-   monthly rents is exactly the shape the 3rd harmonic rewards. Real numbers: Rent scores 0.020
-   monthly and 0.018 quarterly. Taking the minimum answered "quarterly" for a rent paid on the 2nd of
-   every month, and did the same to Phone, Laundry, Books, Date and Sorties - every failure was the
-   true period times n.
-
-   So the best score is not the answer and is not even consulted. The answer is the SHORTEST
-   candidate that clears FIT_CONFIG.fitThreshold, which is the rule that was asked for in the first
-   place: the smallest period where the pattern matches itself. Nothing over the bar is no answer,
-   and says so. */
-export function bestFit(table, threshold){
-	const bar = threshold === undefined ? FIT_CONFIG.fitThreshold : threshold;
-	//CANDIDATE_PERIODS is ascending and `table` is built in that order, so the first hit is shortest
-	const pick = (table || []).find(f =>
-		f && f.misfit !== null && f.misfit !== undefined && 1 - f.misfit > bar);
-	return pick ? {period: pick.period, misfit: pick.misfit} : null;
 }
 
 /* THE EVIDENCE IS THIS REPORTING YEAR, NOT ALL OF HISTORY. The anchor is the start of the current

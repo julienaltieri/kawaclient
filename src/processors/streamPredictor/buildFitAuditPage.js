@@ -186,12 +186,14 @@ const inferCell = (d, r) => {
 		return {cls: differs ? 'inf differs' : 'inf', text: r.period,
 			conf: conf.text, confCls: 'cf ' + conf.cls};
 	}
-	/* A BLOCKED READING IS STILL A READING, and hiding it would make the two gates invisible on the
-	   one surface where the whole portfolio is reviewed at once. */
-	const blocked = (r.route === 'atypical' || r.route === 'stale') && r.merged
-		? r.merged.period : null;
+	/* NO INFERENCE, SAID FIRST. The detector's reading is the REASON there is none, not the answer:
+	   a refused reading is absent from the decision, so this column has to lead with the absence or
+	   it reads as an output. What was refused stays visible after it, because hiding it would make
+	   the two gates invisible on the one surface where the whole portfolio is reviewed at once. */
 	return {cls: 'inf none',
-		text: blocked ? blocked + ' - ' + ROUTE_LABEL[r.route] : '\u2014 ' + ROUTE_LABEL[r.route],
+		text: r.blocked
+			? 'none \u00b7 detector said ' + r.blocked + ', ' + ROUTE_LABEL[r.route]
+			: 'none \u00b7 ' + ROUTE_LABEL[r.route],
 		conf: conf.text, confCls: 'cf ' + conf.cls};
 };
 
@@ -442,9 +444,9 @@ function drawSummaryRow(d, r, k){
 		text = r.period;
 		cls = (r.period === d.declared) ? "inf" : "inf differs";
 	}else{
-		var blocked = (r.route === "atypical" || r.route === "stale") && r.merged
-			? r.merged.period : null;
-		text = blocked ? blocked + " - " + ROUTE_LABEL[r.route] : DASH + " " + ROUTE_LABEL[r.route];
+		text = r.blocked
+			? "none " + DOT + " detector said " + r.blocked + ", " + ROUTE_LABEL[r.route]
+			: "none " + DOT + " " + ROUTE_LABEL[r.route];
 		cls = "inf none";
 	}
 	row.inf.textContent = text;

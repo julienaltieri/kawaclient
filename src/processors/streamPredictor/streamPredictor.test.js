@@ -22,9 +22,10 @@ import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THR
 	from './buildAuditPage';
 import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
 	from './buildCycleAuditPage';
-import {determineCycle} from './cycleDetermination';
+import {determineCycle, cycleOf, declaredCycleOf, isYearlyDeclaration}
+	from './cycleDetermination';
 import {buildFitAuditPage, fitData, COHORTS} from './buildFitAuditPage';
-import {summarizeAll, resolveOne, resolveCycle, confidenceOf, DEFAULT_KNOBS}
+import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 	from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
@@ -213,7 +214,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		let totalLegs = 0, totalBucketed = 0;
 		const lost = [];
 		rows.forEach(r => {
-			const cycle = determineCycle(r.stream || {}).inferredCycle;
+			const cycle = cycleOf(determineCycle(r.stream || {}));
 			if(!cycle)return;
 			const legs = r.legs || [];
 			const buckets = cycleBuckets(legs, cycle, anchor);
@@ -241,20 +242,21 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 	/* THE DECLARATION WINS OUTRIGHT AND THE LEDGER IS NOT CONSULTED. Loosening this to "usually
 	   declaration" would delete the only thing §2 currently promises. */
 	test('every cycle is sourced from the declaration, never from the ledger', () => {
-		const inferred = cycles.filter(c => c.cycle.cycleDetermination !== 'declaration')
-			.map(c => c.stream.name + ' -> ' + c.cycle.cycleDetermination);
+		/* WITH NO EVIDENCE THERE IS NO INFERENCE, and the shape says so by omitting the key rather
+		   than by carrying a label that says "declaration". */
+		const inferred = cycles.filter(c => 'inferred' in c.cycle)
+			.map(c => c.stream.name + ' -> inferred');
 		if(inferred.length)console.log('CYCLES NOT SOURCED FROM THE DECLARATION:\n  ' + inferred.join('\n  '));
 		expect(inferred).toEqual([]);
 	});
 
-	test('isYearly is true exactly for the streams declaring yearly or biyearly', () => {
-		const disagree = cycles.filter(c => c.cycle.isYearly !== !!YEARLY_DECLARATIONS[c.stream.period])
-			.map(c => c.stream.name + ' declared ' + c.stream.period + ' but isYearly='
-				+ c.cycle.isYearly);
-		if(disagree.length)console.log('isYearly DISAGREES WITH THE DECLARATION:\n  ' + disagree.join('\n  '));
+	test('isYearlyDeclaration is true exactly for the streams declaring yearly or biyearly', () => {
+		const disagree = streams
+			.filter(st => isYearlyDeclaration(st.period) !== !!YEARLY_DECLARATIONS[st.period])
+			.map(st => st.name + ' declared ' + st.period);
 		expect(disagree).toEqual([]);
-		expect(cycles.filter(c => c.cycle.isYearly).length)
-			.toBe(streams.filter(s => YEARLY_DECLARATIONS[s.period]).length);
+		expect(streams.filter(st => isYearlyDeclaration(st.period)).length)
+			.toBe(streams.filter(st => YEARLY_DECLARATIONS[st.period]).length);
 	});
 
 	test('writes the cycle audit page from the real results', () => {
@@ -503,16 +505,16 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(emptyCyclesSince([], 'monthly', anchorDate, on(2026, 6, 9))).toBe(null);
 	});
 
-	/* THE PRODUCTION ENTRY POINT AND THE AUDIT PAGE MUST NOT DRIFT. resolveCycle is what a caller
-	   outside this module uses; the page resolves from a precomputed blob. They run the same engine,
-	   but only because resolveCycle builds the evidence the same way - and that is the part a
-	   signature change would break silently, so it is asserted on every stream in both cohorts. */
-	test('resolveCycle answers exactly what the audit page resolves, for all 60 streams', () => {
+	/* THE DEBUG SURFACE AND THE AUDIT PAGE MUST NOT DRIFT. explainCycle builds the evidence from the
+	   legs; the page resolves from a precomputed blob. They run the same engine, but only because
+	   explainCycle assembles the evidence the same way - and that is the part a signature change
+	   would break silently, so it is asserted on every stream in both cohorts. */
+	test('explainCycle answers exactly what the audit page resolves, for all 60 streams', () => {
 		const all = rows.concat(yearlyRows);
 		const blob = data.concat(yearlyData);
 		expect(all.length).toBe(60);
 		all.forEach((r, i) => {
-			const direct = resolveCycle(r.stream, r.legs, anchor, now);
+			const direct = explainCycle(r.stream, r.legs, anchor, now);
 			const viaPage = resolveOne(blob[i], DEFAULT_KNOBS);
 			expect(direct.period).toBe(viaPage.period);
 			expect(direct.route).toBe(viaPage.route);
@@ -520,75 +522,69 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		});
 	});
 
-	/* ---- THE ENRICHED §2 ANSWER ---------------------------------------------------------------------
-	   determineCycle NOW READS THE LEDGER ON EVERY STREAM and reports both answers on one object, so a
-	   prediction experiment can be run against either without re-deriving which streams had an
-	   inference available. What it DECIDES is unchanged for a declared rhythm: the declaration wins
-	   whatever the ledger thinks, and a disagreement is a finding rather than an override. */
-	test('determineCycle reports the declared and the inferred cycle side by side', () => {
-		const ev = r => ({legs: r.legs, anchor: anchor, now: now});
+	/* ---- THE DECISIONER'S CONTRACT ------------------------------------------------------------------
+	   THREE KEYS, TWO OF THEM OPTIONAL. `inferred` is present ONLY where the ledger actually decided,
+	   which is a yearly stream whose reading cleared every gate - so `inferred || declared` is always
+	   the cycle to use and there is no third field to get wrong. A refused reading is ABSENT, not
+	   reported as something: the caller asked what cycle to use, not what was considered. */
+	test('determineCycle returns {declared, inferred?, confidence?} and nothing else', () => {
 		const all = rows.concat(yearlyRows);
-		let differ = 0, agree = 0, fromLedger = 0, noInference = 0;
+		let withInference = 0;
 
 		all.forEach(r => {
-			const c = determineCycle(r.stream, ev(r));
-			expect(c.declared.period).toBe(r.stream.period);
-			expect(c.declared.cycle).toBe(Period[r.stream.period]);
-			expect(c.inferred).toBeTruthy();
+			const c = determineCycle(r.stream, {legs: r.legs, anchor: anchor, now: now});
+			expect(Object.keys(c).sort()).toEqual(
+				'inferred' in c ? ['confidence', 'declared', 'inferred'] : ['declared']);
+			expect(c.declared).toBe(Period[r.stream.period]);
+			expect(cycleOf(c)).toBe(c.inferred || c.declared);
 
-			if(c.agreement === 'differ')differ++;
-			if(c.agreement === 'agree')agree++;
-			if(c.source === 'ledger')fromLedger++;
-			if(c.agreement === 'none')noInference++;
-
-			//A DECLARED RHYTHM IS NEVER OVERRULED, whatever the ledger found.
-			if(!c.declared.isYearly){
-				expect(c.source).toBe('declaration');
-				expect(c.periodName).toBe(r.stream.period);
-				expect(c.cycle).toBe(Period[r.stream.period]);
+			if(!('inferred' in c)){
+				expect('confidence' in c).toBe(false);
+				return;
 			}
-			//A YEARLY STREAM TAKES THE LEDGER'S WORD ONLY WHERE THE GATES LET IT THROUGH.
-			else if(c.inferred.period){
-				expect(c.source).toBe('ledger');
-				expect(c.periodName).toBe(c.inferred.period);
-				expect(c.agreement).toBe('differ');
-			}else{
-				expect(c.source).toBe('declaration');
-				expect(c.periodName).toBe(r.stream.period);
-			}
-			//the route always says WHY an inference is missing, so a caller never has to guess
-			expect(typeof c.inferred.route).toBe('string');
-			if(!c.inferred.period)
-				expect(['declared', 'declined', 'atypical', 'stale', 'capped'])
-					.toContain(c.inferred.route);
+			withInference++;
+			//only a yearly declaration ever hands the answer to the ledger
+			expect(isYearlyDeclaration(r.stream.period)).toBe(true);
+			expect(c.inferred).not.toBe(c.declared);
+			expect(c.confidence).toBeGreaterThanOrEqual(0.5);
+			expect(c.confidence).toBeLessThanOrEqual(1);
 		});
 
-		/* SIX YEARLY STREAMS EARN A CYCLE OFF THE LEDGER and nothing else moves. The twelve that
-		   AGREE are the validated cohort's measured ones - the ledger recovered the declared period
-		   on its own, which is the check the detector was tuned against and is reported here rather
-		   than silently folded into "no inference". */
-		expect(fromLedger).toBe(6);
-		expect(differ).toBe(6);
-		expect(agree).toBe(12);
-		expect(agree + differ + noInference).toBe(all.length);
-		console.log('§2 ENRICHED: ' + all.length + ' streams | ' + fromLedger
-			+ ' take the cycle from the ledger | ' + agree + ' inferred = declared | '
-			+ differ + ' inferred differs | ' + noInference + ' no inference to compare');
+		expect(withInference).toBe(6);
+		console.log('DECISION: ' + all.length + ' streams | ' + withInference
+			+ ' answered by the ledger | ' + (all.length - withInference)
+			+ ' by the declaration alone');
 	});
 
-	/* CALLED WITH NO EVIDENCE IT IS THE FUNCTION IT ALWAYS WAS, which is what keeps the §2 audit page
-	   - which passes a stream and nothing else - working untouched. */
-	test('determineCycle without evidence is declaration-only, as before', () => {
+	/* A BLOCKED READING IS NOT AN INFERENCE. Cadeaux famille Mdm scores bimonthly at 82.2% and the
+	   yearly gate refuses it, so the decision carries no `inferred` at all - while explainCycle, the
+	   debug surface, still holds the whole working. */
+	test('a reading the gates refused leaves no trace in the decision', () => {
+		const r = yearlyRows.find(x => /^Cadeaux famille Mdm$/i.test(x.stream.name || ''));
+		expect(r).toBeTruthy();
+		const c = determineCycle(r.stream, {legs: r.legs, anchor: anchor, now: now});
+		expect(Object.keys(c)).toEqual(['declared']);
+		expect(cycleOf(c)).toBe(Period.yearly);
+
+		const why = explainCycle(r.stream, r.legs, anchor, now);
+		expect(why.route).toBe('atypical');
+		expect(why.measured).toBe(false);
+		expect(why.merged.period).toBe('bimonthly');
+		expect(why.split.period).toBe('monthly');
+		console.log('Cadeaux famille Mdm: decision is {declared: yearly} | explain says merged '
+			+ why.merged.period + ' ' + ((1 - why.merged.misfit) * 100).toFixed(1)
+			+ '%, split ' + why.split.period + ', route ' + why.route);
+	});
+
+	/* CALLED WITH NO EVIDENCE IT IS THE DECLARATION ALONE, which is the same shape by construction
+	   and is how the cycle audit page reads it. */
+	test('determineCycle without evidence is the declaration alone', () => {
 		const c = determineCycle(rows[0].stream);
-		expect(c.inferred).toBe(null);
-		expect(c.agreement).toBe('none');
-		expect(c.source).toBe('declaration');
-		expect(c.cycle).toBe(Period[rows[0].stream.period]);
-		expect(c.inferredCycle).toBe(c.cycle);
+		expect(Object.keys(c)).toEqual(['declared']);
+		expect(cycleOf(c)).toBe(Period[rows[0].stream.period]);
 		//and a malformed declaration is reported, never thrown
-		const bad = determineCycle({period: 'fortnightly'});
-		expect(bad.cycle).toBe(null);
-		expect(bad.declared.raw).toBe('fortnightly');
+		expect(determineCycle({period: 'fortnightly'}).declared).toBe(null);
+		expect(declaredCycleOf('fortnightly')).toBe(null);
 	});
 
 	/* ---- THE CONFIDENCE SCORE -----------------------------------------------------------------------

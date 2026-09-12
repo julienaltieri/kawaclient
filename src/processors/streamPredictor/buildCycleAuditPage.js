@@ -21,7 +21,7 @@
    ================================================================================================== */
 
 import {renderAuditPage, esc} from './auditShell';
-import {determineCycle} from './cycleDetermination';
+import {declaredCycleOf, isYearlyDeclaration} from './cycleDetermination';
 import {cycleBuckets} from './shapeDetermination';
 
 /* MORE THAN HALF THE OBSERVED CYCLES EMPTY is where a declaration stops being a rhythm the ledger
@@ -63,7 +63,14 @@ export function enrichCycles(rows, anchor){
 	return (rows || []).map(r => {
 		const stream = r.stream || {};
 		const legs = (r.legs || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
-		const cycle = determineCycle(stream);
+		/* THE DECLARATION ALONE, which is all this page has ever audited: it exists to show that §2
+		   reads the declaration and nothing else. The ledger-reading half is audited by the cycle-fit
+		   page instead. */
+		const declaredCycle = declaredCycleOf(stream.period);
+		const yearly = isYearlyDeclaration(stream.period);
+		const cycle = {inferredCycle: declaredCycle, isYearly: yearly,
+			periodName: stream.period === undefined ? null : stream.period,
+			cycleDetermination: 'declaration'};
 		const buckets = cycleBuckets(legs, cycle.inferredCycle, anchor);
 		const legsPerCycle = buckets.map(b => b.legs.length);
 		const emptyCycles = legsPerCycle.filter(n => n === 0).length;

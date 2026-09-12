@@ -20,7 +20,7 @@
 export const FIT_CONFIG = {
 
 	/* HOW WELL A CANDIDATE MUST FIT TO BE CLAIMED AT ALL, as a fit in [0,1] where 1 repeats exactly.
-	   The pick is the SHORTEST candidate over this bar, never the best-scoring one - see bestFit.
+	   The pick is the SHORTEST candidate over this bar, never the best-scoring one.
 
 	   MEASURED OVER THE 25 KNOWN-GOOD STREAMS. At 0.85 the rule claims 7 and gets 7 right, which is
 	   safe and nearly silent. At 0.75 it claims 12 and gets 12 right. Below 0.60 the wrong claims

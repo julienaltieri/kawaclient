@@ -94,14 +94,17 @@ function resolveOne(d, k){
 
 	   ATYPICAL FIRST, THEN STALE, so a stream that fails both is reported by the more basic reason.
 	   Both land on the declaration, and neither counts as a measurement. */
+	var blocked = null;
 	if(res && isEnvelope(d.declared) && route !== "declared"){
 		/* A BOUNDARY, NOT A LIST. PERIODS is ascending, so "no longer than monthly" is an index
 		   comparison and a new shorter candidate is admitted without touching this test. */
 		if(PERIODS.indexOf(res.period) > PERIODS.indexOf(k.maxYearlyPeriod)){
+			blocked = res.period;
 			res = {period: d.declared, misfit: null}; route = "atypical";
 		}else{
 			var quiet = d.quiet ? d.quiet[PERIODS.indexOf(res.period)] : null;
 			if(quiet !== null && quiet !== undefined && quiet > k.maxQuiet){
+				blocked = res.period;
 				res = {period: d.declared, misfit: null}; route = "stale";
 			}
 		}
@@ -112,7 +115,11 @@ function resolveOne(d, k){
 		var iR = PERIODS.indexOf(res.period), iD = PERIODS.indexOf(d.declared);
 		if(iR >= 0 && iD >= 0 && iR > iD){ res = {period: d.declared, misfit: null}; route = "capped"; }
 	}
-	return {merged: m, split: s, route: route,
+	/* THE PERIOD THAT WAS PICKED AND THEN REFUSED, carried out rather than recomputed. A reader that
+	   guessed it from the merged reading would be right only while the group gate happens to fail -
+	   the moment a split won and was then blocked, it would name the wrong period.
+	   NO BACKTICK IN HERE: this comment is inside the engine template literal. */
+	return {merged: m, split: s, route: route, blocked: blocked,
 		period: res ? res.period : null, misfit: res ? res.misfit : null,
 		measured: route === "both" || route === "split" || route === "merged",
 		agree: !!res && res.period === d.declared};
@@ -278,10 +285,12 @@ export function fitEvidence(stream, legs, anchor, now, cfg){
 	};
 }
 
-/* ---- THE ONE ENTRY POINT A CALLER SHOULD USE -------------------------------------------------------
-   Hand it a stream, its legs and the analysis anchor; it answers the period, the route it came by,
-   and both readings so an audit can see what the rule was looking at. */
-export function resolveCycle(stream, legs, anchor, now, cfg){
+/* ---- THE WHOLE WORKING, FOR AN AUDIT OR AN EXPERIMENT ----------------------------------------------
+   EVERYTHING THE DECISION LOOKED AT: both readings, every candidate's score, the merchant groups,
+   the route it came by, how long the stream has been quiet, and the confidence. This is a DEBUG
+   surface and not the answer - `determineCycle` in cycleDetermination.js is the answer, and it is
+   deliberately three keys wide. A caller that wants to know WHY comes here on purpose. */
+export function explainCycle(stream, legs, anchor, now, cfg){
 	const evidence = fitEvidence(stream, legs, anchor, now, cfg);
 	const knobs = knobsFrom(cfg);
 	const r = resolveOne(evidence, knobs);
@@ -289,4 +298,4 @@ export function resolveCycle(stream, legs, anchor, now, cfg){
 }
 
 
-export default resolveCycle;
+export default explainCycle;
