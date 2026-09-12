@@ -65,8 +65,13 @@ const histogram = (bins, days) => {
 
 const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + '%';
 
-const confCls = v => v === null || v === undefined ? 'cf none'
-	: (v >= 0.9 ? 'cf full' : 'cf part');
+/* THE COLUMN IS FOCUS, NOT CONFIDENCE, and the difference is the point. Focus is how tightly the
+   movements land on one day - high for a lump, near zero for a spread. Labelling it "confidence"
+   made the clearest row on the page, groceries at 0.11, read as the least trustworthy one: a spread
+   is DEFINED by having no focus, so a low number there is the evidence for the answer rather than
+   doubt about it. */
+const focusCls = v => v === null || v === undefined ? 'cf none'
+	: (v >= 0.9 ? 'cf full' : v >= SHAPE_CONFIG.minConcentration ? 'cf part' : 'cf low');
 
 /* A GRID, NOT A TABLE. Seven table columns do not fit a phone, and the three that fell off the
    right edge - the histogram, the confidence and the tick - are the three the review is done with.
@@ -111,9 +116,10 @@ export function shapeRows(predictor){
 				shapeCls: a.shape ? ('s-' + a.shape) : 's-none',
 				reason: a.reason || '',
 				days: shapeText(a),
-				conf: pct(a.confidence),
-				confCls: confCls(a.confidence),
+				conf: pct(a.concentration),
+				confCls: focusCls(a.concentration),
 				confidence: a.confidence,
+				concentration: a.concentration,
 				hist: histogram(a.histogram, a.days),
 				cycles: a.cyclesObserved,
 				counts: a.eventsPerCycle,
@@ -151,8 +157,8 @@ export function buildShapeAuditPage(predictor, meta){
 		const sa = a.shape in SHAPE_ORDER ? SHAPE_ORDER[a.shape] : 9;
 		const sb = b.shape in SHAPE_ORDER ? SHAPE_ORDER[b.shape] : 9;
 		if(sa !== sb)return sa - sb;
-		const ca = a.confidence === null || a.confidence === undefined ? -1 : a.confidence;
-		const cb = b.confidence === null || b.confidence === undefined ? -1 : b.confidence;
+		const ca = a.concentration === null || a.concentration === undefined ? -1 : a.concentration;
+		const cb = b.concentration === null || b.concentration === undefined ? -1 : b.concentration;
 		if(ca !== cb)return cb - ca;
 		return String(a.name) < String(b.name) ? -1 : 1;
 	});
@@ -166,7 +172,7 @@ export function buildShapeAuditPage(predictor, meta){
 	//the header is a row of the same grid, and it is hidden on a phone where the labels are in the way
 	const head = '<div class="srow shead">'
 		+ '<div class="c-nm">stream</div>'
-		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span><span>conf</span></div>'
+		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span><span>focus</span></div>'
 		+ '<div class="c-hi">every cycle, laid on top of each other</div>'
 		+ '<div class="c-ck">ok</div></div>';
 	const table = '<section class="shp">' + head
@@ -189,7 +195,7 @@ export function buildShapeAuditPage(predictor, meta){
 			{label: 'multiLump', value: by.multiLump || 0},
 			{label: 'spread', value: by.spread || 0},
 			{label: 'anchor', value: anchorText},
-			{label: 'steady bar', value: Math.round(SHAPE_CONFIG.minSteadyShare * 100) + '%'}
+			{label: 'focus bar', value: SHAPE_CONFIG.minConcentration.toFixed(2)}
 		],
 		groups: []
 	});
@@ -203,7 +209,9 @@ const LEGEND = '<span class="lg">one row per ACCOUNT - a stream on two accounts 
 		+ ' spread = a low wall</span>'
 	+ '<span class="lg">the number under each bar is the day of the cycle; every slot is shown</span>'
 	+ '<span class="lg">bar height is scaled to the busiest day IN THAT ROW; hover for the count</span>'
-	+ '<span class="lg">confidence = how often the cycle carried exactly its usual number of movements</span>'
+	+ '<span class="lg">FOCUS = how tightly the movements land on one day, 1.00 = all on the same day</span>'
+	+ '<span class="lg">a lump is high focus; a spread is near zero focus, which IS the answer not a doubt</span>'
+	+ '<span class="lg">two lumps are found by wrapping the cycle twice, three by wrapping it three times</span>'
 	+ '<span class="lg">no shape = the count does not repeat, or there was nothing to read</span>';
 
 const CSS = `
@@ -236,6 +244,7 @@ const CSS = `
 .m-cf{font-size:11px;text-align:right}
 .cf.full{color:var(--realtime);font-weight:600}
 .cf.part{color:var(--ink-soft)}
+.cf.low{color:var(--ink-faint)}
 .cf.none{color:var(--ink-faint)}
 
 .c-hi{min-width:0}

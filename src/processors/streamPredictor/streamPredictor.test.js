@@ -29,7 +29,7 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 	from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
-import {cycleBuckets, classifyShape, lumpDays, dayHistogram, Shape}
+import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape}
 	from './shapeDetermination';
 import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
 import {SHAPE_CONFIG} from './shapeConfig';
@@ -757,56 +757,91 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		predictor = new StreamPredictor(portfolio);
 	});
 
-	/* THE DEFECT THIS REPLACED, PINNED SO IT CANNOT COME BACK. The old rule read the shape off the
-	   typical count alone - 1 was a lump, 2 to 4 were lumps, above 4 was a spread - which put four
-	   grocery shops a week in the same class as a utility bill arriving twice a month. What tells
-	   them apart is not how many, it is whether the how-many repeats. */
-	test('the shape comes from whether the count repeats, not from the count', () => {
-		const rent = [1, 1, 1, 1, 1, 1, 1, 1, 1];
-		const utilities = [2, 2, 2, 2, 2, 2, 2, 2, 2];
-		const groceries = [4, 10, 1, 5, 5, 6, 8, 3, 6, 0, 7, 2, 3, 5, 3, 8, 4, 4, 4];
+	/* ---- FOCUS ------------------------------------------------------------------------------------
+	   THE SHAPE COMES FROM HOW TIGHTLY THE MOVEMENTS LAND ON A DAY, not from how many there are per
+	   cycle. `bins` is every cycle laid on top of every other: bins[3] is how many movements ever
+	   landed on day 3 of a cycle. */
+	const bins = (len, at) => {
+		const b = new Array(len).fill(0);
+		Object.keys(at).forEach(d => { b[Number(d)] = at[d]; });
+		return b;
+	};
 
-		expect(classifyShape(rent).shape).toBe(Shape.lump);
-		expect(classifyShape(utilities).shape).toBe(Shape.multiLump);
-		//four a week, never the same four: a flow, not four lumps
-		expect(classifyShape(groceries).shape).toBe(Shape.spread);
+	test('concentration is 1 on one day, 0 evenly smeared, and reads the cycle as a circle', () => {
+		//everything on one day
+		expect(concentration(bins(31, {11: 9}), 1)).toBeCloseTo(1, 6);
+		//perfectly even round the cycle
+		expect(concentration(new Array(28).fill(1), 1)).toBeCloseTo(0, 6);
 
-		//and the counts that separate them
-		expect(classifyShape(rent).steady).toBe(1);
-		expect(classifyShape(utilities).steady).toBe(1);
-		expect(classifyShape(groceries).steady).toBeLessThan(0.5);
+		/* THE CIRCLE IS NOT A FLOURISH. Days 29, 30, 0 and 1 are four consecutive days that happen to
+		   straddle the seam. On a straight line they look like two groups at opposite ends of the
+		   month; on the circle they are one cluster, which is what they are. */
+		expect(concentration(bins(31, {29: 2, 30: 2, 0: 2, 1: 2}), 1)).toBeGreaterThan(0.9);
 	});
 
-	/* AN IRREGULAR STREAM IS NOT A SHAPE WITH LOW CONFIDENCE. Savings moved 2, 3, 2, 1, 0, 1 and 1
-	   times in successive months - present most months, steady in none, and only about once a month
-	   when it moves at all. That is not a flow and it is not a lump; the answer is no shape, which is
-	   a different thing from a bad one. */
-	test('unsteady and not a flow gets no shape at all', () => {
-		const savings = classifyShape([2, 3, 2, 1, 0, 1, 1]);
-		expect(savings.shape).toBe(null);
-		expect(savings.reason).toMatch(/does not repeat/);
+	/* TWO CLUSTERS HALF A CYCLE APART CANCEL when the circle is counted once round, and come back
+	   into focus when it is wrapped twice. That is what finds a multiLump. */
+	test('wrapping the circle k times finds k lumps', () => {
+		const twice = bins(30, {4: 5, 19: 5});
+		expect(concentration(twice, 1)).toBeLessThan(0.3);
+		expect(concentration(twice, 2)).toBeGreaterThan(0.9);
+		expect(focusOf(twice).lumps).toBe(2);
 
-		//Sorties: half its months empty, and 4 in one of them. Not a flow either.
-		expect(classifyShape([1, 2, 0, 0, 0, 1, 1, 0, 4]).shape).toBe(null);
+		//and a single tight cluster is one lump, tried first so it wins
+		expect(focusOf(bins(31, {11: 9})).lumps).toBe(1);
+	});
 
-		/* THE LINE IS BUSY-AND-MORE-THAN-ONCE. The same stream moving two or three times in nearly
-		   every month IS a flow, and calling it one is the intended answer - being unsteady is what
-		   makes it a spread rather than a set of lumps. */
-		expect(classifyShape([4, 6, 4, 2, 0, 2, 1]).shape).toBe(Shape.spread);
+	/* THE DEFECT THIS REPLACED, PINNED SO IT CANNOT COME BACK. The old rule read the shape off how
+	   many movements a cycle carried and a cutoff at four, which put groceries - four or five shops a
+	   week, every week, the textbook spread - in the same class as a utility bill arriving twice a
+	   month. Counting is not the question. Where they LAND is. */
+	test('the shape comes from where the movements land, not from how many there are', () => {
+		//rent: one a month, always on day 11
+		const rent = classifyShape([1, 1, 1, 1, 1, 1, 1, 1, 1], bins(31, {10: 1, 11: 6, 12: 2}));
+		expect(rent.shape).toBe(Shape.lump);
+		expect(rent.concentration).toBeGreaterThan(0.95);
 
-		//nothing on the account at all is its own answer, separate from "no cycles"
-		expect(classifyShape([0, 0, 0, 0]).reason).toMatch(/no movements/);
-		expect(classifyShape([]).reason).toMatch(/no cycles/);
+		//groceries: four or five a week, every day of the week
+		const groceries = classifyShape([4, 5, 6, 3, 5, 4, 5, 4, 6, 5, 4, 3],
+			bins(7, {0: 8, 1: 9, 2: 7, 3: 8, 4: 7, 5: 8, 6: 7}));
+		expect(groceries.shape).toBe(Shape.spread);
+		expect(groceries.concentration).toBeLessThan(0.2);
+		//AND ITS CONFIDENCE IS HIGH. A flat cycle is a certain spread, not a doubtful lump.
+		expect(groceries.confidence).toBeGreaterThan(0.8);
+
+		//two bills a month, a fortnight apart
+		const twice = classifyShape([2, 2, 2, 2, 2, 2], bins(30, {4: 6, 19: 6}));
+		expect(twice.shape).toBe(Shape.multiLump);
+	});
+
+	/* ONCE A MONTH IS NOT A DAY. Earnin's phone reimbursement arrives exactly once every month and
+	   the count-based rule called it a perfect lump for that reason. It lands anywhere across a
+	   fortnight, so there is no day to predict and saying so is the answer. */
+	test('steady as clockwork but landing anywhere is not a lump', () => {
+		const v = classifyShape([1, 1, 1, 1, 1, 1, 1, 1],
+			bins(31, {15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 23: 1, 27: 1, 29: 1}));
+		expect(v.shape).toBe(null);
+		expect(v.steady).toBe(1);
+		expect(v.concentration).toBeLessThan(0.75);
+		expect(v.reason).toMatch(/do not land on a day/);
 	});
 
 	/* ONE CYCLE MAKES ITS OWN COUNT THE COMMONEST and scores 100% steady by construction. Date had
 	   three movements in a single month and claimed three lumps at full confidence. */
-	test('a single cycle is not a repeat', () => {
-		expect(classifyShape([3]).shape).toBe(null);
-		expect(classifyShape([3]).reason).toMatch(/only 1 cycle/);
-		expect(classifyShape([1, 1]).shape).toBe(null);
-		expect(classifyShape([1, 1, 1]).shape).toBe(Shape.lump);
+	/* TWO POINTS ON THE SAME DAY ARE PERFECTLY IN FOCUS BY CONSTRUCTION, and so are three - there is
+	   nothing for them to disagree with. One old grocery card had two movements, both on day 1, and
+	   read as a lump at 1.00; Tolls had three and claimed two lumps. */
+	test('a handful of movements cannot be in focus', () => {
+		expect(classifyShape([3], bins(31, {4: 1, 5: 1, 6: 1})).reason).toMatch(/only 1 cycle/);
+		expect(classifyShape([1, 1], bins(31, {4: 2})).reason).toMatch(/only 2 cycles/);
+
+		//three cycles, but only two movements between them
+		expect(classifyShape([1, 0, 1], bins(31, {4: 2})).reason).toMatch(/only 2 movements/);
+		//four movements on the same day over four cycles is the smallest real lump
+		expect(classifyShape([1, 1, 1, 1], bins(31, {4: 4})).shape).toBe(Shape.lump);
+
 		expect(SHAPE_CONFIG.minCyclesObserved).toBe(3);
+		expect(SHAPE_CONFIG.minMovements).toBe(4);
 	});
 
 	/* THE TYPICAL COUNT IS ONE SOME CYCLE ACTUALLY HAD. A middle value over an even number of cycles
@@ -814,7 +849,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   that is perfectly steady at two levels. */
 	test('the typical count is never a value no cycle had', () => {
 		//four cycles of 1 and four of 2: a middle value would say 1.5, which nothing ever was
-		const v = classifyShape([1, 1, 1, 1, 2, 2, 2, 2]);
+		const v = classifyShape([1, 1, 1, 1, 2, 2, 2, 2], bins(31, {4: 12}));
 		expect([1, 2]).toContain(v.typical);
 		expect(v.steady).toBe(0.5);
 	});

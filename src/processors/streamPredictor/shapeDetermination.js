@@ -184,6 +184,46 @@ export function lumpDays(buckets, n){
 	});
 }
 
+/* ---- HOW SHARP THE FOCUS IS -------------------------------------------------------------------
+   CONCENTRATION, ON THE CYCLE READ AS A CIRCLE. Every movement is a point on the rim at its own day,
+   and they are added as directions rather than as numbers. All on the same day and they pull
+   together: length 1. Evenly smeared and they cancel: length 0. It is the same idea as focus in a
+   photograph - one sharp point, or the same light spread over everything.
+
+   THE CIRCLE MATTERS AND IS NOT A FLOURISH. Day 30 and day 0 are one day apart, not thirty. Shopping
+   lands on days 24, 29, 30 and 3, which on a straight line looks like two groups at opposite ends
+   and on the circle is one cluster straddling the seam - 0.76, a lump, which is what it is.
+
+   WRAPPING THE CIRCLE k TIMES FINDS k LUMPS. Two clusters half a cycle apart cancel exactly when
+   counted once round; wrap the circle twice and they land on top of each other and pull together.
+   So the first k that brings the movements into focus is how many lumps the cycle carries. */
+export function concentration(bins, k){
+	const days = bins.length;
+	if(!days)return null;
+	let sx = 0, sy = 0, total = 0;
+	bins.forEach((count, day) => {
+		const angle = 2 * Math.PI * (k || 1) * (day / days);
+		sx += Math.cos(angle) * count;
+		sy += Math.sin(angle) * count;
+		total += count;
+	});
+	if(!total)return null;
+	return Math.sqrt(sx * sx + sy * sy) / total;
+}
+
+/* THE FEWEST LUMPS THAT BRING IT INTO FOCUS. One is tried first and wins ties, because a stream that
+   is already in focus as a single lump is a single lump - two lumps on the same day is not a second
+   reading of it, it is the same reading counted twice. */
+export function focusOf(bins, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const at = [];
+	for(let k = 1; k <= c.maxLumps; k++)at.push(concentration(bins, k));
+	for(let k = 1; k <= c.maxLumps; k++)
+		if(at[k - 1] !== null && at[k - 1] >= c.minConcentration)
+			return {lumps: k, concentration: at[k - 1], perLump: at};
+	return {lumps: 0, concentration: at[0], perLump: at};
+}
+
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
    THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
    off the typical count and a cutoff put groceries - four or five shops a week, every week, the
@@ -218,7 +258,7 @@ const commonest = xs => {
 	return Object.keys(seen).map(Number).sort((a, b) => seen[b] - seen[a] || a - b)[0];
 };
 
-export function classifyShape(counts, cfg){
+export function classifyShape(counts, bins, cfg){
 	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
 	if(!counts.length)return {shape: null, reason: 'no cycles'};
 
@@ -227,20 +267,32 @@ export function classifyShape(counts, cfg){
 	if(counts.length < c.minCyclesObserved)
 		return {shape: null, reason: 'only ' + counts.length + ' cycle'
 			+ (counts.length === 1 ? '' : 's') + ' observed'};
+	if(placed < c.minMovements)
+		return {shape: null, reason: 'only ' + placed + ' movement'
+			+ (placed === 1 ? '' : 's') + ' to read'};
 
 	const typical = commonest(counts);
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
+	const focus = focusOf(bins || [], c);
+	const base = {typical: typical, steady: steady, busy: busy,
+		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump};
 
-	if(steady >= c.minSteadyShare && typical >= 1)
-		return {shape: typical === 1 ? Shape.lump : Shape.multiLump,
-			typical: typical, steady: steady, busy: busy};
+	//IN FOCUS: the movements land on a day, or on k days. That is a lump, or k of them.
+	if(focus.lumps === 1)return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
+	if(focus.lumps > 1)
+		return Object.assign({shape: Shape.multiLump, confidence: focus.concentration}, base);
 
+	/* OUT OF FOCUS AND BUSY: a flow. The confidence is how far OUT of focus it is, because that is
+	   what is being claimed - a perfectly flat cycle is a perfectly certain spread, and reporting
+	   0.11 there would read as doubt about the one row the picture is clearest on. */
 	if(busy >= c.minBusyShare && typical >= c.minSpreadEventsPerCycle)
-		return {shape: Shape.spread, typical: typical, steady: steady, busy: busy};
+		return Object.assign({shape: Shape.spread,
+			confidence: 1 - (focus.concentration === null ? 0 : focus.concentration)}, base);
 
-	return {shape: null, reason: 'the count does not repeat and the stream is not a flow',
-		typical: typical, steady: steady, busy: busy};
+	//OUT OF FOCUS AND NOT BUSY: nothing to say. Not a shape with low confidence - no shape.
+	return Object.assign({shape: null,
+		reason: 'the movements do not land on a day and the stream is not a flow'}, base);
 }
 
 /* ---- THE WORKING, FOR AN AUDIT ----------------------------------------------------------------
@@ -252,22 +304,27 @@ export function explainShape(legs, partition, cycle, anchor){
 		const mine = (legs || []).filter(l => l && l.accountId === alloc.accountId);
 		const buckets = cycle ? cycleBuckets(mine, cycle, anchor) : [];
 		const counts = buckets.map(b => b.legs.length);
+		const bins = dayHistogram(buckets);
 		const verdict = yearly
 			? {shape: null, reason: 'the cycle is still yearly after determination'}
-			: classifyShape(counts);
+			: classifyShape(counts, bins);
 		const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
 		return {
 			accountId: alloc.accountId,
 			shape: verdict.shape,
 			reason: verdict.reason || null,
-			days: lumpy ? lumpDays(buckets, verdict.typical) : [],
-			confidence: verdict.shape ? verdict.steady : null,
+			//HOW MANY LUMPS COMES FROM THE FOCUS, not from the count: the cycle that brought the
+			//movements into focus is the one that says how many clusters there are.
+			days: lumpy ? lumpDays(buckets, verdict.lumps) : [],
+			confidence: verdict.shape ? verdict.confidence : null,
+			concentration: verdict.concentration === undefined ? null : verdict.concentration,
+			lumps: verdict.lumps === undefined ? null : verdict.lumps,
 			cyclesObserved: buckets.length,
 			eventsPerCycle: counts,
 			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,
 			steadyShare: verdict.steady === undefined ? null : verdict.steady,
 			busyShare: verdict.busy === undefined ? null : verdict.busy,
-			histogram: dayHistogram(buckets)
+			histogram: bins
 		};
 	});
 }
