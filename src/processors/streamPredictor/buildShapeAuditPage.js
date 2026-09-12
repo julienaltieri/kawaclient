@@ -51,10 +51,15 @@ const histogram = (bins, days) => {
 	const peak = bins.reduce((m, n) => (n > m ? n : m), 0) || 1;
 	const marked = {};
 	(days || []).forEach(d => { marked[d.day] = true; });
+	/* EVERY SLOT IS LABELLED, including the empty ones, because the gaps are half of what the picture
+	   says: two towers at d3 and d17 only read as two lumps if the reader can see fourteen numbered
+	   slots of nothing between them. The number is the day of the CYCLE, matching the days column -
+	   day 0 is the seam. */
 	return '<span class="hist">'
-		+ bins.map((n, i) => '<i class="hb' + (marked[i] ? ' pick' : '') + (n ? '' : ' zero') + '"'
-			+ ' style="height:' + (n ? Math.max(8, Math.round(n / peak * 100)) : 2) + '%"'
-			+ ' title="day ' + i + ': ' + n + ' movement' + (n === 1 ? '' : 's') + '"></i>').join('')
+		+ bins.map((n, i) => '<span class="hs' + (marked[i] ? ' pick' : '') + (n ? '' : ' zero') + '"'
+			+ ' title="day ' + i + ': ' + n + ' movement' + (n === 1 ? '' : 's') + '">'
+			+ '<i style="height:' + (n ? Math.max(8, Math.round(n / peak * 100)) : 2) + '%"></i>'
+			+ '<b>' + i + '</b></span>').join('')
 		+ '</span>';
 };
 
@@ -196,6 +201,7 @@ const LEGEND = '<span class="lg">one row per ACCOUNT - a stream on two accounts 
 	+ '<span class="lg"><i class="sw pick"></i>a day the stage claims</span>'
 	+ '<span class="lg">lump = one tower ' + DOT + ' multiLump = towers with gaps ' + DOT
 		+ ' spread = a low wall</span>'
+	+ '<span class="lg">the number under each bar is the day of the cycle; every slot is shown</span>'
 	+ '<span class="lg">bar height is scaled to the busiest day IN THAT ROW; hover for the count</span>'
 	+ '<span class="lg">confidence = how often the cycle carried exactly its usual number of movements</span>'
 	+ '<span class="lg">no shape = the count does not repeat, or there was nothing to read</span>';
@@ -233,10 +239,18 @@ const CSS = `
 .cf.none{color:var(--ink-faint)}
 
 .c-hi{min-width:0}
-.hist{display:flex;align-items:flex-end;gap:1px;height:26px;width:100%}
-.hb{flex:1 1 0;background:var(--accent-soft);border-radius:1px;min-width:2px}
-.hb.zero{background:var(--sunk)}
-.hb.pick{background:var(--accent)}
+.hist{display:flex;align-items:flex-end;gap:1px;width:100%}
+.hs{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;
+	justify-content:flex-end;height:38px}
+.hs i{display:block;width:100%;background:var(--accent-soft);border-radius:1px}
+.hs.zero i{background:var(--sunk)}
+.hs.pick i{background:var(--accent)}
+/* THE AXIS. Small enough that thirty-one of them fit a phone, and the claimed days are the only
+   ones that are not faint - so the label a reader checks stands out from the ruler around it. */
+.hs b{display:block;font:400 7px/1.5 var(--mono);color:var(--ink-faint);text-align:center;
+	font-weight:400;letter-spacing:-.02em}
+.hs.pick b{color:var(--accent);font-weight:700}
+.hs.zero b{opacity:.45}
 
 .c-ck{text-align:right}
 .c-ck .okbox{width:20px;height:20px;accent-color:var(--accent);margin:0}
@@ -260,7 +274,8 @@ const CSS = `
 	.m-dy{overflow:visible}
 	.m-cf{text-align:left}
 	.c-hi{grid-area:hi}
-	.hist{height:34px}
+	.hs{height:44px}
+	.hs b{font-size:7.5px}
 }
 `;
 
