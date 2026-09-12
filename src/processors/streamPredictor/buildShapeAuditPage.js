@@ -58,7 +58,8 @@ const histogram = (bins, days) => {
 	return '<span class="hist">'
 		+ bins.map((n, i) => '<span class="hs' + (marked[i] ? ' pick' : '') + (n ? '' : ' zero') + '"'
 			+ ' title="day ' + i + ': ' + n + ' movement' + (n === 1 ? '' : 's') + '">'
-			+ '<i style="height:' + (n ? Math.max(8, Math.round(n / peak * 100)) : 2) + '%"></i>'
+			+ '<span class="hw"><i style="height:'
+			+ (n ? Math.max(8, Math.round(n / peak * 100)) : 2) + '%"></i></span>'
 			+ '<b>' + i + '</b></span>').join('')
 		+ '</span>';
 };
@@ -201,18 +202,20 @@ export function buildShapeAuditPage(predictor, meta){
 	});
 }
 
-const LEGEND = '<span class="lg">one row per ACCOUNT - a stream on two accounts has two shapes</span>'
-	+ '<span class="lg">the bars are every cycle laid on top of each other; x is the day of the cycle</span>'
-	+ '<span class="lg">day 0 is the cycle seam, so d11 on a monthly cycle seamed the 21st is the 1st</span>'
-	+ '<span class="lg"><i class="sw pick"></i>a day the stage claims</span>'
-	+ '<span class="lg">lump = one tower ' + DOT + ' multiLump = towers with gaps ' + DOT
-		+ ' spread = a low wall</span>'
-	+ '<span class="lg">the number under each bar is the day of the cycle; every slot is shown</span>'
-	+ '<span class="lg">bar height is scaled to the busiest day IN THAT ROW; hover for the count</span>'
-	+ '<span class="lg">FOCUS = how tightly the movements land on one day, 1.00 = all on the same day</span>'
-	+ '<span class="lg">a lump is high focus; a spread is near zero focus, which IS the answer not a doubt</span>'
-	+ '<span class="lg">two lumps are found by wrapping the cycle twice, three by wrapping it three times</span>'
-	+ '<span class="lg">no shape = the count does not repeat, or there was nothing to read</span>';
+/* THREE LINES, AND THE REST BEHIND A TAP. Ten lines of legend above a sticky header took most of a
+   phone screen before a single row was visible, every time the page was opened. */
+const LEGEND = '<span class="lg">bars = every cycle on top of each other ' + DOT
+		+ ' x = day of the cycle ' + DOT + ' day 0 is the seam</span>'
+	+ '<span class="lg">FOCUS = how tightly they land on one day. lump = one tower '
+		+ DOT + ' spread = a low wall</span>'
+	+ '<details class="more"><summary>more</summary>'
+		+ '<span class="lg">one row per ACCOUNT - a stream on two accounts has two shapes</span>'
+		+ '<span class="lg"><i class="sw pick"></i>a day the stage claims</span>'
+		+ '<span class="lg">bar height is scaled to the busiest day IN THAT ROW; hover for the count</span>'
+		+ '<span class="lg">a spread has near-zero focus, and that IS the answer rather than a doubt</span>'
+		+ '<span class="lg">two lumps are found by wrapping the cycle twice, three by wrapping it three times</span>'
+		+ '<span class="lg">no shape = out of focus and not a flow, or too little to read</span>'
+	+ '</details>';
 
 const CSS = `
 .shp{max-width:1100px;margin:0 auto;padding:8px 14px 24px}
@@ -249,8 +252,13 @@ const CSS = `
 
 .c-hi{min-width:0}
 .hist{display:flex;align-items:flex-end;gap:1px;width:100%}
-.hs{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;
-	justify-content:flex-end;height:38px}
+/* THE BAR HAS ITS OWN BOX AND THE NUMBER SITS OUTSIDE IT. They used to be two flex items in one
+   fixed-height column, so a full-height bar plus its label overflowed - and flex shrinks the tall
+   ones hardest, which flattened every tower into the wall beside it. Utilities reads 0.96
+   concentrated and drew as a spread for exactly that reason: the arithmetic was right and the
+   picture was not. */
+.hs{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch}
+.hw{flex:none;height:30px;display:flex;align-items:flex-end}
 .hs i{display:block;width:100%;background:var(--accent-soft);border-radius:1px}
 .hs.zero i{background:var(--sunk)}
 .hs.pick i{background:var(--accent)}
@@ -268,10 +276,17 @@ const CSS = `
 .sw.pick{background:var(--accent)}
 /* THE LEGEND WRAPS. Every line of it was running off the right edge of a phone. */
 .lg{display:inline-flex;align-items:center;gap:4px;margin-right:11px}
+.more{display:inline}
+.more summary{display:inline;cursor:pointer;color:var(--accent);list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more[open] summary{display:block;margin-bottom:3px}
 
 /* NARROW: name and tick on one line, the four facts on the next, the picture full width under
    them. The picture is the point of the page and it gets the whole screen rather than a sliver. */
 @media (max-width:760px){
+	/* THE HEADER SCROLLS AWAY ON A PHONE. Sticky, it is a permanent third of the screen on the one
+	   device this page is actually reviewed on. */
+	header.top{position:static}
 	.shp{padding:6px 10px 24px}
 	.shead{display:none}
 	.srow{grid-template-columns:1fr 30px;
@@ -283,7 +298,7 @@ const CSS = `
 	.m-dy{overflow:visible}
 	.m-cf{text-align:left}
 	.c-hi{grid-area:hi}
-	.hs{height:44px}
+	.hw{height:40px}
 	.hs b{font-size:7.5px}
 }
 `;
