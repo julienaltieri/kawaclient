@@ -297,6 +297,49 @@ ${groups.map(section).join('')}
 	}
 	function write(v){
 		try{ localStorage.setItem(KEY, JSON.stringify(v)); }catch(e){}
+		push(v);
+	}
+
+	/* ---- THE TICKS ALSO GO SOMEWHERE THE AUTHOR CAN READ THEM ----------------------------------
+	   localStorage IS PRIVATE TO ONE BROWSER, which is correct for the reader and useless to the
+	   person who has to act on the verdicts: a validation done on a phone was, until this, a thing
+	   only a screenshot could report. The page mirrors it into the artifact's own store instead.
+
+	   IT WRITES ONLY. Nothing here ever reads the store back into a checkbox, and that is deliberate
+	   rather than unfinished: the version of this page that re-asserted every box from a shared
+	   object on every change fought the reader's clicks and read as frozen. localStorage stays the
+	   authority in the browser, the store is a copy of it, and a click touches one card.
+
+	   IT IS ALSO OPTIONAL. The capability resolves null when the page is opened outside claude.ai,
+	   or when the reader declines, and the audit works exactly as before - the copy-rejects button
+	   below is still the offline path and still the one that needs no permission. */
+	var DB = null, dirty = null, timer = null;
+	if(window.claude && window.claude.use){
+		try{
+			window.claude.use('db').then(function(d){ DB = d; if(dirty)flush(); },
+				function(){});
+		}catch(e){}
+	}
+	function flush(){
+		var v = dirty;
+		dirty = null;
+		if(!DB || !v)return;
+		try{
+			DB.doc('audits/' + KEY).set({
+				key: KEY,
+				ticked: Object.keys(v).length,
+				total: boxes.length,
+				updatedAt: new Date().toISOString(),
+				ticks: v
+			});
+		}catch(e){}
+	}
+	//debounced: ticking eight streams in a row is one write, not eight
+	function push(v){
+		dirty = v;
+		if(!DB)return;
+		if(timer)clearTimeout(timer);
+		timer = setTimeout(flush, 600);
 	}
 
 	function count(){
@@ -350,8 +393,9 @@ ${groups.map(section).join('')}
 	q.addEventListener('input', apply);
 
 	/* THE UNTICKED STREAMS ARE THE RESULT OF THE AUDIT, so there is a button that hands them over as
-	   text. Nothing here reaches a server, which is the point: the page keeps working when no viewer
-	   is listening, and the reader decides when the verdicts leave the browser. */
+	   text. This path needs no capability and no permission, which is why it stays: the page has to
+	   keep working when it is opened from a file, from a different host, or by a reader who declined
+	   the store. */
 	var NL = String.fromCharCode(10), TAB = String.fromCharCode(9);
 	copy.addEventListener('click', function(){
 		var lines = [];
