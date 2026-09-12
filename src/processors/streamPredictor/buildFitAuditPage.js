@@ -49,9 +49,10 @@ const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
    PLAIN ES5, NO BACKSLASH, NO BACKTICK, NO TEMPLATE INTERPOLATION. See the file header. */
 const ENGINE = `
 var PERIODS = ["weekly","biweekly","semimonthly","monthly","bimonthly","quarterly","yearly"];
-var ROUTES = ["both","split","merged","higherFit","declared","declined"];
+var ROUTES = ["both","split","merged","higherFit","capped","declared","declined"];
 var ROUTE_LABEL = {both: "both", split: "via split", merged: "via merged",
-	higherFit: "via higher fit", declared: "declared", declined: "declined"};
+	higherFit: "via higher fit", capped: "capped to declared",
+	declared: "declared", declined: "declined"};
 var TICK = String.fromCharCode(10003), CROSS = String.fromCharCode(10007);
 var DASH = String.fromCharCode(8212), DOT = String.fromCharCode(183);
 
@@ -98,6 +99,13 @@ function resolveOne(d, k){
 		}
 	}
 	else if(k.fb === "declared"){ res = {period: d.declared, misfit: null}; route = "declared"; }
+	/* THE CAP. PERIODS runs shortest to longest, so a higher index is a longer cycle. A fit that
+	   claims a LONGER cycle than the declaration is the one direction we never believe: the
+	   declaration is the floor, and the fit is only allowed to shorten it. */
+	if(k.cap === "declared" && res && route !== "declared" && route !== "capped"){
+		var iR = PERIODS.indexOf(res.period), iD = PERIODS.indexOf(d.declared);
+		if(iR >= 0 && iD >= 0 && iR > iD){ res = {period: d.declared, misfit: null}; route = "capped"; }
+	}
 	return {merged: m, split: s, route: route,
 		period: res ? res.period : null, misfit: res ? res.misfit : null,
 		agree: !!res && res.period === d.declared};
@@ -149,7 +157,7 @@ export const summarizeAll = engine.summarizeAll;
 /* THE SETTINGS THE PAGE OPENS ON, and the ones every number quoted in the test is taken at. */
 export const DEFAULT_KNOBS = {
 	thr: 0.85, variant: 'standard', pick: 'over', tol: 0.05,
-	dis: 'split', minGroup: 4, minLegs: 4, fb: 'declared'
+	dis: 'split', minGroup: 4, minLegs: 4, fb: 'declared', cap: 'keep'
 };
 
 /* ---- THE PRECOMPUTED BLOB --------------------------------------------------------------------------
@@ -379,6 +387,9 @@ const panel = s => '<section class="panel"><div class="pbox">'
 		+ '<input type="number" id="mingroup" min="2" max="10" step="1" value="4" disabled></div>'
 	+ '<div class="knob"><span class="kl">min legs to claim</span>'
 		+ '<input type="number" id="minlegs" min="1" max="10" step="1" value="4"></div>'
+	+ radioRow('fit longer than declared', 'cap', [
+		{v: 'keep', t: 'keep the fit', on: true},
+		{v: 'declared', t: 'cap at the declared cycle'}])
 	+ radioRow('fallback', 'fb', [
 		{v: 'declared', t: 'use the declared cycle', on: true},
 		{v: 'decline', t: 'decline'}])
@@ -410,7 +421,8 @@ function knobs(){
 		dis: radio("dis"),
 		minGroup: Number(groupIn.value),
 		minLegs: Number(document.getElementById("minlegs").value),
-		fb: radio("fb")
+		fb: radio("fb"),
+		cap: radio("cap")
 	};
 }
 
