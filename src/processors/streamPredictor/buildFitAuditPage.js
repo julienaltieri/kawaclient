@@ -18,7 +18,8 @@
    ================================================================================================== */
 
 import {renderAuditPage, esc} from './auditShell';
-import {CANDIDATE_PERIODS, fitTable, bestFit, fitTableSplit, merchantGroups} from './cycleFit';
+import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, detectCycle,
+	MIN_LEGS_FOR_FIT} from './cycleFit';
 
 /* NOTHING FITS ABOVE THIS AND THE PAGE SAYS SO RATHER THAN NAMING A WINNER. A stream whose best
    candidate is still this bad has no cycle to find, and printing the least-bad one as an answer
@@ -61,8 +62,8 @@ const bars = (table, best, declared) => '<span class="bars">' + (table || []).ma
 		+ '</span>';
 }).join('') + '</span>';
 
-const verdict = (best, declared) => {
-	if(!best)return '<span class="vd none">unscorable</span>';
+const verdict = (best, declared, reason) => {
+	if(!best)return '<span class="vd none">no claim · ' + esc(reason || 'not scorable') + '</span>';
 	if(best.misfit >= WEAK_FIT_CUTOFF)
 		return '<span class="vd weak">no fit · best ' + esc(best.period) + ' ' + pctText(best.misfit)
 			+ '</span>';
@@ -84,9 +85,9 @@ const scaleHead = declared => '<div class="frow head"><span class="flab"></span>
 
 const body = r => '<div class="fit">' + scaleHead(r.declared)
 	+ '<div class="frow"><span class="flab">merged</span>' + bars(r.merged, r.bestMerged, r.declared)
-		+ verdict(r.bestMerged, r.declared) + '</div>'
+		+ verdict(r.bestMerged, r.declared, r.reason) + '</div>'
 	+ '<div class="frow"><span class="flab">split</span>' + bars(r.split, r.bestSplit, r.declared)
-		+ verdict(r.bestSplit, r.declared)
+		+ verdict(r.bestSplit, r.declared, r.reason)
 		+ (r.groups.length > 1
 			? '<span class="grp">' + r.groups.map(g => esc(g.key) + '×' + g.legs.length).join(' · ') + '</span>'
 			: '<span class="grp one">one merchant</span>')
@@ -99,14 +100,27 @@ export function enrichFits(rows, anchor){
 		const legs = r.legs || [];
 		const merged = fitTable(legs, anchor);
 		const sp = fitTableSplit(legs, anchor);
-		const bestMerged = bestFit(merged);
-		const bestSplit = bestFit(sp.table);
+		const dm = detectCycle(legs, anchor);
+		const dsp = legs.length < MIN_LEGS_FOR_FIT
+			? {period: null, misfit: null, reason: dm.reason}
+			: (function(){
+				const b = sp.table.filter(c => c.misfit !== null && c.misfit !== undefined);
+				if(!b.length)return {period: null, misfit: null, reason: 'nothing scorable'};
+				const floor = b.reduce((m, c) => Math.min(m, c.misfit), Infinity);
+				const pick = sp.table.find(c => c.misfit !== null && c.misfit !== undefined
+					&& c.misfit <= floor + 0.05);
+				return pick ? {period: pick.period, misfit: pick.misfit, reason: null}
+					: {period: null, misfit: null, reason: 'nothing scorable'};
+			})();
+		const bestMerged = dm.period ? dm : null;
+		const bestSplit = dsp.period ? dsp : null;
+		const reason = dm.reason;
 		const declared = r.stream.period;
 		const weak = !bestMerged || bestMerged.misfit >= WEAK_FIT_CUTOFF;
 		return {
 			id: r.stream.id, name: r.stream.name, declared: declared, legCount: legs.length,
 			merged: merged, split: sp.table, groups: merchantGroups(legs),
-			bestMerged: bestMerged, bestSplit: bestSplit,
+			bestMerged: bestMerged, bestSplit: bestSplit, reason: reason,
 			agreeMerged: !!bestMerged && bestMerged.period === declared,
 			agreeSplit: !!bestSplit && bestSplit.period === declared,
 			group: weak ? 'weak' : (bestMerged.period === declared ? 'agree' : 'disagree')
@@ -180,8 +194,9 @@ export function buildFitAuditPage(rows, meta){
 		groups: [
 			group('disagree', 'Detected period differs from the declaration', of('disagree')),
 			group('agree', 'Detected period matches the declaration', of('agree')),
-			group('weak', 'Nothing fits — best candidate under '
-				+ ((1 - WEAK_FIT_CUTOFF) * 100).toFixed(0) + '%', of('weak'))
+			group('weak', 'No claim — best candidate under '
+				+ ((1 - WEAK_FIT_CUTOFF) * 100).toFixed(0) + '%, or fewer than '
+				+ MIN_LEGS_FOR_FIT + ' transactions', of('weak'))
 		]
 	});
 }

@@ -164,6 +164,31 @@ export function bestFit(table, tolerance){
 	return pick ? {period: pick.period, misfit: pick.misfit} : null;
 }
 
+/* THE FEWEST TRANSACTIONS THAT CAN SHOW A REPEAT. Three points give two intervals, which is a
+   coincidence rather than a rhythm: Investments has exactly three - 2025-09-15, 2025-10-02 and
+   2025-10-15, the middle one a +3000 credit among two -7000 debits - and the gaps of 17 and 13 days
+   average out to a perfectly convincing biweekly that is not there. Four points give three intervals,
+   the fewest that can disagree with each other.
+
+   MEASURED, AND THE DATA IS INDIFFERENT BETWEEN 4 AND 10. Over the 25 known-good declarations the
+   gate claims 11 and gets 10 right at every value in that range, against 14 claims and 12 right with
+   no gate at all - so it trades two lucky answers for one wrong one, and the number is set at the low
+   end because nothing in the evidence argues for more. */
+export const MIN_LEGS_FOR_FIT = 4;
+
+/* THE ONE ENTRY POINT A CALLER SHOULD USE, and the only place the evidence gate lives. fitTable and
+   bestFit stay pure - they score and rank whatever they are handed - so the page can still draw the
+   bars for a stream too small to claim, which is the difference between showing the reader nothing
+   and showing them why there is no answer. */
+export function detectCycle(legs, anchor, tolerance){
+	const list = legs || [];
+	if(list.length < MIN_LEGS_FOR_FIT)
+		return {period: null, misfit: null, reason: 'only ' + list.length + ' transactions'};
+	const best = bestFit(fitTable(list, anchor), tolerance);
+	return best ? {period: best.period, misfit: best.misfit, reason: null}
+		: {period: null, misfit: null, reason: 'nothing scorable'};
+}
+
 /* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
    ONE STREAM IS OFTEN SEVERAL RHYTHMS BRAIDED TOGETHER. "Utilities" is a gas bill and an electricity
    bill, each arriving once a month a few days apart; merged, the month carries two events and a
