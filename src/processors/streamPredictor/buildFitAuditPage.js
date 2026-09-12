@@ -18,7 +18,7 @@
    ================================================================================================== */
 
 import {renderAuditPage, esc} from './auditShell';
-import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, detectCycle,
+import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, resolveCycle,
 	legsInWindow, MIN_LEGS_FOR_FIT} from './cycleFit';
 
 /* NOTHING FITS ABOVE THIS AND THE PAGE SAYS SO RATHER THAN NAMING A WINNER. A stream whose best
@@ -91,7 +91,28 @@ const body = r => '<div class="fit">' + scaleHead(r.declared)
 		+ (r.groups.length > 1
 			? '<span class="grp">' + r.groups.map(g => esc(g.key) + '×' + g.legs.length).join(' · ') + '</span>'
 			: '<span class="grp one">one merchant</span>')
-	+ '</div></div>';
+	+ '</div>'
+	+ decisionRow(r)
+	+ '</div>';
+
+/* THE DECISION, AND WHICH READING IT CAME FROM. The rule is that the higher fit wins, because a split
+   that fragments one series can only fit worse and a split that separates two can only fit better -
+   so the winner names whether the split was real. The source is printed because the reader is being
+   asked to judge the RULE, not only its answer, and a decision that never says where it came from
+   cannot be argued with. */
+const decisionRow = r => {
+	if(!r.decision)
+		return '<div class="frow dec none"><span class="flab">decision</span>'
+			+ '<span class="dv">no cycle · ' + esc(r.reason || 'nothing fits') + '</span></div>';
+	const ok = r.decision.period === r.declared;
+	return '<div class="frow dec' + (ok ? '' : ' bad') + '">'
+		+ '<span class="flab">decision</span>'
+		+ '<span class="dv">' + esc(r.decision.period) + ' ' + pctText(r.decision.misfit)
+		+ (ok ? ' ✓' : ' ✗ declared ' + esc(r.declared)) + '</span>'
+		+ '<span class="src">from ' + esc(r.decisionSource) + '</span>'
+		+ (r.sourcesDiffer ? '<span class="src diff">readings disagreed</span>' : '')
+		+ '</div>';
+};
 
 /* EVERY NUMBER ON THE PAGE COMES FROM RUNNING THE REAL SCORER over the real legs. Nothing here
    recomputes, rounds early, or decides anything the detector did not decide. */
@@ -102,31 +123,25 @@ export function enrichFits(rows, anchor){
 		const legs = legsInWindow(allLegs, anchor);
 		const merged = fitTable(legs, anchor);
 		const sp = fitTableSplit(legs, anchor);
-		const dm = detectCycle(allLegs, anchor);
-		const dsp = legs.length < MIN_LEGS_FOR_FIT
-			? {period: null, misfit: null, reason: dm.reason}
-			: (function(){
-				const b = sp.table.filter(c => c.misfit !== null && c.misfit !== undefined);
-				if(!b.length)return {period: null, misfit: null, reason: 'nothing scorable'};
-				const floor = b.reduce((m, c) => Math.min(m, c.misfit), Infinity);
-				const pick = sp.table.find(c => c.misfit !== null && c.misfit !== undefined
-					&& c.misfit <= floor + 0.05);
-				return pick ? {period: pick.period, misfit: pick.misfit, reason: null}
-					: {period: null, misfit: null, reason: 'nothing scorable'};
-			})();
+		const decided = resolveCycle(allLegs, anchor);
+		const dm = decided.merged, dsp = decided.split;
 		const bestMerged = dm.period ? dm : null;
 		const bestSplit = dsp.period ? dsp : null;
 		const reason = dm.reason;
+		//the decision only stands if it also clears the fit bar; below it the stream has no cycle
+		const claimed = decided.period && decided.misfit < WEAK_FIT_CUTOFF ? decided : null;
 		const declared = r.stream.period;
-		const weak = !bestMerged || bestMerged.misfit >= WEAK_FIT_CUTOFF;
 		return {
 			id: r.stream.id, name: r.stream.name, declared: declared,
 			legCount: allLegs.length, windowLegs: legs.length,
 			merged: merged, split: sp.table, groups: merchantGroups(legs),
 			bestMerged: bestMerged, bestSplit: bestSplit, reason: reason,
+			decision: claimed, decisionSource: claimed ? decided.source : null,
+			agreeDecision: !!claimed && claimed.period === declared,
+			sourcesDiffer: !!(bestMerged && bestSplit && bestMerged.period !== bestSplit.period),
 			agreeMerged: !!bestMerged && bestMerged.period === declared,
 			agreeSplit: !!bestSplit && bestSplit.period === declared,
-			group: weak ? 'weak' : (bestMerged.period === declared ? 'agree' : 'disagree')
+			group: !claimed ? 'weak' : (claimed.period === declared ? 'agree' : 'disagree')
 		};
 	});
 }
@@ -138,6 +153,10 @@ export function summarizeFits(list){
 		agree: e.filter(r => r.group === 'agree').length,
 		disagree: e.filter(r => r.group === 'disagree').length,
 		weak: e.filter(r => r.group === 'weak').length,
+		decided: e.filter(r => r.decision).length,
+		agreeDecision: e.filter(r => r.agreeDecision).length,
+		fromSplit: e.filter(r => r.decisionSource === 'split').length,
+		sourcesDiffer: e.filter(r => r.sourcesDiffer).length,
 		agreeMerged: e.filter(r => r.agreeMerged).length,
 		agreeSplit: e.filter(r => r.agreeSplit).length,
 		splitDiffers: e.filter(r => (r.bestMerged && r.bestMerged.period)
@@ -190,6 +209,10 @@ export function buildFitAuditPage(rows, meta){
 			{label: 'agree', value: s.agree},
 			{label: 'disagree', value: s.disagree, flag: true},
 			{label: 'no fit', value: s.weak, flag: true},
+			{label: 'decided', value: s.decided},
+			{label: 'decision agrees', value: s.agreeDecision + '/' + s.decided},
+			{label: 'from split', value: s.fromSplit},
+			{label: 'readings disagreed', value: s.sourcesDiffer, flag: true},
 			{label: 'merged agrees', value: s.agreeMerged + '/' + s.total},
 			{label: 'split agrees', value: s.agreeSplit + '/' + s.total},
 			{label: 'merged≠split', value: s.splitDiffers}
@@ -211,6 +234,7 @@ const LEGEND = '<span class="lg"><i class="sw win"></i>best fit</span>'
 	+ '<span class="lg">scale is absolute, never rescaled per stream</span>'
 	+ '<span class="lg">the pick is the SHORTEST period within reach of the best, not the tallest bar</span>'
 	+ '<span class="lg">scored on this reporting year only, from the anchor</span>'
+	+ '<span class="lg">decision = whichever reading fits better; a split that fragments one series fits worse</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
 const CSS = `
@@ -225,6 +249,12 @@ const CSS = `
 .sw.decl{background:transparent;outline:1px solid var(--flag);outline-offset:1px}
 .sw.un{background:repeating-linear-gradient(45deg,transparent,transparent 2px,
 	var(--rule) 2px,var(--rule) 3px)}
+.frow.dec{margin-top:3px;padding-top:4px;border-top:1px dashed var(--rule)}
+.dv{font:600 11.5px/1 var(--mono);color:var(--realtime);padding-bottom:2px}
+.frow.dec.bad .dv{color:var(--flag)}
+.frow.dec.none .dv{color:var(--ink-faint);font-weight:500}
+.src{font:400 10px/1 var(--mono);color:var(--ink-faint);padding-bottom:2px}
+.src.diff{color:var(--flag)}
 .fit{display:flex;flex-direction:column;gap:3px;margin-top:2px}
 .frow{display:flex;align-items:flex-end;gap:7px;min-width:0;flex-wrap:wrap}
 .flab{font:500 9.5px/1 var(--mono);color:var(--ink-faint);text-transform:uppercase;

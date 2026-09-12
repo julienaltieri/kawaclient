@@ -211,6 +211,47 @@ export function detectCycle(legs, anchor, tolerance){
 		: {period: null, misfit: null, windowLegs: list.length, reason: 'nothing scorable'};
 }
 
+/* ---- THE DECISION -------------------------------------------------------------------------------
+   TWO READINGS OF THE SAME STREAM, AND A TEST THAT SAYS WHICH ONE IS REAL.
+
+   Splitting by merchant either separates two interleaved series or fragments one. Which of those
+   happened is not a matter of taste: fragmenting a coherent series can only make each piece fit
+   WORSE, and separating two real ones can only make each piece fit BETTER. So the higher fit wins,
+   and that is a measurement of whether the split was real rather than a preference between two
+   equally good answers.
+
+   Renter's insurance is the case that motivated it. One payee billing $10 on the 12th for eight
+   months, which the bank writes as "Lemonade.Com" six times and "Lemonade Insurance Compan" twice;
+   the keys diverge at the ninth character so they do not group, and a 2-leg fragment cannot hold up
+   monthly. Merged reads 99.9%, split 79.5%, and the rule takes merged.
+
+   A TIE GOES TO MERGED, because splitting is the added assumption and the evidence did not pay for
+   it. */
+export const DecisionSource = {merged: 'merged', split: 'split'};
+
+export function detectCycleSplit(legs, anchor, tolerance){
+	const all = legs || [];
+	const list = legsInWindow(all, anchor);
+	if(list.length < MIN_LEGS_FOR_FIT)return detectCycle(all, anchor, tolerance);
+	const best = bestFit(fitTableSplit(list, anchor).table, tolerance);
+	return best ? {period: best.period, misfit: best.misfit, windowLegs: list.length, reason: null}
+		: {period: null, misfit: null, windowLegs: list.length, reason: 'nothing scorable'};
+}
+
+export function resolveCycle(legs, anchor, tolerance){
+	const merged = detectCycle(legs, anchor, tolerance);
+	const split = detectCycleSplit(legs, anchor, tolerance);
+	const pick = (src, r) => ({period: r.period, misfit: r.misfit, source: src,
+		reason: r.reason, merged: merged, split: split});
+	if(!merged.period && !split.period)return pick(DecisionSource.merged, merged);
+	if(!split.period)return pick(DecisionSource.merged, merged);
+	if(!merged.period)return pick(DecisionSource.split, split);
+	//lower misfit is the better fit; equal misfits keep the simpler reading
+	return split.misfit < merged.misfit
+		? pick(DecisionSource.split, split)
+		: pick(DecisionSource.merged, merged);
+}
+
 /* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
    ONE STREAM IS OFTEN SEVERAL RHYTHMS BRAIDED TOGETHER. "Utilities" is a gas bill and an electricity
    bill, each arriving once a month a few days apart; merged, the month carries two events and a
