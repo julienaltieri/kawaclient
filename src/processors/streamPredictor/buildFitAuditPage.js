@@ -33,19 +33,30 @@ export const WEAK_FIT_CUTOFF = 0.2;
 const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
 	bimonthly: 'B', quarterly: 'q', yearly: 'y'};
 
-const f3 = n => (n === null || n === undefined) ? '—' : n.toFixed(3);
+/* THE PAGE SPEAKS FIT, THE SCORER SPEAKS MISFIT, and the conversion lives here so only one of them
+   is ever on screen. A bar that grows downward for a better answer reads as a mistake every time;
+   worse, the winning bar is the SHORTEST period within tolerance rather than the lowest score, so on
+   Rent the pick sat next to a fractionally lower neighbour and looked simply wrong. Flipped, the pick
+   is the tall bar and the eye agrees with the algorithm. */
+const fitOf = misfit => (misfit === null || misfit === undefined)
+	? null : Math.max(0, Math.min(1, 1 - misfit));
+
+const pctText = misfit => {
+	const v = fitOf(misfit);
+	return v === null ? '—' : (v * 100).toFixed(1) + '%';
+};
 
 /* ONE BAR PER CANDIDATE, height = misfit on a FIXED 0..1 scale. An unscorable candidate - too few
    legs or too few buckets to say anything - renders as an empty slot, which must not be mistakable
    for a misfit of zero: zero means "repeats exactly", and the two would otherwise look identical. */
 const bars = (table, best, declared) => '<span class="bars">' + (table || []).map(c => {
 	const un = c.misfit === null || c.misfit === undefined;
-	const pctH = un ? 0 : Math.max(2, Math.round(Math.min(1, Math.max(0, c.misfit)) * 100));
+	const pctH = un ? 0 : Math.max(2, Math.round(fitOf(c.misfit) * 100));
 	const cls = ['bar'];
 	if(un)cls.push('un');
 	if(best && c.period === best.period)cls.push('win');
 	if(c.period === declared)cls.push('decl');
-	return '<span class="' + cls.join(' ') + '" title="' + esc(c.period) + ' ' + f3(c.misfit) + '">'
+	return '<span class="' + cls.join(' ') + '" title="' + esc(c.period) + ' fit ' + pctText(c.misfit) + '">'
 		+ (un ? '<i class="none"></i>' : '<i style="height:' + pctH + '%"></i>')
 		+ '</span>';
 }).join('') + '</span>';
@@ -53,9 +64,10 @@ const bars = (table, best, declared) => '<span class="bars">' + (table || []).ma
 const verdict = (best, declared) => {
 	if(!best)return '<span class="vd none">unscorable</span>';
 	if(best.misfit >= WEAK_FIT_CUTOFF)
-		return '<span class="vd weak">no fit · best ' + esc(best.period) + ' ' + f3(best.misfit) + '</span>';
+		return '<span class="vd weak">no fit · best ' + esc(best.period) + ' ' + pctText(best.misfit)
+			+ '</span>';
 	const ok = best.period === declared;
-	return '<span class="vd ' + (ok ? 'ok' : 'bad') + '">' + esc(best.period) + ' ' + f3(best.misfit)
+	return '<span class="vd ' + (ok ? 'ok' : 'bad') + '">' + esc(best.period) + ' ' + pctText(best.misfit)
 		+ (ok ? ' ✓' : ' ✗ declared ' + esc(declared)) + '</span>';
 };
 
@@ -168,7 +180,8 @@ export function buildFitAuditPage(rows, meta){
 		groups: [
 			group('disagree', 'Detected period differs from the declaration', of('disagree')),
 			group('agree', 'Detected period matches the declaration', of('agree')),
-			group('weak', 'Nothing fits — best candidate still above ' + WEAK_FIT_CUTOFF, of('weak'))
+			group('weak', 'Nothing fits — best candidate under '
+				+ ((1 - WEAK_FIT_CUTOFF) * 100).toFixed(0) + '%', of('weak'))
 		]
 	});
 }
@@ -176,8 +189,9 @@ export function buildFitAuditPage(rows, meta){
 const LEGEND = '<span class="lg"><i class="sw win"></i>best fit</span>'
 	+ '<span class="lg"><i class="sw decl"></i>declared period</span>'
 	+ '<span class="lg"><i class="sw un"></i>not scorable</span>'
-	+ '<span class="lg">taller bar = worse fit · 0 repeats exactly · 1 no structure</span>'
+	+ '<span class="lg">taller bar = better fit · 100% repeats exactly · 0% no structure</span>'
 	+ '<span class="lg">scale is absolute, never rescaled per stream</span>'
+	+ '<span class="lg">the pick is the SHORTEST period within reach of the best, not the tallest bar</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
 const CSS = `
