@@ -185,7 +185,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		predictor = new StreamPredictor(portfolio);
 		rows = predictor.mapAllAccounts();
 		streams = predictor.terminalStreams();
-		cycles = streams.map(s => ({stream: s, cycle: determineCycle(s)}));
+		cycles = streams.map(s => ({stream: s, cycle: {declared: declaredCycleOf(s.period)}}));
 		anchor = predictor.analysisAnchor();
 		enriched = enrichCycles(rows, anchor);
 		summary = summarizeCycles(enriched);
@@ -214,7 +214,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		let totalLegs = 0, totalBucketed = 0;
 		const lost = [];
 		rows.forEach(r => {
-			const cycle = cycleOf(determineCycle(r.stream || {}));
+			const cycle = declaredCycleOf((r.stream || {}).period);
 			if(!cycle)return;
 			const legs = r.legs || [];
 			const buckets = cycleBuckets(legs, cycle, anchor);
@@ -242,8 +242,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 	/* THE DECLARATION WINS OUTRIGHT AND THE LEDGER IS NOT CONSULTED. Loosening this to "usually
 	   declaration" would delete the only thing §2 currently promises. */
 	test('every cycle is sourced from the declaration, never from the ledger', () => {
-		/* WITH NO EVIDENCE THERE IS NO INFERENCE, and the shape says so by omitting the key rather
-		   than by carrying a label that says "declaration". */
+		//the declaration path carries no inference at all, and the shape says so by having no key
 		const inferred = cycles.filter(c => 'inferred' in c.cycle)
 			.map(c => c.stream.name + ' -> inferred');
 		if(inferred.length)console.log('CYCLES NOT SOURCED FROM THE DECLARATION:\n  ' + inferred.join('\n  '));
@@ -578,13 +577,25 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 
 	/* CALLED WITH NO EVIDENCE IT IS THE DECLARATION ALONE, which is the same shape by construction
 	   and is how the cycle audit page reads it. */
-	test('determineCycle without evidence is the declaration alone', () => {
-		const c = determineCycle(rows[0].stream);
+	/* EVIDENCE IS REQUIRED, AND AN EMPTY LEDGER IS EVIDENCE. The two used to be the same call and
+	   returned the same thing, which meant a caller who simply forgot the argument got a
+	   confident-looking answer instead of a failure. A stream with no transactions still falls back
+	   to the declaration - that is a fact about the stream, not a wiring mistake. */
+	test('evidence is required; an empty ledger falls back to the declaration', () => {
+		const bare = {legs: [], anchor: anchor, now: now};
+		const c = determineCycle(rows[0].stream, bare);
 		expect(Object.keys(c)).toEqual(['declared']);
 		expect(cycleOf(c)).toBe(Period[rows[0].stream.period]);
-		//and a malformed declaration is reported, never thrown
-		expect(determineCycle({period: 'fortnightly'}).declared).toBe(null);
+
+		//a yearly stream with nothing in the ledger is the same answer, by the same route
+		expect(Object.keys(determineCycle({period: 'yearly'}, bare))).toEqual(['declared']);
+
+		//a malformed declaration is reported, never thrown
+		expect(determineCycle({period: 'fortnightly'}, bare).declared).toBe(null);
 		expect(declaredCycleOf('fortnightly')).toBe(null);
+
+		//but a missing argument is a wiring bug and says so
+		expect(() => determineCycle(rows[0].stream)).toThrow(/needs evidence/);
 	});
 
 	/* ---- THE CONFIDENCE SCORE -----------------------------------------------------------------------

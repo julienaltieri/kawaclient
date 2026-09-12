@@ -55,8 +55,15 @@ import { explainCycle } from './cycleDecision';
                                              silent about timing. The ledger decides where it has
                                              earned it, and `inferred` is present exactly there.
 
-   THE LEDGER IS OPTIONAL. Called with no evidence - `determineCycle(stream)` - the answer is the
-   declaration alone and `inferred` is absent, which is the same shape by construction.
+   ALWAYS PASS THE EVIDENCE YOU HAVE. `evidence` is required, and a stream with no transactions is
+   expressed as an empty `legs` array rather than by leaving the argument off. The difference matters:
+   an empty array is a fact about the stream and falls back to the declaration, while a missing
+   argument is a wiring bug - and when it was optional, that bug returned a confident-looking
+   `{declared}` instead of failing, so a caller who forgot it never found out.
+
+   A MALFORMED DECLARATION IS STILL REPORTED, NEVER THROWN. That is a fact about the data, and a
+   stream we cannot predict is not a reason to fail the whole portfolio's prediction pass. A missing
+   argument is the one thing here that throws, because nothing about the data can cause it.
    ================================================================================================== */
 
 /* The nine period names a stream may declare, as an explicit allowlist. `Period` carries static
@@ -72,19 +79,22 @@ export const isYearlyDeclaration = periodName => !!YEARLY[periodName];
 export const declaredCycleOf = periodName =>
 	(periodName && DECLARABLE[periodName]) ? Period[periodName] : null;
 
-/* An unknown or missing period is reported as `declared: null` and never thrown. A stream with a
-   malformed declaration is a stream we cannot predict, not a reason to fail the whole portfolio's
-   prediction pass.
-
-   `evidence` is {legs, anchor, now, config}; omit it and no inference is attempted. */
+/* `evidence` is {legs, anchor, now, config} and is REQUIRED - see the header. Pass the legs you have;
+   an empty array is a valid answer and falls back to the declaration. */
 export function determineCycle(streamNode, evidence){
+	if(!evidence)throw new Error('determineCycle(stream, evidence) needs evidence: '
+		+ '{legs, anchor, now}. Pass the legs you have - an empty array is valid and falls back to '
+		+ 'the declaration. Use declaredCycleOf(stream.period) to read the declaration alone.');
+
 	const stream = streamNode || {};
 	const decision = {declared: declaredCycleOf(stream.period)};
+	const legs = evidence.legs || [];
 
-	if(!evidence || !evidence.legs)return decision;
+	//nothing to infer from, and nothing to infer for: the declaration is the answer
+	if(!legs.length)return decision;
 	if(!isYearlyDeclaration(stream.period))return decision;
 
-	const full = explainCycle(stream, evidence.legs, evidence.anchor, evidence.now, evidence.config);
+	const full = explainCycle(stream, legs, evidence.anchor, evidence.now, evidence.config);
 	if(!full.measured)return decision;
 
 	decision.inferred = declaredCycleOf(full.period);
