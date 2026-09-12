@@ -19,7 +19,7 @@
 
 import {renderAuditPage, esc} from './auditShell';
 import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, detectCycle,
-	MIN_LEGS_FOR_FIT} from './cycleFit';
+	legsInWindow, MIN_LEGS_FOR_FIT} from './cycleFit';
 
 /* NOTHING FITS ABOVE THIS AND THE PAGE SAYS SO RATHER THAN NAMING A WINNER. A stream whose best
    candidate is still this bad has no cycle to find, and printing the least-bad one as an answer
@@ -97,10 +97,12 @@ const body = r => '<div class="fit">' + scaleHead(r.declared)
    recomputes, rounds early, or decides anything the detector did not decide. */
 export function enrichFits(rows, anchor){
 	return (rows || []).map(r => {
-		const legs = r.legs || [];
+		const allLegs = r.legs || [];
+		//the bars show the window the claim is made from, so the reader sees the evidence, not history
+		const legs = legsInWindow(allLegs, anchor);
 		const merged = fitTable(legs, anchor);
 		const sp = fitTableSplit(legs, anchor);
-		const dm = detectCycle(legs, anchor);
+		const dm = detectCycle(allLegs, anchor);
 		const dsp = legs.length < MIN_LEGS_FOR_FIT
 			? {period: null, misfit: null, reason: dm.reason}
 			: (function(){
@@ -118,7 +120,8 @@ export function enrichFits(rows, anchor){
 		const declared = r.stream.period;
 		const weak = !bestMerged || bestMerged.misfit >= WEAK_FIT_CUTOFF;
 		return {
-			id: r.stream.id, name: r.stream.name, declared: declared, legCount: legs.length,
+			id: r.stream.id, name: r.stream.name, declared: declared,
+			legCount: allLegs.length, windowLegs: legs.length,
 			merged: merged, split: sp.table, groups: merchantGroups(legs),
 			bestMerged: bestMerged, bestSplit: bestSplit, reason: reason,
 			agreeMerged: !!bestMerged && bestMerged.period === declared,
@@ -152,7 +155,7 @@ const card = r => ({
 		r.group].join(' ').toLowerCase(),
 	meta: [
 		{cls: 'period', value: r.declared === null || r.declared === undefined ? 'no period' : r.declared},
-		{cls: 'legs', value: r.legCount, label: 'legs'},
+		{cls: 'legs', value: r.windowLegs + ' of ' + r.legCount, label: 'legs this year'},
 		{cls: 'sid', value: r.id}
 	],
 	flagged: r.group === 'disagree',
@@ -207,6 +210,7 @@ const LEGEND = '<span class="lg"><i class="sw win"></i>best fit</span>'
 	+ '<span class="lg">taller bar = better fit · 100% repeats exactly · 0% no structure</span>'
 	+ '<span class="lg">scale is absolute, never rescaled per stream</span>'
 	+ '<span class="lg">the pick is the SHORTEST period within reach of the best, not the tallest bar</span>'
+	+ '<span class="lg">scored on this reporting year only, from the anchor</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
 const CSS = `

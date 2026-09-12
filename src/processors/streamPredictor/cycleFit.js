@@ -180,13 +180,35 @@ export const MIN_LEGS_FOR_FIT = 4;
    bestFit stay pure - they score and rank whatever they are handed - so the page can still draw the
    bars for a stream too small to claim, which is the difference between showing the reader nothing
    and showing them why there is no answer. */
+/* THE EVIDENCE IS THIS REPORTING YEAR, NOT ALL OF HISTORY. The anchor is the start of the current
+   observation period, and a stream's arrangement is a thing its owner changes between years: what it
+   did under last year's plan is not evidence about this year's rhythm, it is evidence about a rhythm
+   that has been retired.
+
+   A STREAM WITH NOTHING SINCE THE ANCHOR HAS NO DATA, and that is a different answer from "no cycle
+   found". Investments last moved 2025-10-15 against an anchor of 2025-12-21 - the owner kept the
+   stream because he may use it again and chose a different strategy this year. Scored across all of
+   history its three old legs average out to a convincing biweekly that describes nothing anyone
+   intends to repeat. Dormant is the honest word and the page prints it. */
+export function legsInWindow(legs, anchor){
+	if(!anchor)return legs || [];
+	const t = new Date(anchor).getTime();
+	return (legs || []).filter(l => l && l.date && new Date(l.date).getTime() >= t);
+}
+
 export function detectCycle(legs, anchor, tolerance){
-	const list = legs || [];
+	const all = legs || [];
+	const list = legsInWindow(all, anchor);
+	if(!list.length)
+		return {period: null, misfit: null, windowLegs: 0,
+			reason: all.length ? 'dormant — nothing since the reporting year began' : 'no transactions'};
 	if(list.length < MIN_LEGS_FOR_FIT)
-		return {period: null, misfit: null, reason: 'only ' + list.length + ' transactions'};
+		return {period: null, misfit: null, windowLegs: list.length,
+			reason: 'only ' + list.length + ' transaction' + (list.length === 1 ? '' : 's')
+				+ ' this reporting year'};
 	const best = bestFit(fitTable(list, anchor), tolerance);
-	return best ? {period: best.period, misfit: best.misfit, reason: null}
-		: {period: null, misfit: null, reason: 'nothing scorable'};
+	return best ? {period: best.period, misfit: best.misfit, windowLegs: list.length, reason: null}
+		: {period: null, misfit: null, windowLegs: list.length, reason: 'nothing scorable'};
 }
 
 /* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
