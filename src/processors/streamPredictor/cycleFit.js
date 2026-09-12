@@ -224,22 +224,10 @@ export function detectCycle(legs, anchor, tolerance){
    match nothing - not even an identical key - so it becomes its own group, which is the correct
    answer rather than a degenerate one: a description too short to identify a merchant is evidence of
    nothing and must not swallow the others. */
-/* A SERIAL NUMBER IS NOT A MERCHANT. getMerchantKey drops tokens that MIX letters and digits, on the
-   reasoning that those are reference codes - but a token of pure digits survives, and a cheque
-   description is exactly that: "Check paid 1035", "Check paid 1039". Day care Emile came out as nine
-   groups of one leg, which is nine merchants where there is one payee and a chequebook, and the
-   split could say nothing at all.
-
-   STRIPPED HERE RATHER THAN IN getMerchantKey, which refund matching uses to decide whether two real
-   transactions are the same purchase - there a trailing number can be the only thing telling two
-   orders apart, and widening it would be a change to live behaviour made for the wrong reason. */
-const groupingKey = description => getMerchantKey(String(description || '')
-	.replace(/[0-9]+/g, ' '));
-
 export function merchantGroups(legs){
 	const groups = [];
 	(legs || []).forEach(leg => {
-		const key = groupingKey(leg && leg.description);
+		const key = getMerchantKey(leg && leg.description);
 		const hit = groups.find(g => merchantKeysMatch(g.key, key));
 		if(hit)hit.legs.push(leg);
 		else groups.push({key: key, legs: [leg]});
