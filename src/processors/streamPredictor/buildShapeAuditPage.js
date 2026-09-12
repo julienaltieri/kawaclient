@@ -63,17 +63,26 @@ const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + 
 const confCls = v => v === null || v === undefined ? 'cf none'
 	: (v >= 0.9 ? 'cf full' : 'cf part');
 
-const row = r => '<tr data-search="' + esc(r.search) + '" class="' + esc(r.rowCls) + '">'
-	+ '<td class="nm">' + esc(r.name)
-		+ (r.acct ? '<span class="acct">' + esc(r.acct) + '</span>' : '') + '</td>'
-	+ '<td class="cy">' + esc(r.cycle) + '</td>'
-	+ '<td class="sh ' + esc(r.shapeCls) + '">' + esc(r.shape) + '</td>'
-	+ '<td class="dy">' + esc(r.days) + '</td>'
-	+ '<td class="' + esc(r.confCls) + '">' + esc(r.conf) + '</td>'
-	+ '<td class="hc">' + r.hist + '</td>'
-	+ '<td class="ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
-		+ ' aria-label="accept ' + esc(r.name) + '"></td>'
-	+ '</tr>';
+/* A GRID, NOT A TABLE. Seven table columns do not fit a phone, and the three that fell off the
+   right edge - the histogram, the confidence and the tick - are the three the review is done with.
+   As a grid the same row can keep its columns on a wide screen and stack into name / facts / picture
+   on a narrow one, without a second set of markup.
+
+   THE FOUR FACTS SIT IN ONE CELL that is itself a grid, so they line up column-wise across rows on a
+   wide screen and become a wrapping line on a phone. */
+const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-search="' + esc(r.search) + '">'
+	+ '<div class="c-nm"><b>' + esc(r.name) + '</b>'
+		+ (r.acct ? '<span class="acct">' + esc(r.acct) + '</span>' : '') + '</div>'
+	+ '<div class="c-meta">'
+		+ '<span class="m-cy">' + esc(r.cycle) + '</span>'
+		+ '<span class="m-sh ' + esc(r.shapeCls) + '">' + esc(r.shape) + '</span>'
+		+ '<span class="m-dy">' + esc(r.days) + '</span>'
+		+ '<span class="m-cf ' + esc(r.confCls) + '">' + esc(r.conf) + '</span>'
+	+ '</div>'
+	+ '<div class="c-hi">' + r.hist + '</div>'
+	+ '<div class="c-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
+		+ ' aria-label="accept ' + esc(r.name) + '"></div>'
+	+ '</div>';
 
 /* THE ROWS ARE THE STAGE'S OWN OUTPUT. `explainShapeOf` is what the module returns for a stream;
    nothing here recomputes a count, a day or a confidence. */
@@ -149,10 +158,14 @@ export function buildShapeAuditPage(predictor, meta){
 			+ '-' + String(anchor.getDate()).padStart(2, '0')
 		: DASH;
 
-	const table = '<section class="shp"><table class="sht"><thead><tr>'
-		+ '<th>stream</th><th>cycle</th><th>shape</th><th>days</th><th>conf</th>'
-		+ '<th>every cycle, laid on top of each other</th><th class="ck">ok</th>'
-		+ '</tr></thead><tbody id="shrows">' + ordered.map(row).join('') + '</tbody></table></section>';
+	//the header is a row of the same grid, and it is hidden on a phone where the labels are in the way
+	const head = '<div class="srow shead">'
+		+ '<div class="c-nm">stream</div>'
+		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span><span>conf</span></div>'
+		+ '<div class="c-hi">every cycle, laid on top of each other</div>'
+		+ '<div class="c-ck">ok</div></div>';
+	const table = '<section class="shp">' + head
+		+ '<div id="shrows">' + ordered.map(row).join('') + '</div></section>';
 
 	return renderAuditPage({
 		title: 'Cycle shape',
@@ -188,39 +201,66 @@ const LEGEND = '<span class="lg">one row per ACCOUNT - a stream on two accounts 
 	+ '<span class="lg">no shape = the count does not repeat, or there was nothing to read</span>';
 
 const CSS = `
-.shp{max-width:1100px;margin:0 auto;padding:8px 14px 0}
-.sht{width:100%;border-collapse:collapse;font:400 12px/1.45 var(--mono);
-	font-variant-numeric:tabular-nums}
-.sht th{font:500 9px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;
-	color:var(--ink-faint);text-align:left;padding:0 8px 4px 0;border-bottom:1px solid var(--rule)}
-.sht td{padding:5px 8px 5px 0;border-bottom:1px solid var(--rule);vertical-align:middle}
-.sht tr.faint td{opacity:.55}
-.sht .nm{color:var(--ink);min-width:150px}
-.sht .acct{display:block;font-size:10px;color:var(--ink-faint)}
-.sht .cy{color:var(--ink-faint);white-space:nowrap}
-.sht .sh{white-space:nowrap;font-weight:600}
-.sht .s-lump{color:var(--realtime)}
-.sht .s-multiLump{color:var(--accent)}
-.sht .s-spread{color:var(--ink-soft)}
-.sht .s-none{color:var(--ink-faint);font-weight:400}
-.sht .dy{white-space:nowrap;color:var(--ink-soft);font-size:11px}
-.sht .cf{white-space:nowrap;font-size:11px}
-.sht .cf.full{color:var(--realtime);font-weight:600}
-.sht .cf.part{color:var(--ink-soft)}
-.sht .cf.none{color:var(--ink-faint)}
-.sht .hc{width:40%}
-.hist{display:flex;align-items:flex-end;gap:1px;height:26px;width:100%;min-width:120px}
+.shp{max-width:1100px;margin:0 auto;padding:8px 14px 24px}
+
+/* WIDE: one grid, so every row's columns line up without a table. */
+.srow{display:grid;grid-template-columns:210px 300px 1fr 30px;align-items:center;gap:10px;
+	padding:7px 0;border-bottom:1px solid var(--rule);
+	font:400 12px/1.4 var(--mono);font-variant-numeric:tabular-nums}
+.srow.faint{opacity:.55}
+.shead{border-bottom:1px solid var(--rule);padding-bottom:5px;
+	font:500 9px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+	color:var(--ink-faint)}
+.shead b,.shead .c-nm{font-weight:500}
+
+.c-nm{min-width:0}
+.c-nm b{font-weight:600;color:var(--ink);word-break:break-word}
+.acct{display:block;font-size:10px;color:var(--ink-faint);word-break:break-word}
+
+.c-meta{display:grid;grid-template-columns:74px 74px 96px 46px;gap:6px;align-items:center;
+	min-width:0}
+.m-cy{color:var(--ink-faint)}
+.m-sh{font-weight:600;white-space:nowrap}
+.s-lump{color:var(--realtime)}
+.s-multiLump{color:var(--accent)}
+.s-spread{color:var(--ink-soft)}
+.s-none{color:var(--ink-faint);font-weight:400}
+.m-dy{color:var(--ink-soft);font-size:11px;white-space:nowrap;overflow:hidden;
+	text-overflow:ellipsis}
+.m-cf{font-size:11px;text-align:right}
+.cf.full{color:var(--realtime);font-weight:600}
+.cf.part{color:var(--ink-soft)}
+.cf.none{color:var(--ink-faint)}
+
+.c-hi{min-width:0}
+.hist{display:flex;align-items:flex-end;gap:1px;height:26px;width:100%}
 .hb{flex:1 1 0;background:var(--accent-soft);border-radius:1px;min-width:2px}
 .hb.zero{background:var(--sunk)}
 .hb.pick{background:var(--accent)}
-.sht th.ck,.sht td.ck{text-align:right;padding-right:0;width:30px}
-.sht .okbox{width:19px;height:19px;accent-color:var(--accent);margin:0}
+
+.c-ck{text-align:right}
+.c-ck .okbox{width:20px;height:20px;accent-color:var(--accent);margin:0}
+
 .sw{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--sunk)}
 .sw.pick{background:var(--accent)}
-.lg{display:inline-flex;align-items:center;gap:4px;margin-right:11px;white-space:nowrap}
-@media (max-width:640px){
-	.sht .hc{width:32%}
-	.sht .nm{min-width:110px}
+/* THE LEGEND WRAPS. Every line of it was running off the right edge of a phone. */
+.lg{display:inline-flex;align-items:center;gap:4px;margin-right:11px}
+
+/* NARROW: name and tick on one line, the four facts on the next, the picture full width under
+   them. The picture is the point of the page and it gets the whole screen rather than a sliver. */
+@media (max-width:760px){
+	.shp{padding:6px 10px 24px}
+	.shead{display:none}
+	.srow{grid-template-columns:1fr 30px;
+		grid-template-areas:"nm ck" "meta meta" "hi hi";
+		gap:5px 8px;padding:10px 0}
+	.c-nm{grid-area:nm}
+	.c-ck{grid-area:ck}
+	.c-meta{grid-area:meta;display:flex;flex-wrap:wrap;gap:4px 10px}
+	.m-dy{overflow:visible}
+	.m-cf{text-align:left}
+	.c-hi{grid-area:hi}
+	.hist{height:34px}
 }
 `;
 
@@ -228,7 +268,7 @@ const CSS = `
    would otherwise be visibly present and do nothing. */
 const SCRIPT = `
 var q = document.getElementById("q");
-var rows = [].slice.call(document.querySelectorAll("#shrows tr"));
+var rows = [].slice.call(document.querySelectorAll("#shrows .srow"));
 function filterRows(){
 	var t = q ? q.value.trim().toLowerCase() : "";
 	rows.forEach(function(tr){
