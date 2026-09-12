@@ -62,6 +62,13 @@ export class StreamPredictor {
 		return this._anchor;
 	}
 
+	/* THE INSTANT THE PORTFOLIO WAS TAKEN, which is what "now" means to every stage here. Reading the
+	   wall clock instead would make a question like "how long has this stream been quiet?" answer
+	   differently tomorrow against the same capture, and the test would drift a day at a time. */
+	analysisNow(){
+		return this.portfolio.today ? new Date(this.portfolio.today) : new Date();
+	}
+
 	/* MEMOISED, because the walk is the same walk for every stage and every stream. */
 	terminalStreams(){
 		if(!this._terminals)this._terminals = terminalStreams(this.portfolio.masterStream);

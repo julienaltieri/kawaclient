@@ -244,6 +244,14 @@ reported **unscorable** — `misfit: null` — never as a number computed from o
 7. **The declaration is a ceiling.** A fit may **shorten** the declared cycle, never lengthen it.
    Finding a shorter pattern than the one declared is a discovery; finding a longer one is the
    detector failing to see the declared rhythm. Route `capped`.
+8. **A yearly declaration adds two more gates, and nothing else does.** A yearly stream is an
+   envelope, so every cycle read off it is an inference about how the envelope happened to be spent
+   rather than a rhythm anyone set up. Before that inference replaces the declaration it has to be a
+   rhythm someone would actually run — `yearlyAllowedPeriods`, route `atypical` — and it has to
+   still be running — no more than `maxEmptyCyclesToStayActive` complete empty cycles between the
+   last movement and the capture date, route `stale`. Both land back on yearly and neither counts as
+   a measurement. **`atypical` is tested first**, so a stream failing both is reported by the more
+   basic reason.
 
 **Worked example — Renter's insurance.** One payee billing $10 on the 12th for eight months, which the
 bank writes "Lemonade.Com" six times and "Lemonade Insurance Compan" twice. The keys diverge at the
@@ -258,7 +266,7 @@ split   monthly    79.5%  ->  shortest over 75%: bimonthly     (the 2-leg fragme
 decision           monthly    declared monthly  ✓
 ```
 
-#### The five numbers
+#### The seven numbers
 
 They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
 its range on the audit page and reading what the validated cohort did. The audit page still moves the
@@ -271,6 +279,8 @@ of the score rather than gates on it.
 | `trimBuckets` | `2` | drop the 2 buckets deviating most from the median and rescore what is left, phase included, so a stream that kept its rhythm except for one doubled month reads as the rhythm it kept. It cannot invent a fit: a flat candidate has nothing to drop and scores identically at every trim — Earnin bimonthly is 79.6% at 0, 1 and 2 |
 | `minLegsToClaim` | `3` | the window is already only one reporting year; raising it silences streams that genuinely moved a handful of times |
 | `minGroupLegs` | `3` | a 2-leg fragment fits any period trivially, so a split containing one is not evidence |
+| `yearlyAllowedPeriods` | `weekly, biweekly, monthly` | *yearly declarations only.* Monthly is the typical arrangement and the two faster ones are really lived; semimonthly, bimonthly and quarterly on a budget envelope describe an accident of when the money was spent. A stream **declared** monthly that reads quarterly is still a disagreement worth seeing — this gate is never applied to a declared rhythm |
+| `maxEmptyCyclesToStayActive` | `2` | *yearly declarations only.* Complete cycles of the detected period between the last transaction and the capture date. One empty cycle is a late payment; three is a habit that stopped. Medical read biweekly off four legs that all landed early in the year and nothing since — 10 empty biweekly cycles by the capture date |
 | `minSplitLegShare` | `0.24` | the split reading combines only the groups that were **scorable** and skips the rest, which degenerates when nearly every group is skipped. Below this share of the window's legs the split is reported **unscorable** rather than as a number. Just under a quarter, because a stream that is genuinely four subscriptions is plausible and one scorable group of four is still worth reporting |
 
 **The algorithm itself is no longer a setting.** Four scoring variants, a tolerance-based pick rule and
@@ -316,8 +326,16 @@ the declaration says "yearly" and means an amount. Agreement is therefore not re
 headline counts what was read off the ledger:
 
 ```
-read off the ledger 13/35 · both 7 · via merged 6 · declared 22
+read off the ledger 6/35 · both 4 · via merged 2
+                        · not a rhythm a budget runs on 6 · pattern went quiet 1 · declared 22
 ```
+
+The six it keeps are all monthly or weekly and all still moving: Gembah, Hobby mdm, Shopping, Tolls,
+Credit Card Payments, Business Expenses. The seven it blocks divide cleanly by *which* condition
+fails — three had gone quiet (Medical 10 empty biweekly cycles, DMV fee 10, Sport 8) and four are
+still active but on a period a budget does not run on (Returns and both Cadeaux bimonthly,
+Exceptional Expense quarterly). The route counts read 6 `atypical` / 1 `stale` rather than 4 / 3
+because `atypical` is tested first and two of the quiet ones were also semimonthly.
 
 **The ground truth for this cohort is Julien's**, recorded per stream id in
 `src/tests/fixtures/cycleGroundTruth.json` — beside the portfolio capture, under the same ignore rule
@@ -326,15 +344,13 @@ a person to make. `basis` separates a rhythm the stream really has from behaviou
 to be regular: Returns reads bimonthly because of how the refunds arrive, not because the stream runs
 on that cycle. Both are accepted detections; only one should ever carry structural weight.
 
-The 13 it measured include `Tolls -> monthly` (3 legs, one merchant), `Business Expenses -> monthly`
-(24 legs) and `Credit Card Payments -> weekly` (75 legs, validated by hand as correct). It no longer
-claims `Medical HSA -> quarterly`: the share gate withdrew that number and the stream resolves to
-yearly, which Julien confirmed is right.
+`Medical HSA -> quarterly` and `Exceptional Expense -> quarterly` were both claimed before these
+gates existed, and both were wrong in the same way: a yearly envelope drawn down often is regular in
+the only sense the score can see. The share gate withdrew the first and the period gate the second.
 
-`Exceptional Expense -> quarterly` (20 legs) is the one still standing that should not be. It survives
-on a merged score computed after the trim discarded the bucket holding 14 of its 20 legs — the open
-trim defect above. It is an **envelope spent erratically**, not a rhythm: a burst of ten payments in
-January followed by a thinning tail.
+**The trim defect above is still open and still material**, because it is what let Exceptional Expense
+score quarterly at 77.1% in the first place — the period gate now blocks that answer, but only by
+refusing the period, not by fixing the score.
 
 **This is the detector's known limit and it is not calibrated away.** The score measures *regularity*,
 and a yearly envelope that is drawn down frequently is regular in the only sense the score can see.

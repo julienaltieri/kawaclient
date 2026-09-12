@@ -310,7 +310,7 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
    the case the whole design turns on - resolves to monthly rather than semimonthly.
    ================================================================================================== */
 suite('StreamPredictor cycle fit - the detector, against known-good declarations', () => {
-	let portfolio, predictor, anchor, rows, yearlyRows, data, yearlyData, s, sy;
+	let portfolio, predictor, anchor, now, rows, yearlyRows, data, yearlyData, s, sy;
 
 	beforeAll(() => {
 		// eslint-disable-next-line global-require
@@ -318,10 +318,11 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		portfolio = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 		predictor = new StreamPredictor(portfolio);
 		anchor = predictor.analysisAnchor();
+		now = predictor.analysisNow();
 		rows = predictor.mapFitCohort();
 		yearlyRows = predictor.mapYearlyCohort();
-		data = fitData(rows, anchor, 'validated');
-		yearlyData = fitData(yearlyRows, anchor, 'yearly');
+		data = fitData(rows, anchor, now, 'validated');
+		yearlyData = fitData(yearlyRows, anchor, now, 'yearly');
 		s = summarizeAll(data, DEFAULT_KNOBS);
 		sy = summarizeAll(yearlyData, DEFAULT_KNOBS);
 	});
@@ -386,7 +387,9 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	   that says whether the agreement was earned. */
 	test('the configured rule reads the validated cohort with no disagreement', () => {
 		expect(DEFAULT_KNOBS).toEqual({thr: FIT_CONFIG.fitThreshold,
-			minLegs: FIT_CONFIG.minLegsToClaim, minGroup: FIT_CONFIG.minGroupLegs});
+			minLegs: FIT_CONFIG.minLegsToClaim, minGroup: FIT_CONFIG.minGroupLegs,
+			yearlyAllowed: FIT_CONFIG.yearlyAllowedPeriods,
+			maxQuiet: FIT_CONFIG.maxEmptyCyclesToStayActive});
 		expect(s.total).toBe(25);
 		expect(s.agree).toBe(25);
 		expect(s.bad.length).toBe(0);
@@ -399,13 +402,21 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	   amount, not a rhythm. The line is reported so a human can read it. */
 	test('the yearly cohort resolves without error and reports what it found', () => {
 		expect(sy.total).toBe(35);
-		expect(sy.measured + sy.counts.declared + sy.counts.declined + sy.counts.capped).toBe(35);
+		expect(sy.measured + sy.counts.declared + sy.counts.declined + sy.counts.capped
+			+ sy.counts.atypical + sy.counts.stale).toBe(35);
 		console.log('YEARLY: ' + sy.headline);
 		sy.rows.forEach((r, i) => {
-			if(!r.measured)return;
 			const d = yearlyData[i];
-			console.log('   ' + d.name + ' -> ' + r.period + ' (' + r.route + ', '
-				+ d.windowLegs + ' legs, groups ' + d.groups.join('/') + ')');
+			if(r.measured)
+				console.log('   KEPT    ' + d.name + ' -> ' + r.period + ' (' + r.route + ', '
+					+ d.windowLegs + ' legs)');
+			else if(r.route === 'atypical' || r.route === 'stale'){
+				const got = r.split && r.merged ? (r.split.period === r.merged.period
+					? r.merged.period : r.merged.period + '/' + r.split.period) : '?';
+				const q = d.quiet[CANDIDATE_PERIODS.indexOf(r.merged ? r.merged.period : 'monthly')];
+				console.log('   BLOCKED ' + d.name + ' -> ' + got + ' (' + r.route
+					+ ', quiet ' + q + ' cycles, ' + d.windowLegs + ' legs)');
+			}
 		});
 	});
 
@@ -440,6 +451,8 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(gt.knobs.minLegsToClaim).toBe(FIT_CONFIG.minLegsToClaim);
 		expect(gt.knobs.minGroupLegs).toBe(FIT_CONFIG.minGroupLegs);
 		expect(gt.knobs.minSplitLegShare).toBe(FIT_CONFIG.minSplitLegShare);
+		expect(gt.knobs.yearlyAllowedPeriods).toEqual(FIT_CONFIG.yearlyAllowedPeriods);
+		expect(gt.knobs.maxEmptyCyclesToStayActive).toBe(FIT_CONFIG.maxEmptyCyclesToStayActive);
 
 		const now = {};
 		sy.rows.forEach((r, i) => { now[yearlyData[i].id] = r; });
@@ -463,7 +476,8 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		const html = buildFitAuditPage({validated: rows, yearly: yearlyRows}, {
 			version: portfolio.version,
 			capturedAt: portfolio.capturedAt,
-			anchor: anchor
+			anchor: anchor,
+			now: now
 		});
 		fs.writeFileSync(OUT_FIT, html, 'utf8');
 		expect(html.startsWith('<!doctype html>')).toBe(true);

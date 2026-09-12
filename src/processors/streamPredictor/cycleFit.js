@@ -241,6 +241,42 @@ const groupingKey = description => {
 	return getMerchantKey(CHEQUE.test(d) ? d.replace(/[0-9]+/g, ' ') : d);
 };
 
+/* ---- HOW LONG THE PATTERN HAS BEEN QUIET -----------------------------------------------------------
+   COMPLETE CYCLES OF `period` BETWEEN THE LAST TRANSACTION AND `now`, on the same lattice the score
+   is computed on. cycleBuckets deliberately stops its walk at the newest leg - its own comment says
+   dormancy is a real finding and not that function's to make - so this is the function that asks.
+
+   A CYCLE ONLY COUNTS WHEN IT HAS FULLY ELAPSED. The period the capture date falls inside is still
+   running and is not evidence of anything, so it is never counted: a stream whose last movement was
+   three weeks ago has one complete empty monthly cycle only once a second month boundary has passed.
+
+   NULL, NOT ZERO, WHEN THERE IS NOTHING TO MEASURE. No legs and no lattice means no last movement to
+   count from, which is a different fact from "it moved recently". */
+const MAX_QUIET_CYCLES = 400;
+
+export function emptyCyclesSince(legs, period, anchor, now){
+	const cycle = Period[period];
+	if(!cycle)return null;
+	const buckets = cycleBuckets(legs || [], cycle, anchor);
+	if(!buckets.length)return null;
+	const t = new Date(now).getTime();
+	if(isNaN(t))return null;
+	//the first lattice edge strictly after the newest leg; the bucket it opens is the first empty one
+	let edge = new Date(buckets[buckets.length - 1].end);
+	let n = 0, guard = 0;
+	let next = cycle.nextDate(edge);
+	while(next.getTime() <= t && ++guard < MAX_QUIET_CYCLES){
+		n++;
+		edge = next;
+		next = cycle.nextDate(edge);
+	}
+	return n;
+}
+
+export function emptyCycleTable(legs, anchor, now){
+	return CANDIDATE_PERIODS.map(p => emptyCyclesSince(legs, p, anchor, now));
+}
+
 export function merchantGroups(legs){
 	const groups = [];
 	(legs || []).forEach(leg => {

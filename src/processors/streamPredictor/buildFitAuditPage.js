@@ -61,9 +61,9 @@ const UNSAFE = new RegExp('[' + String.fromCharCode(92, 92, 34, 60, 62, 96) + ']
 const jsonSafe = s => String(s === null || s === undefined ? '' : s)
 	.replace(/[^ -~]/g, ' ').replace(UNSAFE, ' ');
 
-export function fitData(rows, anchor, cohort){
+export function fitData(rows, anchor, now, cohort){
 	return (rows || []).map(r => {
-		const e = fitEvidence(r.stream, r.legs, anchor);
+		const e = fitEvidence(r.stream, r.legs, anchor, now);
 		return {
 			cohort: cohort,
 			id: jsonSafe(e.id),
@@ -74,7 +74,8 @@ export function fitData(rows, anchor, cohort){
 			groups: e.groups,
 			groupKeys: e.groupKeys.map(jsonSafe),
 			m: e.m.map(r4),
-			s: e.s.map(r4)
+			s: e.s.map(r4),
+			quiet: e.quiet
 		};
 	});
 }
@@ -370,7 +371,7 @@ export function buildFitAuditPage(cohorts, meta){
 	const anchor = m.anchor;
 
 	const data = COHORTS.reduce((acc, co) =>
-		acc.concat(fitData(c[co.key] || [], anchor, co.key)), []);
+		acc.concat(fitData(c[co.key] || [], anchor, m.now, co.key)), []);
 
 	//a reader who moves nothing is looking at exactly what production does
 	const knobs = DEFAULT_KNOBS;

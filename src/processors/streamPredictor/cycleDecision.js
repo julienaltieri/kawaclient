@@ -41,16 +41,18 @@
       failing to see the declared rhythm, and the declaration wins. Route `capped`.
    ================================================================================================== */
 
-import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, legsInWindow} from './cycleFit';
+import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, legsInWindow,
+	emptyCycleTable} from './cycleFit';
 import {FIT_CONFIG} from './fitConfig';
 
 /* THE ROUTE TRAVELS WITH THE ANSWER EVERYWHERE, because anything that is not `both` is a weaker
    claim than it looks and a bare period name cannot be argued with. */
 export const DECISION_ENGINE = `
 var PERIODS = ["weekly","biweekly","semimonthly","monthly","bimonthly","quarterly","yearly"];
-var ROUTES = ["both","split","merged","capped","declared","declined"];
+var ROUTES = ["both","split","merged","capped","atypical","stale","declared","declined"];
 var ROUTE_LABEL = {both: "both", split: "via split", merged: "via merged",
-	capped: "capped to declared", declared: "declared", declined: "declined"};
+	capped: "capped to declared", atypical: "not a rhythm a budget runs on",
+	stale: "pattern went quiet", declared: "declared", declined: "declined"};
 var TICK = String.fromCharCode(10003), CROSS = String.fromCharCode(10007);
 var DASH = String.fromCharCode(8212), DOT = String.fromCharCode(183);
 
@@ -85,6 +87,24 @@ function resolveOne(d, k){
 		else { res = m; route = "merged"; }
 	}
 	else if(d.declared){ res = {period: d.declared, misfit: null}; route = "declared"; }
+
+	/* ---- THE TWO GATES A YEARLY DECLARATION ADDS ------------------------------------------------
+	   A YEARLY STREAM IS AN ENVELOPE, and every cycle read off it is an inference about how the
+	   envelope happens to be spent. Two things have to hold before that inference replaces the
+	   declaration: it has to be a rhythm someone would actually run, and it has to still be running.
+
+	   ATYPICAL FIRST, THEN STALE, so a stream that fails both is reported by the more basic reason.
+	   Both land on the declaration, and neither counts as a measurement. */
+	if(res && isEnvelope(d.declared) && route !== "declared"){
+		if(k.yearlyAllowed.indexOf(res.period) < 0){
+			res = {period: d.declared, misfit: null}; route = "atypical";
+		}else{
+			var quiet = d.quiet ? d.quiet[PERIODS.indexOf(res.period)] : null;
+			if(quiet !== null && quiet !== undefined && quiet > k.maxQuiet){
+				res = {period: d.declared, misfit: null}; route = "stale";
+			}
+		}
+	}
 
 	/* THE CEILING. PERIODS runs shortest to longest, so a higher index is a longer cycle. */
 	if(res && route !== "declared"){
@@ -186,7 +206,13 @@ export const ROUTE_LABEL = engine.ROUTE_LABEL;
    three in from its controls, which is why they are an object rather than three arguments. */
 export const knobsFrom = cfg => {
 	const c = Object.assign({}, FIT_CONFIG, cfg || {});
-	return {thr: c.fitThreshold, minLegs: c.minLegsToClaim, minGroup: c.minGroupLegs};
+	return {
+		thr: c.fitThreshold,
+		minLegs: c.minLegsToClaim,
+		minGroup: c.minGroupLegs,
+		yearlyAllowed: c.yearlyAllowedPeriods,
+		maxQuiet: c.maxEmptyCyclesToStayActive
+	};
 };
 
 /* THE SETTINGS PRODUCTION RUNS ON AND THE PAGE OPENS ON - the configured ones, never a second set
@@ -195,7 +221,9 @@ export const DEFAULT_KNOBS = knobsFrom();
 
 /* THE SHAPE THE ENGINE SCORES, built by the real scorer over the real legs. Production and the page
    both go through here, so the browser is never handed a number this function did not produce. */
-export function fitEvidence(stream, legs, anchor, cfg){
+/* `now` IS THE CAPTURE DATE, NOT THE WALL CLOCK. How long a pattern has been quiet is measured from
+   the instant the portfolio was taken, so the same fixture answers the same thing tomorrow. */
+export function fitEvidence(stream, legs, anchor, now, cfg){
 	const c = Object.assign({}, FIT_CONFIG, cfg || {});
 	const all = legs || [];
 	const win = legsInWindow(all, anchor);
@@ -209,15 +237,17 @@ export function fitEvidence(stream, legs, anchor, cfg){
 		groups: groups.map(g => g.legs.length),
 		groupKeys: groups.map(g => g.key),
 		m: fitTable(win, anchor, c.trimBuckets).map(f => f.misfit),
-		s: fitTableSplit(win, anchor, c.trimBuckets).table.map(f => f.misfit)
+		s: fitTableSplit(win, anchor, c.trimBuckets).table.map(f => f.misfit),
+		//complete cycles of each candidate between the last movement and the capture date
+		quiet: emptyCycleTable(win, anchor, now)
 	};
 }
 
 /* ---- THE ONE ENTRY POINT A CALLER SHOULD USE -------------------------------------------------------
    Hand it a stream, its legs and the analysis anchor; it answers the period, the route it came by,
    and both readings so an audit can see what the rule was looking at. */
-export function resolveCycle(stream, legs, anchor, cfg){
-	const evidence = fitEvidence(stream, legs, anchor, cfg);
+export function resolveCycle(stream, legs, anchor, now, cfg){
+	const evidence = fitEvidence(stream, legs, anchor, now, cfg);
 	const r = resolveOne(evidence, knobsFrom(cfg));
 	return Object.assign({evidence: evidence}, r);
 }
