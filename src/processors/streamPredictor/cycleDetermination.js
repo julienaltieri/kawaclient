@@ -1,5 +1,5 @@
 import { Period } from '../../Time';
-import { resolveCycle, confidenceOf } from './cycleDecision';
+import { resolveCycle } from './cycleDecision';
 
 /* ==================================================================================================
    HOW OFTEN THE STREAM'S PATTERN RESETS - which is not how often money moves.
@@ -57,8 +57,9 @@ const inferenceOf = decision => ({
 	fit: (decision.measured && decision.misfit !== null && decision.misfit !== undefined)
 		? 1 - decision.misfit : null,
 	route: decision.route,
-	//provisional, and derived only from the route - see Still open #3 in the spec
-	confidence: confidenceOf(decision).level,
+	/* A SCORE IN [0.5, 1], or null where nothing was measured. 1 means the reading landed on the
+	   declaration; below that it is the fit rescaled from the threshold up. */
+	confidence: decision.confidence.score,
 	//both readings, so an audit can see what the rule was looking at rather than only its verdict
 	merged: decision.merged ? {period: decision.merged.period, fit: 1 - decision.merged.misfit} : null,
 	split: decision.split ? {period: decision.split.period, fit: 1 - decision.split.misfit} : null,

@@ -24,7 +24,8 @@ import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOL
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
 import {buildFitAuditPage, fitData, COHORTS} from './buildFitAuditPage';
-import {summarizeAll, resolveOne, resolveCycle, DEFAULT_KNOBS} from './cycleDecision';
+import {summarizeAll, resolveOne, resolveCycle, confidenceOf, DEFAULT_KNOBS}
+	from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets} from './shapeDetermination';
@@ -588,6 +589,54 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		const bad = determineCycle({period: 'fortnightly'});
 		expect(bad.cycle).toBe(null);
 		expect(bad.declared.raw).toBe('fortnightly');
+	});
+
+	/* ---- THE CONFIDENCE SCORE -----------------------------------------------------------------------
+	   PINNED AT THE THREE POINTS THAT DEFINE IT. Landing on the declaration is 100%; a disagreement
+	   is the fit rescaled from the threshold up onto a floor of 50%, so sitting exactly on the
+	   threshold reads 50% and a perfect fit reads 100%. Nothing measured has no score at all.
+
+	   BOTH ENDS MOVE WITH THE THRESHOLD, so the knob is swept here too rather than assumed. */
+	test('confidence: 100% on agreement, else 50% + (fit - threshold) / (1 - threshold) x 50%', () => {
+		const at = (fit, agree, thr) => confidenceOf(
+			{measured: true, agree: agree, misfit: 1 - fit, route: 'both'}, {thr: thr || 0.75}).score;
+
+		//agreement is 100% whatever the fit
+		expect(at(0.751, true)).toBe(1);
+		expect(at(0.999, true)).toBe(1);
+
+		//disagreement: the three defining points
+		expect(at(0.75, false)).toBeCloseTo(0.5, 10);
+		expect(at(0.875, false)).toBeCloseTo(0.75, 10);
+		expect(at(1.0, false)).toBeCloseTo(1, 10);
+
+		//linear in between, and never below the floor
+		expect(at(0.80, false)).toBeCloseTo(0.6, 10);
+		expect(at(0.90, false)).toBeCloseTo(0.8, 10);
+		expect(at(0.70, false)).toBe(0.5);
+
+		//the formula is written in terms of the threshold, so it follows the knob
+		expect(at(0.90, false, 0.90)).toBeCloseTo(0.5, 10);
+		expect(at(0.95, false, 0.90)).toBeCloseTo(0.75, 10);
+
+		//no inference, no score - the declaration standing is not a prediction that can be wrong
+		expect(confidenceOf({measured: false, route: 'declared'}, DEFAULT_KNOBS).score).toBe(null);
+	});
+
+	test('every measured stream carries a score, and no unmeasured one does', () => {
+		const lines = [];
+		data.concat(yearlyData).forEach(d => {
+			const r = resolveOne(d, DEFAULT_KNOBS);
+			const c = confidenceOf(r, DEFAULT_KNOBS);
+			if(!r.measured){ expect(c.score).toBe(null); return; }
+			expect(c.score).toBeGreaterThanOrEqual(0.5);
+			expect(c.score).toBeLessThanOrEqual(1);
+			if(c.score < 1)lines.push('   ' + d.name.slice(0, 22).padEnd(23) + d.declared.padEnd(9)
+				+ '-> ' + r.period.padEnd(9) + 'fit ' + ((1 - r.misfit) * 100).toFixed(1)
+				+ '%  confidence ' + c.text);
+		});
+		console.log('CONFIDENCE BELOW 100% (the inferences that disagree with a declaration):');
+		lines.forEach(l => console.log(l));
 	});
 
 	test('writes the fit audit page from the real results', () => {

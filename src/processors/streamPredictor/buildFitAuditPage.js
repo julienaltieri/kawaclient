@@ -179,14 +179,12 @@ const section = (key, title, list) =>
 
    THE CELLS THE KNOBS MOVE ARE THE ONLY ONES REDRAWN. `declared` is a fact and never changes; the
    inferred period and the confidence are recomputed, like the bars on a card. */
-const CONF_ORDER = {high: 0, medium: 1, none: 2};
-
 const inferCell = (d, r) => {
-	const conf = confidenceOf(r);
+	const conf = confidenceOf(r, DEFAULT_KNOBS);
 	if(r.measured){
 		const differs = r.period !== d.declared;
 		return {cls: differs ? 'inf differs' : 'inf', text: r.period,
-			conf: conf.text, confCls: 'cf ' + conf.level};
+			conf: conf.text, confCls: 'cf ' + conf.cls};
 	}
 	/* A BLOCKED READING IS STILL A READING, and hiding it would make the two gates invisible on the
 	   one surface where the whole portfolio is reviewed at once. */
@@ -194,7 +192,7 @@ const inferCell = (d, r) => {
 		? r.merged.period : null;
 	return {cls: 'inf none',
 		text: blocked ? blocked + ' - ' + ROUTE_LABEL[r.route] : '\u2014 ' + ROUTE_LABEL[r.route],
-		conf: conf.text, confCls: 'cf ' + conf.level};
+		conf: conf.text, confCls: 'cf ' + conf.cls};
 };
 
 const summaryRow = r => {
@@ -214,9 +212,16 @@ const summarySection = resolved => '<section class="summary" id="summary">'
 	+ '<p class="sumcount" id="sumcount"></p>'
 	+ '<table class="allt"><thead><tr><th>stream</th><th>declared</th><th>inferred</th>'
 	+ '<th>confidence</th><th class="ck">ok</th></tr></thead><tbody id="allrows">'
-	+ resolved.slice().sort((a, b) =>
-		(CONF_ORDER[confidenceOf(a.res).level] - CONF_ORDER[confidenceOf(b.res).level])
-		|| (String(a.data.name) < String(b.data.name) ? -1 : 1)).map(summaryRow).join('')
+	/* MOST CONFIDENT FIRST, and everything the detector declined to measure last. A final review
+	   reads down from the answers worth checking to the ones there is nothing to check. */
+	+ resolved.slice().sort((a, b) => {
+		const ca = confidenceOf(a.res, DEFAULT_KNOBS).score;
+		const cb = confidenceOf(b.res, DEFAULT_KNOBS).score;
+		if(ca === null && cb !== null)return 1;
+		if(cb === null && ca !== null)return -1;
+		if(ca !== cb)return cb - ca;
+		return String(a.data.name) < String(b.data.name) ? -1 : 1;
+	}).map(summaryRow).join('')
 	+ '</tbody></table></section>';
 
 /* ---- THE CONTROL PANEL -----------------------------------------------------------------------------
@@ -388,7 +393,7 @@ function render(){
 	for(i = 0; i < DATA.length; i++){
 		d = DATA[i];
 		r = resolveOne(d, k);
-		drawSummaryRow(d, r);
+		drawSummaryRow(d, r, k);
 		f = fits[d.id];
 		if(!f)continue;
 		drawBars(f.mbars, d.m, r.merged ? r.merged.period : null, d.declared);
@@ -429,10 +434,10 @@ function render(){
    summary cannot drift from the cards. */
 function cardBox(id){ return document.querySelector(".okbox[data-sid='" + id + "']"); }
 
-function drawSummaryRow(d, r){
+function drawSummaryRow(d, r, k){
 	var row = srows[d.id];
 	if(!row)return;
-	var conf = confidenceOf(r), text, cls;
+	var conf = confidenceOf(r, k), text, cls;
 	if(r.measured){
 		text = r.period;
 		cls = (r.period === d.declared) ? "inf" : "inf differs";
@@ -445,7 +450,7 @@ function drawSummaryRow(d, r){
 	row.inf.textContent = text;
 	row.inf.className = cls;
 	row.conf.textContent = conf.text;
-	row.conf.className = "cf " + conf.level;
+	row.conf.className = "cf " + conf.cls;
 }
 
 function syncSummaryBoxes(){
@@ -582,7 +587,8 @@ const LEGEND = '<span class="lg">the cohort tab and the three numbers below resc
 	+ '<span class="lg">a yearly declaration states an amount, not a rhythm, so nothing on that tab is ticked against it</span>'
 	+ '<span class="lg">capped = a fit was found, but longer than declared, so the declaration won</span>'
 	+ '<span class="lg">summary tab: the tick is the same tick as on the card</span>'
-	+ '<span class="lg">confidence is provisional - high = both readings agreed, medium = one carried it</span>'
+	+ '<span class="lg">confidence: 100% when the reading lands on the declaration</span>'
+	+ '<span class="lg">otherwise 50% + (fit - threshold) / (1 - threshold) x 50%, so the threshold reads 50%</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
 const CSS = `
@@ -634,9 +640,9 @@ body[data-cohort="summary"] .summary{display:block}
 .allt .inf{color:var(--realtime);white-space:nowrap}
 .allt .inf.differs{color:var(--accent);font-weight:600}
 .allt .inf.none{color:var(--ink-faint);font-weight:400;white-space:normal}
-.allt .cf{white-space:nowrap;font-size:11px}
-.allt .cf.high{color:var(--realtime)}
-.allt .cf.medium{color:var(--ink-soft)}
+.allt .cf{white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums}
+.allt .cf.full{color:var(--realtime);font-weight:600}
+.allt .cf.part{color:var(--ink-soft)}
 .allt .cf.none{color:var(--ink-faint)}
 .allt th.ck,.allt td.ck{text-align:right;padding-right:0;width:30px}
 .allt .sbox{width:19px;height:19px;accent-color:var(--accent);margin:0}

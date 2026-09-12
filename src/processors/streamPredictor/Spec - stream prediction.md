@@ -317,6 +317,42 @@ anything 25 times has established nothing, and a single agreement number cannot 
 This is why the tuning sweep that chose the numbers below ranked candidates by `measured`, not by
 agreement: 276 of 1,024 knob combinations reached 25/25, almost all of them by refusing to measure.
 
+#### Confidence
+
+**A score, and only where there is an inference to be confident about.** A stream the detector
+declined to measure carries no confidence figure: the declaration standing is not a prediction that
+could be wrong, and scoring it would invite comparing it with one that could.
+
+```
+landed on the declaration      ->  100%
+disagreed with it              ->  50% + (fit - threshold) / (1 - threshold) x 50%
+nothing measured               ->  no score
+```
+
+**Agreeing with the declaration is 100%** because the declaration is a statement of fact by the person
+receiving the money; a reading that lands on it is corroborated by the one source that cannot be noisy.
+
+**A disagreement is the fit, rescaled onto a floor of 50%,** and the floor is the point of the formula.
+The threshold is the lowest fit that counts as a match at all, so a reading sitting exactly on it is a
+coin flip and must read as one — but it also *cleared* the bar, so it is never "low": clearing by a
+hair is a real chance of being wrong, not evidence of being wrong. The number is meant to map to how
+often the answer holds up, deliberately hedged against false positives rather than centred.
+
+**Both ends are written in terms of the threshold**, so the score follows that knob rather than
+assuming 0.75. At a threshold of 0.90 a fit of 0.95 scores 75%, exactly as 0.875 does at 0.75.
+
+On the captured portfolio every score below 100% is a yearly stream, which is by construction — an
+inference on a yearly declaration always disagrees with it:
+
+```
+Credit Card Payments  weekly    fit 97.7%   95%
+Shopping              monthly   fit 93.3%   87%
+Gembah                monthly   fit 86.2%   72%
+Tolls                 monthly   fit 80.2%   60%
+Business Expenses     monthly   fit 78.6%   57%
+Hobby mdm             monthly   fit 76.2%   52%
+```
+
 #### The seven numbers
 
 They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
@@ -653,6 +689,7 @@ by accident.
 | May a ledger reading overrule a declaration? | **Only when the ledger says so twice.** Both readings have to clear the bar and name the same period, or disagree in a way the merchant split can justify. One reading alone falls back to the declaration. |
 | May it lengthen a declared cycle? | **No.** A fit may shorten the declaration, never lengthen it. Finding a shorter pattern is a discovery; finding a longer one is the detector failing to see the declared rhythm. |
 | What may a yearly stream be re-read as? | **Weekly, biweekly or monthly, and only while the pattern is still running.** Bimonthly and quarterly are extremely rare and carry too few cycles in one reporting year to be confident about, so a reading at those periods is noise. Silence of more than two complete cycles ends the claim. Settled 2026-09-12. |
+| Is confidence a number, a band, or a label? | **A number, in [0.5, 1], and only where something was measured.** 100% when the reading lands on the declaration; otherwise the fit rescaled from the threshold onto a floor of 50%, so sitting on the threshold reads 50%. It is meant to map to how often the answer holds up, hedged against false positives. Settled 2026-09-12. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
@@ -661,9 +698,7 @@ by accident.
    output
    contract and the shape taxonomy have to meet.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
-3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
-   not a person, and comparable between streams.
-4. **The trim is bounded by buckets, never by legs.** `trimBuckets` drops a fixed number of buckets
+3. **The trim is bounded by buckets, never by legs.** `trimBuckets` drops a fixed number of buckets
    whatever the lattice looks like. On a long weekly lattice that is two of thirty-three; on a
    quarterly lattice over one reporting year it is two of three, which drops the group below the
    two-bucket floor and makes it unscorable. The effect is backwards: it destroys the best-evidenced
@@ -672,6 +707,6 @@ by accident.
    Exceptional Expense score quarterly at 77.1% after the trim discarded the bucket holding 14 of its
    20 legs. Capping the trim by the **share of legs** it discards, rather than by a count of buckets,
    is the proposed fix and is not implemented.
-5. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
+4. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
    that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
    because it may need to change.

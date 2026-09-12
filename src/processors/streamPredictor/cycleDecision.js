@@ -158,19 +158,36 @@ function summarizeAll(data, k){
    tick is the score. */
 function isEnvelope(declared){ return declared === "yearly" || declared === "biyearly"; }
 
-/* HOW MUCH THE ANSWER IS WORTH, DERIVED ONLY FROM THINGS ALREADY DECIDED. Whether confidence should
-   finally be a number, a band or a label is still open in the spec, so this invents no threshold and
-   no weighting: it reports how many independent readings produced the answer - which the route
-   already records - alongside the fit itself.
+/* ---- HOW OFTEN THIS ANSWER SHOULD BE RIGHT ---------------------------------------------------------
+   A SCORE, NOT A LABEL, and it exists only where there is an inference to be confident about. A
+   stream the detector declined to measure has no confidence figure at all - the declaration standing
+   is not a prediction that could be wrong, so scoring it would invite comparing it with one.
 
-     high    both readings cleared the bar and named the same period
-     medium  one reading carried it, or the two disagreed and one was chosen
-     none    nothing was measured, and a declaration is not a measurement */
-function confidenceOf(r){
-	if(!r.measured)return {level: "none", text: DASH, why: "not measured"};
-	if(r.route === "both")
-		return {level: "high", text: "high " + pct(r.misfit), why: "both readings agreed"};
-	return {level: "medium", text: "medium " + pct(r.misfit), why: "one reading carried it"};
+   AGREEING WITH THE DECLARATION IS 100%. The declaration is a statement of fact by the person
+   receiving the money; a reading that lands on it is corroborated by the one source that cannot be
+   noisy, and there is nothing left to doubt.
+
+   DISAGREEING IS SCORED FROM THE FIT, ON A FLOOR OF 50%:
+
+       confidence = 50% + (fit - threshold) / (1 - threshold) x 50%
+
+   so at the threshold exactly it is 50% and at a perfect fit it is 100%. The floor is the point of
+   the formula. The threshold is the lowest fit that counts as a match at all, so a reading sitting
+   on it is a coin flip and must read as one - but it is also a reading that CLEARED the bar, so it
+   is never "low": clearing the bar by a hair is a real chance of being wrong, not evidence of being
+   wrong. The intent is that the number maps to how often the answer holds up, deliberately hedged
+   against false positives rather than centred.
+
+   IT MOVES WITH THE THRESHOLD KNOB, because both ends of the formula are defined in terms of it. */
+function confidenceOf(r, k){
+	if(!r.measured)return {score: null, text: DASH, cls: "none"};
+	if(r.agree)return {score: 1, text: "100%", cls: "full"};
+	var fit = 1 - r.misfit, thr = k.thr;
+	var span = 1 - thr;
+	var score = span > 0 ? 0.5 + ((fit - thr) / span) * 0.5 : 0.5;
+	if(score < 0.5)score = 0.5;
+	if(score > 1)score = 1;
+	return {score: score, text: (score * 100).toFixed(0) + "%", cls: "part"};
 }
 
 function verdictOf(p, declared){
@@ -266,8 +283,9 @@ export function fitEvidence(stream, legs, anchor, now, cfg){
    and both readings so an audit can see what the rule was looking at. */
 export function resolveCycle(stream, legs, anchor, now, cfg){
 	const evidence = fitEvidence(stream, legs, anchor, now, cfg);
-	const r = resolveOne(evidence, knobsFrom(cfg));
-	return Object.assign({evidence: evidence}, r);
+	const knobs = knobsFrom(cfg);
+	const r = resolveOne(evidence, knobs);
+	return Object.assign({evidence: evidence, confidence: engine.confidenceOf(r, knobs)}, r);
 }
 
 
