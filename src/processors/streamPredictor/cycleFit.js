@@ -27,6 +27,7 @@
 import {Period} from '../../Time';
 import {cycleBuckets} from './shapeDetermination';
 import {getMerchantKey, merchantKeysMatch} from '../../transactionMatching';
+import {FIT_CONFIG} from './fitConfig';
 
 /* THE PERIODS A STREAM COULD PLAUSIBLY BE ON, in ascending length, which is also the order every bar
    chart on the audit page is drawn in. `daily` is not here: nothing in this portfolio is declared
@@ -81,32 +82,20 @@ const unscorable = (period, buckets) => ({
    non-empty bucket, and the resultant is taken on angles k*theta, which is the standard test for k
    evenly spaced clusters and introduces no parameter of its own: at k = 2 the two opposed phases map
    onto the same angle and lock.  */
-/* ---- FOUR WAYS TO READ THE SAME BUCKETS ------------------------------------------------------------
-   THE RULE IS CHOSEN BY LOOKING AT WHAT IT DOES TO THE COHORT, not argued about in the abstract, so
-   the three alternatives sit next to the original and the audit page hands the reader the switch.
+/* ---- THE TRIM --------------------------------------------------------------------------------------
+   DROP THE FEW BUCKETS THAT DEVIATE MOST FROM THE MEDIAN AND SCORE WHAT IS LEFT, phase included. A
+   stream that kept its rhythm except for one doubled month then reads as the rhythm it kept: Earnin
+   Internet scores monthly 60.2% untrimmed, 71.6% at one and 81.6% at two.
 
-   standard - the three terms exactly as described above.
-   robust   - occupancySpread is the MEDIAN absolute deviation instead of the mean, so one odd cycle
-              in seven stops dragging the whole term down. Earnin Internet monthly: 60.2% -> 74.5%.
-   trim1/2  - drop the 1 or 2 buckets whose count deviates most from the median and rescore what is
-              left, phase included. A stream that kept its rhythm except for one doubled month then
-              reads as the rhythm it kept. Earnin Internet monthly: 60.2 / 71.6 / 81.6.
+   IT CANNOT MANUFACTURE A FIT, because it only ever drops a bucket that actually deviates. A
+   candidate whose counts are already flat has nothing to drop and scores identically at every trim -
+   Earnin bimonthly is 79.6% at all three. Fewer than two survivors is UNSCORABLE, never a number
+   computed from one bucket.
 
-   THE TRIM ONLY EVER DROPS A BUCKET THAT ACTUALLY DEVIATES, so a candidate whose counts are already
-   flat has nothing to drop and scores identically at every trim - Earnin bimonthly is 79.6% at all
-   three. That is what stops the knob manufacturing a fit out of an even series. Fewer than two
-   survivors is UNSCORABLE, never a number computed from one bucket. */
-export const FIT_VARIANTS = ['standard', 'robust', 'trim1', 'trim2'];
-
-const VARIANT = {
-	standard: {robustSpread: false, trim: 0},
-	robust: {robustSpread: true, trim: 0},
-	trim1: {robustSpread: false, trim: 1},
-	trim2: {robustSpread: false, trim: 2}
-};
-
+   HOW MANY IS FIT_CONFIG.trimBuckets, and it is part of the definition of the score rather than a
+   gate on it, which is why it is the one number the audit page does not move. */
 //one bucket at a time, the median re-read after each drop so the second drop answers the first
-const trimBuckets = (buckets, n) => {
+export const trimBuckets = (buckets, n) => {
 	let live = buckets;
 	for(let i = 0; i < n; i++){
 		const med = median(live.map(b => b.legs.length));
@@ -122,7 +111,7 @@ const trimBuckets = (buckets, n) => {
 	return live;
 };
 
-const scoreBuckets = (period, buckets, robustSpread) => {
+const scoreBuckets = (period, buckets) => {
 	/* THE LEGS THAT COUNT ARE THE BUCKETED ONES. cycleBuckets caps its walk, so a leg older than the
 	   cap has no bucket, no phase and no place in the counts - scoring it would mean scoring a leg
 	   the production walk never sees. */
@@ -135,7 +124,7 @@ const scoreBuckets = (period, buckets, robustSpread) => {
 
 	const med = median(counts);
 	const devs = counts.map(c => Math.abs(c - med));
-	const spread = robustSpread ? median(devs) : devs.reduce((s, d) => s + d, 0) / devs.length;
+	const spread = devs.reduce((s, d) => s + d, 0) / devs.length;
 	const occupancySpread = !med ? 1 : clip01(spread / med);
 
 	//k: the number of lumps a cycle carries, so the harmonic that folds them onto one angle
@@ -167,28 +156,22 @@ const scoreBuckets = (period, buckets, robustSpread) => {
 	};
 };
 
-/* THE DEFAULT IS THE ORIGINAL. `variant` is the fourth argument and an absent or unknown one means
-   `standard`, so every existing caller - and every number already measured - is untouched. */
-export function fitScore(legs, period, anchor, variant){
-	const spec = VARIANT[variant] || VARIANT.standard;
+/* THE TRIM COUNT IS THE FOURTH ARGUMENT SO A TEST CAN SWEEP IT, and it defaults to the configured
+   one so no caller has to know what it is. */
+export function fitScore(legs, period, anchor, trim){
+	const n = trim === undefined ? FIT_CONFIG.trimBuckets : trim;
 	const all = cycleBuckets(legs || [], Period[period], anchor);
-	const live = spec.trim ? trimBuckets(all, spec.trim) : all;
+	const live = n ? trimBuckets(all, n) : all;
 	if(live.length < 2)return unscorable(period, all.length);
-	return scoreBuckets(period, live, spec.robustSpread);
+	return scoreBuckets(period, live);
 }
 
 /* ONE ROW PER CANDIDATE, ALWAYS ALL SEVEN AND ALWAYS IN THE SAME ORDER, because the audit page draws
    the table as a bar chart and a row that dropped its unscorable candidates would silently shift
    every bar after it under the wrong axis label. */
-export function fitTable(legs, anchor, variant){
-	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor, variant));
+export function fitTable(legs, anchor, trim){
+	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor, trim));
 }
-
-/* HOW MUCH WORSE A SHORTER PERIOD MAY SCORE AND STILL WIN. Measured, not chosen: over the 25 streams
-   whose declaration is known-good, agreement with the declaration runs 8/25 at zero tolerance, 12/25
-   here, and 14/25 at 0.10 - but past this point the extra agreements come from streams that have no
-   cycle at all, so the number is set where the honest wins stop. */
-export const ALIAS_TOLERANCE = 0.05;
 
 /* THE SHORTEST PERIOD THAT FITS, NOT THE BEST-SCORING ONE - and the difference is the whole
    correctness of this function.
@@ -200,35 +183,18 @@ export const ALIAS_TOLERANCE = 0.05;
    every month, and did the same to Phone, Laundry, Books, Date and Sorties - every failure was the
    true period times n.
 
-   So the minimum only sets the bar. The answer is the SHORTEST candidate that clears it, which is the
-   rule that was asked for in the first place: the smallest period where the pattern matches itself.
-   A table with nothing scorable in it has no best fit and says so. */
-export function bestFit(table, tolerance){
-	const tol = tolerance === undefined ? ALIAS_TOLERANCE : tolerance;
-	const scorable = (table || []).filter(f => f && f.misfit !== null && f.misfit !== undefined);
-	if(!scorable.length)return null;
-	const floor = scorable.reduce((m, f) => Math.min(m, f.misfit), Infinity);
-	//CANDIDATE_PERIODS is ascending, and `table` is built in that order, so the first match is shortest
-	const pick = scorable.find(f => f.misfit <= floor + tol);
+   So the best score is not the answer and is not even consulted. The answer is the SHORTEST
+   candidate that clears FIT_CONFIG.fitThreshold, which is the rule that was asked for in the first
+   place: the smallest period where the pattern matches itself. Nothing over the bar is no answer,
+   and says so. */
+export function bestFit(table, threshold){
+	const bar = threshold === undefined ? FIT_CONFIG.fitThreshold : threshold;
+	//CANDIDATE_PERIODS is ascending and `table` is built in that order, so the first hit is shortest
+	const pick = (table || []).find(f =>
+		f && f.misfit !== null && f.misfit !== undefined && 1 - f.misfit > bar);
 	return pick ? {period: pick.period, misfit: pick.misfit} : null;
 }
 
-/* THE FEWEST TRANSACTIONS THAT CAN SHOW A REPEAT. Three points give two intervals, which is a
-   coincidence rather than a rhythm: Investments has exactly three - 2025-09-15, 2025-10-02 and
-   2025-10-15, the middle one a +3000 credit among two -7000 debits - and the gaps of 17 and 13 days
-   average out to a perfectly convincing biweekly that is not there. Four points give three intervals,
-   the fewest that can disagree with each other.
-
-   MEASURED, AND THE DATA IS INDIFFERENT BETWEEN 4 AND 10. Over the 25 known-good declarations the
-   gate claims 11 and gets 10 right at every value in that range, against 14 claims and 12 right with
-   no gate at all - so it trades two lucky answers for one wrong one, and the number is set at the low
-   end because nothing in the evidence argues for more. */
-export const MIN_LEGS_FOR_FIT = 4;
-
-/* THE ONE ENTRY POINT A CALLER SHOULD USE, and the only place the evidence gate lives. fitTable and
-   bestFit stay pure - they score and rank whatever they are handed - so the page can still draw the
-   bars for a stream too small to claim, which is the difference between showing the reader nothing
-   and showing them why there is no answer. */
 /* THE EVIDENCE IS THIS REPORTING YEAR, NOT ALL OF HISTORY. The anchor is the start of the current
    observation period, and a stream's arrangement is a thing its owner changes between years: what it
    did under last year's plan is not evidence about this year's rhythm, it is evidence about a rhythm
@@ -243,62 +209,6 @@ export function legsInWindow(legs, anchor){
 	if(!anchor)return legs || [];
 	const t = new Date(anchor).getTime();
 	return (legs || []).filter(l => l && l.date && new Date(l.date).getTime() >= t);
-}
-
-export function detectCycle(legs, anchor, tolerance){
-	const all = legs || [];
-	const list = legsInWindow(all, anchor);
-	if(!list.length)
-		return {period: null, misfit: null, windowLegs: 0,
-			reason: all.length ? 'dormant — nothing since the reporting year began' : 'no transactions'};
-	if(list.length < MIN_LEGS_FOR_FIT)
-		return {period: null, misfit: null, windowLegs: list.length,
-			reason: 'only ' + list.length + ' transaction' + (list.length === 1 ? '' : 's')
-				+ ' this reporting year'};
-	const best = bestFit(fitTable(list, anchor), tolerance);
-	return best ? {period: best.period, misfit: best.misfit, windowLegs: list.length, reason: null}
-		: {period: null, misfit: null, windowLegs: list.length, reason: 'nothing scorable'};
-}
-
-/* ---- THE DECISION -------------------------------------------------------------------------------
-   TWO READINGS OF THE SAME STREAM, AND A TEST THAT SAYS WHICH ONE IS REAL.
-
-   Splitting by merchant either separates two interleaved series or fragments one. Which of those
-   happened is not a matter of taste: fragmenting a coherent series can only make each piece fit
-   WORSE, and separating two real ones can only make each piece fit BETTER. So the higher fit wins,
-   and that is a measurement of whether the split was real rather than a preference between two
-   equally good answers.
-
-   Renter's insurance is the case that motivated it. One payee billing $10 on the 12th for eight
-   months, which the bank writes as "Lemonade.Com" six times and "Lemonade Insurance Compan" twice;
-   the keys diverge at the ninth character so they do not group, and a 2-leg fragment cannot hold up
-   monthly. Merged reads 99.9%, split 79.5%, and the rule takes merged.
-
-   A TIE GOES TO MERGED, because splitting is the added assumption and the evidence did not pay for
-   it. */
-export const DecisionSource = {merged: 'merged', split: 'split'};
-
-export function detectCycleSplit(legs, anchor, tolerance){
-	const all = legs || [];
-	const list = legsInWindow(all, anchor);
-	if(list.length < MIN_LEGS_FOR_FIT)return detectCycle(all, anchor, tolerance);
-	const best = bestFit(fitTableSplit(list, anchor).table, tolerance);
-	return best ? {period: best.period, misfit: best.misfit, windowLegs: list.length, reason: null}
-		: {period: null, misfit: null, windowLegs: list.length, reason: 'nothing scorable'};
-}
-
-export function resolveCycle(legs, anchor, tolerance){
-	const merged = detectCycle(legs, anchor, tolerance);
-	const split = detectCycleSplit(legs, anchor, tolerance);
-	const pick = (src, r) => ({period: r.period, misfit: r.misfit, source: src,
-		reason: r.reason, merged: merged, split: split});
-	if(!merged.period && !split.period)return pick(DecisionSource.merged, merged);
-	if(!split.period)return pick(DecisionSource.merged, merged);
-	if(!merged.period)return pick(DecisionSource.split, split);
-	//lower misfit is the better fit; equal misfits keep the simpler reading
-	return split.misfit < merged.misfit
-		? pick(DecisionSource.split, split)
-		: pick(DecisionSource.merged, merged);
 }
 
 /* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
@@ -356,11 +266,11 @@ export function merchantGroups(legs){
 
    Every term is combined the same way, so the combined misfit stays exactly the mean of the combined
    terms and the arithmetic on the page still adds up by hand. */
-export function fitTableSplit(legs, anchor, variant){
+export function fitTableSplit(legs, anchor, trim){
 	const groups = merchantGroups(legs).map(g => ({
 		key: g.key,
 		legCount: g.legs.length,
-		table: fitTable(g.legs, anchor, variant)
+		table: fitTable(g.legs, anchor, trim)
 	}));
 
 	const table = CANDIDATE_PERIODS.map((period, i) => {

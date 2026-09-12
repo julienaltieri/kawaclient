@@ -23,9 +23,10 @@ import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THR
 import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
-import {buildFitAuditPage, enrichFits, summarizeFits, fitData, summarizeAll, DEFAULT_KNOBS,
-	WEAK_FIT_CUTOFF} from './buildFitAuditPage';
-import {FIT_VARIANTS, fitTable, legsInWindow} from './cycleFit';
+import {buildFitAuditPage, fitData, COHORTS} from './buildFitAuditPage';
+import {summarizeAll, DEFAULT_KNOBS} from './cycleDecision';
+import {FIT_CONFIG} from './fitConfig';
+import {fitTable, legsInWindow, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets} from './shapeDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
@@ -306,33 +307,40 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
    the case the whole design turns on - resolves to monthly rather than semimonthly.
    ================================================================================================== */
 suite('StreamPredictor cycle fit - the detector, against known-good declarations', () => {
-	let portfolio, predictor, rows, list, summary;
+	let portfolio, predictor, anchor, rows, yearlyRows, data, yearlyData, s, sy;
 
 	beforeAll(() => {
 		// eslint-disable-next-line global-require
 		const {StreamPredictor} = require('./index');
 		portfolio = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
 		predictor = new StreamPredictor(portfolio);
+		anchor = predictor.analysisAnchor();
 		rows = predictor.mapFitCohort();
-		list = enrichFits(rows, predictor.analysisAnchor());
-		summary = summarizeFits(list);
+		yearlyRows = predictor.mapYearlyCohort();
+		data = fitData(rows, anchor, 'validated');
+		yearlyData = fitData(yearlyRows, anchor, 'yearly');
+		s = summarizeAll(data, DEFAULT_KNOBS);
+		sy = summarizeAll(yearlyData, DEFAULT_KNOBS);
 	});
 
-	test('the cohort is the 25 open, non-yearly streams that carry transactions', () => {
+	test('two cohorts: 25 validated non-yearly, 35 yearly, both open and carrying transactions', () => {
 		expect(predictor.terminalStreams().length).toBe(87);
 		expect(predictor.reviewable().length).toBe(64);
 		expect(rows.length).toBe(25);
+		expect(yearlyRows.length).toBe(35);
 		const byPeriod = {};
 		rows.forEach(r => { byPeriod[r.stream.period] = (byPeriod[r.stream.period] || 0) + 1; });
 		expect(byPeriod).toEqual({monthly: 23, semimonthly: 1, weekly: 1});
+		//COHORTS names exactly the two the page renders, in the order the tab shows them
+		expect(COHORTS.map(c => c.key)).toEqual(['validated', 'yearly']);
 	});
 
 	test('every misfit is null or inside [0,1] - no NaN, nothing out of range', () => {
-		list.forEach(r => [...r.merged, ...r.split].forEach(c => {
-			if(c.misfit === null || c.misfit === undefined)return;
-			expect(Number.isFinite(c.misfit)).toBe(true);
-			expect(c.misfit).toBeGreaterThanOrEqual(0);
-			expect(c.misfit).toBeLessThanOrEqual(1);
+		data.concat(yearlyData).forEach(d => [].concat(d.m, d.s).forEach(m => {
+			if(m === null || m === undefined)return;
+			expect(Number.isFinite(m)).toBe(true);
+			expect(m).toBeGreaterThanOrEqual(0);
+			expect(m).toBeLessThanOrEqual(1);
 		}));
 	});
 
@@ -340,80 +348,69 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	   on semimonthly leaves every other bucket empty - two lumps early in one cycle, not one lump per
 	   half-cycle. A scorer that rewards a single tight peak picks semimonthly and is wrong. */
 	test('Utilities resolves to monthly, not semimonthly', () => {
-		const u = list.find(r => /^utilities$/i.test(r.name || ''));
+		const u = data.find(d => /^utilities$/i.test(d.name || ''));
 		expect(u).toBeTruthy();
-		expect(u.bestMerged.period).toBe('monthly');
-		const semi = u.merged.find(c => c.period === 'semimonthly');
-		expect(u.bestMerged.misfit).toBeLessThan(semi.misfit);
+		const at = p => u.m[CANDIDATE_PERIODS.indexOf(p)];
+		expect(at('monthly')).toBeLessThan(at('semimonthly'));
 	});
 
-	/* THE FOUR SCORING VARIANTS, PINNED TO THE ONE STREAM THAT SEPARATES THEM. Earnin Internet's
-	   monthly lattice is 1 1 1 1 2 0 2 - one doubled cycle, one empty one - and each variant reads
-	   that differently. Its bimonthly lattice is 2 2 2 2, which has no outlier to drop, so it must
-	   read the SAME at every trim: that is what proves the trim is not simply inventing a better
-	   score wherever it is pointed. */
-	test('the scoring variants read Earnin Internet 60.2 / 74.5 / 71.6 / 81.6, bimonthly flat at 79.6',
-		() => {
-			const anchor = predictor.analysisAnchor();
-			const row = rows.find(r => /^earnin/i.test(r.stream.name || ''));
-			expect(row).toBeTruthy();
-			const legs = legsInWindow(row.legs, anchor);
-			const at = (v, p) => {
-				const c = fitTable(legs, anchor, v).find(f => f.period === p);
-				return ((1 - c.misfit) * 100).toFixed(1);
-			};
-			expect(FIT_VARIANTS.map(v => at(v, 'monthly')))
-				.toEqual(['60.2', '74.5', '71.6', '81.6']);
-			expect(FIT_VARIANTS.map(v => at(v, 'bimonthly')))
-				.toEqual(['79.6', '79.6', '79.6', '79.6']);
-			//the default argument is still the original scorer, so nothing already measured moved
-			expect(at(undefined, 'monthly')).toBe(at('standard', 'monthly'));
-		});
+	/* THE TRIM, PINNED TO THE ONE STREAM THAT SEPARATES ITS SETTINGS. Earnin Internet's monthly
+	   lattice is 1 1 1 1 2 0 2 - one doubled cycle, one empty one - and dropping the two worst
+	   buckets reads it as the monthly rhythm it kept. Its bimonthly lattice is 2 2 2 2, which has no
+	   outlier to drop, so it must read the SAME at every trim: that is what proves the trim is not
+	   simply inventing a better score wherever it is pointed. */
+	test('the trim reads Earnin Internet monthly 60.2 -> 81.6, bimonthly flat at 79.6', () => {
+		const row = rows.find(r => /^earnin/i.test(r.stream.name || ''));
+		expect(row).toBeTruthy();
+		const legs = legsInWindow(row.legs, anchor);
+		const at = (trim, p) => {
+			const c = fitTable(legs, anchor, trim).find(f => f.period === p);
+			return ((1 - c.misfit) * 100).toFixed(1);
+		};
+		expect([0, 1, 2].map(t => at(t, 'monthly'))).toEqual(['60.2', '71.6', '81.6']);
+		expect([0, 1, 2].map(t => at(t, 'bimonthly'))).toEqual(['79.6', '79.6', '79.6']);
+		//the configured trim is the one the page and production both use
+		expect(at(undefined, 'monthly')).toBe(at(FIT_CONFIG.trimBuckets, 'monthly'));
+	});
 
-	/* THE DEFAULT KNOBS ARE A MEASUREMENT AND THE PAGE OPENS ON THEM, so they are pinned here. The
-	   browser and this assertion run THE SAME engine source - buildFitAuditPage evaluates the string
-	   it emits - so a drift between what the reader sees and what this test claims is impossible
-	   rather than merely unlikely. */
-	test('at the default knobs the rule agrees 24/25, via both 7 / split 1 / declared 17', () => {
-		const data = fitData(rows, predictor.analysisAnchor());
-		const s = summarizeAll(data, DEFAULT_KNOBS);
+	/* THE CONFIGURED RULE IS A MEASUREMENT AND THE PAGE OPENS ON IT, so the result is pinned here.
+	   The browser and this assertion run THE SAME engine source - cycleDecision.js evaluates the
+	   string it also emits - so a drift between what the reader sees and what this test claims is
+	   impossible rather than merely unlikely.
+
+	   MEASURED IS PINNED ALONGSIDE AGREED. A rule that agrees 25/25 by declining 25 times has
+	   established nothing, so the count of streams it actually read off the ledger is the number
+	   that says whether the agreement was earned. */
+	test('the configured rule reads the validated cohort with no disagreement', () => {
+		expect(DEFAULT_KNOBS).toEqual({thr: FIT_CONFIG.fitThreshold,
+			minLegs: FIT_CONFIG.minLegsToClaim, minGroup: FIT_CONFIG.minGroupLegs});
 		expect(s.total).toBe(25);
-		expect(s.agree).toBe(24);
-		expect(s.counts.both).toBe(7);
-		expect(s.counts.split).toBe(1);
-		expect(s.counts.merged).toBe(0);
-		expect(s.counts.higherFit).toBe(0);
-		expect(s.counts.declared).toBe(17);
-		expect(s.counts.declined).toBe(0);
-		expect(s.headline).toBe('agree 24/25 · both 7 · via split 1 · declared 17');
+		expect(s.agree).toBe(25);
+		expect(s.bad.length).toBe(0);
+		expect(s.measured).toBeGreaterThanOrEqual(12);
+		console.log('VALIDATED: ' + s.headline);
+	});
 
-		expect(s.bad.length).toBe(1);
-		const b = s.bad[0];
-		expect(b.name).toBe("Renter's insurance");
-		expect(b.period).toBe('bimonthly');
-		expect(b.declared).toBe('monthly');
-		expect(b.groups).toEqual([6, 2]);
-
-		console.log('DEFAULT KNOBS: ' + s.headline);
-		console.log('the single disagreement is ' + b.name + ' -> ' + b.period + ' (declared '
-			+ b.declared + '), groups ' + b.groups.join('/'));
-
-		/* THE GROUP GATE IS THE ONE SETTING THAT CLEARS THE COHORT. Renter's insurance splits 6/2,
-		   and a 2-leg fragment is not evidence of anything - so requiring every group to carry at
-		   least 4 legs before the split may win sends it back to merged, which is right. */
-		const gated = summarizeAll(data, Object.assign({}, DEFAULT_KNOBS, {dis: 'group'}));
-		expect(gated.agree).toBe(25);
-		expect(gated.counts.both).toBe(7);
-		expect(gated.counts.merged).toBe(1);
-		expect(gated.counts.declared).toBe(17);
-		console.log('SPLIT ONLY IF EVERY GROUP >= 4: ' + gated.headline);
+	/* THE POPULATION THE DETECTOR EXISTS FOR, AND THE ONE WITH NO GROUND TRUTH. Nothing here is
+	   asserted as correct because nothing here can be: the declaration says "yearly" and means an
+	   amount, not a rhythm. The line is reported so a human can read it. */
+	test('the yearly cohort resolves without error and reports what it found', () => {
+		expect(sy.total).toBe(35);
+		expect(sy.measured + sy.counts.declared + sy.counts.declined + sy.counts.capped).toBe(35);
+		console.log('YEARLY: ' + sy.headline);
+		sy.rows.forEach((r, i) => {
+			if(!r.measured)return;
+			const d = yearlyData[i];
+			console.log('   ' + d.name + ' -> ' + r.period + ' (' + r.route + ', '
+				+ d.windowLegs + ' legs, groups ' + d.groups.join('/') + ')');
+		});
 	});
 
 	test('writes the fit audit page from the real results', () => {
-		const html = buildFitAuditPage(rows, {
+		const html = buildFitAuditPage({validated: rows, yearly: yearlyRows}, {
 			version: portfolio.version,
 			capturedAt: portfolio.capturedAt,
-			anchor: predictor.analysisAnchor()
+			anchor: anchor
 		});
 		fs.writeFileSync(OUT_FIT, html, 'utf8');
 		expect(html.startsWith('<!doctype html>')).toBe(true);
@@ -431,17 +428,16 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
 		});
 
-		//the page opens on the default knobs, so the number it opens on is the number pinned above
-		expect(html).toContain('agree 24/25 · both 7 · via split 1 · declared 17');
-		//and every knob the reader is promised is actually on the page
-		['thr', 'tol', 'mingroup', 'minlegs'].forEach(id => expect(html).toContain('id="' + id + '"'));
-		['variant', 'pick', 'dis', 'fb'].forEach(n => expect(html).toContain('name="' + n + '"'));
+		//the page opens on the configured knobs, so the number it opens on is the number pinned above
+		expect(html).toContain(s.headline);
+		//the three numbers that stayed adjustable, and the cohort tab
+		['thr', 'minlegs', 'mingroup'].forEach(id => expect(html).toContain('id="' + id + '"'));
+		expect(html).toContain('name="cohort"');
+		COHORTS.forEach(c => expect(html).toContain('value="' + c.key + '"'));
+		//the algorithm switches that the tuning settled are gone for good
+		['variant', 'pick', 'dis', 'fb'].forEach(n =>
+			expect(html.indexOf('name="' + n + '"')).toBe(-1));
 
-		console.log('CYCLE FIT: ' + summary.total + ' cohort | ' + summary.agree + ' agree | '
-			+ summary.disagree + ' disagree | ' + summary.weak + ' no fit (>' + WEAK_FIT_CUTOFF + ') | '
-			+ 'AGREEMENT vs declaration: merged ' + summary.agreeMerged + '/' + summary.total
-			+ ', split ' + summary.agreeSplit + '/' + summary.total
-			+ ' | merged and split differ on ' + summary.splitDiffers);
 		console.log('FIT PAGE: ' + OUT_FIT + ' (' + fs.statSync(OUT_FIT).size + ' bytes)');
 	});
 });

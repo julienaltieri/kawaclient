@@ -119,6 +119,21 @@ export class StreamPredictor {
 			({stream: stream, legs: this.legsOf(stream.id)}));
 	}
 
+	/* THE POPULATION THE DETECTOR WAS BUILT FOR, and the one there is no ground truth for. Open,
+	   declared yearly or biyearly, and carrying transactions: 35 of the 38 open yearly streams. The
+	   declaration here states an amount per year and says nothing about rhythm, so agreement with it
+	   is not a score - the reader is judging plausibility by eye, which is exactly why these get
+	   their own tab instead of being folded into the validated cohort. */
+	yearlyCohort(){
+		return this.reviewable().filter(s =>
+			YEARLY_PERIODS[s.period] && this.legsOf(s.id).length > 0);
+	}
+
+	mapYearlyCohort(){
+		return this.yearlyCohort().map(stream =>
+			({stream: stream, legs: this.legsOf(stream.id)}));
+	}
+
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------
 	   §2 cycle determination, §3 shape determination and §4 amount prediction live in their own files
 	   (cycleDetermination.js, shapeDetermination.js, amountPrediction.js) and are composed from this

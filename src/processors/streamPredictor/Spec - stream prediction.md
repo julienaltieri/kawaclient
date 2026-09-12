@@ -189,6 +189,123 @@ determination is made from the most recent coherent chunk of that cycle, not ble
 change. Nothing captures a cycle-change event on the stream today, so in practice this case does not
 yet arise — when it does, this is the rule.
 
+### Inferring the cycle from the ledger
+
+**Why it exists.** The declaration wins for a non-yearly stream, so for those the detector is only a
+*check* — and a check that can be scored, because those declarations have been validated by hand. For
+the 35 open yearly streams there is nothing to win with: a yearly declaration states an amount per
+year and is silent about rhythm, so the rhythm has to be read off the movements. The detector is built
+and tuned against the cohort that has an answer, then pointed at the cohort that does not.
+
+Implemented in `cycleFit.js` (the score), `cycleDecision.js` (the rule) and `fitConfig.js` (the four
+numbers). Audited by `buildFitAuditPage.js`, which re-runs the rule in the browser from the same
+source string production runs, so the page and the code cannot drift.
+
+**The score: how far off one candidate period is.** Fold the stream's legs onto a lattice of that
+period — the production lattice from `cycleBuckets`, phased on the analysis anchor — and sum three
+terms, each already bounded to `[0,1]`, then divide by three. There is no weighting constant and no
+threshold inside the score.
+
+| term | what it catches | how |
+|---|---|---|
+| `emptyRate` | the period is **too short** | `empties / buckets` — fold a monthly stream onto weeks and three weeks in four are empty |
+| `occupancySpread` | the period is **uneven** | mean absolute deviation of the per-bucket counts from their median, over that median, clipped at 1 |
+| `phaseSpread` | the period is **too long**, or is not a rhythm | each leg's position inside its bucket is an angle; `1 - R` of the mean resultant, so 0 is a perfect phase lock |
+
+`phaseSpread` reads the **k-th harmonic**, where `k` is the median legs per non-empty bucket. A stream
+paying on the 1st and the 15th is monthly with two lumps; the first harmonic would read those two
+opposed angles as perfect scatter and punish the very shape §3 exists to describe.
+
+**Seven candidates, always all seven, always in ascending order:** weekly, biweekly, semimonthly,
+monthly, bimonthly, quarterly, yearly. A candidate with fewer than two buckets or two placed legs is
+reported **unscorable** — `misfit: null` — never as a number computed from one bucket.
+
+#### The rule
+
+1. **Window.** Only this reporting year's transactions are evidence — everything on or after the
+   analysis anchor (2025-12-21 for the capture). A stream's arrangement is a thing its owner changes
+   between years; what it did under last year's plan is evidence about a rhythm that has been retired.
+   Fewer than `minLegsToClaim` legs in the window and the ledger is not asked at all.
+2. **Two readings.** `merged` scores the stream's legs as one series. `split` scores each merchant
+   group on its own lattice and combines them leg-count-weighted. Utilities is a gas bill and an
+   electricity bill: merged it looks semimonthly, split it is two monthly series.
+3. **Each reading answers the SHORTEST candidate over `fitThreshold`** — never the best-scoring one.
+   An integer multiple of the true period scores the same by construction: Rent reads monthly 0.020
+   and quarterly 0.018, and a plain minimum answers "quarterly" for a rent paid on the 2nd.
+4. **Both readings naming the same period is the strong case** — route `both`, two independent
+   measurements of one answer.
+5. **On disagreement, split wins only if the split is real.** Splitting either separates two
+   interleaved series or fragments one. A group carrying fewer than `minGroupLegs` legs fits any
+   period trivially and is not evidence, so one small group discards the whole split reading and
+   merged stands.
+6. **A one-sided claim is not a claim.** If only one reading cleared the bar, the rule declines to
+   measure and the declaration stands. This is why `declared` is the most common route, and it is the
+   intended shape: inference overrides a declaration only when the ledger says so twice.
+7. **The declaration is a ceiling.** A fit may **shorten** the declared cycle, never lengthen it.
+   Finding a shorter pattern than the one declared is a discovery; finding a longer one is the
+   detector failing to see the declared rhythm. Route `capped`.
+
+**Worked example — Renter's insurance.** One payee billing $10 on the 12th for eight months, which the
+bank writes "Lemonade.Com" six times and "Lemonade Insurance Compan" twice. The keys diverge at the
+ninth character, so they do not group:
+
+```
+window legs        8          merchant groups  6 / 2
+merged  monthly    99.9%  ->  shortest over 75%: monthly
+split   monthly    79.5%  ->  shortest over 75%: bimonthly     (the 2-leg fragment drags it)
+                              disagreement, and group 2 < minGroupLegs 3
+                              -> split discarded, route via merged
+decision           monthly    declared monthly  ✓
+```
+
+#### The four numbers
+
+They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
+its range on the audit page and reading what the validated cohort did. The audit page still moves the
+last three live; `trimBuckets` is part of the definition of the score rather than a gate on it.
+
+| name | value | why this value |
+|---|---|---|
+| `fitThreshold` | `0.75` | at 0.85 the rule claims 7 and gets 7 right; at 0.75 it claims 12 and gets 12 right; below 0.60 the wrong claims arrive in a block and are all **too short** — Rent, Phone, Utilities, Internet and Plaid all go semimonthly |
+| `trimBuckets` | `2` | drop the 2 buckets deviating most from the median and rescore what is left, phase included, so a stream that kept its rhythm except for one doubled month reads as the rhythm it kept. It cannot invent a fit: a flat candidate has nothing to drop and scores identically at every trim — Earnin bimonthly is 79.6% at 0, 1 and 2 |
+| `minLegsToClaim` | `3` | the window is already only one reporting year; raising it silences streams that genuinely moved a handful of times |
+| `minGroupLegs` | `3` | a 2-leg fragment fits any period trivially, so a split containing one is not evidence |
+
+**The algorithm itself is no longer a setting.** Four scoring variants, a tolerance-based pick rule and
+four disagreement policies were all carried on the audit page while the choice was being made. The
+choice was made from the cohort, and they are gone with it. What stayed adjustable is arithmetic a
+different portfolio could argue with.
+
+#### What it reads today
+
+**Validated cohort — 25 open non-yearly streams with transactions.** Every claim the rule makes is
+correct, and the count it actually measured is reported next to it, because a rule that agrees 25/25
+by declining 25 times has established nothing:
+
+```
+agree 25/25 · measured 12 · both 11 · via split 1 · declared 13
+```
+
+**Yearly cohort — 35 open yearly streams with transactions.** No ground truth exists here; the
+declaration says "yearly" and means an amount. What the detector says:
+
+```
+agree 21/35 · measured 14 · both 8 · via merged 6 · declared 21
+```
+
+The 14 it measured include `Tolls -> monthly` (3 legs, one merchant), `Business Expenses -> monthly`
+(24 legs) and `Medical HSA -> quarterly` (38 legs), which read as real findings — and also
+`Credit Card Payments -> weekly` (75 legs) and `Exceptional Expense -> quarterly` (20 legs), which do
+not: those are **envelopes spent often**, not rhythms. A lattice with many legs and few empty buckets
+scores well whether or not anything is repeating.
+
+**This is the detector's known limit and it is not calibrated away.** The score measures *regularity*,
+and a yearly envelope that is drawn down frequently is regular in the only sense the score can see.
+Separating "this yearly stream has a hidden monthly rhythm" from "this yearly stream is a pot of money
+spent whenever" is the open part of §5, not a threshold to be moved here.
+
+---
+
 **The open question.** What about a declaration that was true and has stopped being true, with no
 formal change recorded?
 
@@ -328,6 +445,11 @@ covering all of them is unlikely to be the answer.
 **The known trap.** A budget that never draws down contributes the same amount every month for ever.
 Whether draw-down is measured, and against which transactions, is unresolved — a card-routed stream's
 spending is not on the account being predicted.
+
+**The cycle half is already measurable.** The detector specified under §2 runs on this cohort and
+reads 14 of the 35 as carrying a shorter rhythm than yearly. It cannot tell a hidden monthly rhythm
+from an envelope that is simply spent often - `Credit Card Payments -> weekly` on 75 legs is the
+clearest case - so its answer is evidence for the scenario question, not the scenario answer.
 
 **Solved when:** each named scenario is recognised from its history, the cycle is found where the
 stream has one, and a budget that is not being spent stops being forecast.
