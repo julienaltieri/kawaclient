@@ -266,6 +266,28 @@ split   monthly    79.5%  ->  shortest over 75%: bimonthly     (the 2-leg fragme
 decision           monthly    declared monthly  ✓
 ```
 
+#### The answer, and how it was reached
+
+Every resolution carries a **route** as well as a period, because anything that is not `both` is a
+weaker claim than the period alone makes it look, and a bare period name cannot be argued with. The
+routes are exhaustive and mutually exclusive, and they are evaluated in this order:
+
+| route | what happened | counts as measured? |
+|---|---|---|
+| `both` | merged and split cleared the bar and named the same period | yes |
+| `split` | they disagreed, every merchant group carried `minGroupLegs`, so the split won | yes |
+| `merged` | they disagreed and the split had a group too small to trust | yes |
+| `atypical` | *yearly only.* A period was found but it is not one a budget runs on | no |
+| `stale` | *yearly only.* A period was found and it is allowed, but the pattern has gone quiet | no |
+| `capped` | the period found is **longer** than the declaration, so the declaration wins | no |
+| `declared` | fewer than `minLegsToClaim` legs, or only one reading cleared the bar | no |
+| `declined` | no reading, and no declaration to fall back to | no |
+
+**`measured` is reported next to agreement, always.** A rule that reaches 25/25 by declining to claim
+anything 25 times has established nothing, and a single agreement number cannot tell those two apart.
+This is why the tuning sweep that chose the numbers below ranked candidates by `measured`, not by
+agreement: 276 of 1,024 knob combinations reached 25/25, almost all of them by refusing to measure.
+
 #### The seven numbers
 
 They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
@@ -352,6 +374,15 @@ the only sense the score can see. The share gate withdrew the first and the peri
 score quarterly at 77.1% in the first place — the period gate now blocks that answer, but only by
 refusing the period, not by fixing the score.
 
+**Bimonthly and quarterly are deliberately not in the allowed list**, and the reason is evidence
+rather than taste. Julien: they are extremely rare in this portfolio — quarterly would be tax,
+bimonthly would be certain bills — and over a single reporting year they carry too few cycles to be
+confident about. Four quarterly cycles is not enough to overrule a declaration, so a reading at those
+periods is noise being promoted to a prediction. `Returns`, `Cadeaux famille Mdm` and
+`Cadeau famille Mr` all read bimonthly and are all still active; all three stay yearly.
+
+**Validated by Julien on 2026-09-12**, against both cohorts on the audit page, at the numbers above.
+
 **This is the detector's known limit and it is not calibrated away.** The score measures *regularity*,
 and a yearly envelope that is drawn down frequently is regular in the only sense the score can see.
 Separating "this yearly stream has a hidden monthly rhythm" from "this yearly stream is a pot of money
@@ -370,6 +401,9 @@ formal change recorded?
 
 **Solved when:** every non-yearly stream's cycle matches its declaration exactly — yearly streams are
 excepted, and solved where they are specified — validated by Julien against the captured portfolio.
+
+**Status: solved, and the detector below with it.** The declaration path was validated first; the
+inference path was validated on 2026-09-12 against both cohorts.
 
 ---
 
@@ -586,6 +620,9 @@ by accident.
 | How is "as good as possible" measured? | **By Julien's judgment**, auditing each stream of the captured portfolio against the decision he would have made. |
 | Is a stream with no transactions a failure? | **No, it is the answer.** With no transactions the account cannot be determined, and an empty partition says exactly that. Settled while validating §1. |
 | Who owns card ↔ checking pairing? | **Not this module.** It is a fact about accounts, not about streams. No stage here consumes it; `accountLinks()` derives it today for whatever does. |
+| May a ledger reading overrule a declaration? | **Only when the ledger says so twice.** Both readings have to clear the bar and name the same period, or disagree in a way the merchant split can justify. One reading alone falls back to the declaration. |
+| May it lengthen a declared cycle? | **No.** A fit may shorten the declaration, never lengthen it. Finding a shorter pattern is a discovery; finding a longer one is the detector failing to see the declared rhythm. |
+| What may a yearly stream be re-read as? | **Weekly, biweekly or monthly, and only while the pattern is still running.** Bimonthly and quarterly are extremely rare and carry too few cycles in one reporting year to be confident about, so a reading at those periods is noise. Silence of more than two complete cycles ends the claim. Settled 2026-09-12. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
 ## Still open
@@ -596,6 +633,15 @@ by accident.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **Whether confidence is a number, a band, or a label.** It has to be usable by a consumer that is
    not a person, and comparable between streams.
-4. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
+4. **The trim is bounded by buckets, never by legs.** `trimBuckets` drops a fixed number of buckets
+   whatever the lattice looks like. On a long weekly lattice that is two of thirty-three; on a
+   quarterly lattice over one reporting year it is two of three, which drops the group below the
+   two-bucket floor and makes it unscorable. The effect is backwards: it destroys the best-evidenced
+   merchant groups and spares the thinnest ones — Medical HSA's 17-leg and 10-leg groups went
+   unscorable at quarterly while its two 2-leg groups survived and produced a 99.7%. It also let
+   Exceptional Expense score quarterly at 77.1% after the trim discarded the bucket holding 14 of its
+   20 legs. Capping the trim by the **share of legs** it discards, rather than by a count of buckets,
+   is the proposed fix and is not implemented.
+5. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
    that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
    because it may need to change.

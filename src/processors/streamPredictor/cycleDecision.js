@@ -41,8 +41,7 @@
       failing to see the declared rhythm, and the declaration wins. Route `capped`.
    ================================================================================================== */
 
-import {CANDIDATE_PERIODS, fitTable, fitTableSplit, merchantGroups, legsInWindow,
-	emptyCycleTable} from './cycleFit';
+import {fitTable, fitTableSplit, merchantGroups, legsInWindow, emptyCycleTable} from './cycleFit';
 import {FIT_CONFIG} from './fitConfig';
 
 /* THE ROUTE TRAVELS WITH THE ANSWER EVERYWHERE, because anything that is not `both` is a weaker
@@ -204,7 +203,7 @@ export const ROUTE_LABEL = engine.ROUTE_LABEL;
 
 /* THE KNOBS THE ENGINE READS, filled from the configured numbers. The audit page hands the same
    three in from its controls, which is why they are an object rather than three arguments. */
-export const knobsFrom = cfg => {
+const knobsFrom = cfg => {
 	const c = Object.assign({}, FIT_CONFIG, cfg || {});
 	return {
 		thr: c.fitThreshold,
@@ -252,6 +251,5 @@ export function resolveCycle(stream, legs, anchor, now, cfg){
 	return Object.assign({evidence: evidence}, r);
 }
 
-export const PERIOD_ORDER = CANDIDATE_PERIODS;
 
 export default resolveCycle;

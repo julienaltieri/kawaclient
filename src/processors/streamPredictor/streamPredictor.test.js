@@ -24,9 +24,9 @@ import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOL
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
 import {buildFitAuditPage, fitData, COHORTS} from './buildFitAuditPage';
-import {summarizeAll, DEFAULT_KNOBS} from './cycleDecision';
+import {summarizeAll, resolveOne, resolveCycle, DEFAULT_KNOBS} from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
-import {fitTable, legsInWindow, CANDIDATE_PERIODS} from './cycleFit';
+import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets} from './shapeDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
@@ -466,10 +466,56 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		});
 		expect(drifted).toEqual([]);
 
-		const behavioural = ids.filter(id => gt.yearly[id].basis === 'behavioural');
-		console.log('YEARLY GROUND TRUTH: ' + ids.length + ' accepted decisions hold | '
-			+ behavioural.length + ' recorded as behavioural, not rhythm: '
-			+ behavioural.map(id => gt.yearly[id].name + ' (' + gt.yearly[id].accepted + ')').join(', '));
+		const by = kind => ids.filter(id => gt.yearly[id].basis === kind)
+			.map(id => gt.yearly[id].name + ' (' + gt.yearly[id].accepted + ')');
+		const part = (label, list) => list.length ? ' | ' + list.length + ' ' + label + ': '
+			+ list.join(', ') : '';
+		console.log('YEARLY GROUND TRUTH: ' + ids.length + ' accepted decisions hold'
+			+ part('rhythm', by('rhythm')) + part('behavioural, not rhythm', by('behavioural'))
+			+ ' | ' + ids.filter(id => gt.yearly[id].supersededBy).length
+			+ ' superseded by a later rule');
+	});
+
+	/* ---- THE TWO PIECES THE YEARLY RULE RESTS ON ----------------------------------------------------
+
+	   HOW LONG A PATTERN HAS BEEN QUIET IS ARITHMETIC, so it is pinned to dates that can be checked by
+	   hand rather than to the capture. Anchor 2025-12-21 puts every monthly lattice edge on the 21st.
+	   Three legs on the 5th, the last of them 2026-03-05, so the first edge after the history is
+	   2026-03-21 and the empty cycles run 03-21..04-21, 04-21..05-21, 05-21..06-21. At a `now` of
+	   2026-06-09 the third is still running and is not counted: two complete empty cycles. */
+	test('emptyCyclesSince counts only cycles that have fully elapsed', () => {
+		/* EVERY DATE HERE IS BUILT LOCALLY. The lattice edges come from Time.js, which works in local
+		   midnight; `new Date('2026-04-21')` is UTC midnight and lands on the 20th west of Greenwich,
+		   so a string would make this test pass or fail by timezone. */
+		const on = (y, m, d) => new Date(y, m - 1, d);
+		const anchorDate = on(2025, 12, 21);
+		const legs = [on(2026, 1, 5), on(2026, 2, 5), on(2026, 3, 5)].map(d => ({date: d}));
+		const at = (y, m, d) => emptyCyclesSince(legs, 'monthly', anchorDate, on(y, m, d));
+		expect(at(2026, 3, 20)).toBe(0);
+		expect(at(2026, 4, 20)).toBe(0);
+		//a cycle that ends exactly at `now` has fully elapsed and counts
+		expect(at(2026, 4, 21)).toBe(1);
+		expect(at(2026, 6, 9)).toBe(2);
+		expect(at(2026, 6, 21)).toBe(3);
+		//nothing to count from is a different fact from "it moved recently"
+		expect(emptyCyclesSince([], 'monthly', anchorDate, on(2026, 6, 9))).toBe(null);
+	});
+
+	/* THE PRODUCTION ENTRY POINT AND THE AUDIT PAGE MUST NOT DRIFT. resolveCycle is what a caller
+	   outside this module uses; the page resolves from a precomputed blob. They run the same engine,
+	   but only because resolveCycle builds the evidence the same way - and that is the part a
+	   signature change would break silently, so it is asserted on every stream in both cohorts. */
+	test('resolveCycle answers exactly what the audit page resolves, for all 60 streams', () => {
+		const all = rows.concat(yearlyRows);
+		const blob = data.concat(yearlyData);
+		expect(all.length).toBe(60);
+		all.forEach((r, i) => {
+			const direct = resolveCycle(r.stream, r.legs, anchor, now);
+			const viaPage = resolveOne(blob[i], DEFAULT_KNOBS);
+			expect(direct.period).toBe(viaPage.period);
+			expect(direct.route).toBe(viaPage.route);
+			expect(direct.measured).toBe(viaPage.measured);
+		});
 	});
 
 	test('writes the fit audit page from the real results', () => {

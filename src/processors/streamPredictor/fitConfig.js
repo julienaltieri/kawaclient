@@ -49,6 +49,12 @@ export const FIT_CONFIG = {
 	   when the money happened to be spent. Monthly is the typical arrangement; biweekly and weekly
 	   are the two faster ones that are really lived. Anything else leaves the stream yearly.
 
+	   BIMONTHLY AND QUARTERLY ARE LEFT OUT ON PURPOSE, and the reason is evidence rather than taste.
+	   Julien: they are extremely rare in this portfolio - quarterly would be tax, bimonthly would be
+	   certain bills - and over a single reporting year they carry too few cycles to be confident
+	   about. Six bimonthly cycles or four quarterly ones is not enough to overrule a declaration, so
+	   a reading at those periods is noise being promoted to a prediction.
+
 	   THIS GATE IS NOT APPLIED TO A DECLARED RHYTHM. A stream declared monthly that reads quarterly
 	   is a disagreement worth seeing; a yearly envelope that reads quarterly is noise. */
 	yearlyAllowedPeriods: ['weekly', 'biweekly', 'monthly'],

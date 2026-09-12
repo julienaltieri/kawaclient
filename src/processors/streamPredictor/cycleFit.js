@@ -158,7 +158,7 @@ const scoreBuckets = (period, buckets) => {
 
 /* THE TRIM COUNT IS THE FOURTH ARGUMENT SO A TEST CAN SWEEP IT, and it defaults to the configured
    one so no caller has to know what it is. */
-export function fitScore(legs, period, anchor, trim){
+function fitScore(legs, period, anchor, trim){
 	const n = trim === undefined ? FIT_CONFIG.trimBuckets : trim;
 	const all = cycleBuckets(legs || [], Period[period], anchor);
 	const live = n ? trimBuckets(all, n) : all;
