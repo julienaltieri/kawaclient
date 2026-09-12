@@ -158,6 +158,21 @@ function summarizeAll(data, k){
    tick is the score. */
 function isEnvelope(declared){ return declared === "yearly" || declared === "biyearly"; }
 
+/* HOW MUCH THE ANSWER IS WORTH, DERIVED ONLY FROM THINGS ALREADY DECIDED. Whether confidence should
+   finally be a number, a band or a label is still open in the spec, so this invents no threshold and
+   no weighting: it reports how many independent readings produced the answer - which the route
+   already records - alongside the fit itself.
+
+     high    both readings cleared the bar and named the same period
+     medium  one reading carried it, or the two disagreed and one was chosen
+     none    nothing was measured, and a declaration is not a measurement */
+function confidenceOf(r){
+	if(!r.measured)return {level: "none", text: DASH, why: "not measured"};
+	if(r.route === "both")
+		return {level: "high", text: "high " + pct(r.misfit), why: "both readings agreed"};
+	return {level: "medium", text: "medium " + pct(r.misfit), why: "one reading carried it"};
+}
+
 function verdictOf(p, declared){
 	if(!p)return {cls: "none", text: "no pick"};
 	if(isEnvelope(declared))return {cls: "", text: p.period + " " + pct(p.misfit)};
@@ -193,12 +208,14 @@ function decisionOf(r, declared){
 // eslint-disable-next-line no-new-func
 const engine = new Function(DECISION_ENGINE + [
 	'return {resolveOne: resolveOne, summarizeAll: summarizeAll, verdictOf: verdictOf,',
-	'decisionOf: decisionOf, pct: pct, ROUTES: ROUTES, ROUTE_LABEL: ROUTE_LABEL};'].join(' '))();
+	'decisionOf: decisionOf, confidenceOf: confidenceOf, pct: pct,',
+	'ROUTES: ROUTES, ROUTE_LABEL: ROUTE_LABEL};'].join(' '))();
 
 export const resolveOne = engine.resolveOne;
 export const summarizeAll = engine.summarizeAll;
 export const verdictOf = engine.verdictOf;
 export const decisionOf = engine.decisionOf;
+export const confidenceOf = engine.confidenceOf;
 export const pct = engine.pct;
 export const ROUTES = engine.ROUTES;
 export const ROUTE_LABEL = engine.ROUTE_LABEL;

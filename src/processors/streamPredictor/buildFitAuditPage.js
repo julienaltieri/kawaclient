@@ -34,10 +34,22 @@ import {renderAuditPage, esc} from './auditShell';
 import {CANDIDATE_PERIODS} from './cycleFit';
 import {FIT_CONFIG} from './fitConfig';
 import {DECISION_ENGINE, DEFAULT_KNOBS, fitEvidence, resolveOne, summarizeAll, verdictOf,
-	decisionOf, pct, ROUTES, ROUTE_LABEL} from './cycleDecision';
+	decisionOf, confidenceOf, pct, ROUTES, ROUTE_LABEL} from './cycleDecision';
 
 const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
 	bimonthly: 'B', quarterly: 'q', yearly: 'y'};
+
+/* THE TABS. The first two are the data cohorts; `summary` is every stream at once, one row each,
+   and is the surface a final review is actually done on - the cards are for working out WHY, the
+   table is for saying yes. */
+export const TABS = [
+	{key: 'validated', label: 'validated (non-yearly)',
+		note: 'declaration checked by hand - agreement is a score'},
+	{key: 'yearly', label: 'yearly',
+		note: 'declaration states an amount, not a rhythm - agreement is not a score'},
+	{key: 'summary', label: 'summary - all streams',
+		note: 'one row per stream. tick what you accept; the tick is the same one as on the card'}
+];
 
 /* THE TWO COHORTS, and the tab is the only thing that tells them apart on the page. */
 export const COHORTS = [
@@ -160,6 +172,53 @@ const card = r => ({
 const section = (key, title, list) =>
 	({key: key, title: title, cards: list.slice().sort(byEvidence).map(card)});
 
+/* ---- THE SUMMARY TABLE ------------------------------------------------------------------------------
+   ONE ROW PER STREAM, AND THE TICK IS THE CARD'S TICK. A second checkbox system for the same stream
+   would be a second answer to the same question; instead the row's box drives the card's box and
+   lets the shell persist it exactly as it always did - one click, one card, one write.
+
+   THE CELLS THE KNOBS MOVE ARE THE ONLY ONES REDRAWN. `declared` is a fact and never changes; the
+   inferred period and the confidence are recomputed, like the bars on a card. */
+const CONF_ORDER = {high: 0, medium: 1, none: 2};
+
+const inferCell = (d, r) => {
+	const conf = confidenceOf(r);
+	if(r.measured){
+		const differs = r.period !== d.declared;
+		return {cls: differs ? 'inf differs' : 'inf', text: r.period,
+			conf: conf.text, confCls: 'cf ' + conf.level};
+	}
+	/* A BLOCKED READING IS STILL A READING, and hiding it would make the two gates invisible on the
+	   one surface where the whole portfolio is reviewed at once. */
+	const blocked = (r.route === 'atypical' || r.route === 'stale') && r.merged
+		? r.merged.period : null;
+	return {cls: 'inf none',
+		text: blocked ? blocked + ' - ' + ROUTE_LABEL[r.route] : '\u2014 ' + ROUTE_LABEL[r.route],
+		conf: conf.text, confCls: 'cf ' + conf.level};
+};
+
+const summaryRow = r => {
+	const d = r.data, c = inferCell(d, r.res);
+	return '<tr data-srow="' + esc(d.id) + '" data-search="'
+		+ esc((d.name + ' ' + d.id + ' ' + d.declared).toLowerCase()) + '">'
+		+ '<td class="nm">' + esc(d.name) + '</td>'
+		+ '<td class="dcl">' + esc(d.declared || '\u2014') + '</td>'
+		+ '<td class="' + c.cls + '" data-inf="1">' + esc(c.text) + '</td>'
+		+ '<td class="' + c.confCls + '" data-conf="1">' + esc(c.conf) + '</td>'
+		+ '<td class="ck"><input type="checkbox" class="sbox" data-sid="' + esc(d.id) + '"'
+			+ ' aria-label="accept ' + esc(d.name) + '"></td>'
+		+ '</tr>';
+};
+
+const summarySection = resolved => '<section class="summary" id="summary">'
+	+ '<p class="sumcount" id="sumcount"></p>'
+	+ '<table class="allt"><thead><tr><th>stream</th><th>declared</th><th>inferred</th>'
+	+ '<th>confidence</th><th class="ck">ok</th></tr></thead><tbody id="allrows">'
+	+ resolved.slice().sort((a, b) =>
+		(CONF_ORDER[confidenceOf(a.res).level] - CONF_ORDER[confidenceOf(b.res).level])
+		|| (String(a.data.name) < String(b.data.name) ? -1 : 1)).map(summaryRow).join('')
+	+ '</tbody></table></section>';
+
 /* ---- THE CONTROL PANEL -----------------------------------------------------------------------------
    THE COHORT TAB, THEN THE SUMMARY, THEN THE THREE NUMBERS. The summary is the thing being watched;
    the hand sits on a control at the bottom of the block and the eye on the number at the top of it,
@@ -193,9 +252,9 @@ const summaryLine = s => s.envelope
 		: 'every stream matches its declaration');
 
 const panel = s => '<section class="panel"><div class="pbox">'
-	+ radioRow('cohort', 'cohort',
-		COHORTS.map((c, i) => ({v: c.key, t: c.label, on: i === 0})))
-	+ '<p class="cnote" id="cnote">' + esc(COHORTS[0].note) + '</p>'
+	+ radioRow('view', 'cohort',
+		TABS.map((c, i) => ({v: c.key, t: c.label, on: i === 0})))
+	+ '<p class="cnote" id="cnote">' + esc(TABS[0].note) + '</p>'
 	+ '<p class="sumhead" id="sumhead">' + esc(s.headline) + '</p>'
 	+ '<table class="sumt"><thead><tr><th>route</th><th class="n">n</th>'
 	+ '<th class="n" id="matchcol">matches</th></tr>'
@@ -220,23 +279,32 @@ const panel = s => '<section class="panel"><div class="pbox">'
 const wiring = (data, notes) => DECISION_ENGINE + `
 var DATA = ` + JSON.stringify(data) + `;
 var NOTES = ` + JSON.stringify(notes) + `;
+var FIXED = ` + JSON.stringify(DEFAULT_KNOBS) + `;
 var fits = {};
 var sumhead = document.getElementById("sumhead");
 var sumrows = document.getElementById("sumrows");
 var sumbad = document.getElementById("sumbad");
 var cnote = document.getElementById("cnote");
+var sumcount = document.getElementById("sumcount");
+var q = document.getElementById("q");
+var srows = {};
 
 function radio(n){
 	var e = document.querySelector("input[name='" + n + "']:checked");
 	return e ? e.value : null;
 }
 
+/* THE READER MOVES THREE NUMBERS; THE REST OF THE KNOBS ARE THE CONFIGURED ONES, emitted once and
+   never rebuilt here. A hand-written copy of this object silently dropped the two yearly settings,
+   and PERIODS.indexOf(undefined) is -1, so every yearly reading came back "atypical" the moment the
+   browser re-rendered. Copy the emitted defaults, override only what has a control. */
 function knobs(){
-	return {
-		thr: Number(document.getElementById("thr").value) / 100,
-		minLegs: Number(document.getElementById("minlegs").value),
-		minGroup: Number(document.getElementById("mingroup").value)
-	};
+	var k = {}, key;
+	for(key in FIXED)k[key] = FIXED[key];
+	k.thr = Number(document.getElementById("thr").value) / 100;
+	k.minLegs = Number(document.getElementById("minlegs").value);
+	k.minGroup = Number(document.getElementById("mingroup").value);
+	return k;
 }
 
 function drawBars(wrap, tab, win, declared){
@@ -269,10 +337,15 @@ function render(){
 	document.body.setAttribute("data-cohort", cohort);
 	cnote.textContent = NOTES[cohort] || "";
 
-	var live = [];
-	for(i = 0; i < DATA.length; i++)if(DATA[i].cohort === cohort)live.push(DATA[i]);
+	/* THE SUMMARY TAB IS EVERY STREAM AT ONCE. Its headline cannot be an agreement rate: half the
+	   rows are envelopes with nothing to agree with. It counts what was actually read instead. */
+	var live = [], all = (cohort === "summary");
+	for(i = 0; i < DATA.length; i++)if(all || DATA[i].cohort === cohort)live.push(DATA[i]);
 	var s = summarizeAll(live, k);
-	sumhead.textContent = s.headline;
+	sumhead.textContent = all
+		? live.length + " streams " + DOT + " " + s.measured + " read off the ledger "
+			+ DOT + " " + s.counts.declared + " on the declaration alone"
+		: s.headline;
 
 	html = "";
 	for(i = 0; i < ROUTES.length; i++){
@@ -286,6 +359,8 @@ function render(){
 
 	document.getElementById("matchcol").textContent = s.envelope ? "" : "matches";
 	sumbad.className = s.envelope ? "sumbad found" : "sumbad";
+	//a tick made on a card has to show on the row, and the only moment to read it back is here
+	syncSummaryBoxes();
 	if(s.envelope){
 		if(!s.found.length)sumbad.textContent = "no cycle found in any of them";
 		else {
@@ -309,12 +384,13 @@ function render(){
 		sumbad.innerHTML = "differs from the declaration: " + html;
 	}
 
-	//every card is redrawn, on screen or not, so switching tabs never shows a stale row
+	//every card AND every summary row is redrawn, on screen or not, so a tab is never stale
 	for(i = 0; i < DATA.length; i++){
 		d = DATA[i];
+		r = resolveOne(d, k);
+		drawSummaryRow(d, r);
 		f = fits[d.id];
 		if(!f)continue;
-		r = resolveOne(d, k);
 		drawBars(f.mbars, d.m, r.merged ? r.merged.period : null, d.declared);
 		drawBars(f.sbars, d.s, r.split ? r.split.period : null, d.declared);
 		setVd(f.mvd, verdictOf(r.merged, d.declared));
@@ -347,6 +423,67 @@ function render(){
 
 /* THE STREAMS THAT DIFFER ARE THE POINT OF THE SUMMARY, so their names are links into the list
    rather than text to go hunting with. */
+/* ---- THE SUMMARY TABLE -----------------------------------------------------------------------
+   ONE TICK PER STREAM, NOT TWO. The row's box does not own any state: it drives the card's box and
+   lets the shell persist it, so there is exactly one record of what has been accepted and the
+   summary cannot drift from the cards. */
+function cardBox(id){ return document.querySelector(".okbox[data-sid='" + id + "']"); }
+
+function drawSummaryRow(d, r){
+	var row = srows[d.id];
+	if(!row)return;
+	var conf = confidenceOf(r), text, cls;
+	if(r.measured){
+		text = r.period;
+		cls = (r.period === d.declared) ? "inf" : "inf differs";
+	}else{
+		var blocked = (r.route === "atypical" || r.route === "stale") && r.merged
+			? r.merged.period : null;
+		text = blocked ? blocked + " - " + ROUTE_LABEL[r.route] : DASH + " " + ROUTE_LABEL[r.route];
+		cls = "inf none";
+	}
+	row.inf.textContent = text;
+	row.inf.className = cls;
+	row.conf.textContent = conf.text;
+	row.conf.className = "cf " + conf.level;
+}
+
+function syncSummaryBoxes(){
+	var id, box, n = 0, total = 0;
+	for(id in srows){
+		box = cardBox(id);
+		if(!box)continue;
+		total++;
+		srows[id].box.checked = box.checked;
+		if(box.checked)n++;
+	}
+	if(sumcount)sumcount.textContent = n + " of " + total + " accepted";
+}
+
+[].slice.call(document.querySelectorAll("[data-srow]")).forEach(function(tr){
+	var id = tr.getAttribute("data-srow");
+	srows[id] = {tr: tr, inf: tr.querySelector("[data-inf]"), conf: tr.querySelector("[data-conf]"),
+		box: tr.querySelector(".sbox")};
+	srows[id].box.addEventListener("change", function(){
+		var box = cardBox(id);
+		if(!box)return;
+		box.checked = srows[id].box.checked;
+		//the shell's own handler does the write, the card class and the header counter
+		box.dispatchEvent(new Event("change", {bubbles: true}));
+		syncSummaryBoxes();
+	});
+});
+
+/* THE SEARCH BOX FILTERS THE TABLE TOO. The shell filters cards; without this the summary would
+   ignore a filter that is visibly applied. */
+function filterSummary(){
+	var t = q ? q.value.trim().toLowerCase() : "";
+	var id;
+	for(id in srows)
+		srows[id].tr.hidden = !!t && srows[id].tr.getAttribute("data-search").indexOf(t) === -1;
+}
+if(q)q.addEventListener("input", filterSummary);
+
 sumbad.addEventListener("click", function(e){
 	var id = (e.target && e.target.getAttribute) ? e.target.getAttribute("data-goto") : null;
 	if(!id)return;
@@ -359,6 +496,10 @@ sumbad.addEventListener("click", function(e){
 });
 
 render();
+syncSummaryBoxes();
+/* the shell restores ticks from localStorage at load and the order of the two scripts is not
+   something this file should depend on, so the table reads them once more on the next tick */
+setTimeout(syncSummaryBoxes, 0);
 `;
 
 /* ---- THE PAGE --------------------------------------------------------------------------------------
@@ -394,7 +535,7 @@ export function buildFitAuditPage(cohorts, meta){
 		: '—';
 
 	const notes = {};
-	COHORTS.forEach(co => { notes[co.key] = co.note; });
+	TABS.forEach(t => { notes[t.key] = t.note; });
 
 	return renderAuditPage({
 		title: 'Cycle fit',
@@ -404,7 +545,7 @@ export function buildFitAuditPage(cohorts, meta){
 		versionTitle: m.version,
 		extraCss: CSS,
 		legendHtml: LEGEND,
-		panelHtml: panel(sv),
+		panelHtml: panel(sv) + summarySection(resolved),
 		extraScript: wiring(data, notes),
 		metaLine: [
 			{label: 'validated', value: sv.agree + '/' + sv.total},
@@ -440,6 +581,8 @@ const LEGEND = '<span class="lg">the cohort tab and the three numbers below resc
 	+ '<span class="lg">route both = merged and split agreed · declared = the fallback, not a measurement</span>'
 	+ '<span class="lg">a yearly declaration states an amount, not a rhythm, so nothing on that tab is ticked against it</span>'
 	+ '<span class="lg">capped = a fit was found, but longer than declared, so the declaration won</span>'
+	+ '<span class="lg">summary tab: the tick is the same tick as on the card</span>'
+	+ '<span class="lg">confidence is provisional - high = both readings agreed, medium = one carried it</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
 
 const CSS = `
@@ -474,6 +617,29 @@ const CSS = `
 .seg input{margin:0;width:12px;height:12px;accent-color:var(--accent)}
 body[data-cohort="validated"] .group[data-group^="y-"]{display:none}
 body[data-cohort="yearly"] .group[data-group^="v-"]{display:none}
+body[data-cohort="summary"] .group{display:none}
+body[data-cohort="summary"] main{padding-top:0}
+.summary{display:none;max-width:1000px;margin:0 auto;padding:8px 14px 0}
+body[data-cohort="summary"] .summary{display:block}
+.sumcount{margin:0 0 6px;font:500 10px/1 var(--mono);color:var(--ink-faint);
+	text-transform:uppercase;letter-spacing:.05em}
+.allt{width:100%;border-collapse:collapse;font:400 12px/1.5 var(--mono);
+	font-variant-numeric:tabular-nums}
+.allt th{font:500 9px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+	color:var(--ink-faint);text-align:left;padding:0 8px 4px 0;border-bottom:1px solid var(--rule)}
+.allt td{padding:5px 8px 5px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+.allt tr:last-child td{border-bottom:0}
+.allt .nm{color:var(--ink);width:36%;word-break:break-word}
+.allt .dcl{color:var(--ink-faint);white-space:nowrap}
+.allt .inf{color:var(--realtime);white-space:nowrap}
+.allt .inf.differs{color:var(--accent);font-weight:600}
+.allt .inf.none{color:var(--ink-faint);font-weight:400;white-space:normal}
+.allt .cf{white-space:nowrap;font-size:11px}
+.allt .cf.high{color:var(--realtime)}
+.allt .cf.medium{color:var(--ink-soft)}
+.allt .cf.none{color:var(--ink-faint)}
+.allt th.ck,.allt td.ck{text-align:right;padding-right:0;width:30px}
+.allt .sbox{width:19px;height:19px;accent-color:var(--accent);margin:0}
 .stream.knobwrong{box-shadow:inset 3px 0 0 var(--flag)}
 .tick{width:15px;text-align:center;font:500 8.5px/1 var(--mono);color:var(--ink-faint);
 	flex:0 0 15px}
