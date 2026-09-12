@@ -33,7 +33,10 @@ const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
+const GROUND_TRUTH = path.join(__dirname, '..', '..', 'tests', 'fixtures',
+	'cycleGroundTruth.json');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
+const HAS_GROUND_TRUTH = fs.existsSync(GROUND_TRUTH);
 
 //`describe.skip` rather than a failing require, so the suite passes on a machine with no capture
 const suite = HAS_FIXTURE ? describe : describe.skip;
@@ -404,6 +407,55 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 			console.log('   ' + d.name + ' -> ' + r.period + ' (' + r.route + ', '
 				+ d.windowLegs + ' legs, groups ' + d.groups.join('/') + ')');
 		});
+	});
+
+
+	/* ---- THE VALIDATED YEARLY DECISIONS -------------------------------------------------------------
+	   THE YEARLY COHORT HAS NO DECLARED GROUND TRUTH, SO THE GROUND TRUTH IS JULIEN'S. He read the
+	   yearly tab at a 75% threshold and ticked the streams whose detected cycle he accepts; those
+	   decisions are recorded per stream id in cycleGroundTruth.json, and this is what holds the
+	   detector to them. Without it the 14 claims below are a console line nobody can regress.
+
+	   THE FILE SITS BESIDE THE PORTFOLIO CAPTURE AND UNDER THE SAME IGNORE RULE, because it names real
+	   streams - and in its OWN file rather than inside portfolio.json, so recapturing the portfolio
+	   does not erase a judgement that took a person to make.
+
+	   `basis` IS NOT A CONFIDENCE, IT IS A KIND. `rhythm` means the stream really runs on that cycle.
+	   `behavioural` means the pattern is genuinely in the ledger but is a side effect of how the
+	   spending is initiated rather than a property of the stream - Medical HSA reads quarterly because
+	   Julien submits the reimbursements in batches, which is real behaviour and a coincidence at the
+	   same time. Both are accepted detections; only one of them should ever carry structural weight,
+	   and nothing downstream consumes the distinction yet. */
+	test('the detector still produces every yearly decision Julien accepted', () => {
+		if(!HAS_GROUND_TRUTH){
+			console.log('NO GROUND TRUTH FILE - skipped');
+			return;
+		}
+		const gt = JSON.parse(fs.readFileSync(GROUND_TRUTH, 'utf8'));
+		const ids = Object.keys(gt.yearly || {});
+		expect(ids.length).toBeGreaterThan(0);
+
+		//the recorded decisions were taken at these knobs, so a knob change has to re-open the review
+		expect(gt.knobs.fitThreshold).toBe(FIT_CONFIG.fitThreshold);
+		expect(gt.knobs.minLegsToClaim).toBe(FIT_CONFIG.minLegsToClaim);
+		expect(gt.knobs.minGroupLegs).toBe(FIT_CONFIG.minGroupLegs);
+
+		const now = {};
+		sy.rows.forEach((r, i) => { now[yearlyData[i].id] = r; });
+
+		const drifted = [];
+		ids.forEach(id => {
+			const want = gt.yearly[id], got = now[id];
+			if(!got || got.period !== want.accepted)
+				drifted.push(want.name + ': accepted ' + want.accepted + ', now '
+					+ (got ? (got.period || 'no claim') + ' (' + got.route + ')' : 'not in the cohort'));
+		});
+		expect(drifted).toEqual([]);
+
+		const behavioural = ids.filter(id => gt.yearly[id].basis === 'behavioural');
+		console.log('YEARLY GROUND TRUTH: ' + ids.length + ' accepted decisions hold | '
+			+ behavioural.length + ' recorded as behavioural, not rhythm: '
+			+ behavioural.map(id => gt.yearly[id].name + ' (' + gt.yearly[id].accepted + ')').join(', '));
 	});
 
 	test('writes the fit audit page from the real results', () => {
