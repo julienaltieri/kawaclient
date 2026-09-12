@@ -29,13 +29,17 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 	from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
-import {cycleBuckets} from './shapeDetermination';
+import {cycleBuckets, classifyShape, lumpDays, dayHistogram, Shape}
+	from './shapeDetermination';
+import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
+import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
+const OUT_SHAPE = path.join(__dirname, 'audit-shape.html');
 const GROUND_TRUTH = path.join(__dirname, '..', '..', 'tests', 'fixtures',
 	'cycleGroundTruth.json');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
@@ -733,5 +737,183 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 			expect(html.indexOf('name="' + n + '"')).toBe(-1));
 
 		console.log('FIT PAGE: ' + OUT_FIT + ' (' + fs.statSync(OUT_FIT).size + ' bytes)');
+	});
+});
+
+/* ==================================================================================================
+   §3, THE SHAPE INSIDE ONE CYCLE.
+
+   THE CLASSIFIER IS ASSERTED ON HAND-WRITTEN COUNTS, not only on the portfolio, because the whole
+   point of it is which arrangements of numbers mean which shape - and those are checkable without a
+   ledger. The portfolio then says what the rule does to real streams, and the page prints it.
+   ================================================================================================== */
+suite('StreamPredictor §3 - the shape inside a cycle', () => {
+	let portfolio, predictor;
+
+	beforeAll(() => {
+		// eslint-disable-next-line global-require
+		const {StreamPredictor} = require('./index');
+		portfolio = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+		predictor = new StreamPredictor(portfolio);
+	});
+
+	/* THE DEFECT THIS REPLACED, PINNED SO IT CANNOT COME BACK. The old rule read the shape off the
+	   typical count alone - 1 was a lump, 2 to 4 were lumps, above 4 was a spread - which put four
+	   grocery shops a week in the same class as a utility bill arriving twice a month. What tells
+	   them apart is not how many, it is whether the how-many repeats. */
+	test('the shape comes from whether the count repeats, not from the count', () => {
+		const rent = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+		const utilities = [2, 2, 2, 2, 2, 2, 2, 2, 2];
+		const groceries = [4, 10, 1, 5, 5, 6, 8, 3, 6, 0, 7, 2, 3, 5, 3, 8, 4, 4, 4];
+
+		expect(classifyShape(rent).shape).toBe(Shape.lump);
+		expect(classifyShape(utilities).shape).toBe(Shape.multiLump);
+		//four a week, never the same four: a flow, not four lumps
+		expect(classifyShape(groceries).shape).toBe(Shape.spread);
+
+		//and the counts that separate them
+		expect(classifyShape(rent).steady).toBe(1);
+		expect(classifyShape(utilities).steady).toBe(1);
+		expect(classifyShape(groceries).steady).toBeLessThan(0.5);
+	});
+
+	/* AN IRREGULAR STREAM IS NOT A SHAPE WITH LOW CONFIDENCE. Savings moved 2, 3, 2, 1, 0, 1 and 1
+	   times in successive months - present most months, steady in none, and only about once a month
+	   when it moves at all. That is not a flow and it is not a lump; the answer is no shape, which is
+	   a different thing from a bad one. */
+	test('unsteady and not a flow gets no shape at all', () => {
+		const savings = classifyShape([2, 3, 2, 1, 0, 1, 1]);
+		expect(savings.shape).toBe(null);
+		expect(savings.reason).toMatch(/does not repeat/);
+
+		//Sorties: half its months empty, and 4 in one of them. Not a flow either.
+		expect(classifyShape([1, 2, 0, 0, 0, 1, 1, 0, 4]).shape).toBe(null);
+
+		/* THE LINE IS BUSY-AND-MORE-THAN-ONCE. The same stream moving two or three times in nearly
+		   every month IS a flow, and calling it one is the intended answer - being unsteady is what
+		   makes it a spread rather than a set of lumps. */
+		expect(classifyShape([4, 6, 4, 2, 0, 2, 1]).shape).toBe(Shape.spread);
+
+		//nothing on the account at all is its own answer, separate from "no cycles"
+		expect(classifyShape([0, 0, 0, 0]).reason).toMatch(/no movements/);
+		expect(classifyShape([]).reason).toMatch(/no cycles/);
+	});
+
+	/* ONE CYCLE MAKES ITS OWN COUNT THE COMMONEST and scores 100% steady by construction. Date had
+	   three movements in a single month and claimed three lumps at full confidence. */
+	test('a single cycle is not a repeat', () => {
+		expect(classifyShape([3]).shape).toBe(null);
+		expect(classifyShape([3]).reason).toMatch(/only 1 cycle/);
+		expect(classifyShape([1, 1]).shape).toBe(null);
+		expect(classifyShape([1, 1, 1]).shape).toBe(Shape.lump);
+		expect(SHAPE_CONFIG.minCyclesObserved).toBe(3);
+	});
+
+	/* THE TYPICAL COUNT IS ONE SOME CYCLE ACTUALLY HAD. A middle value over an even number of cycles
+	   lands between two integers, and "how many cycles carry exactly it" is then zero for a stream
+	   that is perfectly steady at two levels. */
+	test('the typical count is never a value no cycle had', () => {
+		//four cycles of 1 and four of 2: a middle value would say 1.5, which nothing ever was
+		const v = classifyShape([1, 1, 1, 1, 2, 2, 2, 2]);
+		expect([1, 2]).toContain(v.typical);
+		expect(v.steady).toBe(0.5);
+	});
+
+	/* THE DAYS ARE CUT AT THE BIGGEST GAPS, which is what "distinct lumps" means, and each group
+	   answers its MIDDLE day so one late month cannot drag it. */
+	test('lump days are cut at the gaps and read off the middle', () => {
+		const day = 24 * 60 * 60 * 1000;
+		const cycle = (startDay, offsets) => ({
+			start: new Date(2026, 0, startDay),
+			end: new Date(2026, 0, startDay + 30),
+			legs: offsets.map(o => ({date: new Date(new Date(2026, 0, startDay).getTime() + o * day)}))
+		});
+		//two clusters, one around day 3 and one around day 17, over three cycles
+		const buckets = [cycle(1, [3, 17]), cycle(1, [4, 17]), cycle(1, [3, 18])];
+		const days = lumpDays(buckets, 2);
+		expect(days.map(d => d.day)).toEqual([3, 17]);
+		expect(days.map(d => d.events)).toEqual([3, 3]);
+
+		//one outlier does not move the answer
+		const withOutlier = buckets.concat([cycle(1, [3, 29])]);
+		expect(lumpDays(withOutlier, 2)[0].day).toBe(3);
+
+		//every cycle laid on top of every other: two towers, nothing between
+		const bins = dayHistogram(buckets);
+		expect(bins[3]).toBe(2);
+		expect(bins[17]).toBe(2);
+		expect(bins.slice(5, 16).every(n => n === 0)).toBe(true);
+	});
+
+	/* §3 CONSUMES §2's ANSWER. A stream that declared yearly and was read as monthly is shaped like
+	   any other; one still yearly after §2 is not shaped at all. */
+	test('the stage runs on the cycle §2 answered with, never the declaration', () => {
+		const yearlyStill = predictor.reviewable().find(st => {
+			const c = predictor.cycleOf(st.id, st);
+			return st.period === 'yearly' && !c.inferred;
+		});
+		expect(yearlyStill).toBeTruthy();
+		expect(predictor.shapeOf(yearlyStill.id, yearlyStill).allocations
+			.every(a => a.shape === null)).toBe(true);
+
+		const rescued = predictor.reviewable().find(st => {
+			const c = predictor.cycleOf(st.id, st);
+			return st.period === 'yearly' && !!c.inferred;
+		});
+		expect(rescued).toBeTruthy();
+		expect(predictor.shapeOf(rescued.id, rescued).cycle.name).not.toBe('yearly');
+	});
+
+	/* THE ANSWER IS {accountId, shape, days?, confidence?} AND NOTHING ELSE - an undetermined field
+	   is absent, not a placeholder, the same contract §2 answers on. */
+	test('determineShape returns only the fields it determined', () => {
+		let shaped = 0, unshaped = 0;
+		predictor.reviewable().forEach(st => {
+			predictor.shapeOf(st.id, st).allocations.forEach(a => {
+				const keys = Object.keys(a).sort();
+				if(a.shape === Shape.lump || a.shape === Shape.multiLump){
+					shaped++;
+					expect(keys).toEqual(['accountId', 'confidence', 'days', 'shape']);
+					expect(a.days.length).toBeGreaterThan(0);
+				}else if(a.shape === Shape.spread){
+					shaped++;
+					expect(keys).toEqual(['accountId', 'confidence', 'shape']);
+				}else{
+					unshaped++;
+					expect(keys).toEqual(['accountId', 'shape']);
+					expect(a.shape).toBe(null);
+				}
+			});
+		});
+		expect(shaped).toBeGreaterThan(0);
+		console.log('§3 ANSWERS: ' + shaped + ' allocations shaped, ' + unshaped + ' not');
+	});
+
+	test('writes the shape audit page from the real results', () => {
+		const rows = shapeRows(predictor);
+		const by = summarizeShapes(rows);
+		const html = buildShapeAuditPage(predictor, {
+			version: portfolio.version,
+			capturedAt: portfolio.capturedAt,
+			anchor: predictor.analysisAnchor()
+		});
+		fs.writeFileSync(OUT_SHAPE, html, 'utf8');
+		expect(html.startsWith('<!doctype html>')).toBe(true);
+
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBe(2);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
+			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
+		});
+
+		//no row for a stream §2 left yearly - 51 empty rows would bury the ones worth checking
+		expect(rows.every(r => r.cycle !== 'yearly')).toBe(true);
+
+		console.log('§3 SHAPE: ' + rows.length + ' rows | '
+			+ Object.keys(by).sort().map(k => by[k] + ' ' + k).join(' | '));
+		console.log('SHAPE PAGE: ' + OUT_SHAPE + ' (' + fs.statSync(OUT_SHAPE).size + ' bytes)');
 	});
 });

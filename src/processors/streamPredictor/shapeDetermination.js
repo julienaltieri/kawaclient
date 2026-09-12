@@ -20,23 +20,15 @@
    merely empty.
    ================================================================================================== */
 
-export const Shape = {lump: 'lump', spread: 'spread', multiLump: 'multiLump'};
+import {SHAPE_CONFIG} from './shapeConfig';
 
-/* The most events a cycle can carry and still be a set of discrete lumps rather than a flow. Named
-   rather than inlined because it is the one number in this stage that is a judgement call. */
-export const SHAPE_MULTI_LUMP_MAX = 4;
+export const Shape = {lump: 'lump', spread: 'spread', multiLump: 'multiLump'};
 
 const YEARLY = {yearly: true, biyearly: true};
 
 /* A stream with a weekly cycle and a decade of history is ~520 buckets; the cap is far above any
    real history and exists so a malformed date cannot spin the walk forever. */
 const MAX_CYCLES = 5000;
-
-const median = xs => {
-	if(!xs || !xs.length)return null;
-	const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length/2);
-	return a.length % 2 ? a[m] : (a[m-1] + a[m])/2;
-};
 
 /* ---- THE CYCLE BUCKETS, phased on the ANCHOR and walked BACKWARDS over the legs -------------------
    THE LATTICE'S PHASE COMES FROM THE ANCHOR, ITS EXTENT FROM THE LEGS. The anchor is the analysis
@@ -112,49 +104,189 @@ export function cycleBuckets(legs, cycle, anchor){
 	return buckets;
 }
 
-/* THE OPEN QUESTION, stated in the shape of an answer so a caller cannot mistake it for one.
-   A spread is the exception the spec names: for a spread the shape IS the pattern, so there is no
-   day left to determine and it resolves with no days rather than with an unanswered question. */
-const OPEN_PATTERN = {resolved: false, reason: 'day-of-cycle determination is an open question'};
-const SPREAD_PATTERN = {resolved: true, days: null};
+/* ---- WHERE IN ITS CYCLE EACH MOVEMENT LANDS ---------------------------------------------------
+   ONE WHOLE DAY, COUNTED FROM THE START OF THE CYCLE IT FELL IN. Day 0 is the seam itself. The
+   module's seam is the 21st, so a rent paid on the 2nd reads as day 12 and reads that way in every
+   month regardless of how many days the month has.
 
-/* CLASSIFIED ON THE MEDIAN, not the mean: one December with four extra charges must not turn a
-   monthly lump into a multi-lump for the whole history.
+   NOT A FRACTION OF THE CYCLE. A fraction would make the same calendar day land on a different
+   number in February than in March, and the histogram the reader checks this against is drawn in
+   days. The cost is that a 31-day month has one column a 30-day month never fills, which is true
+   and visible rather than smoothed away. */
+const ONE_DAY = 24 * 60 * 60 * 1000;
 
-   The spec names three points - 1, 2..SHAPE_MULTI_LUMP_MAX, and above it - and an even number of
-   observed cycles can put the median between two of them. A fractional median is placed by the
-   INTERVAL it falls in rather than rounded, because rounding makes 1.5 flip between lump and
-   multiLump on the parity of the cycle count, which is not a fact about the stream. */
-function classify(med){
-	if(med === null || med <= 0)return null;
-	if(med < 2)return Shape.lump;
-	if(med <= SHAPE_MULTI_LUMP_MAX)return Shape.multiLump;
-	return Shape.spread;
+export function dayInCycle(leg, bucket){
+	const t = new Date(leg.date).getTime() - bucket.start.getTime();
+	return Math.floor(t / ONE_DAY);
 }
 
-/* THE ANCHOR IS PASSED IN, NEVER COMPUTED HERE. §3 and §4 must bucket the same legs on the same
-   lattice, so there is one anchor - StreamPredictor.analysisAnchor() - and every stage is handed it.
-   A second computation of "the analysis root date" is a second source of truth for a seam. */
-export function determineShape(legs, partition, cycle, anchor){
+/* EVERY CYCLE LAID ON TOP OF EVERY OTHER: how many movements ever landed on day 0, on day 1, and so
+   on. This is the observation the shape is read off and the picture the audit page draws, and they
+   are the same array so the reader is checking the decision rather than an illustration of it. */
+export function dayHistogram(buckets){
+	let span = 0;
+	buckets.forEach(b => {
+		const days = Math.round((b.end.getTime() - b.start.getTime()) / ONE_DAY);
+		if(days > span)span = days;
+	});
+	const bins = new Array(Math.max(span, 1)).fill(0);
+	buckets.forEach(b => b.legs.forEach(l => {
+		const d = dayInCycle(l, b);
+		if(d >= 0 && d < bins.length)bins[d]++;
+	}));
+	return bins;
+}
+
+/* ---- WHICH DAYS THE LUMPS SIT ON --------------------------------------------------------------
+   CUT THE OBSERVED DAYS INTO `n` GROUPS AT THE `n-1` BIGGEST GAPS, then answer each group's middle
+   day. For one lump that is just the middle day of everything, which is the right answer and needs
+   no special case.
+
+   THE BIGGEST GAPS, because that is what "distinct lumps" means: utilities arriving on the 4th and
+   the 18th are two tight clusters with a fortnight of nothing between them, and the fortnight is the
+   only thing that identifies them as two events rather than one smeared one.
+
+   THE MIDDLE DAY OF A GROUP, NOT ITS AVERAGE. Phone lands on day 28, 32, 28, 32, 28 and once on day
+   92 after a billing mistake; the average is dragged four days by that one, the middle day is not. */
+const middleOf = xs => {
+	if(!xs.length)return null;
+	const a = xs.slice().sort((x, y) => x - y);
+	const m = Math.floor(a.length / 2);
+	return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2);
+};
+
+//how far a group's days sit from its own middle day, typically - the wobble the reader sees
+const wobbleOf = (xs, mid) => xs.length
+	? Math.round(middleOf(xs.map(x => Math.abs(x - mid))))
+	: 0;
+
+export function lumpDays(buckets, n){
+	const days = [];
+	buckets.forEach(b => b.legs.forEach(l => days.push(dayInCycle(l, b))));
+	if(!days.length)return [];
+	days.sort((a, b) => a - b);
+
+	//the n-1 biggest gaps between consecutive days are where the groups are cut
+	const cuts = [];
+	for(let i = 1; i < days.length; i++)cuts.push({at: i, gap: days[i] - days[i - 1]});
+	cuts.sort((a, b) => b.gap - a.gap || a.at - b.at);
+	const edges = cuts.slice(0, Math.max(0, n - 1)).map(c => c.at).sort((a, b) => a - b);
+
+	const groups = [];
+	let from = 0;
+	edges.concat([days.length]).forEach(to => {
+		if(to > from)groups.push(days.slice(from, to));
+		from = to;
+	});
+	return groups.map(g => {
+		const mid = middleOf(g);
+		return {day: mid, wobble: wobbleOf(g, mid), events: g.length};
+	});
+}
+
+/* ---- THE CLASSIFIER ---------------------------------------------------------------------------
+   THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
+   off the typical count and a cutoff put groceries - four or five shops a week, every week, the
+   textbook spread - into the same bucket as a utility bill arriving twice a month, because both
+   typically carry four or fewer movements. What separates them is not how many, it is whether the
+   how-many REPEATS.
+
+       steady, one per cycle        a lump
+       steady, several per cycle    that many lumps
+       not steady, but busy         a spread: real movement, no rhythm to it
+       not steady, not busy         no shape. An irregular stream is not a shape with low
+                                    confidence, it is the absence of one, and saying so is the
+                                    answer rather than a failure to produce one.
+
+   STEADY MEANS THE TYPICAL COUNT ACTUALLY RECURS - the share of cycles carrying exactly it. Rent is
+   1 1 1 1 1 1 1 1 1 and scores 100%; groceries is 4 10 1 5 5 6 8 3 6 0 7 ... and scores 24%.
+
+   THE TYPICAL COUNT IS THE COMMONEST ONE, NOT THE MIDDLE ONE. A middle value lands between two
+   integers whenever an even number of cycles was observed, and then "how many cycles carry exactly
+   it" is zero for a stream that is perfectly steady at two different levels. The commonest count is
+   always a count some cycle actually had, which is the only kind of number "exactly it" can be
+   measured against. Ties go to the smaller count, so a stream that is half ones and half twos is
+   described as the quieter of the two rather than by whichever happened to be seen first.
+
+   A SINGLE CYCLE IS NOT A REPEAT. One observed cycle makes every count its own commonest and scores
+   100% by construction - Date showed three movements in one month and claimed three lumps at full
+   confidence. Below minCyclesObserved there is nothing to be steady ABOUT. */
+const commonest = xs => {
+	if(!xs.length)return null;
+	const seen = {};
+	xs.forEach(x => { seen[x] = (seen[x] || 0) + 1; });
+	return Object.keys(seen).map(Number).sort((a, b) => seen[b] - seen[a] || a - b)[0];
+};
+
+export function classifyShape(counts, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	if(!counts.length)return {shape: null, reason: 'no cycles'};
+
+	const placed = counts.reduce((n, x) => n + x, 0);
+	if(!placed)return {shape: null, reason: 'no movements on this account'};
+	if(counts.length < c.minCyclesObserved)
+		return {shape: null, reason: 'only ' + counts.length + ' cycle'
+			+ (counts.length === 1 ? '' : 's') + ' observed'};
+
+	const typical = commonest(counts);
+	const steady = counts.filter(x => x === typical).length / counts.length;
+	const busy = counts.filter(x => x > 0).length / counts.length;
+
+	if(steady >= c.minSteadyShare && typical >= 1)
+		return {shape: typical === 1 ? Shape.lump : Shape.multiLump,
+			typical: typical, steady: steady, busy: busy};
+
+	if(busy >= c.minBusyShare && typical >= c.minSpreadEventsPerCycle)
+		return {shape: Shape.spread, typical: typical, steady: steady, busy: busy};
+
+	return {shape: null, reason: 'the count does not repeat and the stream is not a flow',
+		typical: typical, steady: steady, busy: busy};
+}
+
+/* ---- THE WORKING, FOR AN AUDIT ----------------------------------------------------------------
+   Everything the decision looked at, per allocation. This is a DEBUG surface, not the answer -
+   determineShape below is the answer, and it is deliberately narrow. */
+export function explainShape(legs, partition, cycle, anchor){
 	const yearly = !!cycle && !!YEARLY[cycle.name];
 	return (partition || []).map(alloc => {
 		const mine = (legs || []).filter(l => l && l.accountId === alloc.accountId);
-		const buckets = cycleBuckets(mine, cycle, anchor);
-		const eventsPerCycle = buckets.map(b => b.legs.length);
-		const med = median(eventsPerCycle);
-		//a yearly cycle is not this stage's to shape - the evidence is still gathered, so whatever
-		//eventually handles yearly inherits the counts rather than recomputing them
-		const shape = yearly ? null : classify(med);
+		const buckets = cycle ? cycleBuckets(mine, cycle, anchor) : [];
+		const counts = buckets.map(b => b.legs.length);
+		const verdict = yearly
+			? {shape: null, reason: 'the cycle is still yearly after determination'}
+			: classifyShape(counts);
+		const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
 		return {
 			accountId: alloc.accountId,
-			shape: shape,
-			pattern: shape === Shape.spread ? SPREAD_PATTERN : OPEN_PATTERN,
-			confidence: null,
-			evidence: {
-				cyclesObserved: buckets.length,
-				eventsPerCycle: eventsPerCycle,
-				medianEventsPerCycle: med
-			}
+			shape: verdict.shape,
+			reason: verdict.reason || null,
+			days: lumpy ? lumpDays(buckets, verdict.typical) : [],
+			confidence: verdict.shape ? verdict.steady : null,
+			cyclesObserved: buckets.length,
+			eventsPerCycle: counts,
+			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,
+			steadyShare: verdict.steady === undefined ? null : verdict.steady,
+			busyShare: verdict.busy === undefined ? null : verdict.busy,
+			histogram: dayHistogram(buckets)
 		};
+	});
+}
+
+/* ---- THE ANSWER -------------------------------------------------------------------------------
+   PER ALLOCATION: {accountId, shape, days?, confidence?}. `days` appears only for a lump or a set of
+   lumps - a spread has no day to name, which is what makes it a spread - and `confidence` only
+   where a shape was determined at all. An undetermined field is ABSENT, never a placeholder: a
+   stream with no shape is not a shape with an empty day list.
+
+   THE ANCHOR IS NOT CHOSEN HERE AND SHOULD NOT BE CHOSEN BY A CALLER EITHER. It is the module's one
+   seam, settled once from the portfolio and the as-of date; StreamPredictor.shapeOf() is the entry
+   point that supplies it, and this signature exists so the classifier can be tested in isolation. */
+export function determineShape(legs, partition, cycle, anchor){
+	return explainShape(legs, partition, cycle, anchor).map(e => {
+		const out = {accountId: e.accountId, shape: e.shape};
+		if(e.shape === Shape.lump || e.shape === Shape.multiLump)
+			out.days = e.days.map(d => d.day);
+		if(e.shape)out.confidence = e.confidence;
+		return out;
 	});
 }

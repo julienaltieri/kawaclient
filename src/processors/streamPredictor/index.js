@@ -18,6 +18,9 @@ import {streamLedger, terminalStreams, mapAccounts, isClosedStream} from './acco
    so it is the one case where the ledger has to be asked rather than read. */
 const YEARLY_PERIODS = {yearly: true, biyearly: true};
 import {createDate} from '../../Time';
+import {determineCycle, cycleOf as cycleFrom} from './cycleDetermination';
+import {determineShape, explainShape} from './shapeDetermination';
+import {legsInWindow} from './cycleFit';
 import {reportingConfig} from '../../reportingConfig';
 
 export class StreamPredictor {
@@ -139,6 +142,51 @@ export class StreamPredictor {
 	mapYearlyCohort(){
 		return this.yearlyCohort().map(stream =>
 			({stream: stream, legs: this.legsOf(stream.id)}));
+	}
+
+	/* ---- THE MODULE'S OWN ENTRY POINTS ------------------------------------------------------------
+	   THE SEAM AND THE WINDOW ARE SETTLED HERE, ONCE, AND NO CALLER CHOOSES THEM. Every stage needs
+	   the same analysis anchor and the same slice of history; handing those to a stage as arguments
+	   would let one caller give §3 a different seam from the one §2 used, and the two would disagree
+	   about where a cycle begins while both looking correct. These methods are how a consumer asks,
+	   and the free functions in each stage exist so the arithmetic can be tested in isolation.
+
+	   THE EVIDENCE IS THIS REPORTING YEAR, for §3 exactly as for §2. An arrangement is a thing its
+	   owner changes between years, and a shape read across a change describes neither side of it. */
+	evidenceFor(streamId){
+		return {legs: this.legsOf(streamId), anchor: this.analysisAnchor(), now: this.analysisNow()};
+	}
+
+	cycleOf(streamId, stream){
+		const node = stream || this.terminalStreams().find(s => s.id === streamId);
+		return determineCycle(node, this.evidenceFor(streamId));
+	}
+
+	/* §3 CONSUMES §2's ANSWER, never the declaration directly. A stream that declared yearly and was
+	   read as monthly is shaped monthly, and one still yearly after §2 is not shaped at all. */
+	shapeOf(streamId, stream){
+		const node = stream || this.terminalStreams().find(s => s.id === streamId);
+		const decision = this.cycleOf(streamId, node);
+		const cycle = cycleFrom(decision);
+		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
+		return {
+			cycle: cycle,
+			allocations: determineShape(window, this.partitionOf(streamId), cycle,
+				this.analysisAnchor())
+		};
+	}
+
+	explainShapeOf(streamId, stream){
+		const node = stream || this.terminalStreams().find(s => s.id === streamId);
+		const decision = this.cycleOf(streamId, node);
+		const cycle = cycleFrom(decision);
+		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
+		return {
+			decision: decision,
+			cycle: cycle,
+			allocations: explainShape(window, this.partitionOf(streamId), cycle,
+				this.analysisAnchor())
+		};
 	}
 
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------
