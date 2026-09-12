@@ -196,9 +196,23 @@ finding for a person to look at, not an override.
 }
 ```
 
-**Three keys, two of them optional, and nothing else.** The cycle to use is `inferred || declared` —
-`cycleOf(decision)` does exactly that — so there is no third field to get wrong. An absent `inferred`
-is not an empty one: a reading the rule refused leaves no trace in the answer at all.
+**Three keys, two of them optional, and nothing else.** `inferred` is what the **ledger read**, present
+whenever the detector measured anything at all; `confidence` travels beside it.
+
+**Reporting an inference is not the same as acting on it.** On a declared rhythm the declaration still
+decides and the reading is reported anyway, because *"the ledger agrees"* and *"the ledger was never
+asked"* are different facts. Utilities reads monthly off 18 legs — 96.2% merged, 99.1% split — and that
+corroboration is worth keeping even though monthly was never in doubt; a prediction experiment needs
+to tell a confirmed declaration from an unexamined one. Which of the two is the **answer** is
+`cycleOf(decision)`, and that rule lives in exactly one place:
+
+```
+yearly or biyearly declaration   ->  inferred, when there is one; otherwise declared
+every other declaration          ->  declared, whatever the ledger read
+```
+
+An absent `inferred` is not an empty one: every gate — `atypical`, `stale`, `capped` — and every
+one-sided claim resolves to "nothing measured", so a refused reading leaves no trace at all.
 
 `evidence` is `{legs, anchor, now, config}` and is **required**. Pass the legs you have; an empty array
 is a fact about the stream and falls back to the declaration, while a missing argument is a wiring bug
@@ -212,8 +226,9 @@ a gate refused. That is what the audit page draws and what a prediction experime
 deliberately not part of the answer: a debug surface that rides along inside the contract becomes part
 of the contract the first time someone reads it.
 
-On the captured portfolio, over all 60 open streams carrying transactions: **6 carry an `inferred`**,
-all of them yearly; the other 54 answer from the declaration alone.
+On the captured portfolio, over all 60 open streams carrying transactions: **18 carry an `inferred`**
+— 12 corroborating a declared rhythm at 100% confidence, 6 deciding a yearly stream's cycle — and 42
+carry none, because the detector declined or a gate refused.
 
 **Yearly is the exception, and this stage now answers for it.** A yearly declaration is an envelope —
 an amount per year, silent about timing — so the ledger decides where it has earned it, under the

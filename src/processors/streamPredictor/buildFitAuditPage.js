@@ -194,7 +194,9 @@ const fieldCells = (d, r, k) => {
 	return {
 		declared: f.declared || '—',
 		inferred: has ? f.inferred : '—',
-		inferredCls: has ? 'inf differs' : 'inf none',
+		/* `differs` MEANS DIFFERS. Most inferences corroborate the declaration and must read as
+		   ordinary; highlighting all of them would make the handful that disagree invisible. */
+		inferredCls: !has ? 'inf none' : (f.inferred === f.declared ? 'inf' : 'inf differs'),
 		confidence: has ? Math.round(f.confidence * 100) + '%' : '—',
 		confidenceCls: has ? (f.confidence === 1 ? 'cf full' : 'cf part') : 'cf none'
 	};
@@ -446,7 +448,8 @@ function drawSummaryRow(d, r, k){
 	if(!row)return;
 	var f = decidedFields(d, r, k), has = ("inferred" in f);
 	row.inf.textContent = has ? f.inferred : DASH;
-	row.inf.className = has ? "inf differs" : "inf none";
+	row.inf.className = !has ? "inf none"
+		: (f.inferred === f.declared ? "inf" : "inf differs");
 	row.conf.textContent = has ? Math.round(f.confidence * 100) + "%" : DASH;
 	row.conf.className = has ? (f.confidence === 1 ? "cf full" : "cf part") : "cf none";
 }

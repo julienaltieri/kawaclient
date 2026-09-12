@@ -202,12 +202,19 @@ function confidenceOf(r, k){
    object. The rule for WHEN an inference exists therefore has one copy, and the page cannot show a
    field the module would not have returned.
 
-   The inferred field is present only where the ledger actually decided - a yearly declaration
-   whose reading cleared every gate. The confidence travels with it and never appears alone.
+   The inferred field is present whenever the detector MEASURED something, whether or not that
+   measurement gets to decide. On a declared rhythm the declaration still wins - but the reading is
+   reported, because "the ledger agrees" and "the ledger was never asked" are different facts and a
+   prediction experiment needs to tell them apart. Utilities reads monthly off 18 legs at 96.2% and
+   99.1%; dropping that because the declaration already said monthly throws away the corroboration.
+
+   A REFUSED READING IS STILL ABSENT. measured is false for every gate - atypical, stale, capped -
+   and for a one-sided claim, so those leave no trace here. The confidence travels with the inferred
+   field and never appears alone.
    NO BACKTICK IN HERE: this comment is inside the engine template literal. */
 function decidedFields(d, r, k){
 	var out = {declared: d.declared || null};
-	if(isEnvelope(d.declared) && r.measured){
+	if(r.measured){
 		out.inferred = r.period;
 		out.confidence = confidenceOf(r, k).score;
 	}

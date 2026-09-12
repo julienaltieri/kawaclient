@@ -27,10 +27,18 @@ import { explainCycle, decidedFields, knobsFrom } from './cycleDecision';
      {declared, inferred?, confidence?}
 
    THREE KEYS, TWO OF THEM OPTIONAL, AND NOTHING ELSE. `declared` is a Period (null only for a
-   malformed declaration). `inferred` is present ONLY when the ledger actually determined the answer,
-   so the cycle to use is `inferred || declared` and there is no third field to get wrong.
-   `confidence` travels with `inferred` and appears only beside it - a declaration standing is not a
-   prediction that could be wrong, so scoring it would invite comparing it with one that could.
+   malformed declaration). `inferred` is what the LEDGER read, present whenever the detector measured
+   anything at all, and `confidence` travels beside it.
+
+   REPORTING AN INFERENCE IS NOT THE SAME AS ACTING ON IT. On a declared rhythm the declaration still
+   decides and the inference is reported anyway, because "the ledger agrees" and "the ledger was
+   never asked" are different facts: Utilities reads monthly off 18 legs at 96.2% merged and 99.1%
+   split, and that corroboration is worth having even though monthly was never in doubt. Which of the
+   two is the ANSWER is `cycleOf()` below, and it is the only place that rule lives.
+
+   A REFUSED READING LEAVES NO TRACE. Every gate - atypical, stale, capped - and every one-sided
+   claim resolves to "nothing measured", so `inferred` is simply absent. Cadeaux famille Mdm scores
+   bimonthly at 82.2%, the yearly gate refuses it, and the decision is `{declared: yearly}`.
 
    A REFUSED READING IS ABSENT, NOT REPORTED AS SOMETHING. Cadeaux famille Mdm scores bimonthly at
    82.2%, and bimonthly is longer than a budget rhythm, so the decision is `{declared: yearly}` -
@@ -48,8 +56,9 @@ import { explainCycle, decidedFields, knobsFrom } from './cycleDecision';
                                              fact by the person receiving the money, and transactions
                                              are noisy in ways a declaration is not: a cheque that
                                              lands on the 1st because the 29th was a Sunday, a month
-                                             with a correction in it. `inferred` is absent even when
-                                             the ledger agreed - it did not decide anything.
+                                             with a correction in it. `inferred` is still reported,
+                                             and a disagreement there is a finding for a person to
+                                             look at rather than an override.
 
      yearly or biyearly                      the declaration is an envelope: an amount per year,
                                              silent about timing. The ledger decides where it has
@@ -90,9 +99,8 @@ export function determineCycle(streamNode, evidence){
 	const decision = {declared: declaredCycleOf(stream.period)};
 	const legs = evidence.legs || [];
 
-	//nothing to infer from, and nothing to infer for: the declaration is the answer
+	//nothing to infer from: the declaration is all there is
 	if(!legs.length)return decision;
-	if(!isYearlyDeclaration(stream.period))return decision;
 
 	/* THE PROJECTION LIVES IN cycleDecision.js so the audit page and this function cannot disagree
 	   about when an inference exists. All that happens here is turning period names into Periods. */
@@ -105,7 +113,13 @@ export function determineCycle(streamNode, evidence){
 	return decision;
 }
 
-/* THE CYCLE TO USE, so no caller has to remember which way round the two fields go. */
-export const cycleOf = decision => (decision && (decision.inferred || decision.declared)) || null;
+/* THE CYCLE TO USE, AND THE ONLY PLACE THAT RULE LIVES. A yearly declaration is an envelope and
+   hands the answer to the ledger; every other declaration keeps it. `inferred` being present is
+   therefore not the same as `inferred` being the answer, and no caller should be re-deriving this. */
+export function cycleOf(decision){
+	if(!decision)return null;
+	const yearly = !!(decision.declared && isYearlyDeclaration(decision.declared.name));
+	return (yearly && decision.inferred) || decision.declared || null;
+}
 
 export default determineCycle;

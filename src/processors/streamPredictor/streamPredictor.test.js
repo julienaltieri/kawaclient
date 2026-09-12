@@ -522,37 +522,65 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	});
 
 	/* ---- THE DECISIONER'S CONTRACT ------------------------------------------------------------------
-	   THREE KEYS, TWO OF THEM OPTIONAL. `inferred` is present ONLY where the ledger actually decided,
-	   which is a yearly stream whose reading cleared every gate - so `inferred || declared` is always
-	   the cycle to use and there is no third field to get wrong. A refused reading is ABSENT, not
-	   reported as something: the caller asked what cycle to use, not what was considered. */
+	   THREE KEYS, TWO OF THEM OPTIONAL. `inferred` is present whenever the detector MEASURED something,
+	   whether or not that measurement gets to decide - "the ledger agrees" and "the ledger was never
+	   asked" are different facts and a prediction experiment has to tell them apart. Which of the two
+	   is the ANSWER is cycleOf(), and that rule lives in exactly one place. */
 	test('determineCycle returns {declared, inferred?, confidence?} and nothing else', () => {
 		const all = rows.concat(yearlyRows);
-		let withInference = 0;
+		let measured = 0, agreeing = 0, decidedByLedger = 0;
 
 		all.forEach(r => {
 			const c = determineCycle(r.stream, {legs: r.legs, anchor: anchor, now: now});
 			expect(Object.keys(c).sort()).toEqual(
 				'inferred' in c ? ['confidence', 'declared', 'inferred'] : ['declared']);
 			expect(c.declared).toBe(Period[r.stream.period]);
-			expect(cycleOf(c)).toBe(c.inferred || c.declared);
+
+			const yearly = isYearlyDeclaration(r.stream.period);
+			//a declared rhythm keeps the answer whatever the ledger found
+			expect(cycleOf(c)).toBe(yearly ? (c.inferred || c.declared) : c.declared);
 
 			if(!('inferred' in c)){
 				expect('confidence' in c).toBe(false);
 				return;
 			}
-			withInference++;
-			//only a yearly declaration ever hands the answer to the ledger
-			expect(isYearlyDeclaration(r.stream.period)).toBe(true);
-			expect(c.inferred).not.toBe(c.declared);
+			measured++;
+			if(c.inferred === c.declared)agreeing++;
+			if(cycleOf(c) === c.inferred && c.inferred !== c.declared)decidedByLedger++;
 			expect(c.confidence).toBeGreaterThanOrEqual(0.5);
 			expect(c.confidence).toBeLessThanOrEqual(1);
+			//landing on the declaration is 100% by definition
+			if(c.inferred === c.declared)expect(c.confidence).toBe(1);
 		});
 
-		expect(withInference).toBe(6);
-		console.log('DECISION: ' + all.length + ' streams | ' + withInference
-			+ ' answered by the ledger | ' + (all.length - withInference)
-			+ ' by the declaration alone');
+		expect(measured).toBe(18);
+		expect(agreeing).toBe(12);
+		expect(decidedByLedger).toBe(6);
+		console.log('DECISION: ' + all.length + ' streams | ' + measured
+			+ ' carry an inference (' + agreeing + ' corroborating the declaration, '
+			+ decidedByLedger + ' deciding it) | ' + (all.length - measured)
+			+ ' have none');
+	});
+
+	/* UTILITIES IS THE CASE THAT MOTIVATED REPORTING AN INFERENCE THE DECLARATION OVERRULES. Two
+	   merchants, 18 legs, read monthly by both readings - the declaration was never in doubt, and
+	   throwing the corroboration away because of that is what this asserts against. */
+	test('a declared rhythm still reports what the ledger read', () => {
+		const r = rows.find(x => /^utilities$/i.test(x.stream.name || ''));
+		expect(r).toBeTruthy();
+		const c = determineCycle(r.stream, {legs: r.legs, anchor: anchor, now: now});
+		expect(c.declared).toBe(Period.monthly);
+		expect(c.inferred).toBe(Period.monthly);
+		expect(c.confidence).toBe(1);
+		//reported, not acted on: the answer comes from the declaration either way
+		expect(cycleOf(c)).toBe(c.declared);
+
+		const why = explainCycle(r.stream, r.legs, anchor, now);
+		expect(why.route).toBe('both');
+		console.log('Utilities: declared ' + c.declared.name + ', inferred ' + c.inferred.name
+			+ ' at 100% confidence, route ' + why.route + ' (merged '
+			+ ((1 - why.merged.misfit) * 100).toFixed(1) + '%, split '
+			+ ((1 - why.split.misfit) * 100).toFixed(1) + '%)');
 	});
 
 	/* A BLOCKED READING IS NOT AN INFERENCE. Cadeaux famille Mdm scores bimonthly at 82.2% and the
