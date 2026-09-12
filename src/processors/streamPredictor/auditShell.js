@@ -66,10 +66,14 @@ const section = g => '<section class="group group-' + esc(g.key) + '" data-group
 	+ '<p class="gempty" hidden>nothing matches the filter</p></section>';
 
 /* THE COMPLETE DOCUMENT. `opts` is the whole contract: title, phase, storageKey, metaLine, capturedAt,
-   versionTitle, groups, and three optional slots - `extraCss` for rules only one phase needs, and
+   versionTitle, groups, and five optional slots - `extraCss` for rules only one phase needs,
    `legend` (plain text, escaped) or `legendHtml` (markup, trusted) for a line explaining a phase's
-   own notation. A phase that needs a new control adds it
-   HERE, once, for all four pages. */
+   own notation, `panelHtml` for markup between the header and the stream list, and `extraScript` for
+   a phase's own behaviour. A phase that needs a new control adds it HERE, once, for all four pages.
+
+   `extraScript` IS SUBJECT TO THE NO-BACKSLASH RULE AT THE TOP OF THIS FILE, and more sharply than
+   anything else here: it is interpolated verbatim, so whatever the caller built is what the browser
+   parses. A backslash in that string is a backslash on the page. */
 export function renderAuditPage(opts){
 	const o = opts || {};
 	const groups = (o.groups || []).filter(g => g && g.cards);
@@ -263,6 +267,7 @@ ${o.extraCss || ''}
 		<button id="copy" type="button" title="copy the streams still unticked">copy rejects</button>
 	</div>
 </header>
+${o.panelHtml || ''}
 <main>
 ${groups.map(section).join('')}
 </main>
@@ -375,6 +380,7 @@ ${groups.map(section).join('')}
 	apply();
 })();
 </script>
+${o.extraScript ? '<script>' + o.extraScript + '</script>' : ''}
 </body></html>`;
 }
 

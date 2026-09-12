@@ -81,10 +81,48 @@ const unscorable = (period, buckets) => ({
    non-empty bucket, and the resultant is taken on angles k*theta, which is the standard test for k
    evenly spaced clusters and introduces no parameter of its own: at k = 2 the two opposed phases map
    onto the same angle and lock.  */
-export function fitScore(legs, period, anchor){
-	const cycle = Period[period];
-	const buckets = cycleBuckets(legs || [], cycle, anchor);
+/* ---- FOUR WAYS TO READ THE SAME BUCKETS ------------------------------------------------------------
+   THE RULE IS CHOSEN BY LOOKING AT WHAT IT DOES TO THE COHORT, not argued about in the abstract, so
+   the three alternatives sit next to the original and the audit page hands the reader the switch.
 
+   standard - the three terms exactly as described above.
+   robust   - occupancySpread is the MEDIAN absolute deviation instead of the mean, so one odd cycle
+              in seven stops dragging the whole term down. Earnin Internet monthly: 60.2% -> 74.5%.
+   trim1/2  - drop the 1 or 2 buckets whose count deviates most from the median and rescore what is
+              left, phase included. A stream that kept its rhythm except for one doubled month then
+              reads as the rhythm it kept. Earnin Internet monthly: 60.2 / 71.6 / 81.6.
+
+   THE TRIM ONLY EVER DROPS A BUCKET THAT ACTUALLY DEVIATES, so a candidate whose counts are already
+   flat has nothing to drop and scores identically at every trim - Earnin bimonthly is 79.6% at all
+   three. That is what stops the knob manufacturing a fit out of an even series. Fewer than two
+   survivors is UNSCORABLE, never a number computed from one bucket. */
+export const FIT_VARIANTS = ['standard', 'robust', 'trim1', 'trim2'];
+
+const VARIANT = {
+	standard: {robustSpread: false, trim: 0},
+	robust: {robustSpread: true, trim: 0},
+	trim1: {robustSpread: false, trim: 1},
+	trim2: {robustSpread: false, trim: 2}
+};
+
+//one bucket at a time, the median re-read after each drop so the second drop answers the first
+const trimBuckets = (buckets, n) => {
+	let live = buckets;
+	for(let i = 0; i < n; i++){
+		const med = median(live.map(b => b.legs.length));
+		let idx = -1, worst = 0;
+		live.forEach((b, j) => {
+			//strictly greater: a deviation of 0 is never dropped, and the earliest of equals goes first
+			const d = Math.abs(b.legs.length - med);
+			if(d > worst){ worst = d; idx = j; }
+		});
+		if(idx < 0)return live;
+		live = live.slice(0, idx).concat(live.slice(idx + 1));
+	}
+	return live;
+};
+
+const scoreBuckets = (period, buckets, robustSpread) => {
 	/* THE LEGS THAT COUNT ARE THE BUCKETED ONES. cycleBuckets caps its walk, so a leg older than the
 	   cap has no bucket, no phase and no place in the counts - scoring it would mean scoring a leg
 	   the production walk never sees. */
@@ -96,8 +134,9 @@ export function fitScore(legs, period, anchor){
 	const emptyRate = empties / buckets.length;
 
 	const med = median(counts);
-	const occupancySpread = !med ? 1
-		: clip01(counts.reduce((s, c) => s + Math.abs(c - med), 0) / counts.length / med);
+	const devs = counts.map(c => Math.abs(c - med));
+	const spread = robustSpread ? median(devs) : devs.reduce((s, d) => s + d, 0) / devs.length;
+	const occupancySpread = !med ? 1 : clip01(spread / med);
 
 	//k: the number of lumps a cycle carries, so the harmonic that folds them onto one angle
 	const occupied = counts.filter(n => n > 0);
@@ -126,13 +165,23 @@ export function fitScore(legs, period, anchor){
 		phaseSpread: phaseSpread,
 		misfit: (emptyRate + occupancySpread + phaseSpread) / 3
 	};
+};
+
+/* THE DEFAULT IS THE ORIGINAL. `variant` is the fourth argument and an absent or unknown one means
+   `standard`, so every existing caller - and every number already measured - is untouched. */
+export function fitScore(legs, period, anchor, variant){
+	const spec = VARIANT[variant] || VARIANT.standard;
+	const all = cycleBuckets(legs || [], Period[period], anchor);
+	const live = spec.trim ? trimBuckets(all, spec.trim) : all;
+	if(live.length < 2)return unscorable(period, all.length);
+	return scoreBuckets(period, live, spec.robustSpread);
 }
 
 /* ONE ROW PER CANDIDATE, ALWAYS ALL SEVEN AND ALWAYS IN THE SAME ORDER, because the audit page draws
    the table as a bar chart and a row that dropped its unscorable candidates would silently shift
    every bar after it under the wrong axis label. */
-export function fitTable(legs, anchor){
-	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor));
+export function fitTable(legs, anchor, variant){
+	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor, variant));
 }
 
 /* HOW MUCH WORSE A SHORTER PERIOD MAY SCORE AND STILL WIN. Measured, not chosen: over the 25 streams
@@ -307,11 +356,11 @@ export function merchantGroups(legs){
 
    Every term is combined the same way, so the combined misfit stays exactly the mean of the combined
    terms and the arithmetic on the page still adds up by hand. */
-export function fitTableSplit(legs, anchor){
+export function fitTableSplit(legs, anchor, variant){
 	const groups = merchantGroups(legs).map(g => ({
 		key: g.key,
 		legCount: g.legs.length,
-		table: fitTable(g.legs, anchor)
+		table: fitTable(g.legs, anchor, variant)
 	}));
 
 	const table = CANDIDATE_PERIODS.map((period, i) => {

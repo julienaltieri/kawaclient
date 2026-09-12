@@ -23,7 +23,9 @@ import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THR
 import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
-import {buildFitAuditPage, enrichFits, summarizeFits, WEAK_FIT_CUTOFF} from './buildFitAuditPage';
+import {buildFitAuditPage, enrichFits, summarizeFits, fitData, summarizeAll, DEFAULT_KNOBS,
+	WEAK_FIT_CUTOFF} from './buildFitAuditPage';
+import {FIT_VARIANTS, fitTable, legsInWindow} from './cycleFit';
 import {cycleBuckets} from './shapeDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
@@ -345,6 +347,68 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(u.bestMerged.misfit).toBeLessThan(semi.misfit);
 	});
 
+	/* THE FOUR SCORING VARIANTS, PINNED TO THE ONE STREAM THAT SEPARATES THEM. Earnin Internet's
+	   monthly lattice is 1 1 1 1 2 0 2 - one doubled cycle, one empty one - and each variant reads
+	   that differently. Its bimonthly lattice is 2 2 2 2, which has no outlier to drop, so it must
+	   read the SAME at every trim: that is what proves the trim is not simply inventing a better
+	   score wherever it is pointed. */
+	test('the scoring variants read Earnin Internet 60.2 / 74.5 / 71.6 / 81.6, bimonthly flat at 79.6',
+		() => {
+			const anchor = predictor.analysisAnchor();
+			const row = rows.find(r => /^earnin/i.test(r.stream.name || ''));
+			expect(row).toBeTruthy();
+			const legs = legsInWindow(row.legs, anchor);
+			const at = (v, p) => {
+				const c = fitTable(legs, anchor, v).find(f => f.period === p);
+				return ((1 - c.misfit) * 100).toFixed(1);
+			};
+			expect(FIT_VARIANTS.map(v => at(v, 'monthly')))
+				.toEqual(['60.2', '74.5', '71.6', '81.6']);
+			expect(FIT_VARIANTS.map(v => at(v, 'bimonthly')))
+				.toEqual(['79.6', '79.6', '79.6', '79.6']);
+			//the default argument is still the original scorer, so nothing already measured moved
+			expect(at(undefined, 'monthly')).toBe(at('standard', 'monthly'));
+		});
+
+	/* THE DEFAULT KNOBS ARE A MEASUREMENT AND THE PAGE OPENS ON THEM, so they are pinned here. The
+	   browser and this assertion run THE SAME engine source - buildFitAuditPage evaluates the string
+	   it emits - so a drift between what the reader sees and what this test claims is impossible
+	   rather than merely unlikely. */
+	test('at the default knobs the rule agrees 24/25, via both 7 / split 1 / declared 17', () => {
+		const data = fitData(rows, predictor.analysisAnchor());
+		const s = summarizeAll(data, DEFAULT_KNOBS);
+		expect(s.total).toBe(25);
+		expect(s.agree).toBe(24);
+		expect(s.counts.both).toBe(7);
+		expect(s.counts.split).toBe(1);
+		expect(s.counts.merged).toBe(0);
+		expect(s.counts.higherFit).toBe(0);
+		expect(s.counts.declared).toBe(17);
+		expect(s.counts.declined).toBe(0);
+		expect(s.headline).toBe('agree 24/25 · both 7 · via split 1 · declared 17');
+
+		expect(s.bad.length).toBe(1);
+		const b = s.bad[0];
+		expect(b.name).toBe("Renter's insurance");
+		expect(b.period).toBe('bimonthly');
+		expect(b.declared).toBe('monthly');
+		expect(b.groups).toEqual([6, 2]);
+
+		console.log('DEFAULT KNOBS: ' + s.headline);
+		console.log('the single disagreement is ' + b.name + ' -> ' + b.period + ' (declared '
+			+ b.declared + '), groups ' + b.groups.join('/'));
+
+		/* THE GROUP GATE IS THE ONE SETTING THAT CLEARS THE COHORT. Renter's insurance splits 6/2,
+		   and a 2-leg fragment is not evidence of anything - so requiring every group to carry at
+		   least 4 legs before the split may win sends it back to merged, which is right. */
+		const gated = summarizeAll(data, Object.assign({}, DEFAULT_KNOBS, {dis: 'group'}));
+		expect(gated.agree).toBe(25);
+		expect(gated.counts.both).toBe(7);
+		expect(gated.counts.merged).toBe(1);
+		expect(gated.counts.declared).toBe(17);
+		console.log('SPLIT ONLY IF EVERY GROUP >= 4: ' + gated.headline);
+	});
+
 	test('writes the fit audit page from the real results', () => {
 		const html = buildFitAuditPage(rows, {
 			version: portfolio.version,
@@ -355,11 +419,23 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(html.startsWith('<!doctype html>')).toBe(true);
 
 		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
-		expect(scripts.length).toBeGreaterThan(0);
+		expect(scripts.length).toBe(2);
 		scripts.forEach(block => {
 			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
 			expect(() => new Function(src)).not.toThrow();
+			/* THE TWO CHARACTERS THAT HAVE TAKEN THIS PAGE DOWN. A backslash survives the generator's
+			   template literal as a real control character inside a quoted string; a backtick closes
+			   the literal early. Neither shows up in the markup, so this is the only thing that
+			   catches them. */
+			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
+			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
 		});
+
+		//the page opens on the default knobs, so the number it opens on is the number pinned above
+		expect(html).toContain('agree 24/25 · both 7 · via split 1 · declared 17');
+		//and every knob the reader is promised is actually on the page
+		['thr', 'tol', 'mingroup', 'minlegs'].forEach(id => expect(html).toContain('id="' + id + '"'));
+		['variant', 'pick', 'dis', 'fb'].forEach(n => expect(html).toContain('name="' + n + '"'));
 
 		console.log('CYCLE FIT: ' + summary.total + ' cohort | ' + summary.agree + ' agree | '
 			+ summary.disagree + ' disagree | ' + summary.weak + ' no fit (>' + WEAK_FIT_CUTOFF + ') | '
