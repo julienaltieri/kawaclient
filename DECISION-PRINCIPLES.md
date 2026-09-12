@@ -194,6 +194,73 @@ adjustment, a bad match. Reading it as confirmation launders a coincidence into 
 
 ---
 
+### 30. Report what was measured; omit what was refused
+
+An answer carries what the thing actually concluded. The distinction is **measured against refused**,
+not used against unused, and both halves of that are easy to get backwards.
+
+A reading a rule threw out must leave **no trace** in the answer. Reporting it as a value with a
+reason attached — "quarterly, blocked" — puts the working in the field where the conclusion belongs,
+and a reader takes it as the conclusion. Whatever refused it owns that refusal; by the time the answer
+leaves, the refused reading is simply not there.
+
+A reading that was **taken** and merely could not change the answer must still be reported. "The
+evidence agrees" and "the evidence was never consulted" are different facts, and collapsing them
+throws away the corroboration that makes a later comparison possible. Presence in the answer means
+*this was concluded*, not *this was acted on* — and which of the two available answers wins is a
+separate question with exactly one place to ask it.
+
+The two rules produce an object where an absent field is information: it says nothing was concluded,
+not that nothing was looked at. Whatever was looked at belongs in a **separate call**, because a
+debug surface that rides inside the answer becomes part of the contract the first time someone reads
+it.
+
+> *In practice:* a cycle detector reads a yearly budget stream as bimonthly and a rule refuses it as
+> too slow to be a real arrangement. The answer became `{declared: yearly}` — not "bimonthly, blocked"
+> — and the reading stayed in `explainCycle()` for anyone auditing. The opposite error shipped one
+> round later: a stream declared monthly, read as monthly off eighteen transactions, came back with no
+> inference at all because the declaration was going to win anyway. That is the corroboration deleted,
+> and it is the difference between a declaration nobody has checked and one the ledger confirms.
+
+---
+
+### 31. An agreement rate is not a score unless coverage sits beside it
+
+A rule that can decline has two ways to agree with a known answer: get it right, or never speak. Those
+are indistinguishable in a single percentage, and the quiet one scores better, because declining is
+free and answering is not.
+
+So every agreement figure is reported next to **how many cases it actually answered**, and tuning is
+judged on the pair. A change that lifts agreement while lowering coverage has usually bought the
+number by getting quieter.
+
+> *In practice:* a cycle detector's settings were swept over 1,024 combinations against 25 streams
+> whose answer was already known. 276 of them reached 25/25 — almost all by refusing to measure
+> anything. The setting eventually chosen also reads 25/25, and the reason it is the right one is that
+> it answers 12 of the 25 instead of 7. Every summary on the audit page prints both numbers, and the
+> cohort that has no known answer at all prints only the coverage, because an agreement rate there
+> would be counting the streams the rule declined and calling it a score.
+
+---
+
+### 32. A statistic computed from a small share of its subject is withheld, not reported
+
+An aggregate that skips the parts it cannot use is right to skip them — an unusable part is not
+evidence of a bad fit, it is the absence of evidence. But the result then describes only what it
+managed to include, while carrying the name of the whole thing, and nothing in the number says so.
+
+So a combiner tracks the weight behind its own answer and **refuses below a floor**. The output is the
+same "unusable" it already produces for a part, not a number with a caveat, because a caveat does not
+survive being read at a glance.
+
+> *In practice:* a stream's fit was combined across nine merchant groups, skipping the ones too small
+> to score. At one candidate period only two groups were scorable — two drugstore runs, 4 of the
+> stream's 38 transactions — and the combined result read 99.7% under the stream's own name. The fix
+> was a floor on the share of the subject behind the answer, deliberately just under a quarter so that
+> a genuine four-way split still reports when only one part is scorable.
+
+---
+
 ### 28. Never drop a gate without knowing what it protects
 
 A condition that blocks the case in front of you is not thereby wrong. It was put there against
@@ -283,6 +350,18 @@ elements already use it.
 > existing 6rem picture was already exactly `spacing.xl` — on the scale all along, just written as
 > a literal. Guidance: "no magical numbers, but use design system values even for spacing. to
 > understand when to use what, check the semantic value of other implementations."
+
+**A number chosen by measurement records the measurement, not just the result.** A tuned constant
+whose derivation is not written down is folklore within a month: the next person to ask whether it is
+still right has to redo the whole sweep to find out, so in practice nobody asks. Keep the value beside
+what it was compared against and what happened either side of it.
+
+> *In practice:* a fit threshold sits at 0.75, and the line next to it reads: at 0.85 the rule claims 7
+> and gets 7 right; at 0.75 it claims 12 and gets 12 right; below 0.60 the wrong claims arrive in a
+> block and are all too short. That is re-checkable against a new portfolio without re-deriving
+> anything. "0.75" on its own is not.
+
+---
 
 ### 24. One dimension, one author
 
@@ -414,6 +493,26 @@ change with it?* More than one means the model has already forked sideways.
 
 ---
 
+### 33. What measures must not know what counts as good
+
+Separating the two is what makes either one checkable. A component that reports how well each
+candidate does, with no opinion about which is acceptable, can be verified against arithmetic anyone
+can redo by hand. The moment it also holds the threshold, it is deciding, and the decision is now in
+two places: once where the policy lives, and once inside the thing that was supposed to be neutral.
+
+The test is whether the measuring layer can name the answer. If it can, it has a policy in it. Push
+every threshold, tie-break and exception up to the layer that owns the decision, and let it absorb
+them **completely** — a decider that hands its refusals back down, or out, has only moved the problem.
+
+> *In practice:* a scorer computed how badly each candidate period fitted a stream's transactions, and
+> also carried a `bestFit` that picked the shortest one clearing a threshold. The decision layer had
+> its own copy of that same pick, so the rule existed twice and one copy was already dead. Splitting it
+> three ways — an observer that scores and groups and counts and chooses nothing, a decider that picks
+> and gates and absorbs every refusal, and a thin layer that puts the declaration beside the inference
+> and answers — made each one assertable on its own, and left exactly one place where a threshold lives.
+
+---
+
 ### 23. A test that cannot fail the way production fails proves nothing
 
 The risk is not a missing test. It is a passing one, because it licenses a belief that nothing else will
@@ -430,6 +529,19 @@ go back and check.
 > there as a fixed-width div and in production as an SVG that fills whatever contains it. Widening that
 > container for the caption's sake therefore drew a ring twice its size, in a case the bench could not
 > express. A mock is a claim that the real thing has no behaviour you are not modelling.
+
+**Anything produced as text and consumed as code is tested as code.** Generated markup, a script
+written into a page, a query assembled as a string — the assertions that come naturally are about the
+text, and text assertions pass on output that will not run. Parse or execute the artifact in the test,
+and assert directly on whatever the generator can silently mangle.
+
+> *In practice:* a page generator writes its script inside a template literal, which eats one level of
+> escaping. A backslash meant for the emitted string arrives as a real line break inside a quoted
+> literal, and a backtick in a comment closes the literal early. Either way the page's JavaScript does
+> not parse, nothing on the page works, and every assertion about the markup still passes — the markup
+> is perfectly well-formed. It shipped twice before the test ran `new Function(src)` on each emitted
+> script and asserted the emitted text contains no backslash and no backtick at all. Those two
+> assertions have caught the same class of mistake four more times since.
 
 ---
 
