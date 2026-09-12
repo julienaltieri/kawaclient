@@ -169,10 +169,8 @@ every seven days, once a year — not how often money moves within it. Utilities
 twice a month is a monthly cycle carrying two events, not a semi-monthly one; how many events land
 inside a cycle is what shape determines, not this stage.
 
-**In:** the stream's declared period and the history of that declaration; the transactions belonging
-to the stream on the account it was mapped to.
-
-**Out:** a `Period` (`src/Time.js`), and whether it came from the declaration or from the ledger.
+**In:** the stream's declared period; the transactions belonging to the stream, the analysis anchor,
+and the capture date.
 
 **The declaration always decides for a non-yearly stream.** It is a statement of fact by the person
 receiving the money, and transactions are noisy in ways a declaration is not — a cheque moved off a
@@ -186,13 +184,13 @@ so a future predictor can be tried against either without re-deriving which stre
 available. On a declared rhythm the inference is **reported and never consulted**; a disagreement is a
 finding for a person to look at, not an override.
 
-**Out**, from `determineCycle(stream, evidence?)`:
+**Out**, from `determineCycle(stream, evidence)`:
 
 ```
 {
-  declared:   Period          // always. null only for a malformed declaration.
-  inferred?:  Period          // ONLY where the ledger actually decided.
-  confidence?: 0.5 .. 1       // travels with `inferred`, never alone.
+  declared:    Period        // always. null only for a malformed declaration.
+  inferred?:   Period        // whatever the ledger read, when it read anything.
+  confidence?: 0.5 .. 1      // travels with `inferred`, never alone.
 }
 ```
 
@@ -519,8 +517,10 @@ formal change recorded?
 **Solved when:** every non-yearly stream's cycle matches its declaration exactly — yearly streams are
 excepted, and solved where they are specified — validated by Julien against the captured portfolio.
 
-**Status: solved, and the detector below with it.** The declaration path was validated first; the
-inference path was validated on 2026-09-12 against both cohorts.
+**Status: SOLVED, and the detector below with it.** The declaration path was validated first; the
+inference path was validated on 2026-09-12 against both cohorts, stream by stream, on the audit page.
+The yearly decisions Julien accepted are recorded per stream id in
+`src/tests/fixtures/cycleGroundTruth.json` and a test holds the detector to them.
 
 ---
 
@@ -740,6 +740,8 @@ by accident.
 | May a ledger reading overrule a declaration? | **Only when the ledger says so twice.** Both readings have to clear the bar and name the same period, or disagree in a way the merchant split can justify. One reading alone falls back to the declaration. |
 | May it lengthen a declared cycle? | **No.** A fit may shorten the declaration, never lengthen it. Finding a shorter pattern is a discovery; finding a longer one is the detector failing to see the declared rhythm. |
 | What may a yearly stream be re-read as? | **Weekly, biweekly or monthly, and only while the pattern is still running.** Bimonthly and quarterly are extremely rare and carry too few cycles in one reporting year to be confident about, so a reading at those periods is noise. Silence of more than two complete cycles ends the claim. Settled 2026-09-12. |
+| Where does the ledger reading appear? | **On every stream that has one, decided or not.** `inferred` is present whenever the detector measured something, because "the ledger agrees" and "the ledger was never asked" are different facts. Which of the two is the answer is `cycleOf()`, and that rule lives in exactly one place. Settled 2026-09-12. |
+| How does a caller see the working? | **`explainCycle()`, a separate call.** Both readings, every candidate's score, the merchant groups, the route, the quiet count, what a gate refused. Deliberately not part of the answer: a debug surface that rides along inside a contract becomes part of it the first time someone reads it. |
 | Is confidence a number, a band, or a label? | **A number, in [0.5, 1], and only where something was measured.** 100% when the reading lands on the declaration; otherwise the fit rescaled from the threshold onto a floor of 50%, so sitting on the threshold reads 50%. It is meant to map to how often the answer holds up, hedged against false positives. Settled 2026-09-12. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 

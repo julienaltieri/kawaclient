@@ -1,5 +1,6 @@
 /* ==================================================================================================
-   THE FOUR NUMBERS THE CYCLE DETECTOR IS TUNED ON, and the only four.
+   THE EIGHT SETTINGS THE CYCLE DETECTOR IS TUNED ON, and the only eight. Seven are numbers; the
+   eighth is a list of description patterns.
 
    THEY LIVE HERE BECAUSE THEY WERE CHOSEN BY MEASUREMENT AND CAN BE RE-CHOSEN THE SAME WAY. Every
    one of them was moved across its range on the audit page against 25 streams whose declared period
@@ -12,9 +13,11 @@
    the answer is the code in cycleFit.js and cycleDecision.js. What survives here is the arithmetic,
    not the choice of arithmetic.
 
-   THE AUDIT PAGE STILL MOVES THESE THREE LIVE - threshold, minLegsToClaim, minGroupLegs - because
-   they are the ones a new portfolio could argue with. trimBuckets is fixed because it is part of the
-   score's definition rather than a gate on it.
+   THE AUDIT PAGE STILL MOVES THREE OF THEM LIVE - fitThreshold, minLegsToClaim, minGroupLegs -
+   because those are the ones a new portfolio could argue with. The rest are fixed here: trimBuckets
+   and minSplitLegShare are part of the score's DEFINITION rather than gates on it, and the two
+   yearly settings encode a judgement about what a budget envelope can plausibly be rather than a
+   dial to sweep.
    ================================================================================================== */
 
 export const FIT_CONFIG = {

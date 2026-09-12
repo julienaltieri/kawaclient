@@ -164,10 +164,12 @@ suite('StreamPredictor §1 - account mapping, against the captured portfolio', (
 /* ==================================================================================================
    §2, RUN OVER THE SAME 87 STREAMS.
 
-   THE RULE UNDER TEST IS THAT THERE IS NO INFERENCE. determineCycle takes no transactions, so every
-   stream must come back sourced from its declaration; a 'ledger' answer would mean the stage had
-   grown an opinion nobody specified, and the assertion is written to FAIL on that rather than to
-   tolerate it.
+   THE RULE UNDER TEST IS THAT A DECLARED RHYTHM IS NEVER OVERRULED. The detector now runs on every
+   stream and reports what it read, so the invariant worth asserting is no longer "nothing is
+   inferred" - it is that an inference on a weekly, monthly or quarterly declaration is REPORTED and
+   never becomes the answer. Only a yearly envelope hands the answer to the ledger. The assertion is
+   written to FAIL if the stage ever grows an opinion about a declaration nobody asked it to
+   second-guess.
 
    THE PAGE IS WHERE THE REAL QUESTION LIVES. Whether a declaration is TRUE is not something an
    assertion can decide - it needs the ledger next to it and a person reading both - so the test
@@ -232,21 +234,44 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 		expect(totalBucketed).toBe(totalLegs);
 	});
 
-	test('every one of the 87 terminal streams gets a period name', () => {
+	/* EVERY STREAM RESOLVES TO A REAL Period, which is what `declared: null` would deny. A malformed
+	   or missing declaration is reported rather than thrown, so nothing fails on its own - this is
+	   the assertion that would catch it. */
+	test('every one of the 87 terminal streams declares a period we recognise', () => {
 		expect(streams.length).toBe(87);
-		const nameless = cycles.filter(c => c.cycle.periodName === null).map(c => c.stream.name);
-		if(nameless.length)console.log('STREAMS WITH NO DECLARED PERIOD: ' + nameless.join(', '));
+		const nameless = cycles.filter(c => c.cycle.declared === null).map(c => c.stream.name);
+		if(nameless.length)console.log('STREAMS WITH NO USABLE DECLARED PERIOD: ' + nameless.join(', '));
 		expect(nameless).toEqual([]);
+		//and the Period that comes back is the one the declaration names
+		cycles.forEach(c => expect(c.cycle.declared.name).toBe(c.stream.period));
 	});
 
-	/* THE DECLARATION WINS OUTRIGHT AND THE LEDGER IS NOT CONSULTED. Loosening this to "usually
-	   declaration" would delete the only thing §2 currently promises. */
-	test('every cycle is sourced from the declaration, never from the ledger', () => {
-		//the declaration path carries no inference at all, and the shape says so by having no key
-		const inferred = cycles.filter(c => 'inferred' in c.cycle)
-			.map(c => c.stream.name + ' -> inferred');
-		if(inferred.length)console.log('CYCLES NOT SOURCED FROM THE DECLARATION:\n  ' + inferred.join('\n  '));
-		expect(inferred).toEqual([]);
+	/* THE DECLARATION WINS OUTRIGHT FOR A DECLARED RHYTHM. Loosening this to "usually declaration"
+	   would delete the thing §2 promises about the 43 streams that state a real period. */
+	test('a declared rhythm is never overruled by the ledger, on any of the 87', () => {
+		const now = predictor.analysisNow();
+		const overruled = [], corroborated = [], disagreed = [];
+
+		streams.forEach(st => {
+			if(YEARLY_DECLARATIONS[st.period])return;
+			const legs = predictor.legsOf(st.id);
+			const c = determineCycle(st, {legs: legs, anchor: anchor, now: now});
+			//whatever the ledger read, the answer is the declaration
+			if(cycleOf(c) !== declaredCycleOf(st.period))
+				overruled.push(st.name + ' declared ' + st.period + ' but answered '
+					+ (cycleOf(c) && cycleOf(c).name));
+			if(!('inferred' in c))return;
+			(c.inferred === c.declared ? corroborated : disagreed)
+				.push(st.name + ' -> ' + c.inferred.name);
+		});
+
+		expect(overruled).toEqual([]);
+		//and a disagreement on a declared rhythm is a finding to print, not a failure to assert away
+		if(disagreed.length)
+			console.log('LEDGER DISAGREES WITH A DECLARED RHYTHM (reported, not acted on):\n  '
+				+ disagreed.join('\n  '));
+		console.log('DECLARED RHYTHMS: ' + corroborated.length
+			+ ' corroborated by the ledger, ' + disagreed.length + ' disagreed with, 0 overruled');
 	});
 
 	test('isYearlyDeclaration is true exactly for the streams declaring yearly or biyearly', () => {

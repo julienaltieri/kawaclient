@@ -1,13 +1,14 @@
 /* ==================================================================================================
    DOES THE LEDGER ACTUALLY KEEP THIS RHYTHM? - a cycle detector, read off the movements alone.
 
-   §2 READS THE DECLARATION AND NEVER LOOKS AT A TRANSACTION, and for a declared weekly or monthly
-   stream that is the right answer: the period is a statement of fact by the person receiving the
-   money, and no inference beats being told. But 44 of the 87 terminal streams are YEARLY, and a
-   yearly declaration is not a rhythm at all - it is a budget envelope, silent about when the money
-   moves. For those the spec says the rhythm has to be INFERRED, and this file is that inference.
+   A DECLARED RHYTHM IS STILL DECIDED BY ITS DECLARATION - the period is a statement of fact by the
+   person receiving the money, and no inference beats being told. But 44 of the 87 terminal streams
+   are YEARLY, and a yearly declaration is not a rhythm at all: it is a budget envelope, silent about
+   when the money moves. For those the spec says the rhythm has to be INFERRED, and this file is the
+   measurement that inference is built on. It runs on every stream either way, because a reading that
+   CORROBORATES a declaration is worth having even when it cannot change the answer.
 
-   IT IS VALIDATED ON THE STREAMS WHOSE PERIOD IS ALREADY KNOWN-GOOD before it is pointed at the
+   IT IS VALIDATED ON THE STREAMS WHOSE PERIOD IS ALREADY KNOWN-GOOD before it is trusted on the
    yearly ones. A detector that cannot recover `monthly` on a stream the user declared monthly has
    no business guessing at a stream nobody declared anything useful about.
 

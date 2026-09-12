@@ -43,7 +43,7 @@ const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
 /* THE TABS. The first two are the data cohorts; `summary` is every stream at once, one row each,
    and is the surface a final review is actually done on - the cards are for working out WHY, the
    table is for saying yes. */
-export const TABS = [
+const TABS = [
 	{key: 'validated', label: 'validated (non-yearly)',
 		note: 'declaration checked by hand - agreement is a score'},
 	{key: 'yearly', label: 'yearly',
