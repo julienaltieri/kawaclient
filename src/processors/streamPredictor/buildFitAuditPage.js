@@ -42,7 +42,7 @@ const bars = (table, best, declared) => '<span class="bars">' + (table || []).ma
 	if(c.period === declared)cls.push('decl');
 	return '<span class="' + cls.join(' ') + '" title="' + esc(c.period) + ' ' + f3(c.misfit) + '">'
 		+ (un ? '<i class="none"></i>' : '<i style="height:' + pctH + '%"></i>')
-		+ '<b>' + esc(SHORT[c.period] || c.period.slice(0, 1)) + '</b></span>';
+		+ '</span>';
 }).join('') + '</span>';
 
 const verdict = (best, declared) => {
@@ -54,9 +54,18 @@ const verdict = (best, declared) => {
 		+ (ok ? ' ✓' : ' ✗ declared ' + esc(declared)) + '</span>';
 };
 
-/* THE ROW IS TWO LINES BECAUSE THE COMPARISON IS THE POINT, and they are the two lines the reader
-   is asked to choose between. Everything else about the stream is on the header line above them. */
-const body = r => '<div class="fit">'
+/* THE ROW IS TWO LINES BECAUSE THE COMPARISON IS THE POINT - merged against merchant-split - and
+   they are the two the reader is asked to choose between.
+
+   THE INITIALS SIT ABOVE THE PAIR, ONCE. Repeating them under both rows cost a line of vertical
+   space each and said the same thing twice; the columns are the same seven in the same order on
+   every row of the page, so naming them once at the top of the stream is enough. */
+const scaleHead = declared => '<div class="frow head"><span class="flab"></span><span class="bars">'
+	+ CANDIDATE_PERIODS.map(pd => '<span class="tick' + (pd === declared ? ' decl' : '') + '"'
+		+ ' title="' + esc(pd) + '">' + esc(SHORT[pd]) + '</span>').join('')
+	+ '</span></div>';
+
+const body = r => '<div class="fit">' + scaleHead(r.declared)
 	+ '<div class="frow"><span class="flab">merged</span>' + bars(r.merged, r.bestMerged, r.declared)
 		+ verdict(r.bestMerged, r.declared) + '</div>'
 	+ '<div class="frow"><span class="flab">split</span>' + bars(r.split, r.bestSplit, r.declared)
@@ -140,9 +149,7 @@ export function buildFitAuditPage(rows, meta){
 		capturedAt: m.capturedAt,
 		versionTitle: m.version,
 		extraCss: CSS,
-		legend: 'bar height = misfit, 0 fits exactly · 1 no structure · scale is absolute, not '
-			+ 'rescaled per stream · order ' + CANDIDATE_PERIODS.map(p => SHORT[p]).join(' ')
-			+ ' · outlined bar = declared',
+		legendHtml: LEGEND,
 		metaLine: [
 			{label: 'cohort', value: s.total},
 			{label: 'anchor', value: anchorText},
@@ -161,7 +168,25 @@ export function buildFitAuditPage(rows, meta){
 	});
 }
 
+const LEGEND = '<span class="lg"><i class="sw win"></i>best fit</span>'
+	+ '<span class="lg"><i class="sw decl"></i>declared period</span>'
+	+ '<span class="lg"><i class="sw un"></i>not scorable</span>'
+	+ '<span class="lg">taller bar = worse fit · 0 repeats exactly · 1 no structure</span>'
+	+ '<span class="lg">scale is absolute, never rescaled per stream</span>'
+	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
+
 const CSS = `
+.tick{width:15px;text-align:center;font:500 8.5px/1 var(--mono);color:var(--ink-faint);
+	flex:0 0 15px}
+.tick.decl{color:var(--flag);font-weight:600}
+.frow.head{align-items:center;margin-bottom:1px}
+.frow.head .bars{height:auto}
+.lg{display:inline-flex;align-items:center;gap:4px;margin-right:11px;white-space:nowrap}
+.sw{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--sunk)}
+.sw.win{background:var(--accent)}
+.sw.decl{background:transparent;outline:1px solid var(--flag);outline-offset:1px}
+.sw.un{background:repeating-linear-gradient(45deg,transparent,transparent 2px,
+	var(--rule) 2px,var(--rule) 3px)}
 .fit{display:flex;flex-direction:column;gap:3px;margin-top:2px}
 .frow{display:flex;align-items:flex-end;gap:7px;min-width:0;flex-wrap:wrap}
 .flab{font:500 9.5px/1 var(--mono);color:var(--ink-faint);text-transform:uppercase;
@@ -172,10 +197,8 @@ const CSS = `
 .bar i{display:block;width:100%;background:var(--accent-soft);border-radius:2px 2px 0 0}
 .bar i.none{height:100%;background:repeating-linear-gradient(45deg,transparent,transparent 2px,
 	var(--rule) 2px,var(--rule) 3px)}
-.bar b{position:absolute;bottom:-12px;font:500 8.5px/1 var(--mono);color:var(--ink-faint)}
 .bar.win i{background:var(--accent)}
 .bar.decl{outline:1px solid var(--flag);outline-offset:1px}
-.bar.win b{color:var(--accent);font-weight:600}
 .vd{font:500 11px/1 var(--mono);padding-bottom:2px}
 .vd.ok{color:var(--realtime)}
 .vd.bad{color:var(--flag)}
@@ -183,7 +206,6 @@ const CSS = `
 .grp{font:400 10px/1.3 var(--mono);color:var(--ink-faint);padding-bottom:2px;
 	word-break:break-all;min-width:0}
 .grp.one{opacity:.6}
-.frow + .frow{padding-bottom:10px}
 `;
 
 export default buildFitAuditPage;

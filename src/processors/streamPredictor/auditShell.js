@@ -66,8 +66,9 @@ const section = g => '<section class="group group-' + esc(g.key) + '" data-group
 	+ '<p class="gempty" hidden>nothing matches the filter</p></section>';
 
 /* THE COMPLETE DOCUMENT. `opts` is the whole contract: title, phase, storageKey, metaLine, capturedAt,
-   versionTitle, groups, and two optional slots - `extraCss` for rules only one phase needs, and
-   `legend` for a line explaining a phase's own notation. A phase that needs a new control adds it
+   versionTitle, groups, and three optional slots - `extraCss` for rules only one phase needs, and
+   `legend` (plain text, escaped) or `legendHtml` (markup, trusted) for a line explaining a phase's
+   own notation. A phase that needs a new control adds it
    HERE, once, for all four pages. */
 export function renderAuditPage(opts){
 	const o = opts || {};
@@ -253,7 +254,8 @@ ${o.extraCss || ''}
 <header class="top">
 	<p class="meta"><b>${esc(o.title)} ${esc(o.phase)}</b>${(o.metaLine || []).map(metaItem).join('')}
 		<span class="cap" title="${esc(o.versionTitle)}">${esc(o.capturedAt)}</span></p>
-	${o.legend ? '<p class="legend">' + esc(o.legend) + '</p>' : ''}
+	${o.legendHtml ? '<p class="legend">' + o.legendHtml + '</p>'
+		: (o.legend ? '<p class="legend">' + esc(o.legend) + '</p>' : '')}
 	<div class="bar-row">
 		<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
 		<button id="only" type="button" aria-pressed="false">unvalidated</button>
