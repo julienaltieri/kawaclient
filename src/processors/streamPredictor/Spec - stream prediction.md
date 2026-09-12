@@ -526,11 +526,23 @@ The yearly decisions Julien accepted are recorded per stream id in
 
 ## §3 — Determining what shape the money movements have during a cycle
 
-**The question.** For a stream whose cycle is known and is not yearly, determine what shape the
-money movements have during a cycle.
+**The question.** For a stream whose cycle is not yearly, determine what shape the money movements
+have during a cycle.
 
-**In:** the stream's cycle, its `accountAllocation` partition, and the history of its declared
-amount.
+**Not yearly means the cycle it ENDED UP WITH**, not what it declared. §2 hands back a declared cycle
+and, where the ledger earned it, an inferred one; this stage runs on whichever of the two §2 answered
+with. Six streams in the captured portfolio declare yearly and come out of §2 as weekly or monthly —
+they are shaped here like any other. A stream that is still yearly after §2 is not this stage's to
+shape.
+
+**In:** the cycle §2 answered with, the stream's `accountAllocation` partition, and the history of its
+declared amount.
+
+**The analysis anchor is NOT an input to this stage.** It is the one seam the whole module is cut on,
+it is settled once from the module's own inputs — the portfolio and the as-of date — and every stage
+reads that same one. Handing it to a stage as an argument would let a caller give §3 a different seam
+from the one §2 used, and the two would then disagree about where a cycle begins while both looking
+correct. Same for every other stage: the seam is the module's, not the stage's.
 
 **Out:** for each `accountAllocation`, one of a small set of shapes, the pattern that shape returns, and
 a confidence. A stream split across two accounts can have a different shape on each side, and each
@@ -544,9 +556,12 @@ side's confidence is its own — a partition does not inherit a single verdict.
 | **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
 | **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
 
-**The open questions.** How a lump or a multi-lump determines which day, or days, of the cycle it
-falls on. And which shape a fractional median names: an even number of observed cycles produces
-medians of 1.5 and 2.5, which fall between the counts the three shapes are defined on.
+**An account with no movements has no shape, and that is its own answer.** It is not "yearly, deferred"
+and it is not "the dates were unreadable", and one shared empty answer for all three would make a
+partition with a dormant side indistinguishable from a broken one. Each is named separately.
+
+**The open question.** How a lump or a multi-lump determines which day, or days, of the cycle it falls
+on.
 
 **Solved when:** every stream in the captured portfolio is shaped correctly, validated by Julien.
 
@@ -742,6 +757,7 @@ by accident.
 | What may a yearly stream be re-read as? | **Weekly, biweekly or monthly, and only while the pattern is still running.** Bimonthly and quarterly are extremely rare and carry too few cycles in one reporting year to be confident about, so a reading at those periods is noise. Silence of more than two complete cycles ends the claim. Settled 2026-09-12. |
 | Where does the ledger reading appear? | **On every stream that has one, decided or not.** `inferred` is present whenever the detector measured something, because "the ledger agrees" and "the ledger was never asked" are different facts. Which of the two is the answer is `cycleOf()`, and that rule lives in exactly one place. Settled 2026-09-12. |
 | How does a caller see the working? | **`explainCycle()`, a separate call.** Both readings, every candidate's score, the merchant groups, the route, the quiet count, what a gate refused. Deliberately not part of the answer: a debug surface that rides along inside a contract becomes part of it the first time someone reads it. |
+| Which shape does a fractional count name? | **The range it falls in, never a rounded value.** An even number of observed cycles produces a middle count of 1.5 or 2.5, between the counts the shapes are defined on. Rounding makes 1.5 flip between one shape and another on whether the stream happened to be observed for an even number of cycles, which is not a fact about the stream. |
 | Is confidence a number, a band, or a label? | **A number, in [0.5, 1], and only where something was measured.** 100% when the reading lands on the declaration; otherwise the fit rescaled from the threshold onto a floor of 50%, so sitting on the threshold reads 50%. It is meant to map to how often the answer holds up, hedged against false positives. Settled 2026-09-12. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
