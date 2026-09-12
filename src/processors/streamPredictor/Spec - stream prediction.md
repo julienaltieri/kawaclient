@@ -190,28 +190,35 @@ finding for a person to look at, not an override.
 
 ```
 {
-  declared:  {period, cycle, isYearly, raw}          // what the stream says about itself
-  inferred:  {period, cycle, fit, route,             // what the ledger says, or null with no evidence
-              merged: {period, fit},                 //   period is null when the detector declined;
-              split:  {period, fit},                 //   route always says which reason
-              windowLegs, totalLegs, merchantGroups,
-              blocked}                               //   what a gate refused, kept legible
-  cycle, periodName,                                 // THE ANSWER
-  source:    'declaration' | 'ledger',
-  agreement: 'agree' | 'differ' | 'none'             // the flag an experiment filters on
+  declared:   Period          // always. null only for a malformed declaration.
+  inferred?:  Period          // ONLY where the ledger actually decided.
+  confidence?: 0.5 .. 1       // travels with `inferred`, never alone.
 }
 ```
 
-`evidence` is `{legs, anchor, now, config}`. **Omit it and this is the function it always was** —
-declaration only, `inferred: null` — which is why the §2 audit page, which passes a stream and nothing
-else, is untouched. On the captured portfolio, over all 60 open streams carrying transactions: 6 take
-the cycle from the ledger, 12 have an inference that matches the declaration, 6 have one that differs
-and is overruled, and 42 have none to compare.
+**Three keys, two of them optional, and nothing else.** The cycle to use is `inferred || declared` —
+`cycleOf(decision)` does exactly that — so there is no third field to get wrong. An absent `inferred`
+is not an empty one: a reading the rule refused leaves no trace in the answer at all.
 
-**Yearly is the exception.** It behaves differently from every other cycle — the arithmetic connecting
-a yearly figure to the size of one movement is unlike every other case — and how is worked out
-entirely in Special case: yearly streams. This stage's only job for a yearly stream is to hand it on
-correctly labelled.
+`evidence` is `{legs, anchor, now, config}` and is **required**. Pass the legs you have; an empty array
+is a fact about the stream and falls back to the declaration, while a missing argument is a wiring bug
+and throws. When it was optional a caller who simply forgot it got a confident-looking `{declared}`
+back instead of a failure. To read the declaration alone — which is what the §2 audit page wants —
+call `declaredCycleOf(stream.period)`.
+
+**The working is a separate call.** `explainCycle(stream, legs, anchor, now)` returns both readings,
+every candidate's score, the merchant groups, the route, how long the stream has been quiet, and what
+a gate refused. That is what the audit page draws and what a prediction experiment should read. It is
+deliberately not part of the answer: a debug surface that rides along inside the contract becomes part
+of the contract the first time someone reads it.
+
+On the captured portfolio, over all 60 open streams carrying transactions: **6 carry an `inferred`**,
+all of them yearly; the other 54 answer from the declaration alone.
+
+**Yearly is the exception, and this stage now answers for it.** A yearly declaration is an envelope —
+an amount per year, silent about timing — so the ledger decides where it has earned it, under the
+gates below. What a yearly figure means for the SIZE of one movement is a different question and is
+worked out entirely in Special case: yearly streams.
 
 **A cycle change is read from its most recent chunk.** If a stream's declared cycle changes, the
 determination is made from the most recent coherent chunk of that cycle, not blended across the
@@ -226,9 +233,17 @@ the 35 open yearly streams there is nothing to win with: a yearly declaration st
 year and is silent about rhythm, so the rhythm has to be read off the movements. The detector is built
 and tuned against the cohort that has an answer, then pointed at the cohort that does not.
 
-Implemented in `cycleFit.js` (the score), `cycleDecision.js` (the rule) and `fitConfig.js` (the four
-numbers). Audited by `buildFitAuditPage.js`, which re-runs the rule in the browser from the same
-source string production runs, so the page and the code cannot drift.
+**Three layers, each knowing less than the next.** `cycleFit.js` is an **observer**: it scores every
+candidate against the legs, groups them by merchant and counts how long the stream has been quiet. It
+chooses nothing, knows no threshold and has never heard of a yearly stream. `cycleDecision.js` reads
+those observations — picks, breaks a merged/split disagreement, applies the gates — and **absorbs the
+refusals in full**, so a blocked reading is simply not an inference by the time it leaves.
+`cycleDetermination.js` puts the declaration next to the inference and answers. The settings are in
+`fitConfig.js`.
+
+Audited by `buildFitAuditPage.js`, which re-runs the rule in the browser from the same source string
+production runs, so the page and the code cannot drift. The summary tab renders `decidedFields` — the
+same projection `determineCycle` uses — so the page cannot show a field the module would not return.
 
 **The score: how far off one candidate period is.** Fold the stream's legs onto a lattice of that
 period — the production lattice from `cycleBuckets`, phased on the analysis anchor — and sum three
@@ -259,8 +274,10 @@ reported **unscorable** — `misfit: null` — never as a number computed from o
    group on its own lattice and combines them leg-count-weighted. Utilities is a gas bill and an
    electricity bill: merged it looks semimonthly, split it is two monthly series.
 3. **Each reading answers the SHORTEST candidate over `fitThreshold`** — never the best-scoring one.
-   An integer multiple of the true period scores the same by construction: Rent reads monthly 0.020
-   and quarterly 0.018, and a plain minimum answers "quarterly" for a rent paid on the 2nd.
+   An integer multiple of the true period scores the same by construction: Rent reads **monthly
+   99.4% and quarterly 99.6%**, so a plain best-score would answer "quarterly" for a rent paid on the
+   2nd of every month. The shortest candidate over the bar is the answer; the best one is never
+   consulted.
 4. **Both readings naming the same period is the strong case** — route `both`, two independent
    measurements of one answer.
 5. **On disagreement, split wins only if the split is real.** Splitting either separates two
@@ -270,10 +287,7 @@ reported **unscorable** — `misfit: null` — never as a number computed from o
 6. **A one-sided claim is not a claim.** If only one reading cleared the bar, the rule declines to
    measure and the declaration stands. This is why `declared` is the most common route, and it is the
    intended shape: inference overrides a declaration only when the ledger says so twice.
-7. **The declaration is a ceiling.** A fit may **shorten** the declared cycle, never lengthen it.
-   Finding a shorter pattern than the one declared is a discovery; finding a longer one is the
-   detector failing to see the declared rhythm. Route `capped`.
-8. **A yearly declaration adds two more gates, and nothing else does.** A yearly stream is an
+7. **A yearly declaration adds two more gates, and nothing else does.** A yearly stream is an
    envelope, so every cycle read off it is an inference about how the envelope happened to be spent
    rather than a rhythm anyone set up. Before that inference replaces the declaration it has to be a
    rhythm someone would actually run — no longer than `maxYearlyInferredPeriod`, route `atypical` —
@@ -281,19 +295,40 @@ reported **unscorable** — `misfit: null` — never as a number computed from o
    last movement and the capture date, route `stale`. Both land back on yearly and neither counts as
    a measurement. **`atypical` is tested first**, so a stream failing both is reported by the more
    basic reason.
+8. **The declaration is a ceiling.** A fit may **shorten** the declared cycle, never lengthen it.
+   Finding a shorter pattern than the one declared is a discovery; finding a longer one is the
+   detector failing to see the declared rhythm. Route `capped`. Applied after the yearly gates, which
+   makes it unreachable for a yearly stream — those have already landed back on the declaration — so
+   in practice it only ever fires on a declared rhythm.
 
-**Worked example — Renter's insurance.** One payee billing $10 on the 12th for eight months, which the
-bank writes "Lemonade.Com" six times and "Lemonade Insurance Compan" twice. The keys diverge at the
-ninth character, so they do not group:
+**Worked example — Hobby mdm**, the weakest inference the rule currently makes, and the one that
+exercises the group gate. Declared yearly, 7 legs in the window, four merchants:
 
 ```
-window legs        8          merchant groups  6 / 2
-merged  monthly    99.9%  ->  shortest over 75%: monthly
-split   monthly    79.5%  ->  shortest over 75%: bimonthly     (the 2-leg fragment drags it)
-                              disagreement, and group 2 < minGroupLegs 3
-                              -> split discarded, route via merged
-decision           monthly    declared monthly  ✓
+groups   claudebyanthropic x4 | amazon x1 | cline x1 | deepai x1
+
+period        merged   split
+weekly         11.9%   13.0%
+biweekly       23.0%   64.6%
+semimonthly    35.3%   86.6%   <- split: shortest over 75%
+monthly        76.2%   99.99%  <- merged: shortest over 75%
+bimonthly      86.8%   99.96%       (better, and never consulted - shortest wins)
+quarterly         -    75.7%
+yearly            -       -
+
+merged monthly, split semimonthly -> they disagree
+three groups carry 1 leg, below minGroupLegs 3 -> the split is not evidence
+  -> route `merged`, monthly at 76.2%
+monthly is no longer than maxYearlyInferredPeriod  -> not `atypical`
+0 empty monthly cycles since the last leg          -> not `stale`
+
+determineCycle -> {declared: Period.yearly, inferred: Period.monthly, confidence: 0.524}
+                  50% + (76.2 - 75) / 25 x 50%  =  52%
 ```
+
+The split says semimonthly only because splitting turns a 4-leg subscription into one clean series and
+three single legs; that is fragmentation, not two interleaved rhythms, and the gate is what tells them
+apart.
 
 #### The answer, and how it was reached
 
@@ -353,10 +388,11 @@ Business Expenses     monthly   fit 78.6%   57%
 Hobby mdm             monthly   fit 76.2%   52%
 ```
 
-#### The seven numbers
+#### The eight settings
 
 They live in `fitConfig.js`, never inline in the scorer, because each was chosen by sweeping it across
-its range on the audit page and reading what the validated cohort did. The audit page still moves the
+its range on the audit page and reading what the validated cohort did. Seven are numbers; the eighth
+is a list of patterns. The audit page still moves the
 threshold and the two leg gates live; `trimBuckets` and `minSplitLegShare` are part of the definition
 of the score rather than gates on it.
 

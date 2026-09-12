@@ -1,5 +1,5 @@
 import { Period } from '../../Time';
-import { explainCycle } from './cycleDecision';
+import { explainCycle, decidedFields, knobsFrom } from './cycleDecision';
 
 /* ==================================================================================================
    THE DECISIONER. What cycle does this stream run on?
@@ -94,11 +94,14 @@ export function determineCycle(streamNode, evidence){
 	if(!legs.length)return decision;
 	if(!isYearlyDeclaration(stream.period))return decision;
 
+	/* THE PROJECTION LIVES IN cycleDecision.js so the audit page and this function cannot disagree
+	   about when an inference exists. All that happens here is turning period names into Periods. */
 	const full = explainCycle(stream, legs, evidence.anchor, evidence.now, evidence.config);
-	if(!full.measured)return decision;
+	const fields = decidedFields(full.evidence, full, knobsFrom(evidence.config));
+	if(!('inferred' in fields))return decision;
 
-	decision.inferred = declaredCycleOf(full.period);
-	decision.confidence = full.confidence.score;
+	decision.inferred = declaredCycleOf(fields.inferred);
+	decision.confidence = fields.confidence;
 	return decision;
 }
 

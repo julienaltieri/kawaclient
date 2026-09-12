@@ -197,6 +197,23 @@ function confidenceOf(r, k){
 	return {score: score, text: (score * 100).toFixed(0) + "%", cls: "part"};
 }
 
+/* THE DECISIONER'S THREE FIELDS, PROJECTED FROM ONE RESOLUTION. cycleDetermination.js turns these
+   names into Period instances and returns exactly this object; the audit page renders exactly this
+   object. The rule for WHEN an inference exists therefore has one copy, and the page cannot show a
+   field the module would not have returned.
+
+   The inferred field is present only where the ledger actually decided - a yearly declaration
+   whose reading cleared every gate. The confidence travels with it and never appears alone.
+   NO BACKTICK IN HERE: this comment is inside the engine template literal. */
+function decidedFields(d, r, k){
+	var out = {declared: d.declared || null};
+	if(isEnvelope(d.declared) && r.measured){
+		out.inferred = r.period;
+		out.confidence = confidenceOf(r, k).score;
+	}
+	return out;
+}
+
 function verdictOf(p, declared){
 	if(!p)return {cls: "none", text: "no pick"};
 	if(isEnvelope(declared))return {cls: "", text: p.period + " " + pct(p.misfit)};
@@ -232,7 +249,7 @@ function decisionOf(r, declared){
 // eslint-disable-next-line no-new-func
 const engine = new Function(DECISION_ENGINE + [
 	'return {resolveOne: resolveOne, summarizeAll: summarizeAll, verdictOf: verdictOf,',
-	'decisionOf: decisionOf, confidenceOf: confidenceOf, pct: pct,',
+	'decisionOf: decisionOf, confidenceOf: confidenceOf, decidedFields: decidedFields, pct: pct,',
 	'ROUTES: ROUTES, ROUTE_LABEL: ROUTE_LABEL};'].join(' '))();
 
 export const resolveOne = engine.resolveOne;
@@ -240,13 +257,14 @@ export const summarizeAll = engine.summarizeAll;
 export const verdictOf = engine.verdictOf;
 export const decisionOf = engine.decisionOf;
 export const confidenceOf = engine.confidenceOf;
+export const decidedFields = engine.decidedFields;
 export const pct = engine.pct;
 export const ROUTES = engine.ROUTES;
 export const ROUTE_LABEL = engine.ROUTE_LABEL;
 
 /* THE KNOBS THE ENGINE READS, filled from the configured numbers. The audit page hands the same
    three in from its controls, which is why they are an object rather than three arguments. */
-const knobsFrom = cfg => {
+export const knobsFrom = cfg => {
 	const c = Object.assign({}, FIT_CONFIG, cfg || {});
 	return {
 		thr: c.fitThreshold,

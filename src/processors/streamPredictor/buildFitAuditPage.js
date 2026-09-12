@@ -1,10 +1,11 @@
 /* ==================================================================================================
    THE CYCLE-FIT AUDIT PAGE — a side quest off §2, and the missing piece of the yearly case.
 
-   determineCycle reads the declaration and never looks at a transaction, which is right for a
-   non-yearly stream and useless for a yearly one: the spec says a yearly stream's rhythm must be
-   INFERRED. This page shows what the inference says, on two cohorts that are read in completely
-   different ways and therefore sit behind a tab rather than in one list:
+   THE DECLARATION DECIDES FOR A DECLARED RHYTHM and the ledger decides for a yearly envelope, which
+   is right and is also exactly why the second half needs auditing: a yearly declaration states an
+   amount per year and says nothing about timing, so its cycle is inferred and nobody typed it in.
+   This page shows what that inference says, on two cohorts read in completely different ways and
+   therefore behind a tab rather than in one list:
 
    VALIDATED (25) - open, non-yearly, carrying transactions. The declaration on these has been
    checked by hand, so agreement with it is a SCORE: the rule was tuned until every claim it makes
@@ -34,7 +35,7 @@ import {renderAuditPage, esc} from './auditShell';
 import {CANDIDATE_PERIODS} from './cycleFit';
 import {FIT_CONFIG} from './fitConfig';
 import {DECISION_ENGINE, DEFAULT_KNOBS, fitEvidence, resolveOne, summarizeAll, verdictOf,
-	decisionOf, confidenceOf, pct, ROUTES, ROUTE_LABEL} from './cycleDecision';
+	decisionOf, decidedFields, pct, ROUTES, ROUTE_LABEL} from './cycleDecision';
 
 const SHORT = {weekly: 'w', biweekly: 'b', semimonthly: 's', monthly: 'M',
 	bimonthly: 'B', quarterly: 'q', yearly: 'y'};
@@ -51,13 +52,9 @@ export const TABS = [
 		note: 'one row per stream. tick what you accept; the tick is the same one as on the card'}
 ];
 
-/* THE TWO COHORTS, and the tab is the only thing that tells them apart on the page. */
-export const COHORTS = [
-	{key: 'validated', label: 'validated (non-yearly)',
-		note: 'declaration checked by hand - agreement is a score'},
-	{key: 'yearly', label: 'yearly',
-		note: 'declaration states an amount, not a rhythm - agreement is not a score'}
-];
+/* THE TWO DATA COHORTS. `summary` is a view of both, not a third cohort, so it is not in this list -
+   nothing is scored or tagged with it. Derived from TABS so the two cannot drift. */
+export const COHORTS = TABS.filter(t => t.key !== 'summary');
 
 /* ---- THE DATA THE BROWSER RE-RESOLVES --------------------------------------------------------------
    EVERY NUMBER COMES FROM RUNNING THE REAL SCORER over the real legs, in node, once. The page holds
@@ -179,32 +176,38 @@ const section = (key, title, list) =>
 
    THE CELLS THE KNOBS MOVE ARE THE ONLY ONES REDRAWN. `declared` is a fact and never changes; the
    inferred period and the confidence are recomputed, like the bars on a card. */
-const inferCell = (d, r) => {
-	const conf = confidenceOf(r, DEFAULT_KNOBS);
-	if(r.measured){
-		const differs = r.period !== d.declared;
-		return {cls: differs ? 'inf differs' : 'inf', text: r.period,
-			conf: conf.text, confCls: 'cf ' + conf.cls};
-	}
-	/* NO INFERENCE, SAID FIRST. The detector's reading is the REASON there is none, not the answer:
-	   a refused reading is absent from the decision, so this column has to lead with the absence or
-	   it reads as an output. What was refused stays visible after it, because hiding it would make
-	   the two gates invisible on the one surface where the whole portfolio is reviewed at once. */
-	return {cls: 'inf none',
-		text: r.blocked
-			? 'none \u00b7 detector said ' + r.blocked + ', ' + ROUTE_LABEL[r.route]
-			: 'none \u00b7 ' + ROUTE_LABEL[r.route],
-		conf: conf.text, confCls: 'cf ' + conf.cls};
+/* ---- THE SUMMARY ROW IS THE DECISIONER'S RETURN OBJECT, FIELD FOR FIELD ---------------------------
+   THREE COLUMNS BECAUSE THE ANSWER HAS THREE FIELDS. determineCycle returns {declared, inferred?,
+   confidence?} and this table renders that and nothing else: an absent field is an em dash, never a
+   substitute value and never an explanation dressed up as one.
+
+   WHY A READING WAS REFUSED IS NOT ON THIS TABLE, and that is the point of it. A cell reading
+   "bimonthly, longer than a budget rhythm" was showing the detector's working in the column where
+   the module's answer belongs, and it read as an output. The working is on the stream's own card,
+   one tab away, where the bars are.
+
+   THE PROJECTION IS cycleDecision's, NOT A SECOND OPINION. decidedFields is the same function
+   cycleDetermination.js calls, so a field shown here is a field the module would have returned. */
+const fieldCells = (d, r, k) => {
+	const f = decidedFields(d, r, k);
+	const has = 'inferred' in f;
+	return {
+		declared: f.declared || '—',
+		inferred: has ? f.inferred : '—',
+		inferredCls: has ? 'inf differs' : 'inf none',
+		confidence: has ? Math.round(f.confidence * 100) + '%' : '—',
+		confidenceCls: has ? (f.confidence === 1 ? 'cf full' : 'cf part') : 'cf none'
+	};
 };
 
 const summaryRow = r => {
-	const d = r.data, c = inferCell(d, r.res);
+	const d = r.data, c = fieldCells(d, r.res, DEFAULT_KNOBS);
 	return '<tr data-srow="' + esc(d.id) + '" data-search="'
 		+ esc((d.name + ' ' + d.id + ' ' + d.declared).toLowerCase()) + '">'
 		+ '<td class="nm">' + esc(d.name) + '</td>'
-		+ '<td class="dcl">' + esc(d.declared || '\u2014') + '</td>'
-		+ '<td class="' + c.cls + '" data-inf="1">' + esc(c.text) + '</td>'
-		+ '<td class="' + c.confCls + '" data-conf="1">' + esc(c.conf) + '</td>'
+		+ '<td class="dcl">' + esc(c.declared) + '</td>'
+		+ '<td class="' + c.inferredCls + '" data-inf="1">' + esc(c.inferred) + '</td>'
+		+ '<td class="' + c.confidenceCls + '" data-conf="1">' + esc(c.confidence) + '</td>'
 		+ '<td class="ck"><input type="checkbox" class="sbox" data-sid="' + esc(d.id) + '"'
 			+ ' aria-label="accept ' + esc(d.name) + '"></td>'
 		+ '</tr>';
@@ -217,8 +220,10 @@ const summarySection = resolved => '<section class="summary" id="summary">'
 	/* MOST CONFIDENT FIRST, and everything the detector declined to measure last. A final review
 	   reads down from the answers worth checking to the ones there is nothing to check. */
 	+ resolved.slice().sort((a, b) => {
-		const ca = confidenceOf(a.res, DEFAULT_KNOBS).score;
-		const cb = confidenceOf(b.res, DEFAULT_KNOBS).score;
+		const fa = decidedFields(a.data, a.res, DEFAULT_KNOBS);
+		const fb = decidedFields(b.data, b.res, DEFAULT_KNOBS);
+		const ca = 'confidence' in fa ? fa.confidence : null;
+		const cb = 'confidence' in fb ? fb.confidence : null;
 		if(ca === null && cb !== null)return 1;
 		if(cb === null && ca !== null)return -1;
 		if(ca !== cb)return cb - ca;
@@ -439,20 +444,11 @@ function cardBox(id){ return document.querySelector(".okbox[data-sid='" + id + "
 function drawSummaryRow(d, r, k){
 	var row = srows[d.id];
 	if(!row)return;
-	var conf = confidenceOf(r, k), text, cls;
-	if(r.measured){
-		text = r.period;
-		cls = (r.period === d.declared) ? "inf" : "inf differs";
-	}else{
-		text = r.blocked
-			? "none " + DOT + " detector said " + r.blocked + ", " + ROUTE_LABEL[r.route]
-			: "none " + DOT + " " + ROUTE_LABEL[r.route];
-		cls = "inf none";
-	}
-	row.inf.textContent = text;
-	row.inf.className = cls;
-	row.conf.textContent = conf.text;
-	row.conf.className = "cf " + conf.cls;
+	var f = decidedFields(d, r, k), has = ("inferred" in f);
+	row.inf.textContent = has ? f.inferred : DASH;
+	row.inf.className = has ? "inf differs" : "inf none";
+	row.conf.textContent = has ? Math.round(f.confidence * 100) + "%" : DASH;
+	row.conf.className = has ? (f.confidence === 1 ? "cf full" : "cf part") : "cf none";
 }
 
 function syncSummaryBoxes(){
@@ -588,7 +584,10 @@ const LEGEND = '<span class="lg">the cohort tab and the three numbers below resc
 	+ '<span class="lg">route both = merged and split agreed · declared = the fallback, not a measurement</span>'
 	+ '<span class="lg">a yearly declaration states an amount, not a rhythm, so nothing on that tab is ticked against it</span>'
 	+ '<span class="lg">capped = a fit was found, but longer than declared, so the declaration won</span>'
-	+ '<span class="lg">summary tab: the tick is the same tick as on the card</span>'
+	+ '<span class="lg">summary tab: exactly what determineCycle returns - declared, inferred, confidence</span>'
+	+ '<span class="lg">an em dash means the field is ABSENT from the answer, not empty</span>'
+	+ '<span class="lg">why a reading was refused is on the stream card, not in the answer</span>'
+	+ '<span class="lg">the tick is the same tick as on the card</span>'
 	+ '<span class="lg">confidence: 100% when the reading lands on the declaration</span>'
 	+ '<span class="lg">otherwise 50% + (fit - threshold) / (1 - threshold) x 50%, so the threshold reads 50%</span>'
 	+ '<span class="lg">' + CANDIDATE_PERIODS.map(p => SHORT[p] + ' ' + p).join(' · ') + '</span>';
