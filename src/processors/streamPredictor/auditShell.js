@@ -66,7 +66,9 @@ const section = g => '<section class="group group-' + esc(g.key) + '" data-group
 	+ '<p class="gempty" hidden>nothing matches the filter</p></section>';
 
 /* THE COMPLETE DOCUMENT. `opts` is the whole contract: title, phase, storageKey, metaLine, capturedAt,
-   versionTitle, groups. A phase that needs a new control adds it HERE, once, for all four pages. */
+   versionTitle, groups, and two optional slots - `extraCss` for rules only one phase needs, and
+   `legend` for a line explaining a phase's own notation. A phase that needs a new control adds it
+   HERE, once, for all four pages. */
 export function renderAuditPage(opts){
 	const o = opts || {};
 	const groups = (o.groups || []).filter(g => g && g.cards);
@@ -125,6 +127,7 @@ header.top{position:sticky;top:0;z-index:10;background:var(--surface);
 .meta .num{color:var(--ink-soft);font-weight:500}
 .meta .num.f{color:var(--flag)}
 .meta .dim{color:var(--ink-faint);opacity:.75}
+.legend{margin:4px 0 0;font:400 10px/1.4 var(--mono);color:var(--ink-faint)}
 .meta .cap{float:right;color:var(--ink-faint);font-family:var(--mono);font-size:10.5px;
 	margin-left:8px;cursor:help}
 .bar-row{display:flex;gap:6px;align-items:stretch;margin-top:7px}
@@ -244,11 +247,13 @@ table.part{border-collapse:collapse;width:100%;min-width:430px}
 	main{padding:12px 10px 40px}
 	header.top{padding:9px 10px 10px}
 }
+${o.extraCss || ''}
 </style>
 </head><body>
 <header class="top">
 	<p class="meta"><b>${esc(o.title)} ${esc(o.phase)}</b>${(o.metaLine || []).map(metaItem).join('')}
 		<span class="cap" title="${esc(o.versionTitle)}">${esc(o.capturedAt)}</span></p>
+	${o.legend ? '<p class="legend">' + esc(o.legend) + '</p>' : ''}
 	<div class="bar-row">
 		<input id="q" type="search" placeholder="filter by stream name, account name, id" autocomplete="off">
 		<button id="only" type="button" aria-pressed="false">unvalidated</button>

@@ -23,11 +23,13 @@ import {buildAuditPage, enrich, summarize, DIVERGENCE_THRESHOLD_POINTS, TAIL_THR
 import {buildCycleAuditPage, enrichCycles, summarizeCycles, EMPTY_CYCLE_THRESHOLD}
 	from './buildCycleAuditPage';
 import {determineCycle} from './cycleDetermination';
+import {buildFitAuditPage, enrichFits, summarizeFits, WEAK_FIT_CUTOFF} from './buildFitAuditPage';
 import {cycleBuckets} from './shapeDetermination';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
+const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
 
 //`describe.skip` rather than a failing require, so the suite passes on a machine with no capture
@@ -285,5 +287,85 @@ suite('StreamPredictor §2 - cycle determination, against the captured portfolio
 			+ summary.totalLegs + ' legs | ' + summary.fromLedger + ' sourced from the ledger | '
 			+ summary.unknownCycle + ' with an unrecognised period');
 		console.log('CYCLE AUDIT PAGE: ' + OUT_CYCLE + ' (' + fs.statSync(OUT_CYCLE).size + ' bytes)');
+	});
+});
+
+/* ==================================================================================================
+   THE CYCLE-FIT DETECTOR, MEASURED BEFORE IT IS BELIEVED.
+
+   The cohort is the 25 streams that are open, non-yearly and carry transactions: their declared
+   period has been validated by hand, so it is the only ground truth this detector will ever get.
+   The 44 yearly streams it is ultimately FOR have none, which is exactly why the number below has
+   to be taken here first.
+
+   THE AGREEMENT RATE IS REPORTED, NOT ASSERTED. Locking a threshold in would turn a measurement
+   into a rule and hide the next regression behind a passing test; the console line is the result,
+   and a human reads it. What IS asserted is that the scorer stays in range and that Utilities -
+   the case the whole design turns on - resolves to monthly rather than semimonthly.
+   ================================================================================================== */
+suite('StreamPredictor cycle fit - the detector, against known-good declarations', () => {
+	let portfolio, predictor, rows, list, summary;
+
+	beforeAll(() => {
+		// eslint-disable-next-line global-require
+		const {StreamPredictor} = require('./index');
+		portfolio = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+		predictor = new StreamPredictor(portfolio);
+		rows = predictor.mapFitCohort();
+		list = enrichFits(rows, predictor.analysisAnchor());
+		summary = summarizeFits(list);
+	});
+
+	test('the cohort is the 25 open, non-yearly streams that carry transactions', () => {
+		expect(predictor.terminalStreams().length).toBe(87);
+		expect(predictor.reviewable().length).toBe(64);
+		expect(rows.length).toBe(25);
+		const byPeriod = {};
+		rows.forEach(r => { byPeriod[r.stream.period] = (byPeriod[r.stream.period] || 0) + 1; });
+		expect(byPeriod).toEqual({monthly: 23, semimonthly: 1, weekly: 1});
+	});
+
+	test('every misfit is null or inside [0,1] - no NaN, nothing out of range', () => {
+		list.forEach(r => [...r.merged, ...r.split].forEach(c => {
+			if(c.misfit === null || c.misfit === undefined)return;
+			expect(Number.isFinite(c.misfit)).toBe(true);
+			expect(c.misfit).toBeGreaterThanOrEqual(0);
+			expect(c.misfit).toBeLessThanOrEqual(1);
+		}));
+	});
+
+	/* THE CASE THE DESIGN TURNS ON. Utilities' 24 legs all land on days 1-6 of the month, so folding
+	   on semimonthly leaves every other bucket empty - two lumps early in one cycle, not one lump per
+	   half-cycle. A scorer that rewards a single tight peak picks semimonthly and is wrong. */
+	test('Utilities resolves to monthly, not semimonthly', () => {
+		const u = list.find(r => /^utilities$/i.test(r.name || ''));
+		expect(u).toBeTruthy();
+		expect(u.bestMerged.period).toBe('monthly');
+		const semi = u.merged.find(c => c.period === 'semimonthly');
+		expect(u.bestMerged.misfit).toBeLessThan(semi.misfit);
+	});
+
+	test('writes the fit audit page from the real results', () => {
+		const html = buildFitAuditPage(rows, {
+			version: portfolio.version,
+			capturedAt: portfolio.capturedAt,
+			anchor: predictor.analysisAnchor()
+		});
+		fs.writeFileSync(OUT_FIT, html, 'utf8');
+		expect(html.startsWith('<!doctype html>')).toBe(true);
+
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBeGreaterThan(0);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+		});
+
+		console.log('CYCLE FIT: ' + summary.total + ' cohort | ' + summary.agree + ' agree | '
+			+ summary.disagree + ' disagree | ' + summary.weak + ' no fit (>' + WEAK_FIT_CUTOFF + ') | '
+			+ 'AGREEMENT vs declaration: merged ' + summary.agreeMerged + '/' + summary.total
+			+ ', split ' + summary.agreeSplit + '/' + summary.total
+			+ ' | merged and split differ on ' + summary.splitDiffers);
+		console.log('FIT PAGE: ' + OUT_FIT + ' (' + fs.statSync(OUT_FIT).size + ' bytes)');
 	});
 });

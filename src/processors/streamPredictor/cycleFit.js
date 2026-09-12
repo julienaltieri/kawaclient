@@ -1,0 +1,224 @@
+/* ==================================================================================================
+   DOES THE LEDGER ACTUALLY KEEP THIS RHYTHM? - a cycle detector, read off the movements alone.
+
+   §2 READS THE DECLARATION AND NEVER LOOKS AT A TRANSACTION, and for a declared weekly or monthly
+   stream that is the right answer: the period is a statement of fact by the person receiving the
+   money, and no inference beats being told. But 44 of the 87 terminal streams are YEARLY, and a
+   yearly declaration is not a rhythm at all - it is a budget envelope, silent about when the money
+   moves. For those the spec says the rhythm has to be INFERRED, and this file is that inference.
+
+   IT IS VALIDATED ON THE STREAMS WHOSE PERIOD IS ALREADY KNOWN-GOOD before it is pointed at the
+   yearly ones. A detector that cannot recover `monthly` on a stream the user declared monthly has
+   no business guessing at a stream nobody declared anything useful about.
+
+   THE SCORE IS ABSOLUTE AND IS NEVER NORMALISED - not per stream, not per row, not per anything.
+   The bar the reader sees is the score itself, so a stream that fits nothing shows seven tall bars
+   and reads, at a glance, as "nothing here fits" next to a stream whose monthly bar is on the floor.
+   Rescaling each row to its own best would make those two streams look identical.
+
+   EVERY TERM IS ALREADY BOUNDED TO [0,1], so the three are summed and divided by three. There is no
+   weighting constant, no tuning knob and no threshold inside the score, because every number on the
+   audit page has to be traceable by hand to the legs that produced it.
+
+   THE BUCKETS COME FROM cycleBuckets(), THE PRODUCTION WALK. A detector that cut its own cycles with
+   its own calendar arithmetic would be scoring its own lattice rather than the one §3 and §4 use.
+   ================================================================================================== */
+
+import {Period} from '../../Time';
+import {cycleBuckets} from './shapeDetermination';
+import {getMerchantKey, merchantKeysMatch} from '../../transactionMatching';
+
+/* THE PERIODS A STREAM COULD PLAUSIBLY BE ON, in ascending length, which is also the order every bar
+   chart on the audit page is drawn in. `daily` is not here: nothing in this portfolio is declared
+   daily and a daily lattice over a decade is thousands of buckets of which nearly all are empty, so
+   it would win nothing and cost the walk. `biyearly` is not here for the opposite reason - the
+   capture holds at most a few years, which is not enough buckets to score it at all. */
+export const CANDIDATE_PERIODS = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'bimonthly',
+	'quarterly', 'yearly'];
+
+const median = xs => {
+	if(!xs || !xs.length)return null;
+	const a = xs.slice().sort((x, y) => x - y), m = Math.floor(a.length / 2);
+	return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
+const clip01 = n => (n < 0 ? 0 : n > 1 ? 1 : n);
+
+/* AN UNSCORABLE CANDIDATE IS REPORTED AS UNSCORABLE, NEVER AS A SCORE. One bucket cannot show a
+   rhythm and one leg cannot show a phase, so a number computed from them would be a fabrication
+   wearing the same clothes as a measurement. `misfit: null` is the mark, and the page draws it as an
+   empty slot rather than as a bar. */
+const unscorable = (period, buckets) => ({
+	period: period,
+	buckets: buckets,
+	empties: 0,
+	emptyRate: null,
+	occupancySpread: null,
+	phaseSpread: null,
+	misfit: null
+});
+
+/* ---- HOW FAR OFF ONE CANDIDATE PERIOD IS ----------------------------------------------------------
+   Three terms, each measuring a different way a period can be wrong, each in [0,1]:
+
+   emptyRate       - the period is TOO SHORT. Fold a monthly stream onto a weekly lattice and three
+                     weeks in four are empty. empties / buckets.
+
+   occupancySpread - the period is UNEVEN. Mean absolute deviation of the per-bucket counts from
+                     their median, divided by that median, clipped at 1. A median of 0 means more
+                     than half the buckets are empty and the term is 1 outright.
+
+   phaseSpread     - the period is TOO LONG, or is not a rhythm at all. Every leg's position INSIDE
+                     its bucket is an angle on a circle; if the period is right, the legs pile up at
+                     one angle and the mean resultant vector is long. 1 - R, so 0 is a perfect phase
+                     lock and 1 is uniform scatter. This is the term that separates monthly from
+                     quarterly: fold a monthly stream onto quarters and no bucket is empty and the
+                     counts are even, but the three payments sit at three different phases.
+
+   K CLUSTERS, VIA THE K-TH HARMONIC. A stream that pays on the 1st and the 15th of every month is
+   MONTHLY with two lumps, and the first harmonic reads those two opposed angles as perfect scatter -
+   R near 0 - which would punish the very shape §3 exists to describe. k is the median legs per
+   non-empty bucket, and the resultant is taken on angles k*theta, which is the standard test for k
+   evenly spaced clusters and introduces no parameter of its own: at k = 2 the two opposed phases map
+   onto the same angle and lock.  */
+export function fitScore(legs, period, anchor){
+	const cycle = Period[period];
+	const buckets = cycleBuckets(legs || [], cycle, anchor);
+
+	/* THE LEGS THAT COUNT ARE THE BUCKETED ONES. cycleBuckets caps its walk, so a leg older than the
+	   cap has no bucket, no phase and no place in the counts - scoring it would mean scoring a leg
+	   the production walk never sees. */
+	const counts = buckets.map(b => b.legs.length);
+	const placed = counts.reduce((n, c) => n + c, 0);
+	if(buckets.length < 2 || placed < 2)return unscorable(period, buckets.length);
+
+	const empties = counts.filter(n => n === 0).length;
+	const emptyRate = empties / buckets.length;
+
+	const med = median(counts);
+	const occupancySpread = !med ? 1
+		: clip01(counts.reduce((s, c) => s + Math.abs(c - med), 0) / counts.length / med);
+
+	//k: the number of lumps a cycle carries, so the harmonic that folds them onto one angle
+	const occupied = counts.filter(n => n > 0);
+	const k = Math.max(1, Math.round(median(occupied) || 1));
+
+	let sx = 0, sy = 0;
+	buckets.forEach(b => {
+		const start = b.start.getTime(), span = b.end.getTime() - start;
+		if(span <= 0)return;
+		b.legs.forEach(l => {
+			const phase = (new Date(l.date).getTime() - start) / span;
+			const theta = 2 * Math.PI * k * phase;
+			sx += Math.cos(theta);
+			sy += Math.sin(theta);
+		});
+	});
+	const R = clip01(Math.sqrt(sx * sx + sy * sy) / placed);
+	const phaseSpread = 1 - R;
+
+	return {
+		period: period,
+		buckets: buckets.length,
+		empties: empties,
+		emptyRate: emptyRate,
+		occupancySpread: occupancySpread,
+		phaseSpread: phaseSpread,
+		misfit: (emptyRate + occupancySpread + phaseSpread) / 3
+	};
+}
+
+/* ONE ROW PER CANDIDATE, ALWAYS ALL SEVEN AND ALWAYS IN THE SAME ORDER, because the audit page draws
+   the table as a bar chart and a row that dropped its unscorable candidates would silently shift
+   every bar after it under the wrong axis label. */
+export function fitTable(legs, anchor){
+	return CANDIDATE_PERIODS.map(p => fitScore(legs, p, anchor));
+}
+
+/* THE LOWEST MISFIT WINS, and ties go to the SHORTER period simply because CANDIDATE_PERIODS is in
+   ascending order and the comparison is strict - two candidates that score identically are two
+   candidates the evidence does not separate, and picking deterministically is the only thing left to
+   do honestly. A table with nothing scorable in it has no best fit and says so. */
+export function bestFit(table){
+	let best = null;
+	(table || []).forEach(f => {
+		if(!f || f.misfit === null || f.misfit === undefined)return;
+		if(!best || f.misfit < best.misfit)best = {period: f.period, misfit: f.misfit};
+	});
+	return best;
+}
+
+/* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
+   ONE STREAM IS OFTEN SEVERAL RHYTHMS BRAIDED TOGETHER. "Utilities" is a gas bill and an electricity
+   bill, each arriving once a month a few days apart; merged, the month carries two events and a
+   semimonthly lattice can look tempting. Split by merchant, each side is one clean event per month.
+
+   THE GROUPING IS transactionMatching's, NOT A NEW ONE. getMerchantKey and merchantKeysMatch already
+   decide whether two descriptions name the same merchant for refund matching, and a second rule here
+   would drift from that one the first time either was touched.
+
+   GREEDY, SINGLE PASS, FIRST MATCH WINS. A leg whose key is shorter than the matcher's minimum can
+   match nothing - not even an identical key - so it becomes its own group, which is the correct
+   answer rather than a degenerate one: a description too short to identify a merchant is evidence of
+   nothing and must not swallow the others. */
+export function merchantGroups(legs){
+	const groups = [];
+	(legs || []).forEach(leg => {
+		const key = getMerchantKey(leg && leg.description);
+		const hit = groups.find(g => merchantKeysMatch(g.key, key));
+		if(hit)hit.legs.push(leg);
+		else groups.push({key: key, legs: [leg]});
+	});
+	//biggest group first; the key breaks ties so two runs of the same ledger print the same order
+	return groups.sort((a, b) => b.legs.length - a.legs.length
+		|| (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+/* THE SPLIT TABLE: each merchant scored on its own lattice, then combined as a LEG-COUNT-WEIGHTED
+   MEAN over the groups that were scorable at all.
+
+   RATIONALE. A stream whose two merchants are each cleanly monthly should read as monthly, even
+   though the merged series carries two events per cycle and would score well on semimonthly too.
+   Scoring the merchants separately asks the question that is actually being asked - "is each thing
+   that happens here monthly?" - and the leg-count weight keeps a two-leg stray from outvoting a
+   forty-leg rhythm. Unscorable groups are skipped rather than counted as bad: a merchant with one
+   transaction says nothing about the period, and saying nothing is not the same as fitting badly.
+
+   Every term is combined the same way, so the combined misfit stays exactly the mean of the combined
+   terms and the arithmetic on the page still adds up by hand. */
+export function fitTableSplit(legs, anchor){
+	const groups = merchantGroups(legs).map(g => ({
+		key: g.key,
+		legCount: g.legs.length,
+		table: fitTable(g.legs, anchor)
+	}));
+
+	const table = CANDIDATE_PERIODS.map((period, i) => {
+		let weight = 0, empty = 0, occ = 0, phase = 0, buckets = 0, empties = 0;
+		groups.forEach(g => {
+			const f = g.table[i];
+			if(!f || f.misfit === null)return;
+			weight += g.legCount;
+			empty += f.emptyRate * g.legCount;
+			occ += f.occupancySpread * g.legCount;
+			phase += f.phaseSpread * g.legCount;
+			buckets += f.buckets;
+			empties += f.empties;
+		});
+		if(!weight)return unscorable(period, buckets);
+		const emptyRate = empty / weight, occupancySpread = occ / weight, phaseSpread = phase / weight;
+		return {
+			period: period,
+			buckets: buckets,
+			empties: empties,
+			emptyRate: emptyRate,
+			occupancySpread: occupancySpread,
+			phaseSpread: phaseSpread,
+			misfit: (emptyRate + occupancySpread + phaseSpread) / 3
+		};
+	});
+
+	return {groups: groups, table: table};
+}
+
+export default fitTable;

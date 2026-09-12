@@ -12,7 +12,11 @@
    between one pass over 1,214 transactions and eighty-seven.
    ================================================================================================== */
 
-import {streamLedger, terminalStreams, mapAccounts} from './accountMapping';
+import {streamLedger, terminalStreams, mapAccounts, isClosedStream} from './accountMapping';
+
+/* THE TWO PERIODS THE SPEC DEFERS. A yearly declaration states an amount per year and no rhythm,
+   so it is the one case where the ledger has to be asked rather than read. */
+const YEARLY_PERIODS = {yearly: true, biyearly: true};
 import {createDate} from '../../Time';
 import {reportingConfig} from '../../reportingConfig';
 
@@ -90,6 +94,29 @@ export class StreamPredictor {
 			const legs = this.legsOf(stream.id);
 			return {stream: stream, legs: legs, partition: this.partitionOf(stream.id)};
 		});
+	}
+
+	/* WHAT A PERSON IS ASKED TO REVIEW, which is not the same set as what the predictor predicts.
+	   A closed stream is the user saying this one stopped; 23 carry an endDate and 21 of those have
+	   no transactions and names like `test`, `test3`, `ttest`. The walk keeps returning them - taking
+	   them out of `terminalStreams` would change what the module is a prediction OF - but no audit
+	   page should spend a row on one. */
+	reviewable(){
+		return this.terminalStreams().filter(s => !isClosedStream(s));
+	}
+
+	/* THE GROUND TRUTH FOR THE CYCLE DETECTOR. Open, non-yearly, and carrying transactions: the
+	   declaration on these has been validated by hand, so a detector that disagrees with one of them
+	   is wrong about a known answer. The yearly streams are excluded precisely BECAUSE the spec says
+	   their rhythm must be inferred - there is nothing to check an inference against there. */
+	fitCohort(){
+		return this.reviewable().filter(s =>
+			!YEARLY_PERIODS[s.period] && this.legsOf(s.id).length > 0);
+	}
+
+	mapFitCohort(){
+		return this.fitCohort().map(stream =>
+			({stream: stream, legs: this.legsOf(stream.id)}));
 	}
 
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------

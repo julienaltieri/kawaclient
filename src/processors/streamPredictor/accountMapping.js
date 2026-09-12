@@ -42,6 +42,17 @@ export function terminalStreams(masterStream){
 	return out;
 }
 
+/* A STREAM THE USER HAS CLOSED IS NOT DATA. `endDate` is the user saying this stream stopped, and
+   the 23 that carry one are overwhelmingly abandoned drafts - `test`, `test3`, `ttest` - with no
+   transactions in them at all. They are terminal streams and the walk keeps returning them, because
+   dropping them from the walk would quietly change what the predictor is a prediction OF. What they
+   are excluded from is REVIEW: an audit page is a list of things a person has to look at, and a
+   closed empty draft is not one of them.
+
+   ONE DEFINITION, USED BY THE PREDICTOR AND BY EVERY AUDIT PAGE. Two copies of "what closed means"
+   is two answers the first time either side is touched. */
+export const isClosedStream = stream => !!(stream && stream.endDate);
+
 /* THE ALLOCATED AMOUNT IS THE STREAM'S AMOUNT, NOT THE TRANSACTION'S.
 
    A $200 order split $150/$50 across two streams is not evidence that either stream moved $200.
