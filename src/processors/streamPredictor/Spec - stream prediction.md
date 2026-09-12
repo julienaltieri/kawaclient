@@ -174,10 +174,39 @@ to the stream on the account it was mapped to.
 
 **Out:** a `Period` (`src/Time.js`), and whether it came from the declaration or from the ledger.
 
-**The declaration always wins for a non-yearly stream.** It is a statement of fact by the person
+**The declaration always decides for a non-yearly stream.** It is a statement of fact by the person
 receiving the money, and transactions are noisy in ways a declaration is not — a cheque moved off a
 Sunday, a month with a correction in it, a bank that posts late. A noisy signal never overrules a clean
-one; the ledger is not consulted at all once a non-yearly declaration exists.
+one.
+
+**But the ledger is read on every stream and reported alongside.** The detector used to run only where
+the declaration was useless. Running it everywhere costs one pass and buys the thing a prediction
+experiment needs: the declared answer and the inferred answer, on the same object, for every stream —
+so a future predictor can be tried against either without re-deriving which streams had an inference
+available. On a declared rhythm the inference is **reported and never consulted**; a disagreement is a
+finding for a person to look at, not an override.
+
+**Out**, from `determineCycle(stream, evidence?)`:
+
+```
+{
+  declared:  {period, cycle, isYearly, raw}          // what the stream says about itself
+  inferred:  {period, cycle, fit, route,             // what the ledger says, or null with no evidence
+              merged: {period, fit},                 //   period is null when the detector declined;
+              split:  {period, fit},                 //   route always says which reason
+              windowLegs, totalLegs, merchantGroups,
+              blocked}                               //   what a gate refused, kept legible
+  cycle, periodName,                                 // THE ANSWER
+  source:    'declaration' | 'ledger',
+  agreement: 'agree' | 'differ' | 'none'             // the flag an experiment filters on
+}
+```
+
+`evidence` is `{legs, anchor, now, config}`. **Omit it and this is the function it always was** —
+declaration only, `inferred: null` — which is why the §2 audit page, which passes a stream and nothing
+else, is untouched. On the captured portfolio, over all 60 open streams carrying transactions: 6 take
+the cycle from the ledger, 12 have an inference that matches the declaration, 6 have one that differs
+and is overruled, and 42 have none to compare.
 
 **Yearly is the exception.** It behaves differently from every other cycle — the arithmetic connecting
 a yearly figure to the size of one movement is unlike every other case — and how is worked out
@@ -247,8 +276,8 @@ reported **unscorable** — `misfit: null` — never as a number computed from o
 8. **A yearly declaration adds two more gates, and nothing else does.** A yearly stream is an
    envelope, so every cycle read off it is an inference about how the envelope happened to be spent
    rather than a rhythm anyone set up. Before that inference replaces the declaration it has to be a
-   rhythm someone would actually run — `yearlyAllowedPeriods`, route `atypical` — and it has to
-   still be running — no more than `maxEmptyCyclesToStayActive` complete empty cycles between the
+   rhythm someone would actually run — no longer than `maxYearlyInferredPeriod`, route `atypical` —
+   and it has to still be running — no more than `maxEmptyCyclesToStayActive` complete empty cycles between the
    last movement and the capture date, route `stale`. Both land back on yearly and neither counts as
    a measurement. **`atypical` is tested first**, so a stream failing both is reported by the more
    basic reason.
@@ -277,7 +306,7 @@ routes are exhaustive and mutually exclusive, and they are evaluated in this ord
 | `both` | merged and split cleared the bar and named the same period | yes |
 | `split` | they disagreed, every merchant group carried `minGroupLegs`, so the split won | yes |
 | `merged` | they disagreed and the split had a group too small to trust | yes |
-| `atypical` | *yearly only.* A period was found but it is not one a budget runs on | no |
+| `atypical` | *yearly only.* A period was found but it is longer than `maxYearlyInferredPeriod` | no |
 | `stale` | *yearly only.* A period was found and it is allowed, but the pattern has gone quiet | no |
 | `capped` | the period found is **longer** than the declaration, so the declaration wins | no |
 | `declared` | fewer than `minLegsToClaim` legs, or only one reading cleared the bar | no |
@@ -301,7 +330,8 @@ of the score rather than gates on it.
 | `trimBuckets` | `2` | drop the 2 buckets deviating most from the median and rescore what is left, phase included, so a stream that kept its rhythm except for one doubled month reads as the rhythm it kept. It cannot invent a fit: a flat candidate has nothing to drop and scores identically at every trim — Earnin bimonthly is 79.6% at 0, 1 and 2 |
 | `minLegsToClaim` | `3` | the window is already only one reporting year; raising it silences streams that genuinely moved a handful of times |
 | `minGroupLegs` | `3` | a 2-leg fragment fits any period trivially, so a split containing one is not evidence |
-| `yearlyAllowedPeriods` | `weekly, biweekly, monthly` | *yearly declarations only.* Monthly is the typical arrangement and the two faster ones are really lived; semimonthly, bimonthly and quarterly on a budget envelope describe an accident of when the money was spent. A stream **declared** monthly that reads quarterly is still a disagreement worth seeing — this gate is never applied to a declared rhythm |
+| `maxYearlyInferredPeriod` | `monthly` | *yearly declarations only.* **A boundary, not a list**: a candidate is admitted when it is no longer than this, so a new shorter candidate period needs no edit and an enumeration would silently exclude it. Bimonthly and quarterly are dropped because they are extremely rare — quarterly would be tax, bimonthly certain bills — and one reporting year carries too few of their cycles to overrule a declaration. A stream **declared** monthly that reads quarterly is still a disagreement worth seeing; this gate is never applied to a declared rhythm |
+| `digitsAreSerialWhen` | `[/che(ck\|que)s?/i]` | descriptions whose digit runs are a serial rather than an identity, stripped before the merchant key is taken. `getMerchantKey` drops tokens mixing letters and digits but keeps a pure-digit token, so "Check paid 1035" and "Check paid 1039" were nine merchants and one chequebook. **An array because it will grow** — every bank writes these differently. Narrow on purpose: elsewhere a trailing number is the identity, a store number or an order |
 | `maxEmptyCyclesToStayActive` | `2` | *yearly declarations only.* Complete cycles of the detected period between the last transaction and the capture date. One empty cycle is a late payment; three is a habit that stopped. Medical read biweekly off four legs that all landed early in the year and nothing since — 10 empty biweekly cycles by the capture date |
 | `minSplitLegShare` | `0.24` | the split reading combines only the groups that were **scorable** and skips the rest, which degenerates when nearly every group is skipped. Below this share of the window's legs the split is reported **unscorable** rather than as a number. Just under a quarter, because a stream that is genuinely four subscriptions is plausible and one scorable group of four is still worth reporting |
 
@@ -349,15 +379,14 @@ headline counts what was read off the ledger:
 
 ```
 read off the ledger 6/35 · both 4 · via merged 2
-                        · not a rhythm a budget runs on 6 · pattern went quiet 1 · declared 22
+                        · longer than a budget rhythm 4 · pattern went quiet 3 · declared 22
 ```
 
 The six it keeps are all monthly or weekly and all still moving: Gembah, Hobby mdm, Shopping, Tolls,
 Credit Card Payments, Business Expenses. The seven it blocks divide cleanly by *which* condition
 fails — three had gone quiet (Medical 10 empty biweekly cycles, DMV fee 10, Sport 8) and four are
-still active but on a period a budget does not run on (Returns and both Cadeaux bimonthly,
-Exceptional Expense quarterly). The route counts read 6 `atypical` / 1 `stale` rather than 4 / 3
-because `atypical` is tested first and two of the quiet ones were also semimonthly.
+still active but on a period longer than a month (Returns and both Cadeaux bimonthly, Exceptional
+Expense quarterly).
 
 **The ground truth for this cohort is Julien's**, recorded per stream id in
 `src/tests/fixtures/cycleGroundTruth.json` — beside the portfolio capture, under the same ignore rule
@@ -374,12 +403,13 @@ the only sense the score can see. The share gate withdrew the first and the peri
 score quarterly at 77.1% in the first place — the period gate now blocks that answer, but only by
 refusing the period, not by fixing the score.
 
-**Bimonthly and quarterly are deliberately not in the allowed list**, and the reason is evidence
-rather than taste. Julien: they are extremely rare in this portfolio — quarterly would be tax,
-bimonthly would be certain bills — and over a single reporting year they carry too few cycles to be
-confident about. Four quarterly cycles is not enough to overrule a declaration, so a reading at those
-periods is noise being promoted to a prediction. `Returns`, `Cadeaux famille Mdm` and
-`Cadeau famille Mr` all read bimonthly and are all still active; all three stay yearly.
+**Bimonthly and quarterly fall outside the boundary**, and the reason is evidence rather than taste.
+Julien: they are extremely rare in this portfolio — quarterly would be tax, bimonthly would be certain
+bills — and over a single reporting year they carry too few cycles to be confident about. Four
+quarterly cycles is not enough to overrule a declaration, so a reading at those periods is noise being
+promoted to a prediction. `Returns`, `Cadeaux famille Mdm` and `Cadeau famille Mr` all read bimonthly
+and are all still active; all three stay yearly. Semimonthly **is** inside the boundary — `Sport` and
+`DMV fee` read semimonthly and are blocked by the quiet gate instead, which is the accurate reason.
 
 **Validated by Julien on 2026-09-12**, against both cohorts on the audit page, at the numbers above.
 

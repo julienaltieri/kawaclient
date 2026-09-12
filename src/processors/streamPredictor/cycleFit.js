@@ -224,21 +224,13 @@ export function legsInWindow(legs, anchor){
    match nothing - not even an identical key - so it becomes its own group, which is the correct
    answer rather than a degenerate one: a description too short to identify a merchant is evidence of
    nothing and must not swallow the others. */
-/* A CHEQUE NUMBER IS THE ONE NUMBER THAT IS NOT AN IDENTITY. getMerchantKey drops tokens that MIX
-   letters and digits, on the reasoning that those are reference codes, but a token of pure digits
-   survives - and a cheque description is exactly that: "Check paid 1035", "Check paid 1039". Day care
-   Emile grouped into nine merchants where there is one payee and a chequebook, and its split could
-   say nothing.
-
-   NARROW ON PURPOSE: the digits go only when the description says cheque. Everywhere else a trailing
-   number can be the identity - a store number, an order - and stripping them all would merge accounts
-   and merchants that are genuinely different. getMerchantKey itself is untouched, because refund
-   matching uses it to decide whether two real transactions are the same purchase. */
-const CHEQUE = /che(?:ck|que)s?/i;
-
+/* THE DIGITS COME OUT ONLY WHERE THEY ARE A SERIAL, and which descriptions those are is
+   FIT_CONFIG.digitsAreSerialWhen - a list, because every bank writes cheques differently and more
+   will turn up. Everywhere else a trailing number can be the identity: a store number, an order. */
 const groupingKey = description => {
 	const d = String(description || '');
-	return getMerchantKey(CHEQUE.test(d) ? d.replace(/[0-9]+/g, ' ') : d);
+	const serial = FIT_CONFIG.digitsAreSerialWhen.some(re => re.test(d));
+	return getMerchantKey(serial ? d.replace(/[0-9]+/g, ' ') : d);
 };
 
 /* ---- HOW LONG THE PATTERN HAS BEEN QUIET -----------------------------------------------------------
@@ -277,6 +269,19 @@ export function emptyCycleTable(legs, anchor, now){
 	return CANDIDATE_PERIODS.map(p => emptyCyclesSince(legs, p, anchor, now));
 }
 
+/* ---- WHO THE MONEY WENT TO ------------------------------------------------------------------------
+   ONE STREAM IS OFTEN SEVERAL RHYTHMS BRAIDED TOGETHER. "Utilities" is a gas bill and an electricity
+   bill, each arriving once a month a few days apart; merged, the month carries two events and a
+   semimonthly lattice can look tempting. Split by merchant, each side is one clean event per month.
+
+   THE GROUPING IS transactionMatching's, NOT A NEW ONE. getMerchantKey and merchantKeysMatch already
+   decide whether two descriptions name the same merchant for refund matching, and a second rule here
+   would drift from that one the first time either was touched.
+
+   GREEDY, SINGLE PASS, FIRST MATCH WINS. A leg whose key is shorter than the matcher's minimum can
+   match nothing - not even an identical key - so it becomes its own group, which is the correct
+   answer rather than a degenerate one: a description too short to identify a merchant is evidence of
+   nothing and must not swallow the others. */
 export function merchantGroups(legs){
 	const groups = [];
 	(legs || []).forEach(leg => {

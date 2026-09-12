@@ -50,7 +50,7 @@ export const DECISION_ENGINE = `
 var PERIODS = ["weekly","biweekly","semimonthly","monthly","bimonthly","quarterly","yearly"];
 var ROUTES = ["both","split","merged","capped","atypical","stale","declared","declined"];
 var ROUTE_LABEL = {both: "both", split: "via split", merged: "via merged",
-	capped: "capped to declared", atypical: "not a rhythm a budget runs on",
+	capped: "capped to declared", atypical: "longer than a budget rhythm",
 	stale: "pattern went quiet", declared: "declared", declined: "declined"};
 var TICK = String.fromCharCode(10003), CROSS = String.fromCharCode(10007);
 var DASH = String.fromCharCode(8212), DOT = String.fromCharCode(183);
@@ -95,7 +95,9 @@ function resolveOne(d, k){
 	   ATYPICAL FIRST, THEN STALE, so a stream that fails both is reported by the more basic reason.
 	   Both land on the declaration, and neither counts as a measurement. */
 	if(res && isEnvelope(d.declared) && route !== "declared"){
-		if(k.yearlyAllowed.indexOf(res.period) < 0){
+		/* A BOUNDARY, NOT A LIST. PERIODS is ascending, so "no longer than monthly" is an index
+		   comparison and a new shorter candidate is admitted without touching this test. */
+		if(PERIODS.indexOf(res.period) > PERIODS.indexOf(k.maxYearlyPeriod)){
 			res = {period: d.declared, misfit: null}; route = "atypical";
 		}else{
 			var quiet = d.quiet ? d.quiet[PERIODS.indexOf(res.period)] : null;
@@ -209,7 +211,7 @@ const knobsFrom = cfg => {
 		thr: c.fitThreshold,
 		minLegs: c.minLegsToClaim,
 		minGroup: c.minGroupLegs,
-		yearlyAllowed: c.yearlyAllowedPeriods,
+		maxYearlyPeriod: c.maxYearlyInferredPeriod,
 		maxQuiet: c.maxEmptyCyclesToStayActive
 	};
 };

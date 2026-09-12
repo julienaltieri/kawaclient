@@ -45,19 +45,22 @@ export const FIT_CONFIG = {
 	/* ---- THE TWO THAT APPLY ONLY TO A YEARLY DECLARATION -------------------------------------------
 	   A YEARLY STREAM MAY ONLY MOVE TO A RHYTHM SOMEONE WOULD ACTUALLY RUN. The declaration states an
 	   amount per year and nothing about timing, so anything the ledger says is an inference - and an
-	   inference that a budget envelope is "quarterly" or "semimonthly" is describing an accident of
-	   when the money happened to be spent. Monthly is the typical arrangement; biweekly and weekly
-	   are the two faster ones that are really lived. Anything else leaves the stream yearly.
+	   inference that a budget envelope is "quarterly" is describing an accident of when the money
+	   happened to be spent rather than an arrangement anyone made.
 
-	   BIMONTHLY AND QUARTERLY ARE LEFT OUT ON PURPOSE, and the reason is evidence rather than taste.
-	   Julien: they are extremely rare in this portfolio - quarterly would be tax, bimonthly would be
-	   certain bills - and over a single reporting year they carry too few cycles to be confident
-	   about. Six bimonthly cycles or four quarterly ones is not enough to overrule a declaration, so
-	   a reading at those periods is noise being promoted to a prediction.
+	   ANYTHING LONGER THAN A MONTH IS DROPPED, and the reason is evidence rather than taste. Julien:
+	   bimonthly and quarterly streams are extremely rare - quarterly would be tax, bimonthly certain
+	   bills - and over a single reporting year they carry too few cycles to be confident about. Six
+	   bimonthly cycles or four quarterly ones is not enough to overrule a declaration, so a reading
+	   at those periods is noise being promoted to a prediction.
+
+	   A BOUNDARY, NOT A LIST. The test is "is this candidate no longer than monthly?", so a new
+	   candidate period shorter than a month is admitted without an edit here; an enumeration would
+	   silently exclude it. Monthly itself is in - it is the typical arrangement.
 
 	   THIS GATE IS NOT APPLIED TO A DECLARED RHYTHM. A stream declared monthly that reads quarterly
 	   is a disagreement worth seeing; a yearly envelope that reads quarterly is noise. */
-	yearlyAllowedPeriods: ['weekly', 'biweekly', 'monthly'],
+	maxYearlyInferredPeriod: 'monthly',
 
 	/* AND THE PATTERN HAS TO STILL BE RUNNING. A rhythm that showed itself in January and has been
 	   silent since is not this stream's frequency, it is a burst that has ended - Medical read
@@ -81,6 +84,25 @@ export const FIT_CONFIG = {
 	   four is scorable, 25% of the legs are behind the answer and that is still worth reporting.
 	   Two legs of twenty is not. */
 	minSplitLegShare: 0.24,
+
+	/* DESCRIPTIONS WHOSE DIGITS ARE A REFERENCE NUMBER, NOT AN IDENTITY. getMerchantKey drops tokens
+	   that MIX letters and digits, on the reasoning that those are reference codes, but a token of
+	   pure digits survives - and a cheque description is exactly that: "Check paid 1035", "Check paid
+	   1039". Day care Emile grouped into nine merchants where there is one payee and a chequebook,
+	   and its split could say nothing.
+
+	   AN ARRAY BECAUSE IT WILL GROW. Every bank writes these differently and more will turn up as
+	   more ledgers are seen; a description matching ANY pattern here has its digit runs replaced with
+	   spaces before the merchant key is taken.
+
+	   NARROW ON PURPOSE. Everywhere else a trailing number can be the identity - a store number, an
+	   order - and stripping them all would merge merchants that are genuinely different. Add a
+	   pattern only for a description whose numbers are known to be a serial. getMerchantKey itself is
+	   never touched, because refund matching uses it to decide whether two real transactions are the
+	   same purchase. */
+	digitsAreSerialWhen: [
+		/che(?:ck|que)s?/i
+	],
 
 	/* THE FEWEST LEGS A MERCHANT GROUP MAY CARRY FOR THE SPLIT READING TO BE ALLOWED TO WIN. Renter's
 	   insurance splits 6/2 because the bank wrote the same payee two ways; a 2-leg fragment fits any

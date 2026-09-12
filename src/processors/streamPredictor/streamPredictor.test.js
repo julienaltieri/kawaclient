@@ -28,6 +28,7 @@ import {summarizeAll, resolveOne, resolveCycle, DEFAULT_KNOBS} from './cycleDeci
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets} from './shapeDetermination';
+import {Period} from '../../Time';
 
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
@@ -388,7 +389,7 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	test('the configured rule reads the validated cohort with no disagreement', () => {
 		expect(DEFAULT_KNOBS).toEqual({thr: FIT_CONFIG.fitThreshold,
 			minLegs: FIT_CONFIG.minLegsToClaim, minGroup: FIT_CONFIG.minGroupLegs,
-			yearlyAllowed: FIT_CONFIG.yearlyAllowedPeriods,
+			maxYearlyPeriod: FIT_CONFIG.maxYearlyInferredPeriod,
 			maxQuiet: FIT_CONFIG.maxEmptyCyclesToStayActive});
 		expect(s.total).toBe(25);
 		expect(s.agree).toBe(25);
@@ -451,7 +452,7 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 		expect(gt.knobs.minLegsToClaim).toBe(FIT_CONFIG.minLegsToClaim);
 		expect(gt.knobs.minGroupLegs).toBe(FIT_CONFIG.minGroupLegs);
 		expect(gt.knobs.minSplitLegShare).toBe(FIT_CONFIG.minSplitLegShare);
-		expect(gt.knobs.yearlyAllowedPeriods).toEqual(FIT_CONFIG.yearlyAllowedPeriods);
+		expect(gt.knobs.maxYearlyInferredPeriod).toBe(FIT_CONFIG.maxYearlyInferredPeriod);
 		expect(gt.knobs.maxEmptyCyclesToStayActive).toBe(FIT_CONFIG.maxEmptyCyclesToStayActive);
 
 		const now = {};
@@ -516,6 +517,77 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 			expect(direct.route).toBe(viaPage.route);
 			expect(direct.measured).toBe(viaPage.measured);
 		});
+	});
+
+	/* ---- THE ENRICHED §2 ANSWER ---------------------------------------------------------------------
+	   determineCycle NOW READS THE LEDGER ON EVERY STREAM and reports both answers on one object, so a
+	   prediction experiment can be run against either without re-deriving which streams had an
+	   inference available. What it DECIDES is unchanged for a declared rhythm: the declaration wins
+	   whatever the ledger thinks, and a disagreement is a finding rather than an override. */
+	test('determineCycle reports the declared and the inferred cycle side by side', () => {
+		const ev = r => ({legs: r.legs, anchor: anchor, now: now});
+		const all = rows.concat(yearlyRows);
+		let differ = 0, agree = 0, fromLedger = 0, noInference = 0;
+
+		all.forEach(r => {
+			const c = determineCycle(r.stream, ev(r));
+			expect(c.declared.period).toBe(r.stream.period);
+			expect(c.declared.cycle).toBe(Period[r.stream.period]);
+			expect(c.inferred).toBeTruthy();
+
+			if(c.agreement === 'differ')differ++;
+			if(c.agreement === 'agree')agree++;
+			if(c.source === 'ledger')fromLedger++;
+			if(c.agreement === 'none')noInference++;
+
+			//A DECLARED RHYTHM IS NEVER OVERRULED, whatever the ledger found.
+			if(!c.declared.isYearly){
+				expect(c.source).toBe('declaration');
+				expect(c.periodName).toBe(r.stream.period);
+				expect(c.cycle).toBe(Period[r.stream.period]);
+			}
+			//A YEARLY STREAM TAKES THE LEDGER'S WORD ONLY WHERE THE GATES LET IT THROUGH.
+			else if(c.inferred.period){
+				expect(c.source).toBe('ledger');
+				expect(c.periodName).toBe(c.inferred.period);
+				expect(c.agreement).toBe('differ');
+			}else{
+				expect(c.source).toBe('declaration');
+				expect(c.periodName).toBe(r.stream.period);
+			}
+			//the route always says WHY an inference is missing, so a caller never has to guess
+			expect(typeof c.inferred.route).toBe('string');
+			if(!c.inferred.period)
+				expect(['declared', 'declined', 'atypical', 'stale', 'capped'])
+					.toContain(c.inferred.route);
+		});
+
+		/* SIX YEARLY STREAMS EARN A CYCLE OFF THE LEDGER and nothing else moves. The twelve that
+		   AGREE are the validated cohort's measured ones - the ledger recovered the declared period
+		   on its own, which is the check the detector was tuned against and is reported here rather
+		   than silently folded into "no inference". */
+		expect(fromLedger).toBe(6);
+		expect(differ).toBe(6);
+		expect(agree).toBe(12);
+		expect(agree + differ + noInference).toBe(all.length);
+		console.log('§2 ENRICHED: ' + all.length + ' streams | ' + fromLedger
+			+ ' take the cycle from the ledger | ' + agree + ' inferred = declared | '
+			+ differ + ' inferred differs | ' + noInference + ' no inference to compare');
+	});
+
+	/* CALLED WITH NO EVIDENCE IT IS THE FUNCTION IT ALWAYS WAS, which is what keeps the §2 audit page
+	   - which passes a stream and nothing else - working untouched. */
+	test('determineCycle without evidence is declaration-only, as before', () => {
+		const c = determineCycle(rows[0].stream);
+		expect(c.inferred).toBe(null);
+		expect(c.agreement).toBe('none');
+		expect(c.source).toBe('declaration');
+		expect(c.cycle).toBe(Period[rows[0].stream.period]);
+		expect(c.inferredCycle).toBe(c.cycle);
+		//and a malformed declaration is reported, never thrown
+		const bad = determineCycle({period: 'fortnightly'});
+		expect(bad.cycle).toBe(null);
+		expect(bad.declared.raw).toBe('fortnightly');
 	});
 
 	test('writes the fit audit page from the real results', () => {
