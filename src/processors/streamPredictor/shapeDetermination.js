@@ -224,6 +224,83 @@ export function focusOf(bins, cfg){
 	return {lumps: 0, concentration: at[0], perLump: at};
 }
 
+/* ---- HOW FAR OFF THE MOVEMENTS LAND ------------------------------------------------------------
+   ON AVERAGE, HOW MANY DAYS FROM ITS NEAREST CLAIMED DAY does a movement fall. Rent lands 0.7 days
+   off on average; Utilities 1.2; Shopping 3.3. That is the number a person is reading off the
+   histogram when they say one looks tighter than another, and it is in days, so it can be checked
+   by counting.
+
+   MEASURED ROUND THE CIRCLE, so the last day of a cycle is one day from the first.
+
+   IT REPLACED TWO EARLIER ATTEMPTS AND THE REASON IS WORTH KEEPING. An angle measure saturates:
+   on a monthly cycle anything inside a week scores over 0.9, and Rent and Utilities came out 0.01
+   apart while landing three days and five days wide. Counting the busiest days instead ignored where
+   they were - Savings scored well on days 2, 5, 8, 23 and 24, which is not a target anyone could aim
+   at. Growing a window day by day fixed that and introduced ties: Shopping's four movements sit on
+   days 3, 24, 29 and 30 with nothing between them, so the window had no reason to grow one way
+   rather than the other and wandered to 27 days. A distance has no ties to break. */
+const dayGap = (a, b, days) => {
+	const d = Math.abs(a - b) % days;
+	return d > days / 2 ? days - d : d;
+};
+
+/* THE CLAIMED DAYS, READ OFF THE HISTOGRAM: the k busiest days, no two of them neighbours. The
+   adjacency rule is what stops one cluster being counted as two - a second claimed day has to be
+   somewhere else in the cycle to be a second lump at all. */
+export function peakDays(bins, lumps){
+	const days = bins.length;
+	const k = Math.max(1, lumps || 1);
+	const taken = [];
+	for(let c = 0; c < k; c++){
+		let best = -1, most = 0;
+		for(let d = 0; d < days; d++){
+			if(taken.indexOf(d) >= 0)continue;
+			if(taken.some(t => dayGap(t, d, days) <= 1))continue;
+			if(bins[d] > most){ most = bins[d]; best = d; }
+		}
+		if(best < 0)break;
+		taken.push(best);
+	}
+	return taken.sort((a, b) => a - b);
+}
+
+export function dayScatter(bins, lumps){
+	const days = bins.length;
+	const peaks = peakDays(bins, lumps);
+	if(!days || !peaks.length)return null;
+	let total = 0, sum = 0;
+	bins.forEach((count, day) => {
+		if(!count)return;
+		let nearest = days;
+		peaks.forEach(pk => {
+			const g = dayGap(pk, day, days);
+			if(g < nearest)nearest = g;
+		});
+		sum += nearest * count;
+		total += count;
+	});
+	return total ? sum / total : null;
+}
+
+/* THE SAME SCATTER AS A SCORE, NORMALISED SO CYCLE LENGTH AND CLUSTER COUNT DROP OUT.
+
+       tightness = 1 - scatter / (cycleDays / (4 x lumps))
+
+   Movements landing anywhere in the cycle sit a quarter of it away from any given day on average, so
+   that is the zero point; landing on the claimed day every time is 1. With k clusters the cycle is
+   effectively k times shorter, which is why k divides the yardstick - a weekly stream paid on the
+   same weekday scores the same as a monthly one paid on the same date. */
+export function tightness(bins, lumps){
+	const days = bins.length;
+	const k = Math.max(1, lumps || 1);
+	const scatter = dayScatter(bins, k);
+	if(scatter === null || !days)return null;
+	const worst = days / (4 * k);
+	if(worst <= 0)return null;
+	const t = 1 - scatter / worst;
+	return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
    THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
    off the typical count and a cutoff put groceries - four or five shops a week, every week, the
@@ -275,8 +352,15 @@ export function classifyShape(counts, bins, cfg){
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
 	const focus = focusOf(bins || [], c);
+	/* REPORTED, NOT YET DECIDING. The width is the number a person can check against the bars; the
+	   angular focus is what still picks the shape and finds how many clusters there are. Both travel
+	   so the two can be compared on the audit page before either is given the gate. */
+	const lumps = Math.max(1, focus.lumps || 1);
 	const base = {typical: typical, steady: steady, busy: busy,
-		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump};
+		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump,
+		scatter: dayScatter(bins || [], lumps),
+		cycleDays: (bins || []).length,
+		tightness: tightness(bins || [], lumps)};
 
 	//IN FOCUS: the movements land on a day, or on k days. That is a lump, or k of them.
 	if(focus.lumps === 1)return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
@@ -319,6 +403,9 @@ export function explainShape(legs, partition, cycle, anchor){
 			confidence: verdict.shape ? verdict.confidence : null,
 			concentration: verdict.concentration === undefined ? null : verdict.concentration,
 			lumps: verdict.lumps === undefined ? null : verdict.lumps,
+			tightness: verdict.tightness === undefined ? null : verdict.tightness,
+			scatter: verdict.scatter === undefined ? null : verdict.scatter,
+			cycleDays: verdict.cycleDays === undefined ? null : verdict.cycleDays,
 			cyclesObserved: buckets.length,
 			eventsPerCycle: counts,
 			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,

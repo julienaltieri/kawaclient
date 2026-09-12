@@ -89,6 +89,7 @@ const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-search="' + esc(r
 		+ '<span class="m-sh ' + esc(r.shapeCls) + '">' + esc(r.shape) + '</span>'
 		+ '<span class="m-dy">' + esc(r.days) + '</span>'
 		+ '<span class="m-cf ' + esc(r.confCls) + '">' + esc(r.conf) + '</span>'
+		+ '<span class="m-tg ' + esc(r.tightCls) + '">' + esc(r.tight) + '</span>'
 	+ '</div>'
 	+ '<div class="c-hi">' + r.hist + '</div>'
 	+ '<div class="c-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
@@ -119,8 +120,13 @@ export function shapeRows(predictor){
 				days: shapeText(a),
 				conf: pct(a.concentration),
 				confCls: focusCls(a.concentration),
+				tight: (a.tightness === null || a.tightness === undefined) ? DASH
+					: Math.round(a.tightness * 100) + '% ' + DOT + ' '
+						+ a.scatter.toFixed(1) + 'd off',
+				tightCls: focusCls(a.tightness),
 				confidence: a.confidence,
 				concentration: a.concentration,
+				tightness: a.tightness,
 				hist: histogram(a.histogram, a.days),
 				cycles: a.cyclesObserved,
 				counts: a.eventsPerCycle,
@@ -158,8 +164,8 @@ export function buildShapeAuditPage(predictor, meta){
 		const sa = a.shape in SHAPE_ORDER ? SHAPE_ORDER[a.shape] : 9;
 		const sb = b.shape in SHAPE_ORDER ? SHAPE_ORDER[b.shape] : 9;
 		if(sa !== sb)return sa - sb;
-		const ca = a.concentration === null || a.concentration === undefined ? -1 : a.concentration;
-		const cb = b.concentration === null || b.concentration === undefined ? -1 : b.concentration;
+		const ca = a.tightness === null || a.tightness === undefined ? -1 : a.tightness;
+		const cb = b.tightness === null || b.tightness === undefined ? -1 : b.tightness;
 		if(ca !== cb)return cb - ca;
 		return String(a.name) < String(b.name) ? -1 : 1;
 	});
@@ -173,7 +179,8 @@ export function buildShapeAuditPage(predictor, meta){
 	//the header is a row of the same grid, and it is hidden on a phone where the labels are in the way
 	const head = '<div class="srow shead">'
 		+ '<div class="c-nm">stream</div>'
-		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span><span>focus</span></div>'
+		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span>'
+			+ '<span>angle</span><span>tight</span></div>'
 		+ '<div class="c-hi">every cycle, laid on top of each other</div>'
 		+ '<div class="c-ck">ok</div></div>';
 	const table = '<section class="shp">' + head
@@ -196,7 +203,7 @@ export function buildShapeAuditPage(predictor, meta){
 			{label: 'multiLump', value: by.multiLump || 0},
 			{label: 'spread', value: by.spread || 0},
 			{label: 'anchor', value: anchorText},
-			{label: 'focus bar', value: SHAPE_CONFIG.minConcentration.toFixed(2)}
+			{label: 'angle bar', value: SHAPE_CONFIG.minConcentration.toFixed(2)}
 		],
 		groups: []
 	});
@@ -206,8 +213,9 @@ export function buildShapeAuditPage(predictor, meta){
    phone screen before a single row was visible, every time the page was opened. */
 const LEGEND = '<span class="lg">bars = every cycle on top of each other ' + DOT
 		+ ' x = day of the cycle ' + DOT + ' day 0 is the seam</span>'
-	+ '<span class="lg">FOCUS = how tightly they land on one day. lump = one tower '
-		+ DOT + ' spread = a low wall</span>'
+	+ '<span class="lg">TIGHT = how far off its day a movement lands, on average ' + DOT
+		+ ' 1.1d off is countable on the bars</span>'
+	+ '<span class="lg">ANGLE is the older score, kept beside it while the two are compared</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">one row per ACCOUNT - a stream on two accounts has two shapes</span>'
 		+ '<span class="lg"><i class="sw pick"></i>a day the stage claims</span>'
@@ -234,8 +242,9 @@ const CSS = `
 .c-nm b{font-weight:600;color:var(--ink);word-break:break-word}
 .acct{display:block;font-size:10px;color:var(--ink-faint);word-break:break-word}
 
-.c-meta{display:grid;grid-template-columns:74px 74px 96px 46px;gap:6px;align-items:center;
+.c-meta{display:grid;grid-template-columns:64px 66px 82px 42px 96px;gap:6px;align-items:center;
 	min-width:0}
+.m-tg{font-size:11px;white-space:nowrap}
 .m-cy{color:var(--ink-faint)}
 .m-sh{font-weight:600;white-space:nowrap}
 .s-lump{color:var(--realtime)}
@@ -297,6 +306,7 @@ const CSS = `
 	.c-meta{grid-area:meta;display:flex;flex-wrap:wrap;gap:4px 10px}
 	.m-dy{overflow:visible}
 	.m-cf{text-align:left}
+	.m-tg{font-size:11px}
 	.c-hi{grid-area:hi}
 	.hw{height:40px}
 	.hs b{font-size:7.5px}
