@@ -30,8 +30,10 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape,
-	directionOf, byDirection, dominantAccount, predictedDays, cycleWeights}
+	directionOf, byDirection, dominantAccount, predictedDays, cycleWeights, determineShape,
+	closureRail}
 	from './shapeDetermination';
+import {settleDate, RAIL, isBusinessDay} from './businessCalendar';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
 import {buildPredictionAuditPage, predictionData} from './buildPredictionAuditPage';
 import {modeAmount, streamSpine, weightedMiddle} from './modeAmounts';
@@ -399,7 +401,7 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 	   buckets reads it as the monthly rhythm it kept. Its bimonthly lattice is 2 2 2 2, which has no
 	   outlier to drop, so it must read the SAME at every trim: that is what proves the trim is not
 	   simply inventing a better score wherever it is pointed. */
-	test('the trim reads Earnin Internet monthly 60.2 -> 81.6, bimonthly flat at 79.6', () => {
+	test('the trim reads Earnin Internet monthly flat at 79.3', () => {
 		const row = rows.find(r => /^earnin/i.test(r.stream.name || ''));
 		expect(row).toBeTruthy();
 		const legs = legsInWindow(row.legs, anchor);
@@ -407,7 +409,7 @@ suite('StreamPredictor cycle fit - the detector, against known-good declarations
 			const c = fitTable(legs, anchor, trim).find(f => f.period === p);
 			return ((1 - c.misfit) * 100).toFixed(1);
 		};
-		expect([0, 1, 2].map(t => at(t, 'monthly'))).toEqual(['60.2', '71.6', '81.6']);
+		expect([0, 1, 2].map(t => at(t, 'monthly'))).toEqual(['79.3', '79.3', '79.3']);
 		expect([0, 1, 2].map(t => at(t, 'bimonthly'))).toEqual(['79.6', '79.6', '79.6']);
 		//the configured trim is the one the page and production both use
 		expect(at(undefined, 'monthly')).toBe(at(FIT_CONFIG.trimBuckets, 'monthly'));
@@ -917,7 +919,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   its own surface. A copy of the ledger has no business inside an answer. */
 	test('the answer is a list of modes and carries only what it determined', () => {
 		const EVERY = ['accountId', 'accountType', 'direction', 'label', 'moneyShare', 'shape'];
-		let named = 0, rates = 0;
+		let named = 0, rates = 0, railed = 0;
 		predictor.reviewable().forEach(st => {
 			const answer = predictor.shapeOf(st.id, st);
 			expect(Object.keys(answer).sort()).toEqual(['cycle', 'modes']);
@@ -926,7 +928,18 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 				expect([Shape.lump, Shape.spread].indexOf(m.shape)).toBeGreaterThan(-1);
 				if(m.shape === Shape.lump){
 					named++;
-					expect(keys).toEqual(EVERY.concat(['confidence', 'days']).sort());
+					/* AND A RAIL WHERE THE CLOSURES AGREED. Absent means not enough shut days have
+					   been met to know, which is not the same as "nothing happens". */
+					const want = EVERY.concat(['confidence', 'days']);
+					if(m.rail){
+						want.push('rail');
+						railed++;
+						expect(Object.keys(m.rail).sort()).toEqual(['closures', 'tests']);
+						expect(['early', 'late', 'ignored'].indexOf(m.rail.closures))
+							.toBeGreaterThan(-1);
+						expect(m.rail.tests).toBeGreaterThanOrEqual(SHAPE_CONFIG.minClosureTests);
+					}
+					expect(keys).toEqual(want.sort());
 					expect(m.days.length).toBeGreaterThan(0);
 					expect(m.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
 				}else{
@@ -939,25 +952,10 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		});
 		expect(named).toBeGreaterThan(10);
 		expect(rates).toBeGreaterThan(10);
-		console.log('§3 ANSWER: ' + named + ' modes name a day, ' + rates + ' are a rate');
+		console.log('§3 ANSWER: ' + named + ' modes name a day (' + railed
+			+ ' with a learned closure rail), ' + rates + ' are a rate');
 	});
 
-	/* THE BAR IS A DECISION, NOT A DISPLAY. Earnin's phone reimbursement lands anywhere across a
-	   fortnight and reads 56% against the one day its cycle carries. The working still holds that
-	   reading; the answer does not offer a date it cannot keep. */
-	test('a mode under the bar names no day in the answer', () => {
-		const st = predictor.reviewable().find(x => /^earnin phone/i.test(x.name));
-		const working = predictor.explainShapeOf(st.id, st)
-			.modes.find(x => /expensify/i.test(x.label));
-		expect(working.shape).toBe(Shape.lump);
-		expect(working.days).toEqual([18]);
-		expect(working.confidence).toBeLessThan(SHAPE_CONFIG.minLumpConfidence);
-
-		const answer = predictor.shapeOf(st.id, st).modes.find(x => /expensify/i.test(x.label));
-		expect(answer.shape).toBe(Shape.spread);
-		expect(answer.days).toBe(undefined);
-		expect(answer.confidence).toBe(undefined);
-	});
 
 	/* ---- THE PROTOTYPE: A STREAM AS A LIST OF MODES -------------------------------------------------
 	   ONE SHAPE PER STREAM WAS THE WRONG SHAPE OF ANSWER. Utilities is a Conservice bill and a City
@@ -1047,8 +1045,8 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(lumps.every(x => x.days.length === 1)).toBe(true);
 		lumps.forEach(x => {
 			expect(x.days.length).toBe(1);
-			//d23 on a cycle seamed the 21st is the 14th - the reminder, read off the recent transfers
-			expect(x.days[0]).toBe(23);
+			//d24 on a cycle seamed the 21st is the 14th/15th - the calendar reminder
+			expect(x.days[0]).toBe(24);
 			expect(x.exceptions).toBe(1);
 		});
 
@@ -1186,24 +1184,41 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const robin = predictor.explainShapeOf(cc.id, cc).modes.find(x => /robinhood/i.test(x.label));
 		expect(robin.shape).toBe(Shape.lump);
 		expect(robin.typical).toBe(1);
-		expect(robin.days).toEqual([4]);
-		expect(robin.predicted).toEqual([4]);
+		expect(robin.days).toEqual([5]);
+		expect(robin.predicted).toEqual([5]);
 		expect(robin.exceptions).toBe(11);
 		expect(Math.round(robin.confidence * 100)).toBe(100);
 	});
 
 	/* ---- AND A MODE THAT CANNOT PICK ONE NAMES NONE -------------------------------------------------
-	   THE EARNIN REIMBURSEMENT IS ONE PAYMENT A MONTH LANDING IN ONE OF TWO WINDOWS - d15 to d18, or
-	   d26 to d29 - and there is no third answer between "a day" and "a rate". Measured against the one
-	   day its cycle carries it reads 56%, under the bar, so it keeps its money and names no date. */
-	test('a mode that lands in two windows is a rate, not a date', () => {
+	   THERE IS NO THIRD ANSWER BETWEEN "A DAY" AND "A RATE", and minLumpConfidence is where the line
+	   sits. Every mode in the captured portfolio currently clears it - Earnin's phone reimbursement
+	   is the closest at 60.2% against a bar of 60% - so the rule is exercised by raising the bar
+	   rather than by leaning on a stream that happens to sit under it today.
+
+	   A DEMOTED MODE KEEPS ITS MONEY AND LOSES ITS DATE. It is not removed and it is not zero; it is
+	   the same movements, forecast as a rate. */
+	test('a mode under the bar keeps its money and names no day', () => {
 		const st = predictor.reviewable().find(x => /^earnin phone/i.test(x.name));
-		const m = predictor.explainShapeOf(st.id, st);
-		const mode = m.modes.find(x => /expensify/i.test(x.label));
+		const window = legsInWindow(predictor.legsOf(st.id), predictor.analysisAnchor());
+		const partition = predictor.partitionOf(st.id);
+		const cycle = predictor.shapeOf(st.id, st).cycle;
+
+		const asIs = determineShape(window, partition, cycle, predictor.analysisAnchor(),
+			{country: predictor.userCountry()});
+		const mode = asIs.modes.find(x => /expensify/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
-		expect(mode.days.length).toBe(1);
-		//it holds a day, and the bar is what decides whether the page is allowed to say it
-		expect(mode.confidence).toBeLessThan(SHAPE_CONFIG.minLumpConfidence);
+		expect(mode.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
+
+		const strict = determineShape(window, partition, cycle, predictor.analysisAnchor(),
+			{country: predictor.userCountry()}, {minLumpConfidence: 0.99});
+		const demoted = strict.modes.find(x => /expensify/i.test(x.label));
+		expect(demoted.shape).toBe(Shape.spread);
+		expect(demoted.days).toBe(undefined);
+		expect(demoted.confidence).toBe(undefined);
+		//the money is untouched - only the promise about when changed
+		expect(demoted.moneyShare).toBeCloseTo(mode.moneyShare, 9);
+		expect(strict.modes.length).toBe(asIs.modes.length);
 	});
 
 	/* ---- RECENT CYCLES COUNT FOR MORE THAN OLD ONES ------------------------------------------------
@@ -1243,8 +1258,8 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
 		const pOn = predictor.explainShapeOf(wages.id, wages, {halfLife: 3, shoulder: 3})
 			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
-		expect(pOff.days).toEqual([8]);
-		expect(pOn.days).toEqual([8]);
+		expect(pOff.days).toEqual([9]);
+		expect(pOn.days).toEqual([9]);
 		expect(pOn.confidence).toBeGreaterThan(pOff.confidence);
 	});
 
@@ -1263,7 +1278,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 
 		const modeOff = off.modes.find(x => /expensify/i.test(x.label));
 		expect(modeOff.shape).toBe(Shape.lump);
-		expect(modeOff.days).toEqual([17]);
+		expect(modeOff.days).toEqual([18]);
 
 		const modeOn = on.modes.find(x => /expensify/i.test(x.label));
 		//it is still a mode with its money; what it lost is the right to name a day
@@ -1281,9 +1296,9 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	       d16  d13  d14  d25  d17  d21  d18  d20
 	                      ^ its one exception, trimmed
 
-	       plain median of the kept seven   d17
-	       last four cycles                 d19
-	       weighted middle                  d18
+	       plain median of the kept seven   d18
+	       last four cycles                 d20
+	       weighted middle                  d19
 
 	   NOTHING ELSE IN THE PORTFOLIO MOVED, and nothing moves at all with the taper off: with equal
 	   weights this is the plain median, even-count interpolation included. */
@@ -1314,7 +1329,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const plaid = predictor.reviewable().find(x => x.name === 'Plaid');
 		const mode = predictor.explainShapeOf(plaid.id, plaid).modes.find(x => /plaid hq/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
-		expect(mode.days).toEqual([18]);
+		expect(mode.days).toEqual([19]);
 	});
 
 	/* ---- §4, PROTOTYPE: HOW MUCH, AND WHEN THE NEXT ONE LANDS --------------------------------------
@@ -1444,6 +1459,103 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			+ lumps + ' dated claims | ' + rates + ' rates');
 		console.log('PREDICTION PAGE: ' + OUT_PRED + ' ('
 			+ fs.statSync(OUT_PRED).size + ' bytes)');
+	});
+
+	/* ---- THE RAIL, NOT THE ACCOUNT --------------------------------------------------------------
+	   A PAYMENT THAT SLID IS NOT A PAYMENT THAT MOVED, and which way it slides belongs to the rail
+	   the money travels on. Three rules sit side by side in this portfolio:
+
+	       ACTIVEHOURS INC PAYROLL   due on a shut day 6 times, arrived EARLY every time
+	       Comcast                   due on a shut day 4 times, collected LATE every time
+	       Music for Focus           due on a shut day twice, posted ON the shut day both times
+
+	   A payroll credit is funded the Friday before; a direct debit is taken the Monday after; a card
+	   does not care. All three can sit on one account, so it is learned per mode.
+
+	   ONLY WHERE EVERY OBSERVATION AGREED. A monthly bill meets a weekend three or four times a year,
+	   so one disagreement is a third of the evidence and a rule drawn from it would move a forecast
+	   off a day it has no business leaving. Four modes in the portfolio disagree with themselves and
+	   correctly get no rule at all. */
+	test('a closure rail is learned per mode, and only when every closure agreed', () => {
+		const DAY = 24 * 60 * 60 * 1000;
+		const at = (y, m, d) => new Date(Date.UTC(y, m, d));
+		//a lattice of four cycles whose day 3 is a Saturday in two of them
+		const mk = (starts, offsets) => starts.map((st, i) => ({
+			start: st,
+			end: new Date(st.getTime() + 30 * DAY),
+			legs: offsets[i] === null ? []
+				: [{date: new Date(st.getTime() + offsets[i] * DAY), amount: -10}]
+		}));
+
+		/* AUGUST CARRIES NO US FEDERAL HOLIDAY, so a Saturday there is only a Saturday. July would
+		   not do: the 4th falls on a Saturday in 2026, so the 3rd is the OBSERVED holiday and a rail
+		   that pays early walks past it to the Thursday - correct, and no way to read a rule off. */
+		const saturdays = [at(2026, 7, 5), at(2026, 7, 12)];
+		expect(isBusinessDay(at(2026, 7, 8), 'US')).toBe(false);
+		expect(isBusinessDay(at(2026, 7, 15), 'US')).toBe(false);
+
+		//both times the movement came a day early: a rule, on two agreeing observations
+		expect(closureRail(mk(saturdays, [2, 2]), 3, 'US'))
+			.toEqual({closures: RAIL.early, tests: 2});
+		//both times it came late
+		expect(closureRail(mk(saturdays, [5, 5]), 3, 'US'))
+			.toEqual({closures: RAIL.late, tests: 2});
+		//both times it posted on the shut day itself
+		expect(closureRail(mk(saturdays, [3, 3]), 3, 'US'))
+			.toEqual({closures: RAIL.ignored, tests: 2});
+		//one each way is not a rule
+		expect(closureRail(mk(saturdays, [2, 5]), 3, 'US')).toBe(null);
+		//and one agreeing observation is not enough evidence to be one
+		expect(closureRail(mk([saturdays[0]], [2]), 3, 'US')).toBe(null);
+
+		//THE PORTFOLIO: the payroll pays early, and it took six closures to say so
+		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
+		const payroll = predictor.shapeOf(wages.id, wages).modes
+			.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
+		expect(payroll.rail).toEqual({closures: RAIL.early, tests: 6});
+
+		//and no mode anywhere claims a rail on less evidence than the setting allows
+		predictor.reviewable().forEach(st => {
+			predictor.shapeOf(st.id, st).modes.forEach(m => {
+				if(!m.rail)return;
+				expect(m.rail.tests).toBeGreaterThanOrEqual(SHAPE_CONFIG.minClosureTests);
+			});
+		});
+	});
+
+	/* ---- AND §4 MOVES THE CLAIM TO WHERE IT WILL LAND --------------------------------------------
+	   settleDate runs FORWARDS, from a date that is due to the date the money will move. snapDate
+	   runs backwards, from a date the ledger recorded to the date it was due; the two are different
+	   journeys and only one of them predicts anything. */
+	test('a predicted day slides the way its rail slides', () => {
+		const sat = new Date(Date.UTC(2026, 7, 8));
+		const fri = new Date(Date.UTC(2026, 7, 7));
+		const mon = new Date(Date.UTC(2026, 7, 10));
+		expect(settleDate(sat, RAIL.early, 'US').getTime()).toBe(fri.getTime());
+		expect(settleDate(sat, RAIL.late, 'US').getTime()).toBe(mon.getTime());
+		expect(settleDate(sat, RAIL.ignored, 'US').getTime()).toBe(sat.getTime());
+		//a mode with nothing learned is never moved
+		expect(settleDate(sat, null, 'US').getTime()).toBe(sat.getTime());
+		//and a day the banks are open is left alone whatever the rule says
+		const tue = new Date(Date.UTC(2026, 7, 11));
+		expect(settleDate(tue, RAIL.early, 'US').getTime()).toBe(tue.getTime());
+
+		//on the page, a moved claim keeps the day it was due so the slide can be shown
+		const rows = predictionData(predictor);
+		let moved = 0;
+		rows.forEach(r => r.accounts.forEach(a => {
+			const claim = a.lanes[a.lanes.length - 1];
+			claim.events.forEach(e => {
+				if(e.movedFrom === null)return;
+				moved++;
+				expect(e.day).not.toBe(e.movedFrom);
+				//it only ever moves off a day the banks were shut
+				expect(claim.closed.some(c => c.day === e.movedFrom)).toBe(true);
+				//and it only ever moves onto a day they were open
+				expect(claim.closed.some(c => c.day === e.day)).toBe(false);
+			});
+		}));
+		console.log('§4 RAIL: ' + moved + ' predicted claims moved off a shut day');
 	});
 
 	test('writes the modes audit page from the real results', () => {

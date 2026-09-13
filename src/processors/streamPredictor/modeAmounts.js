@@ -29,7 +29,7 @@
    ================================================================================================== */
 
 import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
-import {isBusinessDay, isHoliday} from './businessCalendar';
+import {isBusinessDay, isHoliday, settleDate} from './businessCalendar';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -184,6 +184,7 @@ export function predictionRows(predictor, streamId, stream, opts){
 			legs: w.legs,
 			amount: amt.perCycle,
 			kind: amt.kind,
+			rail: w.rail || null,
 			quiet: amt.quiet,
 			cyclesLanded: amt.cyclesLanded,
 			rawLegs: w.rawLegs
@@ -213,15 +214,31 @@ export function predictionRows(predictor, streamId, stream, opts){
 				.map(l => ({day: dayInCycle(l, b), amount: l.amount, label: m.label}))), [])
 		}));
 
+		/* ---- THE CLAIM IS MOVED TO WHERE IT WILL ACTUALLY LAND ----------------------------------
+		   §3 LEARNED WHAT THE BANKS DO TO THIS RAIL; this is where that becomes a date. A payroll
+		   due on a Saturday is paid on the Friday, a direct debit is collected on the Monday, and a
+		   card posts on the Saturday - so the day drawn is the settled day, not the due day, and
+		   `movedFrom` keeps the due day so the page can show the slide rather than hide it.
+
+		   A MODE WITH NO LEARNED RAIL IS NOT MOVED. Not enough closures have been met to know which
+		   way it goes, and guessing would put the money on a day nothing has ever landed on. */
 		if(nxt)lanes.push({
 			start: nxt.start, end: nxt.end, days: nxt.days,
 			closed: closedDays(nxt.start, nxt.days, o.country),
 			predicted: true,
 			events: mine.filter(m => m.kind === 'lump')
-				.reduce((out, m) => out.concat(m.days.map((d, k) => ({
-					day: d, amount: m.amount, label: m.label,
-					wobble: m.wobble[k] || 0, confidence: m.confidence
-				}))), []),
+				.reduce((out, m) => out.concat(m.days.map((d, k) => {
+					const due = new Date(nxt.start.getTime() + d * ONE_DAY);
+					const rule = m.rail ? m.rail.closures : null;
+					const at = settleDate(due, rule, o.country);
+					const day = Math.round((at.getTime() - nxt.start.getTime()) / ONE_DAY);
+					return {
+						day: day, amount: m.amount, label: m.label,
+						wobble: m.wobble[k] || 0, confidence: m.confidence,
+						movedFrom: day === d ? null : d,
+						rail: rule
+					};
+				})), []),
 			rate: mine.filter(m => m.kind === 'rate')
 				.reduce((n, m) => n + m.amount, 0),
 			rateModes: mine.filter(m => m.kind === 'rate').length

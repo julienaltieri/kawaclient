@@ -21,7 +21,7 @@
    ================================================================================================== */
 
 import {SHAPE_CONFIG} from './shapeConfig';
-import {SNAP, snapDate, isBusinessDay} from './businessCalendar';
+import {SNAP, snapDate, isBusinessDay, RAIL} from './businessCalendar';
 import {AccountKind} from './accountMapping';
 import {merchantGroups} from './cycleFit';
 
@@ -105,6 +105,25 @@ export function cycleWeights(n, taper){
 const weightOf = b => (b && b.weight !== undefined) ? b.weight : 1;
 export const weightsOf = buckets => (buckets || []).map(weightOf);
 
+/* ---- THE SEAM IS A CALENDAR DAY, NOT AN INSTANT ------------------------------------------------
+   THE LATTICE IS WALKED WITH Time.js, WHICH BUILDS LOCAL DATES, and a ledger date is UTC midnight.
+   West of Greenwich local midnight is LATER in the day than UTC midnight - 08:00Z here - so a
+   payment on the 27th sat 5 days and 16 hours after a seam on the 21st, and dayInCycle floored that
+   to 5. Every claimed day was one lower than the calendar offset it describes, silently, on every
+   stream: Music for Focus bills on the 27th and the model said day 5 of a cycle seamed the 21st,
+   which is the 26th.
+
+   IT ONLY MATTERED WHEN A DAY BECAME A DATE. §3 labels a cluster, and a label one off is still a
+   label; §4 emits a date, and a date one off is a wrong forecast every month. The closure rule made
+   it worse than wrong - "was the due day a Saturday" was asking about the Friday.
+
+   SO EVERY EDGE IS PINNED TO UTC MIDNIGHT OF THE CALENDAR DAY IT MEANS, read with the local getters
+   because the walk produced local dates. Both sides of a day subtraction are then midnights and the
+   offset is exact. THE WALK COMPARES SEAMS TOO: pinning the edges after choosing them would leave
+   the top edge eight hours earlier than the test that placed it, and a leg landing exactly on that
+   date would fall outside every bucket. */
+const seam = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+
 export function cycleBuckets(legs, cycle, anchor, taper){
 	if(!cycle)return [];
 	const list = (legs || [])
@@ -126,10 +145,13 @@ export function cycleBuckets(legs, cycle, anchor, taper){
 		   silence since. Dormancy is a real finding and it is not this function's to make; stopping
 		   at the legs leaves it to whatever asks the question properly. */
 		top = root;
-		while(top.getTime() <= newest && ++guard < MAX_CYCLES)top = cycle.nextDate(top);
+		while(seam(top).getTime() <= newest && ++guard < MAX_CYCLES)top = cycle.nextDate(top);
 		let back = cycle.previousDate(top);
-		while(back.getTime() > newest && ++guard < MAX_CYCLES){top = back; back = cycle.previousDate(top)}
-	}else top = new Date(newest + 1);
+		while(seam(back).getTime() > newest && ++guard < MAX_CYCLES){
+			top = back;
+			back = cycle.previousDate(top);
+		}
+	}else top = new Date(newest + ONE_DAY);
 
 	const edges = [top];
 	let cur = top;
@@ -137,11 +159,11 @@ export function cycleBuckets(legs, cycle, anchor, taper){
 	do {
 		cur = cycle.previousDate(cur);
 		edges.push(cur);
-	} while(cur.getTime() > oldest && ++guard < MAX_CYCLES);
+	} while(seam(cur).getTime() > oldest && ++guard < MAX_CYCLES);
 
 	const buckets = [];
 	for(let i = edges.length - 1; i > 0; i--)
-		buckets.push({start: new Date(edges[i]), end: new Date(edges[i-1]), legs: []});
+		buckets.push({start: seam(edges[i]), end: seam(edges[i-1]), legs: []});
 
 	let b = 0;
 	list.forEach(x => {
@@ -166,8 +188,9 @@ export function cycleBuckets(legs, cycle, anchor, taper){
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
 export function dayInCycle(leg, bucket){
+	//both sides are UTC midnights - see the seam note in cycleBuckets - so this divides exactly
 	const t = new Date(leg.date).getTime() - bucket.start.getTime();
-	return Math.floor(t / ONE_DAY);
+	return Math.round(t / ONE_DAY);
 }
 
 /* EVERY CYCLE LAID ON TOP OF EVERY OTHER: how many movements ever landed on day 0, on day 1, and so
@@ -686,6 +709,55 @@ export function classifyShape(counts, bins, cfg, weights){
 		reason: 'the movements do not land on a day and the stream is not a flow'}, base);
 }
 
+/* ---- WHICH WAY THIS RAIL MOVES WHEN THE BANKS ARE SHUT -------------------------------------------
+   A PAYMENT THAT SLID IS NOT A PAYMENT THAT MOVED, and which way it slides is a property of the rail
+   the money travels on rather than of the account it lands in. Measured on the portfolio, three
+   different rules sit side by side:
+
+       ACTIVEHOURS INC PAYROLL   due on a shut day 6 times, arrived EARLY 6 times
+       Comcast                   due on a shut day 4 times, collected LATE 4 times
+       Music for Focus           due on a shut day 2 times, posted on the shut day both times
+
+   A payroll credit is funded on the Friday before; a direct debit is taken on the Monday after; a
+   card does not care. All three can sit on one account, which is why this is asked per mode.
+
+   ONLY WHERE EVERY OBSERVATION AGREED. A bill on the 12th meets a weekend three or four times a
+   year, so one disagreement is a third of the evidence - and a rule learned from that would move a
+   forecast off a day it has no business leaving. Disagreement returns null, which the answer carries
+   as an absent field rather than as a shrug.
+
+   THE BUCKETS MUST HOLD THE RAW LEGS. The lattice a mode is SHAPED on may carry dates the closure
+   theories already moved, and asking those where the banks pushed them is asking the adjustment
+   about itself: it answered "posts anyway" for a payroll that is six for six early, because by then
+   the six had been snapped back onto their due day. What happened is in the ledger, so that is what
+   this reads. */
+export function closureRail(buckets, day, country, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	if(day === undefined || day === null)return null;
+	let early = 0, late = 0, ignored = 0;
+
+	(buckets || []).forEach(b => {
+		if(!b.legs.length)return;
+		const due = new Date(b.start.getTime() + day * ONE_DAY);
+		if(isBusinessDay(due, country))return;
+		//the movement nearest the day it was due is the one that answers for this cycle
+		let best = null, bestGap = Infinity;
+		b.legs.forEach(l => {
+			const gap = new Date(l.date).getTime() - due.getTime();
+			if(Math.abs(gap) < bestGap){ bestGap = Math.abs(gap); best = gap; }
+		});
+		if(best === null)return;
+		if(best < 0)early++; else if(best > 0)late++; else ignored++;
+	});
+
+	const tests = early + late + ignored;
+	if(tests < c.minClosureTests)return null;
+	if(early === tests)return {closures: RAIL.early, tests: tests};
+	if(late === tests)return {closures: RAIL.late, tests: tests};
+	if(ignored === tests)return {closures: RAIL.ignored, tests: tests};
+	return null;
+}
+
 /* ---- A PATTERN AND ITS OWN EXCEPTIONS -----------------------------------------------------------
    DROP THE MOVEMENT FURTHEST FROM THE CLAIMED DAY WHILE THAT IMPROVES THE FIT. A habit with a late
    month is still that habit, and a mode that has to account for every movement it ever made cannot
@@ -886,6 +958,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		host.dayEvents = d.map(x => x.events);
 		host.typical = mg.verdict.typical === undefined ? null : mg.verdict.typical;
 		host.predicted = predictedDays(d, mg.verdict.typical);
+		host.rail = (d.length && cycle)
+			? closureRail(cycleBuckets(host.rawLegs, cycle, anchor, o.taper), d[0].day, o.country)
+			: null;
 	});
 
 	/* EVERYTHING STILL LOOSE BECOMES ONE MODE. Per account, because a shape is per account and a
@@ -922,6 +997,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 			dayEvents: d.map(x => x.events),
 			typical: mg.verdict.typical === undefined ? null : mg.verdict.typical,
 			predicted: predictedDays(d, mg.verdict.typical),
+			rail: (d.length && cycle)
+				? closureRail(cycleBuckets(legs, cycle, anchor, o.taper), d[0].day, o.country)
+				: null,
 			confidence: mg.verdict.shape ? mg.fit : null,
 			money: group.reduce((n, m) => n + m.money, 0),
 			moneyShare: group.reduce((n, m) => n + m.moneyShare, 0),
@@ -1027,6 +1105,9 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 			}
 			const lumpy = verdict.shape === Shape.lump;
 			const dd = lumpy ? lumpDays(buckets, verdict.lumps) : [];
+			const rail = (lumpy && dd.length && cycle)
+				? closureRail(cycleBuckets(mine, cycle, anchor, o.taper), dd[0].day, o.country)
+				: null;
 
 			modes.push({
 				label: modeLabel(mine),
@@ -1045,6 +1126,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				dayEvents: dd.map(d => d.events),
 				typical: verdict.typical === undefined ? null : verdict.typical,
 				predicted: predictedDays(dd, verdict.typical),
+				rail: rail,
 				confidence: verdict.shape
 					? (verdict.fit === undefined || verdict.fit === null ? null : verdict.fit)
 					: null,
@@ -1148,6 +1230,10 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 			if(named){
 				out.days = m.days.slice();
 				out.confidence = m.confidence;
+				/* WHAT THE BANKS DO TO THIS DAY, where the rail has said so consistently. Absent
+				   means not enough closures have been met to know, which is not the same as
+				   "nothing happens" and must not be read as it. */
+				if(m.rail)out.rail = {closures: m.rail.closures, tests: m.rail.tests};
 			}
 			out.moneyShare = m.moneyShare;
 			return out;

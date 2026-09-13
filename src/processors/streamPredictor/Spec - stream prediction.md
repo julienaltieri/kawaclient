@@ -672,6 +672,7 @@ reading both would be reading the same evidence twice.
         shape,        lump | spread
         days?,        lump only - the days of the cycle it lands on
         confidence?,  lump only - 0 to 1
+        rail?,        lump only - {closures: early | late | ignored, tests: n}
         moneyShare    how much of the stream rides on this mode
       }]
     }
@@ -679,6 +680,34 @@ reading both would be reading the same evidence twice.
 **An undetermined field is ABSENT, never a placeholder** — the same contract §2 answers on. A spread
 has no `days` because it has no day to name, which is what makes it a spread, and no `confidence`
 about a day it never claimed.
+
+### What the banks do to the day
+
+**A payment that slid is not a payment that moved**, and which way it slides belongs to the rail the
+money travels on rather than to the account it lands in. Three rules sit side by side in the captured
+portfolio:
+
+    ACTIVEHOURS INC PAYROLL   due on a shut day 6 times, arrived EARLY every time
+    Comcast                   due on a shut day 4 times, collected LATE every time
+    Music for Focus           due on a shut day twice, posted ON the shut day both times
+
+A payroll credit is funded the Friday before; a direct debit is taken the Monday after; a card does
+not care. All three can sit on one account, so it is learned per MODE.
+
+**Only where every observed closure agreed**, over at least `minClosureTests` of them. A monthly bill
+meets a weekend three or four times a year, so one disagreement is a third of the evidence and a rule
+drawn from that would move a forecast off a day it has no business leaving. Six modes qualify today;
+four more have three observations each and disagree with themselves, and get no rule at all.
+
+**Read off the raw ledger, never off the adjusted lattice.** The buckets a mode is SHAPED on may hold
+dates the closure theories already moved, and asking those which way the bank pushed them is asking
+the adjustment about itself — it answered "posts anyway" for a payroll that is six for six early,
+because by then the six had been snapped back onto their due day.
+
+**Absent means not enough closures have been met to know**, which is not the same as "nothing
+happens" and must not be read as it. Four modes in the predicted cycle land on a shut day with no
+rail; they are left where they are, because guessing would put the money on a day nothing has ever
+landed on.
 
 **Everything else is the working, and the working has its own surface.** `explainShape` returns the
 same modes carrying the movements they were read from, the histogram, the cycles observed, which
@@ -691,6 +720,7 @@ reads it.
 | setting | value | what it decides | measured on |
 |---|---|---|---|
 | `minConcentration` | 0.75 | how sharply movements must cluster to be a lump at all | the portfolio's bills all clear it; groceries read 0.11 |
+| `minClosureTests` | 2 | how many shut due-days before a rail is a rule | at 2 the portfolio learns six rails; the four modes with three disagreeing observations correctly learn none |
 | `minLumpConfidence` | 0.60 | what a claim on a date costs | Earnin's phone reimbursement reads 56% across a fortnight and names no day; every real bill clears it with room |
 | `taperShoulderCycles` | 3 | how many recent cycles are never faded | a rhythm needs a few cycles at full weight to be a rhythm; without this the card payment dips from 94% to 85% at one half-life and recovers at the next |
 | `taperHalfLifeCycles` | 3 | how fast older cycles fade | short enough to follow a habit that moved, long enough that moving is what it takes |
@@ -708,8 +738,18 @@ reads it.
 
 ### What it reads today
 
-29 streams reach this stage with a non-yearly cycle and at least one movement. 17 modes name a day;
-every other mode is a rate.
+29 streams reach this stage with a non-yearly cycle and at least one movement. 18 modes name a day,
+six of them with a learned closure rail; every other mode is a rate.
+
+**The seam is a calendar day, not an instant.** The lattice is walked with `Time.js`, which builds
+LOCAL dates, and a ledger date is UTC midnight. West of Greenwich local midnight is later in the day,
+so a payment on the 27th sat 5 days and 16 hours after a seam on the 21st and `dayInCycle` floored it
+to 5 — every claimed day was one lower than the calendar offset it describes. It only mattered once a
+day became a date: §3 labels a cluster and a label one off is still a label, but §4 emits a date, and
+the closure rule made it worse than wrong by asking "was the due day a Saturday" about the Friday.
+Every bucket edge is now pinned to UTC midnight of the day it means, and the walk compares seams too.
+Seventeen of the eighteen claimed days moved by exactly one with identical confidence; §2's validated
+cohort is unchanged.
 
 **Worked example — the credit card payment.** 38 movements over 37 weekly cycles, almost exactly one a
 week, in two clusters:
@@ -727,6 +767,12 @@ model read two lumps half a cycle apart, because March's stray sits opposite the
 wrapping the circle twice lands them on top of each other. Allowed one exception it reads **lump, day
 23 — the 14th — at 73%**, with the pull-backs kept apart by direction and answered as a rate.
 
+**Worked example — the payroll and the banks.** `ACTIVEHOURS INC PAYROLL` claims day 9 of a
+semimonthly cycle. Six times in seventeen cycles that day was a Saturday, a Sunday or a holiday, and
+six times out of six the money arrived two days early — the employer funds it before the weekend. The
+answer carries `rail: {closures: 'early', tests: 6}`, and §4 moves the claim to the previous business
+day whenever the due day is shut.
+
 **Worked example — Hobby mdm.**
 
     {
@@ -738,6 +784,8 @@ wrapping the circle twice lands them on top of each other. Allowed one exception
         {label: "everything else (3 payees)", accountId: "ins_54::9869::credit",
          accountType: "deferred", direction: "out",
          shape: "spread", moneyShare: 0.429}
+        // the Claude subscription has met only two shut days and disagreed with itself,
+        // so it carries no rail
       ]
     }
 
@@ -955,6 +1003,9 @@ by accident.
 - **The confidence bar is a decision, not a display.** A lump under it is answered as a spread.
 - **The answer carries no wobble, no histogram, no leg counts and no legs.** Those are the working, and
   the working has its own surface in `explainShape`.
+- **What the banks do to a day is learned per mode, from the raw ledger, and only on unanimous
+  evidence.** A payroll pays early, a direct debit collects late, a card does not move; the rule
+  belongs to the rail, not the account. Absent means not yet known, never "nothing happens".
 
 ## Still open
 

@@ -160,4 +160,26 @@ export function snapDate(date, how, country){
 	return d;
 }
 
+/* ---- WHERE A PAYMENT DUE ON A SHUT DAY ACTUALLY LANDS -------------------------------------------
+   snapDate above runs BACKWARDS, from a date the ledger recorded to the date it was due. This runs
+   forwards, from a date that is due to the date the money will move, and the two are not the same
+   journey: one undoes a bank, the other predicts it.
+
+   THE RULE BELONGS TO THE RAIL, NOT THE ACCOUNT. A payroll credit arrives EARLY when payday is a
+   Saturday - the employer funds it on the Friday. A direct debit is collected LATE, on the next
+   business day. A card does not care at all and posts on the Saturday. All three can sit on the same
+   account, so the rule is learned per mode and passed in. */
+export const RAIL = {early: 'early', late: 'late', ignored: 'ignored'};
+
+export function settleDate(due, rule, country){
+	const c = country || DEFAULT_COUNTRY;
+	const d = new Date(due);
+	if(rule === RAIL.ignored || !rule || !CALENDARS[c])return d;
+	if(isBusinessDay(d, c))return d;
+	const step = rule === RAIL.early ? -ONE_DAY : ONE_DAY;
+	let probe = new Date(d.getTime() + step), guard = 0;
+	while(!isBusinessDay(probe, c) && ++guard < 30)probe = new Date(probe.getTime() + step);
+	return probe;
+}
+
 export default isBusinessDay;

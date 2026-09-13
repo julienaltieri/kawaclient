@@ -63,6 +63,8 @@ export function predictionData(predictor){
 				mask: a.mask || null,
 				modes: a.modes.map(m => ({
 					label: plain(m.label),
+					rail: m.rail ? m.rail.closures : null,
+					railTests: m.rail ? m.rail.tests : 0,
 					shape: m.shape,
 					pattern: plain(patternOf(m)),
 					amount: m.amount,
@@ -84,7 +86,8 @@ export function predictionData(predictor){
 					rateModes: l.rateModes || 0,
 					events: l.events.map(e => ({
 						day: e.day, amount: e.amount, label: plain(e.label),
-						wobble: e.wobble || 0
+						wobble: e.wobble || 0,
+						movedFrom: e.movedFrom === undefined ? null : e.movedFrom
 					}))
 				}))
 			}))
@@ -190,9 +193,12 @@ function laneHtml(lane, scale){
 		e = lane.events[i];
 		left = Math.max(0, Math.min(100, (e.day / lane.days) * 100));
 		h = Math.max(9, Math.round((Math.abs(e.amount) / scale) * 26));
-		cls = "mk" + (e.amount < 0 ? " out" : " in");
+		cls = "mk" + (e.amount < 0 ? " out" : " in")
+			+ (e.movedFrom === null || e.movedFrom === undefined ? "" : " moved");
 		marks = marks + "<span class='" + cls + "' style='left:" + left + "%;height:" + h + "px'"
-			+ " title='" + esc2(e.label) + " " + DOTCH + " d" + e.day + " " + money(e.amount) + "'>"
+			+ " title='" + esc2(e.label) + " " + DOTCH + " d" + e.day + " " + money(e.amount)
+				+ (e.movedFrom === null || e.movedFrom === undefined ? ""
+					: " " + DOTCH + " due d" + e.movedFrom + ", the banks were shut") + "'>"
 			+ "<i>" + money(e.amount) + "</i></span>";
 	}
 	/* A RATE HAS NO POSITION, so it is the lane's own ground rather than a mark on it. */
@@ -208,7 +214,16 @@ function laneHtml(lane, scale){
 		+ "</div>";
 }
 
+/* WHAT THE BANKS DO TO THIS DAY, in the words a person would use for it. */
+function railWords(r){
+	if(r === "early")return "shut day " + DOTCH + " pays the business day before";
+	if(r === "late")return "shut day " + DOTCH + " collects the next business day";
+	if(r === "ignored")return "shut day " + DOTCH + " posts anyway";
+	return "";
+}
+
 function modeHtml(m){
+	var rail = railWords(m.rail);
 	return "<div class='md" + (m.kind === "lump" ? "" : " rate") + "'>"
 		+ "<span class='mdsh'>" + (m.kind === "lump" ? "lump" : "rate") + "</span>"
 		+ "<span class='mdpat'>" + esc2(m.pattern) + "</span>"
@@ -218,7 +233,9 @@ function modeHtml(m){
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "
 			+ DOTCH + " " + Math.round(m.moneyShare * 100) + "% of the stream"
 			+ (m.quiet > 2 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
-			+ "</i></div></div>";
+			+ (rail ? "</i><u>" + esc2(rail) + " " + DOTCH + " seen " + m.railTests
+				+ " times</u>" : "</i>")
+			+ "</div></div>";
 }
 
 function accountHtml(acc){
@@ -272,6 +289,8 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 		+ 'cycle</span>'
 	+ '<span class="lg">shaded columns are days the banks were shut - grey for a weekend, amber for '
 		+ 'a holiday</span>'
+	+ '<span class="lg">a mode that has met enough shut days says what its rail does with them, and '
+		+ 'a moved claim is drawn in accent on the day it will really land</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'
@@ -324,6 +343,7 @@ const CSS = `
 .mdcf{grid-area:cf;font-size:10px;color:var(--ink-faint);white-space:nowrap}
 .mdwho{grid-area:who;color:var(--ink-soft);word-break:break-word}
 .mdwho i{display:block;font-style:normal;font-size:9.5px;color:var(--ink-faint)}
+.mdwho u{display:block;text-decoration:none;font-size:9.5px;color:var(--accent)}
 
 .lanes{margin-top:8px}
 .lane{margin-bottom:2px}
@@ -337,6 +357,7 @@ const CSS = `
 .mk{position:absolute;bottom:0;width:5px;margin-left:-2px;border-radius:2px 2px 0 0;
 	background:var(--realtime)}
 .mk.out{background:var(--deferred)}
+.mk.moved{background:var(--accent);box-shadow:0 0 0 2px var(--paper)}
 .mk i{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
 	font:500 8.5px/1 var(--mono);color:var(--ink-soft);white-space:nowrap;padding-bottom:1px}
 .lane.next .mk{opacity:.85}

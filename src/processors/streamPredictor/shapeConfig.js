@@ -177,6 +177,21 @@ export const SHAPE_CONFIG = {
 	   maxLumps and took the first that passed, so pinning tests a subset of what passed before. */
 	pinLumpsToEventsPerCycle: true,
 
+	/* ---- HOW MUCH CLOSURE EVIDENCE BEFORE A RAIL IS A RULE -----------------------------------------
+	   A RAIL IS LEARNED, NOT ASSUMED, and most modes have barely met a closed day. A monthly bill on
+	   the 12th hits a weekend three or four times a year, so the question "which way does it move"
+	   has three or four observations behind it and a single disagreement is a third of the evidence.
+
+	   SO A RULE IS CLAIMED ONLY WHEN EVERY OBSERVED CLOSURE AGREED, over at least this many of them.
+	   Below it the mode says nothing rather than guessing, which is the honest answer for a bill that
+	   has met two Saturdays and dodged both.
+
+	   MEASURED: at 2 the portfolio learns six rails - the payroll pays early 6 times out of 6, Comcast
+	   collects late 4 out of 4, GEICO late 2 out of 2, and three card modes post on the closed day
+	   itself. Four more modes have three observations each and disagree with themselves; they get no
+	   rule, which is correct. */
+	minClosureTests: 2,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus
