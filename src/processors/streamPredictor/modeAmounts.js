@@ -117,8 +117,17 @@ export function modeAmount(mode, spine, shape, cfg){
 	/* AND THE SAME QUESTION FOR A LUMP, ASKED ITS OWN WAY. A rate stops by going silent for a couple
 	   of cycles; a bill stops by missing a date it has never missed. Gembah is 43 days past a payment
 	   that never took more than 31. */
+	/* HOW FAR PAST ITS RECORD A MODE MUST GO DEPENDS ON HOW PREDICTABLE ITS DATE WAS. A metronome
+	   that is 40% late has stopped; a payment whose day already wanders is just wandering. Gembah
+	   kept its day to 90% and is 1.39 past its worst wait; Earnin's reimbursement keeps its day to
+	   65% and is 1.06 past - the same bar for both would call the second one dead on noise.
+
+	   SO THE TOLERANCE IS THE BAR DIVIDED BY THE DAY CONFIDENCE, which needs no second number:
+	   Gembah must pass 1.11 and does, the reimbursement must pass 1.54 and does not. */
+	const dayConf = (mode.onDay === null || mode.onDay === undefined)
+		? 1 : Math.max(0.3, mode.onDay);
 	const late = lump && mode.overdue !== null && mode.overdue !== undefined
-		&& mode.overdue > ac.lateMultiple;
+		&& mode.overdue > ac.lateMultiple / dayConf;
 
 	return {
 		kind: lump ? 'lump' : unread ? 'unknown' : 'rate',
@@ -241,6 +250,10 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			days: plannedAt ? [plannedAt.day] : (a.days || []),
 			wobble: plannedAt ? [plannedAt.wobble] : (w.wobble || []),
 			confidence: a.confidence === undefined ? null : a.confidence,
+			arrival: (a.confidence && a.confidence.arrival !== undefined)
+				? a.confidence.arrival : null,
+			onDay: (a.confidence && a.confidence.day !== undefined) ? a.confidence.day : null,
+			wandering: !!w.wandering,
 			moneyShare: a.moneyShare,
 			direction: w.direction,
 			exceptions: w.exceptions || 0,

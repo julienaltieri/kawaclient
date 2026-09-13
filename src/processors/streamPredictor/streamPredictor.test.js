@@ -805,7 +805,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   many movements a cycle carried and a cutoff at four, which put groceries - four or five shops a
 	   week, every week, the textbook spread - in the same class as a utility bill arriving twice a
 	   month. Counting is not the question. Where they LAND is. */
-	test('the shape comes from where the movements land, not from how many there are', () => {
+	test('focus decides first, and how often decides the rest', () => {
 		//rent: one a month, always on day 11
 		const rent = classifyShape([1, 1, 1, 1, 1, 1, 1, 1, 1], bins(31, {10: 1, 11: 6, 12: 2}));
 		expect(rent.shape).toBe(Shape.lump);
@@ -815,28 +815,55 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const groceries = classifyShape([4, 5, 6, 3, 5, 4, 5, 4, 6, 5, 4, 3],
 			bins(7, {0: 8, 1: 9, 2: 7, 3: 8, 4: 7, 5: 8, 6: 7}));
 		expect(groceries.shape).toBe(Shape.spread);
+		expect(groceries.flow).toBe(true);
 		expect(groceries.concentration).toBeLessThan(0.2);
 		//AND ITS CONFIDENCE IS HIGH. A flat cycle is a certain spread, not a doubtful lump.
 		expect(groceries.confidence).toBeGreaterThan(0.8);
 
-		//two bills a month, a fortnight apart: one lump with two days in it, not a second kind of shape
+		/* TWO BILLS A FORTNIGHT APART ARE TWO DATES, NOT A FLOW. Two movements a cycle is above the
+		   rate that makes a spread, and counting them first would call a pair of perfectly dated
+		   bills a rate - so focus is asked first, and where the movements land on their days how
+		   many of them there are is not the question. */
 		const twice = classifyShape([2, 2, 2, 2, 2, 2], bins(30, {4: 6, 19: 6}));
 		expect(twice.shape).toBe(Shape.lump);
 		expect(twice.lumps).toBe(2);
+		expect(twice.perMonth).toBe(2);
+		expect(twice.flow).toBe(undefined);
 	});
 
 	/* ONCE A MONTH IS NOT A DAY. Earnin's phone reimbursement arrives exactly once every month and
 	   the count-based rule called it a perfect lump for that reason. It lands anywhere across a
 	   fortnight, so there is no day to predict and saying so is the answer. */
-	test('steady as clockwork but landing anywhere is a spread, not a lump', () => {
+	/* ---- ONE A CYCLE LANDING ANYWHERE IS A LUMP WHOSE DATE WANDERS ---------------------------------
+	   A SPREAD IS WHEN SO MANY MOVEMENTS HAPPEN THAT PRECISION IS NOT WORTH TRYING FOR. One a month
+	   is the opposite: the money arrives all at once, and smearing $50 across thirty days as $1.67 a
+	   day describes nothing that happens. So it keeps its median day and reports the doubt.
+
+	   THE TWO CONFIDENCES COME APART HERE, which is why they are two. Arrival is certain - it turns
+	   up in every cycle - and the day is worth nothing. Multiplied into one number that is zero, and
+	   a payment we are sure about would be thrown away for a date nobody asked it to keep. */
+	test('one a cycle landing anywhere is a lump whose date wanders', () => {
 		const v = classifyShape([1, 1, 1, 1, 1, 1, 1, 1],
 			bins(31, {15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 23: 1, 27: 1, 29: 1}));
-		//past the evidence guards and out of focus: a spread it EARNED, and not a flow
-		expect(v.shape).toBe(Shape.spread);
+		expect(v.shape).toBe(Shape.lump);
+		expect(v.wandering).toBe(true);
 		expect(v.flow).toBe(undefined);
-		expect(v.steady).toBe(1);
 		expect(v.concentration).toBeLessThan(0.75);
-		expect(v.reason).toMatch(/do not land on a day/);
+		//certain it comes, and nothing to say about when
+		expect(v.arrival).toBe(1);
+		expect(v.day).toBeLessThan(0.5);
+		//and the two multiplied - the old single number - would have thrown it away
+		expect(v.fit).toBeLessThan(v.arrival);
+	});
+
+	/* A WEEKLY LATTICE MAKES EVERY RATE LOOK SMALL, so the comparison is per month. Groceries run
+	   3.5 shops a month and read 0.81 a cycle; counted per cycle they would pass for one payment. */
+	test('the rate is measured per month, not per cycle', () => {
+		const weekly = classifyShape([1, 0, 1, 2, 1, 0, 1, 1, 2, 1, 0, 1],
+			bins(7, {0: 3, 1: 2, 2: 2, 3: 1, 4: 1, 5: 1, 6: 1}));
+		expect(weekly.perCycle).toBeLessThan(1.2);
+		expect(weekly.perMonth).toBeGreaterThan(1.2);
+		expect(weekly.shape).toBe(Shape.spread);
 	});
 
 	/* ONE CYCLE MAKES ITS OWN COUNT THE COMMONEST and scores 100% steady by construction. Date had
@@ -942,7 +969,13 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 					named++;
 					/* AND A RAIL WHERE THE CLOSURES AGREED. Absent means not enough shut days have
 					   been met to know, which is not the same as "nothing happens". */
-					const want = EVERY.concat(['confidence', 'days']);
+					const want = EVERY.concat(['confidence', 'days', 'wobble']);
+					/* TWO QUESTIONS, TWO CONFIDENCES: will it come, and do we know when. They move
+					   together on an ordinary bill and come apart on a date that wanders. */
+					expect(Object.keys(m.confidence).sort()).toEqual(['arrival', 'day']);
+					expect(m.confidence.arrival).toBeGreaterThanOrEqual(
+						SHAPE_CONFIG.minLumpConfidence);
+					expect(m.wobble.length).toBe(m.days.length);
 					//how far past its own worst gap it is, where it has a gap to be past
 					if(m.overdue !== undefined)want.push('overdue');
 					if(m.rail){
@@ -955,7 +988,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 					}
 					expect(keys).toEqual(want.sort());
 					expect(m.days.length).toBeGreaterThan(0);
-					expect(m.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
+
 				}else{
 					rates++;
 					expect(keys).toEqual(EVERY);
@@ -1226,7 +1259,8 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			{country: predictor.userCountry(), now: predictor.analysisNow()});
 		const mode = asIs.modes.find(x => /expensify/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
-		expect(mode.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
+		//THE BAR GUARDS ARRIVAL: below it we do not know whether money is coming at all
+		expect(mode.confidence.arrival).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
 
 		const strict = determineShape(window, partition, cycle, predictor.analysisAnchor(),
 			{country: predictor.userCountry(), now: predictor.analysisNow()},
@@ -1288,23 +1322,31 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   newest of a handful of stale movements dominate RAISES a claim that should be falling. Counting
 	   WEIGHTED movements against minMovements is what turns a stale claim into no claim.
 
-	   THE EARNIN INTERNET REIMBURSEMENT IS THE CASE. Eight movements, the last on the 21st of July,
-	   and untapered it still holds a day at 58%. Faded, there is not enough weight left in it to ask
-	   the question, and it becomes part of the stream's baseline instead. */
-	test('a mode whose movements have all faded stops claiming a day', () => {
-		const st = predictor.reviewable().find(x => /^earnin internet/i.test(x.name));
-		const off = predictor.explainShapeOf(st.id, st, {halfLife: 0, shoulder: 3});
-		const on = predictor.explainShapeOf(st.id, st, {halfLife: 3, shoulder: 3});
+	   TESTED ON THE ARITHMETIC, not on a stream that happens to sit near the line today. Four
+	   movements clear the floor at full weight and the same four do not once they have faded, which
+	   is the whole of the rule. */
+	test('a mode whose movements have all faded stops being read at all', () => {
+		const counts = [1, 1, 1, 1, 0, 0, 0, 0];
+		const picture = bins(30, {10: 4});
 
-		const modeOff = off.modes.find(x => /expensify/i.test(x.label));
-		expect(modeOff.shape).toBe(Shape.lump);
-		expect(modeOff.days).toEqual([18]);
+		//at full weight it is four movements and it is read
+		const fresh = classifyShape(counts, picture, null, counts.map(() => 1));
+		expect(fresh.shape).toBe(Shape.lump);
 
-		const modeOn = on.modes.find(x => /expensify/i.test(x.label));
-		//it is still a mode with its money; what it lost is the right to name a day
-		expect(modeOn.shape).not.toBe(Shape.lump);
-		expect(modeOn.days).toEqual([]);
-		expect(on.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
+		//faded to a quarter it is one weighted movement, and there is nothing to read
+		const faded = classifyShape(counts, picture, null,
+			[0.25, 0.25, 0.25, 0.25, 1, 1, 1, 1]);
+		expect(faded.shape).toBe(null);
+		expect(faded.reason).toMatch(/once the old ones fade/);
+
+		//and the portfolio really does have modes the floor silences
+		let unread = 0;
+		predictor.reviewable().forEach(st => {
+			const a = predictor.shapeOf(st.id, st);
+			if(!a.cycle || /yearly/i.test(a.cycle.name))return;
+			a.modes.forEach(m => { if(m.shape === Shape.unknown)unread++; });
+		});
+		expect(unread).toBeGreaterThan(0);
 	});
 
 	/* ---- THE DAY IS A WEIGHTED MIDDLE TOO ----------------------------------------------------------

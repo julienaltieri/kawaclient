@@ -105,7 +105,9 @@ export function predictionData(predictor){
 					observed: m.observed,
 					silenced: !!m.silenced,
 					kind: m.kind,
-					confidence: m.confidence,
+					arrival: m.arrival,
+					onDay: m.onDay,
+					wandering: !!m.wandering,
 					moneyShare: m.moneyShare,
 					direction: m.direction,
 					legs: m.legs,
@@ -279,6 +281,9 @@ function modeHtml(m){
 	var quiet = !!gate;
 	/* A DECLARATION THE LEDGER AGREED WITH. Worth saying out loud, because the number came from the
 	   user rather than from the ledger and a reader must not mistake it for a measurement. */
+	var wander = (m.wandering && m.onDay !== null && m.onDay < 0.5)
+		? "the date wanders " + DOTCH + " the day shown is the middle of the ones it has used"
+		: "";
 	var plan = m.kind === "planned"
 		? "amount declared " + esc2(m.plannedAt) + " and paid as declared "
 			+ DOTCH + " seen " + m.plannedSeen + (m.plannedSeen === 1 ? " time" : " times")
@@ -291,17 +296,22 @@ function modeHtml(m){
 		+ "<b class='mdamt" + (quiet ? " hushed" : "") + "'>"
 			+ (quiet ? money(m.capped ? m.cappedAmount : m.observed) : money(m.amount))
 			+ ((m.kind === "lump" || m.kind === "planned") ? "" : " / cycle") + "</b>"
-		+ "<span class='mdcf'>" + (m.confidence === null ? DOTCH
-			: Math.round(m.confidence * 100) + "% sure") + "</span>"
+		/* TWO QUESTIONS, TWO ANSWERS. Will it come, and do we know when - they move together on an
+		   ordinary bill and come apart on a date that wanders, which is the case worth seeing. */
+		+ "<span class='mdcf'>" + (m.arrival === null ? DOTCH
+			: Math.round(m.arrival * 100) + "% arrives"
+				+ (m.onDay === null ? "" : ", " + Math.round(m.onDay * 100) + "% on the day"))
+			+ "</span>"
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "
 			+ DOTCH + " " + Math.round(m.moneyShare * 100) + "% of the stream"
 			+ (!quiet && m.quiet > 0 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
-			+ ((gate || plan || rail) ? "</i>" : "")
+			+ ((gate || plan || rail || wander) ? "</i>" : "")
 			+ (gate ? "<s>" + esc2(gate) + "</s>" : "")
 			+ (plan ? "<em>" + plan + "</em>" : "")
+			+ (wander ? "<em>" + wander + "</em>" : "")
 			+ (rail ? "<u>" + esc2(rail) + " " + DOTCH + " seen "
 				+ m.railTests + " times</u>" : "")
-			+ ((gate || plan || rail) ? "" : "</i>")
+			+ ((gate || plan || rail || wander) ? "" : "</i>")
 			+ "</div></div>";
 }
 
@@ -373,6 +383,8 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 	+ '<span class="lg">a "planned" mode is one the ledger is too young to read, whose first payment '
 		+ 'arrived at exactly the amount the user declared before it - the number is theirs, not a '
 		+ 'measurement</span>'
+	+ '<span class="lg">two confidences: how often it ARRIVES, and how well it keeps its DAY - they '
+		+ 'come apart on a payment that is certain to come and lands anywhere</span>'
 	+ '<span class="lg">the budget comparison sits on each ACCOUNT: a transfer between two of your '
 		+ 'own nets to nothing at the stream and still moves both balances</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '

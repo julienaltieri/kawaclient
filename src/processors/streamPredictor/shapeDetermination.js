@@ -471,6 +471,17 @@ export function tightness(bins, lumps){
    nine points cannot help piling onto a handful of weekday slots, so they look tight, and 0.31 x 0.57
    says what they are worth. Nothing is gated - a stray can still complete a sparse mode and raise it -
    the score simply stops mistaking arithmetic for a habit. */
+/* THE SHARE OF CYCLES THAT CARRIED ANYTHING, weighted by how recent they are. On its own this is
+   the answer to "will it come"; multiplied by tightness it is the old single fit, which the merge
+   test still wants because that question is about both halves at once. */
+export function weightedFills(counts, weights){
+	if(!counts || !counts.length)return 0;
+	const w = i => (weights && weights[i] !== undefined) ? weights[i] : 1;
+	let filled = 0, total = 0;
+	counts.forEach((x, i) => { total += w(i); if(x > 0)filled += w(i); });
+	return total ? filled / total : 0;
+}
+
 export function patternFit(bins, counts, lumps, weights){
 	const t = tightness(bins, lumps);
 	if(t === null)return null;
@@ -682,6 +693,15 @@ export function classifyShape(counts, bins, cfg, weights){
 	const typical = commonest(counts);
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
+	/* HOW MANY MOVEMENTS A CYCLE ACTUALLY CARRIES, as a MEAN. `commonest` answers a different
+	   question and answers it badly here: cycles running 1, 1, 1, 2, 5, 8 have a modal count of one
+	   and carry three a cycle. */
+	const perCycle = placed / counts.length;
+	/* AND THE SAME RATE IN DAYS, because a cycle is not a fixed length. Groceries run on a WEEKLY
+	   lattice, so 3.5 shops a month reads as 0.81 a cycle and would look like one payment; the
+	   comparison has to be against a span both sides share. */
+	const span = (bins || []).length || 30;
+	const perMonth = span ? (placed / counts.length) * (30 / span) : perCycle;
 	/* AS MANY CLUSTERS AS THE CYCLE HAS MOVEMENTS. A cycle that typically carries nothing is still
 	   asked about one day - whether it should have been asked at all is the movement floor's job,
 	   already answered above. */
@@ -692,7 +712,21 @@ export function classifyShape(counts, bins, cfg, weights){
 	   angular focus is what still picks the shape and finds how many clusters there are. Both travel
 	   so the two can be compared on the audit page before either is given the gate. */
 	const lumps = Math.max(1, focus.lumps || 1);
-	const base = {typical: typical, steady: steady, busy: busy,
+
+	/* ---- TWO QUESTIONS, TWO CONFIDENCES ---------------------------------------------------------
+	   WILL IT COME, AND DO WE KNOW WHEN. For an ordinary bill the two move together - Rent arrives in
+	   100% of its cycles and lands within a day of the 2nd - so one number multiplying them was fine
+	   and `fit` still does it, because the merge test genuinely wants both halves at once.
+
+	   THEY COME APART ON A LUMP WITH A VARIABLE DATE. Earnin's reimbursement arrives in every single
+	   cycle and lands anywhere in it: arrival 100%, day 0%. Multiplied that is zero, and a mode we
+	   are certain about would be thrown away for a date nobody asked it to keep. */
+	const arrival = weightedFills(counts, weights);
+	const onDay = tightness(bins || [], lumps);
+
+	const base = {typical: typical, steady: steady, busy: busy, perCycle: perCycle,
+		perMonth: perMonth,
+		arrival: arrival, day: onDay === null ? 0 : onDay,
 		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump,
 		fit: fit === null ? 0 : fit,
 		scatter: dayScatter(bins || [], lumps),
@@ -701,26 +735,32 @@ export function classifyShape(counts, bins, cfg, weights){
 		sd: circularSd(bins || [], lumps),
 		test: rayleigh(bins || [], lumps)};
 
-	//IN FOCUS: the movements land on a day, or on k days. Either way that is a lump; k is its length.
+	/* ---- IN FOCUS: A LUMP, HOWEVER MANY DAYS IT USES --------------------------------------------
+	   TWO BILLS A FORTNIGHT APART ARE TWO DATES, NOT A FLOW. Utilities pays Conservice and the city
+	   on the same day of the month; measured as one mode that is two movements a cycle, and counting
+	   them would call a pair of perfectly dated bills a rate. Focus is asked first for exactly that:
+	   if the movements land on their days, how many of them there are is not the question. */
 	if(focus.lumps >= 1)
 		return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
 
-	/* OUT OF FOCUS AND BUSY: a flow. The confidence is how far OUT of focus it is, because that is
-	   what is being claimed - a perfectly flat cycle is a perfectly certain spread, and reporting
-	   0.11 there would read as doubt about the one row the picture is clearest on. */
-	if(busy >= c.minBusyShare && typical >= c.minSpreadEventsPerCycle)
+	/* ---- OUT OF FOCUS: HOW OFTEN DECIDES ---------------------------------------------------------
+	   A SPREAD IS WHEN SO MANY MOVEMENTS HAPPEN THAT PRECISION IS NOT WORTH TRYING FOR, and a daily
+	   amount is the better approximation. One a month arrives all at once, and smearing $50 across
+	   thirty days as $1.67 a day describes nothing that happens - that is a lump whose date wanders,
+	   and its median day with the doubt attached is the honest answer.
+
+	   MEASURED PER MONTH, NOT PER CYCLE, because a weekly lattice makes every rate look small:
+	   groceries at 3.5 shops a month read 0.81 a cycle and would pass for one payment.
+
+	   MEASURED AS A MEAN, NOT A MODE. `commonest` answered a different question badly - cycles
+	   running 1, 1, 1, 2, 5, 8 have a modal count of one and carry three a cycle, which is how
+	   Social's 24 movements in 8 cycles were called out of focus and left unread. */
+	if(perMonth >= c.minSpreadEventsPerCycle)
 		return Object.assign({shape: Shape.spread, flow: true,
 			confidence: 1 - (focus.concentration === null ? 0 : focus.concentration)}, base);
 
-	/* OUT OF FOCUS AND NOT BUSY, BUT PAST THE EVIDENCE GUARDS ABOVE: a spread, earned. It has enough
-	   cycles and enough movements to have shown a pattern and has not shown one, which is a finding
-	   rather than a shrug. The shrug is the null the guards return, and that one becomes `unknown`.
-
-	   THE CONFIDENCE IS HOW FAR OUT OF FOCUS IT IS, as for the busy branch above: what is being
-	   claimed is the absence of a day, so a cycle with no focus at all is a certain spread. */
-	return Object.assign({shape: Shape.spread,
-		confidence: 1 - (focus.concentration === null ? 0 : focus.concentration),
-		reason: 'the movements do not land on a day'}, base);
+	return Object.assign({shape: Shape.lump, confidence: focus.concentration,
+		wandering: true}, base);
 }
 
 /* ---- WHICH WAY THIS RAIL MOVES WHEN THE BANKS ARE SHUT -------------------------------------------
@@ -1149,6 +1189,9 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				confidence: verdict.shape
 					? (verdict.fit === undefined || verdict.fit === null ? null : verdict.fit)
 					: null,
+				arrival: verdict.arrival === undefined ? null : verdict.arrival,
+				onDay: verdict.day === undefined ? null : verdict.day,
+				wandering: !!verdict.wandering,
 				moneyShare: money ? absSum(mine) / money : 0,
 				money: absSum(mine),
 				cyclesObserved: buckets.length,
@@ -1301,9 +1344,12 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 	return {
 		cycle: cycle || null,
 		modes: read.modes.map(m => {
+			/* THE BAR GUARDS ARRIVAL, NOT THE DAY. Below it we do not know whether money is coming at
+			   all, which is the unknown case. A date we are unsure of is still a date worth naming -
+			   that doubt is reported as `confidence.day` rather than by saying nothing. */
 			const named = m.shape === Shape.lump
-				&& m.confidence !== null && m.confidence !== undefined
-				&& m.confidence >= c.minLumpConfidence
+				&& m.arrival !== null && m.arrival !== undefined
+				&& m.arrival >= c.minLumpConfidence
 				&& m.days.length > 0;
 			/* ONLY THE OBSERVER'S NULL BECOMES UNKNOWN. It means the guards refused to read the mode
 			   at all - too few cycles, too few movements once the old ones faded - and a mode nobody
@@ -1323,7 +1369,11 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 			};
 			if(named){
 				out.days = m.days.slice();
-				out.confidence = m.confidence;
+				/* THE WOBBLE COMES BACK. It was dropped when confidence was one number and already
+				   carried it; with a date that may wander it is the only field describing how far it
+				   wanders, and a caller placing money needs it. */
+				out.wobble = (m.wobble || []).slice();
+				out.confidence = {arrival: m.arrival, day: m.onDay};
 				/* WHAT THE BANKS DO TO THIS DAY, where the rail has said so consistently. Absent
 				   means not enough closures have been met to know, which is not the same as
 				   "nothing happens" and must not be read as it. */

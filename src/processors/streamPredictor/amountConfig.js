@@ -55,10 +55,14 @@ export const AMOUNT_CONFIG = {
 	   claimed day INSIDE a cycle, and the question here is the gap BETWEEN cycles. That was the first
 	   yardstick tried and it caught nothing, including the one stream that had plainly stopped.
 
+	   DIVIDED BY THE DAY CONFIDENCE, so a mode whose date already wanders is allowed to wander
+	   further before it is called dead. A metronome 40% late has stopped; a payment that never kept
+	   a day is just being itself. Gembah keeps its day to 90% and must pass 1.11; Earnin's
+	   reimbursement keeps its day to 65% and must pass 1.54.
+
 	   MEASURED ACROSS THE PORTFOLIO: Gembah is 43 days past a payment that has never taken more than
-	   31, a ratio of 1.43. The next highest mode in the portfolio sits at 0.91 of its own worst gap.
-	   At 1.0 exactly one mode qualifies and there is nothing within 9% of the line, which is the kind
-	   of margin that survives new data.
+	   31, a ratio of 1.39, and it is the only mode above its own tolerance. The reimbursement is the
+	   only other one above 1.0 at all, at 1.06, and the scaling is what keeps it alive.
 
 	   A SUSPICION, NOT A CONCLUSION. The mode keeps its history, its money share and its identity; it
 	   stops promising. A stream that resumes is visibly the same stream. */

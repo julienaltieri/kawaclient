@@ -228,7 +228,25 @@ export const SHAPE_CONFIG = {
 	   fading 4, 6, 4, 2, 0, 2, 1 - present, but not a flow. Requiring more than one movement in the
 	   typical cycle separates a spread from a stream that simply moves once in a while and is bad at
 	   it. */
-	minSpreadEventsPerCycle: 2,
+	/* ---- ONE MOVEMENT A CYCLE IS NOT A FLOW -------------------------------------------------------
+	   A SPREAD IS WHEN SO MANY MOVEMENTS HAPPEN THAT PRECISION IS NOT WORTH TRYING FOR, and a daily
+	   amount is the better approximation. One payment a cycle is the opposite: the money arrives all
+	   at once, and smearing $50 across thirty days as $1.67 a day describes nothing that happens.
+
+	   Earnin's internet reimbursement is the case - eight movements in eight cycles, every one exactly
+	   $50, landing on days 19, 16, 18, 17, 27, 0, 16, 0. It WILL arrive and there is no telling when.
+	   That is a lump with a variable date, not a rate.
+
+	   MEASURED AS A MEAN, NOT A MODE. The old test read `commonest(counts)`, so a stream whose cycles
+	   run 1, 1, 1, 2, 5, 8 reported "1 event per cycle" and was refused: Social moves 24 times in 8
+	   cycles - three a cycle, every cycle filled - and was called out of focus because its MODAL cycle
+	   carries one.
+
+	   THE PORTFOLIO LEAVES A CLEAN GAP. Every mode sits at 1.03 per cycle or below, or at 1.33 and
+	   above, with nothing in between; the threshold can be anywhere inside it. Below the line:
+	   Earnin's reimbursement and every ordinary bill. Above it: groceries at 1.58 a week, Gas at 1.33,
+	   Social at 3.00. */
+	minSpreadEventsPerCycle: 1.2,
 
 	/* THE FEWEST MOVEMENTS THAT CAN BE IN FOCUS. Two points on the same day are perfectly
 	   concentrated by construction and so are three - there is nothing for them to disagree with.
