@@ -242,11 +242,16 @@ export const SHAPE_CONFIG = {
 	   cycles - three a cycle, every cycle filled - and was called out of focus because its MODAL cycle
 	   carries one.
 
-	   THE PORTFOLIO LEAVES A CLEAN GAP. Every mode sits at 1.03 per cycle or below, or at 1.33 and
-	   above, with nothing in between; the threshold can be anywhere inside it. Below the line:
-	   Earnin's reimbursement and every ordinary bill. Above it: groceries at 1.58 a week, Gas at 1.33,
-	   Social at 3.00. */
-	minSpreadEventsPerCycle: 1.2,
+	   TWO A MONTH, NOT ONE. A month carrying a single movement is a payment however irregular its
+	   date; it takes two before smearing beats dating. At 1.2 the mean was dragged over the line by a
+	   minority of busy cycles - Gas is one fill-up in seven months of nine and four in one, and read
+	   1.29 - and every mode that crossed it that way is a lump.
+
+	   MEASURED: above the line sit groceries at 6.8 a month, its remainder at 6.1, Costco at 3.5,
+	   Amazon at 3.2, Social at 2.9 and Loki's Grocery Outlet at 2.7. Below it sit Laundry at 1.5, Gas
+	   and the Expensify reimbursement at 1.3, and every ordinary bill at 1.0. Nothing sits between
+	   1.5 and 2.7, so the line has more than a point of room on either side. */
+	minSpreadEventsPerCycle: 2,
 
 	/* THE FEWEST MOVEMENTS THAT CAN BE IN FOCUS. Two points on the same day are perfectly
 	   concentrated by construction and so are three - there is nothing for them to disagree with.

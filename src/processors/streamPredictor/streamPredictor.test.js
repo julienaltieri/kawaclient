@@ -1027,9 +1027,14 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		   and it is a rate it EARNED, on nine cycles and twelve movements with no day in them. */
 		const gas = predictor.reviewable().find(x => x.name === 'Gas');
 		const g = predictor.explainShapeOf(gas.id, gas);
+		/* AND IT IS ONE MODE, NOT EIGHT ROWS OF NOTHING. Twelve fill-ups at eight stations is one
+		   habit with a long tail; gathered it reads as a payment a month whose day wanders badly -
+		   arrival 92%, day 14% - which is more use to a forecast than eight silences. */
 		const gasAnswer = predictor.shapeOf(gas.id, gas);
-		expect(gasAnswer.modes.every(m => m.shape === Shape.spread)).toBe(true);
-		expect(gasAnswer.modes.every(m => m.days === undefined)).toBe(true);
+		expect(gasAnswer.modes.length).toBe(1);
+		expect(gasAnswer.modes[0].shape).toBe(Shape.lump);
+		expect(gasAnswer.modes[0].confidence.arrival).toBeGreaterThan(0.8);
+		expect(gasAnswer.modes[0].confidence.day).toBeLessThan(0.3);
 		expect(g.baseline.moneyShare).toBeCloseTo(0, 6);
 
 		/* THE PAYROLL SEPARATES FROM THE DISABILITY DEPOSITS - where this started - AND THEN PUTS

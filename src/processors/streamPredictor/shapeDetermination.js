@@ -696,12 +696,18 @@ export function classifyShape(counts, bins, cfg, weights){
 	/* HOW MANY MOVEMENTS A CYCLE ACTUALLY CARRIES, as a MEAN. `commonest` answers a different
 	   question and answers it badly here: cycles running 1, 1, 1, 2, 5, 8 have a modal count of one
 	   and carry three a cycle. */
-	const perCycle = placed / counts.length;
+	/* WEIGHTED, LIKE EVERYTHING ELSE. A stream that used to move three times a month and now moves
+	   once is moving once - Laundry ran 3, 3, 0, 1, 2, 2, 1, 1, 1 and the recent cycles are the ones
+	   that describe it. */
+	const cw = i => (weights && weights[i] !== undefined) ? weights[i] : 1;
+	let wPlaced = 0, wCycles = 0;
+	counts.forEach((x, i) => { wPlaced += x * cw(i); wCycles += cw(i); });
+	const perCycle = wCycles ? wPlaced / wCycles : 0;
 	/* AND THE SAME RATE IN DAYS, because a cycle is not a fixed length. Groceries run on a WEEKLY
 	   lattice, so 3.5 shops a month reads as 0.81 a cycle and would look like one payment; the
 	   comparison has to be against a span both sides share. */
 	const span = (bins || []).length || 30;
-	const perMonth = span ? (placed / counts.length) * (30 / span) : perCycle;
+	const perMonth = span ? perCycle * (30 / span) : perCycle;
 	/* AS MANY CLUSTERS AS THE CYCLE HAS MOVEMENTS. A cycle that typically carries nothing is still
 	   asked about one day - whether it should have been asked at all is the movement floor's job,
 	   already answered above. */
@@ -1008,6 +1014,12 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		host.absorbed = (host.absorbed || []).concat([stray.label + ' x' + stray.legs]);
 		host.shape = mg.verdict.shape;
 		host.confidence = mg.fit;
+		/* EVERY FIELD THE RE-READING PRODUCED, not only the ones the merge test wanted. Leaving
+		   `arrival` off here left it undefined, and an undefined arrival cannot clear the bar - so a
+		   collapsed mode was demoted to a rate no matter what it actually looked like. */
+		host.arrival = mg.verdict.arrival === undefined ? null : mg.verdict.arrival;
+		host.onDay = mg.verdict.day === undefined ? null : mg.verdict.day;
+		host.wandering = !!mg.verdict.wandering;
 		host.adjusted = mg.snap;
 		host.histogram = mg.bins;
 		host.cyclesObserved = mg.buckets.length;
@@ -1051,6 +1063,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 			rawLegs: legs,
 			shape: mg.verdict.shape,
 			reason: mg.verdict.reason || null,
+			arrival: mg.verdict.arrival === undefined ? null : mg.verdict.arrival,
+			onDay: mg.verdict.day === undefined ? null : mg.verdict.day,
+			wandering: !!mg.verdict.wandering,
 			days: d.map(x => x.day),
 			wobble: d.map(x => x.wobble),
 			dayEvents: d.map(x => x.events),
