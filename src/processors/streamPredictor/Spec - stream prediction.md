@@ -813,6 +813,9 @@ day whenever the due day is shut.
 
 ## §4 — Predicting the amount that moves
 
+> **SUPERSEDED IN DRAFT.** This section describes what the code does today. [Appendix A](#appendix-a--4-revised-what-a-prediction-is-allowed-to-claim)
+> describes what it should do and is the one to build from; it replaces this section once it works.
+
 **The question.** For a stream whose cycle and shape are already known, **predict** how much money
 moves per cycle.
 
@@ -1070,3 +1073,249 @@ by accident.
 4. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
    that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
    because it may need to change.
+
+
+---
+
+# Appendix A — §4 revised: what a prediction is allowed to claim
+
+**Status: a REVISION, not yet the specification.** §4 above still describes what the code does. This
+appendix describes what it should do, in enough detail to build from. When it is built, tested and
+agreed, it replaces §4 and this appendix goes away.
+
+**Why a revision at all.** §4 was written when §3 answered one shape per allocation. §3 now answers a
+list of modes, and four things went wrong in the gap between them — each found by reading a real
+stream rather than by review.
+
+---
+
+## The inversion at the root
+
+**§3 uses "not enough evidence for a lump" as positive evidence for a spread.** `minCyclesObserved`
+blocks a lump below three cycles, the mode falls through to `spread`, and §4 divides its total by the
+lattice and calls the result a rate. **The weakest possible evidence produces the most confident
+forward claim in the portfolio:**
+
+    Option Exercise / Carta      1 movement,  1 cycle    spread   -$10,582 / cycle
+    Day Care Eleonore / Check    2 movements, 2 cycles   spread    -$2,400 / cycle
+    Books / Amazon               1 movement,  1 cycle    spread       -$22 / cycle
+    Date / everything else       3 movements, 1 cycle    spread      -$106 / cycle
+
+    6 of 45 modes rest on a single movement and claim $10,604 a cycle between them
+
+A spread is a real finding — groceries genuinely arrive at a rate — but it has to be EARNED by
+watching enough activity fail to form a pattern. It cannot be the answer of last resort.
+
+---
+
+## Four gates, and each may only reduce a claim
+
+A prediction starts as what the ledger observed and passes through four gates. **No gate may raise a
+claim or invent one**; every one of them can only narrow what came in. That invariant is what makes
+the order safe to reason about.
+
+    0. EVIDENCE    has enough happened to say anything at all?
+    1. SHAPE       what did that evidence earn: a day, a rate, or nothing?
+    2. LIVENESS    is it still running?
+    3. BUDGET      does the claim fit the envelope the user drew?
+
+Gates 0-2 read the stream's own behaviour. Gate 3 reads the user's stated intent, which is why it is
+last: it is the only gate that can veto a perfectly healthy rhythm, and it should only be asked once
+the others have finished.
+
+---
+
+## Gate 0 — Evidence
+
+**`unknown` is the default and the other shapes are earned.** A mode below the evidence bar answers
+`unknown` and predicts nothing at all.
+
+**Two movements minimum before any claim.** One movement is an event, not a behaviour. Two is the
+first point at which a spacing exists to be measured, and Julien's reading of his own portfolio is
+that two is where the answers start being right:
+
+- Gembah, after two payments a month apart, would have read monthly. Correct.
+- Income Tax, after two payments, would NOT have read monthly - the spacing resonates with no cycle.
+  Correct, and the reason taxes must not be forced into a rhythm.
+- The Claude subscription inside Hobby mdm starts being visible as a mode of its own. Correct.
+
+**A rate needs as many cycles as a lump does.** Gate 0 and Gate 1 must agree with each other: if
+there is not enough history to claim a day, there is not enough to claim a rate. Today they disagree
+and that disagreement IS the inversion above.
+
+**Measured effect:** the six single-movement modes stop claiming $10,604 a cycle. Day Care Eleonore's
+two cheques stop being a $2,400/cycle rate and become a low-confidence monthly lump instead, which is
+what they are.
+
+---
+
+## Gate 1 — Shape, with three values
+
+    lump      lands on named days        earned by concentration, cycles and confidence
+    spread    arrives at a rate          earned by enough activity with no pattern
+    unknown   promises nothing yet       the default
+
+**This reinstates a third value, and it is not the `null` that was removed.** That `null` meant "the
+observer could not read this" and leaked into an answer as an accident. `unknown` is a positive
+statement with a forecasting consequence: contribute zero, and say why. A caller can act on it.
+
+**`unknown` and "a spread of zero" are different answers.** A spread of zero says the mode spends
+nothing. `unknown` says we do not know yet, which is what a reader needs to see next to a stream
+declared at $10,000 that has moved twice.
+
+---
+
+## Gate 2 — Liveness
+
+### A rate: silence
+
+Built, and **currently broken**. `quiet` counts cycles since a mode last moved, measured on a lattice
+that `cycleBuckets` deliberately stops at the stream's newest leg. A stream that stopped ENTIRELY
+therefore reads `quiet = 0`, because its last movement sits in the last bucket that exists. Gembah's
+lump reads 0 having not paid in 43 days.
+
+**The fix: measure the silence against the analysis date, not against the stream's own last leg.**
+
+### A lump: it has waited longer than it has ever waited
+
+**Wobble is the wrong yardstick and was the first thing tried.** Wobble is deviation around the
+claimed day INSIDE a cycle; the question here is the gap BETWEEN cycles. Measured against each mode's
+own observed spacing, one mode in the portfolio has waited longer than it ever has:
+
+    mode                      typical   worst    since    ratio
+    Gembah / Gembah              30d      31d      43d    x1.43   <- never waited this long
+    Plaid / Plaid HQ             32d      39d      29d    x0.91
+    Renter's insurance           31d      31d      28d    x0.90
+    Savings / transfer           31d      60d      26d    x0.84
+    Wages Julien / PAYROLL       15d      19d      12d    x0.80
+
+Nothing else is above 0.91. **"Longer than its own worst observed gap" isolates Gembah with no
+tuning and no false positives**, which is the kind of rule that survives new data.
+
+**It is a suspicion, not a conclusion.** A stream that resumes must be visibly the same stream: the
+mode keeps its history, its money share and its identity, and only stops promising.
+
+---
+
+## Gate 3 — Budget
+
+**One rule: the DECLARED period decides whether the budget can constrain a forecast.** The two cases
+that felt like competing rules are the same rule seen through two kinds of envelope.
+
+### A yearly declaration is a finite plan
+
+Many movements share one envelope, so the envelope can be spent. **A movement is predicted only if
+the stream stays within +/-x% of target after it.**
+
+**The test is forward-looking, on the position AFTER the movement.** Spend-to-date is not enough:
+
+    Gembah    spent -$11,299 of -$10,000            113%   passes a 115% bar
+              + a 5th payment of -$2,626    ->      139%   refused
+
+Gembah's fifth installment is refused on the 28th of August, before it is ever late - weeks earlier
+than Gate 2 could notice the silence. That is the early indicator.
+
+**The band applies to the STREAM, not the mode.** A yearly declaration is a plan for the whole
+stream; its modes are how the plan happens to be paid, and no mode carries the plan on its own.
+
+**A refused movement predicts ZERO, never the remaining envelope.** Capping Gembah's payment at the
+-$1,299 still unspent would invent a payment of a size that never occurs, and worse: the remainder
+would then be compressed into however many cycles are left in the year, inflating every later
+prediction to use it up. Zero is the honest answer and the stable one.
+
+**Ground truth for Gembah:** the plan was four installments of $2,626 against an approximate $10,000
+envelope, with no committed start date - and there will not be a fifth. Both Gate 2 and Gate 3 reach
+that answer independently, from different evidence.
+
+### A cycle declaration is an envelope that refills
+
+A weekly or monthly budget is restored every cycle, so it **cannot** constrain a forecast - it can
+only be compared with one. Consistent overshoot means the budget is miscalibrated, not that the
+spending will stop.
+
+**So project the observed trend and report the gap. This is the rebaseline case.**
+
+    Groceries & Hygiene   observed -$256 / week   declared -$230 / week   111%, every week
+    Utilities             observed  -$269 / month declared -$225 / month  120%
+    Sorties               observed  -$144 / month declared  -$30 / month  478%
+
+**The comparison is RATE against BUDGET, never spend-to-date against budget.** For a weekly envelope,
+"spent so far this week" is meaningless at any instant - Groceries reads $0 of $230 mid-week. The
+per-cycle rate is a number §4 already computes, so rebaselining costs nothing new: use the observed
+rate, and report how far it sits from the declared one.
+
+**Rebaselining requires a cycle that repeats.** Hobby mr and Sport overshoot by 367% and cannot be
+rebaselined: both are declared yearly AND left yearly by §2, so there is no rhythm to project a trend
+onto. They are alert-only by the rule and alert-only by necessity, which is a good sign for the rule.
+
+### Which streams land where
+
+    stream            declared   §2 answered    budget     spent     used    treatment
+    Sorties           monthly    monthly          -$30     -$144     478%    rebaseline
+    Utilities         monthly    monthly         -$225     -$269     120%    rebaseline
+    Hobby mr          yearly     yearly          -$250     -$918     367%    alert only
+    Sport             yearly     yearly          -$100     -$367     367%    alert only
+    Shopping          yearly     monthly         -$300     -$443     148%    alert only, cap future
+    Gembah            yearly     monthly      -$10,000  -$11,299     113%    alert only, cap future
+
+Two streams rebaseline today. **The alert itself is out of scope**: build the machinery so the module
+reports the position, and stop at the module boundary. Telling the user is a product decision for
+later.
+
+---
+
+## What survives unchanged from §4
+
+The arithmetic is not the problem and none of it moves:
+
+- **Median for a lump, mean for a rate**, the shape deciding which. A lump is a repeated thing and a
+  one-off must not move it; a rate is a total over time and the median destroys it.
+- **The stream's own lattice is the denominator, never the mode's.**
+- **Both weighted by recency**, on §3's cycle weights.
+- **The rail correction** - `settleDate` moving a claim to the day it will actually land.
+- **Silencing a rate that has gone quiet** - which becomes Gate 2 rather than a standalone rule.
+
+---
+
+## New settings
+
+    minMovementsToPredict     2       Gate 0. One movement is an event, not a behaviour.
+    minCyclesForRate          3       Gate 0. A rate needs what a lump needs. Matches
+                                      minCyclesObserved, and must not diverge from it.
+    maxQuietCycles            2       Gate 2, already shipped, needs the `quiet` fix behind it.
+    lateMultiple              1.0     Gate 2. Multiples of a mode's WORST observed gap before it is
+                                      suspected stopped. At 1.0 exactly one mode qualifies and the
+                                      next is at 0.91.
+    budgetBand                0.15?   Gate 3. How far past a finite envelope a prediction may push
+                                      the stream. UNTUNED: Gembah projects to 139%, which clears any
+                                      value from 10% to 30%, so the portfolio cannot currently
+                                      distinguish them. Pick it when a near case appears.
+
+---
+
+## What this does not solve
+
+1. **A yearly stream with no data still predicts nothing, and that is the intended answer** - but only
+   because one year of transactions is loaded. A yearly envelope repeated across years is a real
+   pattern and would be predictable from it. **Out of scope: the module reads one year.**
+2. **The alert.** Machinery only, no surfacing.
+3. **Taxes.** Gate 0 keeps them silent until two movements exist, and their spacing resonates with no
+   cycle, so they stay `unknown` and predict nothing. That is correct today and is not the same as
+   predicting them well.
+4. **The lump/rate split of a stream's budget.** Gate 3 works at stream level; how a stream's envelope
+   should be shared between its modes is not answered and does not need to be yet.
+
+---
+
+## Order of work
+
+1. `unknown` as the default shape, `spread` earned - removes $10,604/cycle of phantom rate and fixes
+   Option Exercise, Books, Date and Day Care Eleonore in one change.
+2. Fix `quiet` to count against the analysis date.
+3. The lump liveness test on observed spacing.
+4. Budget position as an observation on the answer: envelope kind, used, projected-after-next.
+5. The yearly cap.
+6. Rebaseline reporting for cycle budgets.
+
+Steps 1-3 are the stream's own evidence and can be validated against the ledger alone. Steps 4-6 need
+Julien's budgets and should be read together with him.
