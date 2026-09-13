@@ -1904,6 +1904,73 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			+ rescued + ' mode predicting from the declaration');
 	});
 
+	/* ---- A SPREAD IS PLACED, NOT SMEARED -----------------------------------------------------------
+	   A RATE IS A TRUE DESCRIPTION AND A POOR INSTRUCTION. "-$116 a week" tells a balance nothing
+	   about when the money leaves, and a forecast that smears it loses every date it had. Rounded to
+	   the nearest whole movement and spaced evenly, the same money becomes two payments of -$58 -
+	   still an approximation, and one a balance can be run against.
+
+	   THE DAYS COME FROM THE CLUSTERS, NOT FROM A RULER. Shopping is not uniform - a weekend run and a
+	   midweek top-up are two humps - and `lumpDays` already finds n of them and takes each one's
+	   recency-weighted middle. Grocery Outlet's week runs 12, 4, 4, 9, 7, 10, 14 across its days and
+	   its two events land on 0 and 4, which is where the money goes; a ruler would have said 2 and 5.
+
+	   EVEN SPACING IS THE FALLBACK for a mode whose days cannot be cut into n groups at all. Then the
+	   days are only where money is put, and nothing is claimed about them. */
+	test('a spread is placed as whole movements at regular intervals', () => {
+		const rows = predictionData(predictor);
+		let spread = 0;
+		rows.forEach(r => r.accounts.forEach(a => {
+			const claim = a.lanes[a.lanes.length - 1];
+			a.modes.forEach(m => {
+				if(m.kind !== 'rate' || !m.amount)return;
+				spread++;
+				const mine = claim.events.filter(e => e.spaced && e.label === m.label);
+
+				//as many events as the cycle carries movements, rounded, and never none
+				expect(mine.length).toBe(m.events);
+				expect(m.events).toBeGreaterThan(0);
+
+				//the money is conserved, not multiplied
+				const sum = mine.reduce((n, e) => n + e.amount, 0);
+				expect(sum).toBeCloseTo(m.amount, 6);
+				mine.forEach(e => expect(e.amount).toBeCloseTo(m.amount / m.events, 9));
+
+				//inside the cycle, in order, and never two on the same day
+				mine.forEach((e, k) => {
+					expect(e.day).toBeGreaterThanOrEqual(0);
+					expect(e.day).toBeLessThan(claim.days);
+					if(k)expect(e.day).toBeGreaterThan(mine[k - 1].day);
+					//placed by a ruler only where the days could not be cut into groups
+					if(!e.clustered)
+						expect(e.day).toBe(Math.round(claim.days * (k + 0.5) / m.events));
+				});
+				expect(new Set(mine.map(e => e.day)).size).toBe(mine.length);
+			});
+		}));
+		expect(spread).toBeGreaterThan(3);
+
+		/* THE PORTFOLIO: groceries run two shops a week of -$57.90 each, placed on the two busiest
+		   parts of the week rather than at even intervals. */
+		const groceries = rows.find(r => r.name === 'Groceries & Hygiene');
+		const outlet = groceries.accounts.reduce((hit, a) =>
+			hit || a.modes.find(m => /grocery outlet/i.test(m.label)), null);
+		expect(outlet.events).toBe(2);
+		const lane = groceries.accounts
+			.find(a => a.modes.indexOf(outlet) >= 0).lanes.slice(-1)[0];
+		const shops = lane.events.filter(e => e.spaced && /grocery outlet/i.test(e.label));
+		expect(shops.map(e => e.day)).toEqual([0, 4]);
+		expect(shops.every(e => e.clustered)).toBe(true);
+
+		//and the band is gone, because the money it described is now the events themselves
+		rows.forEach(r => r.accounts.forEach(a => {
+			const claim = a.lanes[a.lanes.length - 1];
+			const placed = claim.events.filter(e => e.spaced)
+				.reduce((n, e) => n + e.amount, 0);
+			expect(placed).toBeCloseTo(claim.rate || 0, 6);
+		}));
+	});
+
 	test('writes the modes audit page from the real results', () => {
 		const rows = modeRows(predictor);
 		const html = buildModesAuditPage(predictor, {

@@ -90,6 +90,14 @@ export function modeAmount(mode, spine, shape, cfg){
 
 	const landed = [];
 	per.forEach((x, i) => { if(count[i])landed.push({x: x, w: weights[i], i: i}); });
+
+	/* HOW MANY MOVEMENTS A CYCLE OF THIS CARRIES, rounded to something a forecast can place. A rate
+	   is a true description and a poor instruction: "-$116 a week" tells a balance nothing about when
+	   it leaves. Rounded to the nearest whole movement and spaced evenly, the same money becomes two
+	   payments of -$58 - still an approximation, and one a balance can actually be run against. */
+	let wCount = 0, wCycles = 0;
+	count.forEach((n, i) => { wCount += n * weights[i]; wCycles += weights[i]; });
+	const events = Math.max(1, Math.round(wCycles ? wCount / wCycles : 1));
 	const use = shape || mode.shape;
 	const lump = use === Shape.lump;
 	//GATE 0: a mode nobody could read promises nothing, whatever the arithmetic would have said
@@ -141,6 +149,7 @@ export function modeAmount(mode, spine, shape, cfg){
 		cyclesObserved: spine.length,
 		//how many cycles since it last moved: a rate nobody has paid in months is a stale rate
 		quiet: quiet,
+		events: events,
 		total: per.reduce((n, x) => n + x, 0),
 		perCycleTotals: per
 	};
@@ -259,6 +268,7 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			exceptions: w.exceptions || 0,
 			legs: w.legs,
 			amount: (amt.kind === 'unknown' && carries) ? planned.amount : amt.perCycle,
+			events: amt.events,
 			planned: (amt.kind === 'unknown' && carries) ? planned : null,
 			observed: (amt.kind === 'unknown' && carries) ? planned.amount : amt.observed,
 			silenced: amt.silenced,
@@ -325,7 +335,37 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			predicted: true,
 			/* A PLANNED CLAIM IS DRAWN LIKE A LUMP, because it is one: an amount on a day. Where it
 			   differs is the source of both numbers, and the mode says so. */
-			events: mine.filter(m => m.kind === 'lump' || m.kind === 'planned')
+			/* ---- A SPREAD IS PLACED, NOT SMEARED -------------------------------------------------
+			   THE AVERAGE COUNT, ROUNDED, AND PUT WHERE THE MONEY ACTUALLY GOES. A rate is a true
+			   description and a poor instruction: "-$116 a week" tells a balance nothing about when
+			   it leaves. Rounded to two whole movements it becomes two payments of -$58, and a
+			   balance can be run against that.
+
+			   THE DAYS COME FROM THE CLUSTERS, NOT FROM A RULER. Shopping is not uniform - a weekend
+			   run and a midweek top-up are two humps, and `lumpDays` already finds n of them and
+			   takes each one's recency-weighted middle. That is the same function that gives a lump
+			   its day, asked for n days instead of one.
+
+			   EVEN SPACING IS THE FALLBACK, for a mode whose days are too few or too alike to cut
+			   into n groups at all. Then the days are only where money is put, and nothing is
+			   claimed about them. */
+			events: mine.filter(m => m.kind === 'rate' && m.amount)
+				.reduce((out, m) => {
+					const n = Math.max(1, m.events || 1);
+					const cut = cycle
+						? lumpDays(cycleBuckets(m.rawLegs, cycle, anchor, o.taper), n) : [];
+					const clustered = cut.length === n;
+					for(let k = 0; k < n; k++)out.push({
+						day: clustered ? cut[k].day : Math.round(nxt.days * (k + 0.5) / n),
+						amount: m.amount / n,
+						label: m.label,
+						wobble: clustered ? cut[k].wobble : 0,
+						spaced: true,
+						clustered: clustered
+					});
+					return out;
+				}, [])
+				.concat(mine.filter(m => m.kind === 'lump' || m.kind === 'planned')
 				.reduce((out, m) => out.concat(m.days.map((d, k) => {
 					const due = new Date(nxt.start.getTime() + d * ONE_DAY);
 					const rule = m.rail ? m.rail.closures : null;
@@ -337,7 +377,8 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 						movedFrom: day === d ? null : d,
 						rail: rule
 					};
-				})), []),
+				})), [])),
+			//kept for the total; the money itself is drawn as the spaced events above
 			rate: mine.filter(m => m.kind === 'rate')
 				.reduce((n, m) => n + m.amount, 0),
 			rateModes: mine.filter(m => m.kind === 'rate').length

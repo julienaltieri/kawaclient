@@ -38,7 +38,10 @@ const iso = d => {
 const patternOf = m => {
 	/* THE DAYS DECIDE, NOT THE SHAPE NAME. A planned mode is `unknown` to §3 and still carries a day,
 	   because §4 fell back to the middle of the days it has used. */
-	if(!m.days || !m.days.length)return 'a rate ' + DOT + ' no day';
+	if(!m.days || !m.days.length){
+		const n = Math.max(1, m.events || 1);
+		return n + ' a cycle';
+	}
 	return m.days.map((d, i) => 'd' + d + (m.wobble && m.wobble[i] ? '±' + m.wobble[i] : ''))
 		.join(' ' + DOT + ' ');
 };
@@ -93,6 +96,7 @@ export function predictionData(predictor){
 					label: plain(m.label),
 					late: !!m.late,
 					overdue: (m.overdue === null || m.overdue === undefined) ? null : m.overdue,
+					events: m.events || 1,
 					capped: !!m.capped,
 					cappedAmount: m.cappedAmount === undefined ? null : m.cappedAmount,
 					plannedSeen: m.planned ? m.planned.seen : 0,
@@ -125,6 +129,8 @@ export function predictionData(predictor){
 					events: l.events.map(e => ({
 						day: e.day, amount: e.amount, label: plain(e.label),
 						wobble: e.wobble || 0,
+						spaced: !!e.spaced,
+						clustered: !!e.clustered,
 						movedFrom: e.movedFrom === undefined ? null : e.movedFrom
 					}))
 				}))
@@ -234,7 +240,9 @@ function laneHtml(lane, scale){
 		left = Math.max(0, Math.min(100, (e.day / lane.days) * 100));
 		h = Math.max(9, Math.round((Math.abs(e.amount) / scale) * 26));
 		cls = "mk" + (e.amount < 0 ? " out" : " in")
-			+ (e.movedFrom === null || e.movedFrom === undefined ? "" : " moved");
+			+ (e.movedFrom === null || e.movedFrom === undefined ? "" : " moved")
+			//a placed event, not an observed one: hollow, so the eye does not read it as a date
+			+ (e.spaced ? " spaced" : "");
 		marks = marks + "<span class='" + cls + "' style='left:" + left + "%;height:" + h + "px'"
 			+ " title='" + esc2(e.label) + " " + DOTCH + " d" + e.day + " " + money(e.amount)
 				+ (e.movedFrom === null || e.movedFrom === undefined ? ""
@@ -243,11 +251,9 @@ function laneHtml(lane, scale){
 	}
 	/* A RATE HAS NO POSITION, so it is the lane's own ground rather than a mark on it. */
 	//a silenced rate contributes nothing to the band, which is the whole point of silencing it
-	var band = (lane.predicted && lane.rate)
-		? "<span class='band'><i>" + money(lane.rate) + " across the cycle"
-			+ (lane.rateModes > 1 ? " " + DOTCH + " " + lane.rateModes + " modes" : "")
-			+ "</i></span>"
-		: "";
+	/* THE BAND IS GONE: the money it described is drawn as the spaced events themselves, and showing
+	   both would count it twice. */
+	var band = "";
 	return "<div class='lane" + (lane.predicted ? " next" : "") + "'>"
 		+ "<div class='lb'>" + esc2(lane.from) + " " + DOTCH + " " + esc2(lane.to)
 			+ (lane.predicted ? "<b>predicted</b>" : "") + "</div>"
@@ -370,8 +376,8 @@ filterBlocks();
 
 const LEGEND = '<span class="lg">three cycles of what happened, then the one being promised, on one '
 		+ 'axis and one scale</span>'
-	+ '<span class="lg">a mark is a dated claim; a band is money with no date, spread across the '
-		+ 'cycle</span>'
+	+ '<span class="lg">a solid mark is a dated claim; a dashed one is a rate placed at a regular '
+		+ 'interval - the amount and the count are real, the day is only where it was put</span>'
 	+ '<span class="lg">shaded columns are days the banks were shut - grey for a weekend, amber for '
 		+ 'a holiday</span>'
 	+ '<span class="lg">a mode that has met enough shut days says what its rail does with them, and '
@@ -459,6 +465,8 @@ const CSS = `
 	background:var(--realtime)}
 .mk.out{background:var(--deferred)}
 .mk.moved{background:var(--accent);box-shadow:0 0 0 2px var(--paper)}
+.mk.spaced{background:transparent;border:1px dashed var(--realtime);border-bottom:0}
+.grp.def .mk.spaced,.ac.def .mk.spaced{border-color:var(--deferred)}
 .mk i{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
 	font:500 8.5px/1 var(--mono);color:var(--ink-soft);white-space:nowrap;padding-bottom:1px}
 .lane.next .mk{opacity:.85}
