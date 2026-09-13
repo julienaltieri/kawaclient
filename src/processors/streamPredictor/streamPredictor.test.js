@@ -963,14 +963,24 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(payroll.absorbed).toEqual(['ACTIVEHOURS D B PAYROLL x1']);
 		expect(wm.baseline.legs).toBe(3);
 
-		/* AND A STRAY THAT DOES NOT BELONG IS NOT ABSORBED. Day care Emile is eight cheques and one
-		   Zelle transfer; merging the transfer drops the fit from 0.81 to 0.76, and the arithmetic
-		   saying so is the whole test - no rule about what the names look like. */
+		/* A STRAY THAT COMPLETES THE PATTERN IS ABSORBED, AND THAT IS THE HARDER CASE. Day care Emile
+		   is eight cheques and one Zelle transfer, and August has no cheque - the transfer IS
+		   August's payment, made another way once. Merging it loosens the day slightly and completes
+		   the year, and only a fit carrying both halves can see that as an improvement:
+
+		       cheques alone   1 1 1 1 1 1 1 0 1   fills 0.889 x tight 0.806 = 0.717
+		       with the Zelle  1 1 1 1 1 1 1 1 1   fills 1.000 x tight 0.756 = 0.756
+
+		   A tightness-only score reads 0.806 -> 0.756, refuses, and leaves the year with a hole in
+		   August that a forecast would then invent a missing payment for. */
 		const dc = predictor.reviewable().find(x => x.name === 'Day care Emile');
 		const dm = predictor.modesOf(dc.id, dc);
-		expect(dm.modes.length).toBe(2);
-		expect(dm.modes[0].absorbed).toBe(undefined);
-		expect(dm.modes[0].legs).toBe(8);
+		expect(dm.modes.length).toBe(1);
+		expect(dm.modes[0].legs).toBe(9);
+		expect(dm.modes[0].shape).toBe(Shape.lump);
+		expect(dm.modes[0].absorbed.length).toBe(1);
+		expect(dm.modes[0].absorbed[0]).toMatch(/Zelle/);
+		expect(dm.predictableShare).toBeCloseTo(1, 6);
 
 		/* EVERYTHING STILL LOOSE IS GATHERED INTO ONE MODE. Eight petrol stations are not eight facts
 		   about a forecast - they are one habit with no rhythm, and one row saying so beats eight. */

@@ -304,6 +304,34 @@ export function tightness(bins, lumps){
 	return t < 0 ? 0 : t > 1 ? 1 : t;
 }
 
+/* ---- HOW WELL A PATTERN FITS: IT HAS TO TURN UP, AND IT HAS TO LAND ------------------------------
+
+       fit = share of cycles that carry anything  x  how tightly those land on a day
+
+   BOTH HALVES ARE THE PATTERN. A bill that is always on the 6th but skipped August is not a monthly
+   bill that happens to be tight - it is a monthly bill that missed a month, and a forecast built on
+   it will invent a payment that never came. Tightness alone cannot see that: it only looks at where
+   movements landed, never at the cycles where none did.
+
+   THIS IS WHY DAY CARE EMILE'S ZELLE TRANSFER BELONGS. The cheques land tightly and skip August; the
+   Zelle IS August's payment, paid another way once. Merging it loosens the day a little and completes
+   the year, and only a score carrying both halves can see that as the improvement it is:
+
+       cheques alone    counts 1 1 1 1 1 1 1 0 1    fills 0.889 x tight 0.806 = 0.717
+       with the Zelle   counts 1 1 1 1 1 1 1 1 1    fills 1.000 x tight 0.756 = 0.756
+
+   IT ALSO DEFLATES A SPARSE MODE WITHOUT FORBIDDING ONE. Whole Foods is nine trips across 37 weeks:
+   nine points cannot help piling onto a handful of weekday slots, so they look tight, and 0.31 x 0.57
+   says what they are worth. Nothing is gated - a stray can still complete a sparse mode and raise it -
+   the score simply stops mistaking arithmetic for a habit. */
+export function patternFit(bins, counts, lumps){
+	const t = tightness(bins, lumps);
+	if(t === null)return null;
+	if(!counts || !counts.length)return null;
+	const fills = counts.filter(c => c > 0).length / counts.length;
+	return fills * t;
+}
+
 /* ---- TWO MORE READINGS OF THE SAME BARS, FOR COMPARISON ----------------------------------------
    None of these decides anything yet. They are on the audit page behind a selector so the one that
    matches what a person sees can be chosen on evidence rather than argued about.
@@ -381,8 +409,8 @@ function scoreTheory(legs, total, cycle, anchor){
 	const bins = dayHistogram(buckets);
 	const counts = buckets.map(b => b.legs.length);
 	const verdict = classifyShape(counts, bins);
-	const tight = verdict.tightness === undefined || verdict.tightness === null
-		? 0 : verdict.tightness;
+	//THE FIT, NOT THE TIGHTNESS. A theory that lands tightly but skips cycles has not explained them.
+	const tight = verdict.fit === undefined || verdict.fit === null ? 0 : verdict.fit;
 	const share = total ? legs.length / total : 0;
 	return {legs: legs, buckets: buckets, bins: bins, counts: counts, verdict: verdict,
 		share: share, tightness: tight, eligible: share >= SHAPE_CONFIG.minTheoryShare};
@@ -497,12 +525,14 @@ export function classifyShape(counts, bins, cfg){
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
 	const focus = focusOf(bins || [], c);
+	const fit = patternFit(bins || [], counts, focus.lumps);
 	/* REPORTED, NOT YET DECIDING. The width is the number a person can check against the bars; the
 	   angular focus is what still picks the shape and finds how many clusters there are. Both travel
 	   so the two can be compared on the audit page before either is given the gate. */
 	const lumps = Math.max(1, focus.lumps || 1);
 	const base = {typical: typical, steady: steady, busy: busy,
 		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump,
+		fit: fit === null ? 0 : fit,
 		scatter: dayScatter(bins || [], lumps),
 		cycleDays: (bins || []).length,
 		tightness: tightness(bins || [], lumps),
@@ -597,10 +627,14 @@ export function explainShape(legs, partition, cycle, anchor, opts){
    a month, and the way to find out is to put it back and look: if the movements belong to the rhythm
    they land on its day and the merged mode is tighter or no worse; if they do not, they widen it.
 
-   THE PATTERN HAS TO SURVIVE THE MERGE. A stray is absorbed only when the combined mode still snaps
-   to a strong pattern - minCollapseFit - so nothing is merged on the strength of its NAME looking
-   similar. Wages Julien's second payroll spelling is absorbed; Day care Emile's single Zelle payment
-   is not, because merging it drops the fit from 0.81 to 0.76 and a one-off transfer is not a cheque.
+   THE MERGE HAS TO IMPROVE THE HOST, and that is a comparison rather than a bar. A stray that
+   belongs to the rhythm either lands on its day or fills a cycle the rhythm had missed, and cannot
+   make it worse; one that does not, widens it and is refused by the same arithmetic. Nothing is
+   merged on the strength of its NAME looking similar.
+
+   BOTH HALVES OF THE FIT MATTER HERE. Day care Emile's Zelle transfer lands on a different day from
+   its cheques and would be refused on tightness alone - but August has no cheque, because the
+   transfer IS August's payment, and completing the year is worth more than the day it cost.
 
    WHAT IS STILL LOOSE AFTERWARDS IS GATHERED INTO ONE MODE. Twenty-one grocery payees are not
    twenty-one facts about a forecast - they are one habit with a long tail, and a single "everything
@@ -621,11 +655,10 @@ function remeasure(legs, cycle, anchor, opts){
 	const verdict = chosen ? chosen.verdict : classifyShape(counts, bins);
 	return {verdict: verdict, buckets: buckets, bins: bins,
 		snap: chosen ? chosen.snap : SNAP.none,
-		fit: (verdict.tightness === undefined || verdict.tightness === null) ? 0 : verdict.tightness};
+		fit: (verdict.fit === undefined || verdict.fit === null) ? 0 : verdict.fit};
 }
 
-export function collapseModes(modes, cycle, anchor, opts, cfg){
-	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+export function collapseModes(modes, cycle, anchor, opts){
 	const o = opts || {};
 	if(!cycle)return {modes: modes, gathered: null};
 
@@ -646,7 +679,11 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 				{country: o.country, realTime: host.accountType === AccountKind.realTime});
 			const lumpy = merged.verdict.shape === Shape.lump
 				|| merged.verdict.shape === Shape.multiLump;
-			if(!lumpy || merged.fit < c.minCollapseFit)return;
+			/* NO BAR - A COMPARISON. The question is whether adding this made the host better or
+			   worse, not whether the result is good in the abstract. A stray that belongs to the
+			   rhythm lands on its day, or fills a cycle the rhythm had missed, and cannot make it
+			   worse; one that does not, widens it and is refused by the same arithmetic. */
+			if(!lumpy || merged.fit < host.confidence)return;
 			if(!best || merged.fit > best.fit
 				|| (merged.fit === best.fit && host.moneyShare > best.host.moneyShare))
 				best = {host: host, merged: merged, fit: merged.fit};
@@ -790,8 +827,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				days: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.day) : [],
 				wobble: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.wobble) : [],
 				confidence: verdict.shape
-					? (verdict.tightness === undefined || verdict.tightness === null
-						? null : verdict.tightness)
+					? (verdict.fit === undefined || verdict.fit === null ? null : verdict.fit)
 					: null,
 				moneyShare: money ? absSum(mine) / money : 0,
 				money: absSum(mine),

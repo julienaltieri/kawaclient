@@ -66,21 +66,20 @@ export const SHAPE_CONFIG = {
 	   the unsplit stream fits 0.92. Nothing had to be gated for it to lose; it just fits worse. */
 
 	/* ---- COLLAPSING MODES BACK TOGETHER ------------------------------------------------------------
-	   AN ISOLATED PAYEE IS OFTEN THE SAME HABIT UNDER ANOTHER NAME. Wages Julien's payroll arrives 16
-	   times as "ACTIVEHOURS INC PAYROLL" and once as "ACTIVEHOURS D B PAYROLL" - one payer, one
-	   rhythm, two spellings, and split apart the second is a mode of one movement with nothing to say.
-	   Put back, the payroll is 17 movements in 17 cycles and reads tighter than it did without it.
+	   AN ISOLATED PAYEE IS OFTEN THE SAME HABIT UNDER ANOTHER NAME, or the same bill paid another way
+	   for one month. Day care Emile is eight cheques and one Zelle transfer - and August has no
+	   cheque, because the Zelle IS August's payment. Split apart, the cheques skip a month and the
+	   transfer is a mode of one movement; put back, every month has exactly one payment.
 
-	   SO EVERY PATTERNLESS MODE IS OFFERED TO EVERY PATTERNED ONE, and it is absorbed only if the
-	   merged mode STILL SNAPS TO A STRONG PATTERN. That is the whole test and it needs no notion of
-	   which names look alike: if the stray movements belong to the rhythm they will land on its day,
-	   and if they do not they will widen it and be refused.
+	   A STRAY IS ABSORBED WHEN THE MERGED MODE FITS AT LEAST AS WELL AS THE HOST DID ALONE. There is
+	   no bar to clear, and that is deliberate: a fixed threshold asks "is the result any good", when
+	   the question is "did adding this make it better or worse". Day care's merge reads 0.717 -> 0.756
+	   and is absorbed; a stray that lands nowhere near the rhythm widens it and is refused by the same
+	   comparison, whatever the numbers happen to be.
 
-	   MEASURED: at 0.80 the second payroll spelling is absorbed into the first and Day care Emile's
-	   single Zelle payment is NOT absorbed into its run of cheques - merging that one drops the fit
-	   from 0.81 to 0.76, which is the arithmetic saying a one-off bank transfer is not the monthly
-	   cheque. */
-	minCollapseFit: 0.80,
+	   The earlier form was a bar at 0.80, and it got Day care WRONG - it refused the one payment that
+	   completed the year - while passing a merge that degraded a host from 0.95 to 0.88 because both
+	   sides of that cleared the bar. */
 
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
