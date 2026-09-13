@@ -41,12 +41,30 @@ const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + 
 
 /* WHAT THE MODE PREDICTS, in the vocabulary the shape uses. A lump predicts a day; a spread predicts
    a rate and deliberately names no day, because naming one would be the error the shape exists to
-   avoid. */
+   avoid.
+
+   ONLY THE DAYS THE FORECAST WILL ACTUALLY NAME ARE PRINTED HERE. The credit card payment sits in two
+   clusters and happens once a week, so one of the two is the answer and the other is where it
+   sometimes goes - printing both as though both were due would read as two payments a week. */
 const patternOf = m => {
-	if(m.shape === Shape.lump || m.shape === Shape.multiLump)
-		return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : ''))
-			.join(' ' + DOT + ' ');
-	return 'no day ' + DOT + ' a rate';
+	if(m.shape !== Shape.lump && m.shape !== Shape.multiLump)return 'no day ' + DOT + ' a rate';
+	const pick = m.predicted && m.predicted.length ? m.predicted : m.days;
+	return m.days.map((d, i) => ({d: d, w: m.wobble[i]}))
+		.filter(x => pick.indexOf(x.d) >= 0)
+		.map(x => 'd' + x.d + (x.w ? '±' + x.w : ''))
+		.join(' ' + DOT + ' ');
+};
+
+/* AND WHERE ELSE IT LANDS, with the count that decided it. A reader looking at "d0" on 38 payments
+   has to be able to see that 17 of them chose d4 - the page names one day, and it owes the reader the
+   margin it named it by. */
+const spreadOfDays = m => {
+	if(m.shape !== Shape.lump && m.shape !== Shape.multiLump)return '';
+	if(!m.days || m.days.length < 2)return '';
+	const pick = m.predicted && m.predicted.length ? m.predicted : m.days;
+	const part = (d, i) => 'd' + d + ' x' + (m.dayEvents ? m.dayEvents[i] : '?')
+		+ (pick.indexOf(d) >= 0 ? '' : ' (sometimes)');
+	return m.days.map(part).join(' ' + DOT + ' ');
 };
 
 /* THE PAYEES BEHIND THE BAR. A merged mode is several names and the reader has to see all of them -
@@ -80,13 +98,15 @@ const plain = s => String(s === null || s === undefined ? '' : s)
 	.replace(/\s+/g, ' ').trim();
 
 const modeData = m => ({
-	wo: plain(whoOf(m)),
+	who: plain(whoOf(m)),
 	shape: m.shape || null,
 	pat: plain(patternOf(m)),
 	conf: (m.confidence === null || m.confidence === undefined) ? null : m.confidence,
 	share: m.moneyShare,
 	legs: m.legs,
 	exc: m.exceptions || 0,
+	alt: plain(spreadOfDays(m)),
+	per: (m.typical === null || m.typical === undefined) ? null : m.typical,
 	adj: (m.adjusted && m.adjusted !== 'none') ? m.adjusted : null
 });
 
@@ -210,6 +230,8 @@ function rowHtml(m, cls){
 	var w = Math.max(1.5, m.share * 100);
 	var note = m.exc ? " " + DOTCH + " " + m.exc + " off-pattern" : "";
 	if(m.adj)note = note + " " + DOTCH + " closures " + m.adj;
+	/* WHEN SEVERAL DAYS COMPETE, SAY WHICH ONE WON AND BY HOW MUCH. */
+	if(m.alt)note = note + " " + DOTCH + " " + m.per + " per cycle " + DOTCH + " " + m.alt;
 	return "<div class='mrow " + cls + "'>"
 		+ "<div class='mbar'><span style='width:" + w + "%'></span></div>"
 		+ "<b class='mpct'>" + pc(m.share) + "</b>"
@@ -231,7 +253,7 @@ function restHtml(rest){
 	}
 	var who = names.length === 1 ? names[0] : "the rest " + DOTCH + " " + names.join(", ");
 	return rowHtml({who: who, pat: "spread " + DOTCH + " no day", conf: null,
-		share: share, legs: legs, exc: 0, adj: null}, "rest");
+		share: share, legs: legs, exc: 0, adj: null, alt: null, per: null}, "rest");
 }
 
 function draw(){
@@ -286,6 +308,9 @@ const LEGEND = '<span class="lg">one bar per mode, and the bars are shares of th
 		+ 'just arrives at a rate</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
+		+ '<span class="lg">several clusters is not several payments - the page names as many days '
+			+ 'as the cycle typically carries movements, biggest cluster first, and lists the rest '
+			+ 'as "sometimes"</span>'
 		+ '<span class="lg">"sure" = how tightly the movements land on that day AND how many cycles '
 			+ 'they turned up in</span>'
 		+ '<span class="lg">"N off-pattern" = movements the habit did not account for - a late '

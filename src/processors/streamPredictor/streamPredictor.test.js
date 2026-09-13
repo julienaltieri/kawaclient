@@ -30,7 +30,7 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape,
-	directionOf, byDirection, dominantAccount}
+	directionOf, byDirection, dominantAccount, predictedDays}
 	from './shapeDetermination';
 import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
@@ -1108,6 +1108,42 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		});
 	});
 
+	/* ---- SEVERAL CLUSTERS IS NOT SEVERAL PAYMENTS -------------------------------------------------
+	   THE CREDIT CARD PAYMENT IS THE CASE. Robinhood is 38 movements over 37 weekly cycles - almost
+	   exactly one a week - sitting in two clusters:
+
+	       d0  x12
+	       d4  x26     38 movements / 37 cycles = 1.03 a week
+
+	   That is ONE payment landing on one of two days, not two payments. Naming both would put a second
+	   card payment in every week of the forecast, so the cycle's own event count decides how many days
+	   are named and the biggest clusters get them: d4, and d0 is where it sometimes goes instead.
+
+	   AT LEAST ONE DAY IS ALWAYS NAMED. A sparse mode - Whole Foods, seven shops across thirteen weeks
+	   - has a commonest count of ZERO, and answering "no day" there is the shape's decision to make
+	   before this is called, not this function's. */
+	test('as many days are named as the cycle typically carries movements', () => {
+		const two = [{day: 0, events: 12}, {day: 4, events: 26}];
+		expect(predictedDays(two, 1)).toEqual([4]);
+		expect(predictedDays(two, 2)).toEqual([0, 4]);
+		//never none, and never more days than there are clusters
+		expect(predictedDays(two, 0)).toEqual([4]);
+		expect(predictedDays(two, 9)).toEqual([0, 4]);
+		expect(predictedDays([], 1)).toEqual([]);
+		//named in calendar order, chosen in size order
+		expect(predictedDays([{day: 6, events: 4}, {day: 17, events: 5}, {day: 29, events: 3}], 2))
+			.toEqual([6, 17]);
+
+		const cc = predictor.reviewable().find(x => x.name === 'Credit Card Payments');
+		const m = predictor.modesOf(cc.id, cc);
+		const robin = m.modes.find(x => /robinhood/i.test(x.label));
+		expect(robin.shape).toBe(Shape.multiLump);
+		expect(robin.days).toEqual([0, 4]);
+		expect(robin.dayEvents).toEqual([12, 26]);
+		expect(robin.typical).toBe(1);
+		expect(robin.predicted).toEqual([4]);
+	});
+
 	test('writes the modes audit page from the real results', () => {
 		const rows = modeRows(predictor);
 		const html = buildModesAuditPage(predictor, {
@@ -1126,6 +1162,33 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
 			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
 		});
+
+		/* EVERY FIELD THE SCRIPT READS HAS TO BE A FIELD THE DATA CARRIES. The page draws itself in
+		   the browser, so a mistyped key is not an error - it is the word "undefined" printed in the
+		   row where a payee's name belongs, on a page nothing else checks. It has happened once: a
+		   tab escape in a patch ate the h out of "who" and forty-one rows went blank.
+
+		   READ OFF THE EMITTED SCRIPT rather than from a list kept by hand, because a list kept by
+		   hand is the same bug one level up. */
+		const page = scripts[1].replace(/^<script>/, '').replace(/<\/script>$/, '');
+		const blob = page.match(/^var DATA = ([\s\S]*?);\nvar bar/);
+		expect(blob).toBeTruthy();
+		const emitted = JSON.parse(blob[1]);
+		const anyMode = emitted.reduce((hit, st) =>
+			hit || st.groups.reduce((h, g) => h || g.modes[0], null), null);
+		expect(anyMode).toBeTruthy();
+
+		const reads = {};
+		(page.match(/\bm\.[a-z]+/g) || []).forEach(r => { reads[r.slice(2)] = true; });
+		expect(Object.keys(reads).length).toBeGreaterThan(5);
+		Object.keys(reads).forEach(k =>
+			expect({field: k, present: Object.prototype.hasOwnProperty.call(anyMode, k)})
+				.toEqual({field: k, present: true}));
+
+		//and the group fields the chart is laid out from
+		const anyGroup = emitted[0].groups[0];
+		['kind', 'note', 'cls', 'share', 'modes'].forEach(k =>
+			expect(Object.prototype.hasOwnProperty.call(anyGroup, k)).toBe(true));
 
 		const modes = rows.reduce((n, r) => n + r.modes.length, 0);
 		const shaped = rows.reduce((n, r) => n + r.modes.filter(x => x.shape).length, 0);

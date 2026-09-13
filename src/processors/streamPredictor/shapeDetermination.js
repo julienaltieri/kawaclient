@@ -163,6 +163,32 @@ const wobbleOf = (xs, mid) => xs.length
 	? Math.round(middleOf(xs.map(x => Math.abs(x - mid))))
 	: 0;
 
+/* ---- WHICH OF THE DAYS THE FORECAST ACTUALLY NAMES ----------------------------------------------
+   SEVERAL CLUSTERS DOES NOT MEAN SEVERAL PAYMENTS. The credit card payment to Robinhood is 38
+   movements over 37 weekly cycles - almost exactly one a week - and they sit in two clusters, d0 and
+   d4. That is ONE payment that lands on one of two days, not two payments; a forecast that named both
+   would invent a second payment every week.
+
+   SO THE CYCLE'S OWN EVENT COUNT DECIDES HOW MANY DAYS ARE NAMED, and the biggest clusters get them.
+   A cycle that typically carries one movement names one day - the day most of the movements chose -
+   and the others are where it sometimes goes instead. A cycle that typically carries three names
+   three, which is what a multi-lump is for.
+
+   AT LEAST ONE DAY IS ALWAYS NAMED. A sparse mode - seven shops across thirteen weeks - has a
+   commonest count of zero, and answering "no day" there would be the shape's job, not this
+   function's: it reports which day the pattern points at, and whether the pattern should have been
+   claimed at all is decided before it is called. */
+export function predictedDays(days, typical){
+	const all = (days || []).slice();
+	if(!all.length)return [];
+	const n = Math.min(all.length, Math.max(1, typical || 0));
+	return all.slice()
+		.sort((a, b) => (b.events || 0) - (a.events || 0) || a.day - b.day)
+		.slice(0, n)
+		.map(d => d.day)
+		.sort((a, b) => a - b);
+}
+
 export function lumpDays(buckets, n){
 	const days = [];
 	buckets.forEach(b => b.legs.forEach(l => days.push(dayInCycle(l, b))));
@@ -818,6 +844,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		const d = lumpDays(mg.buckets, mg.verdict.lumps);
 		host.days = d.map(x => x.day);
 		host.wobble = d.map(x => x.wobble);
+		host.dayEvents = d.map(x => x.events);
+		host.typical = mg.verdict.typical === undefined ? null : mg.verdict.typical;
+		host.predicted = predictedDays(d, mg.verdict.typical);
 	});
 
 	/* EVERYTHING STILL LOOSE BECOMES ONE MODE. Per account, because a shape is per account and a
@@ -851,6 +880,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 			reason: mg.verdict.reason || null,
 			days: d.map(x => x.day),
 			wobble: d.map(x => x.wobble),
+			dayEvents: d.map(x => x.events),
+			typical: mg.verdict.typical === undefined ? null : mg.verdict.typical,
+			predicted: predictedDays(d, mg.verdict.typical),
 			confidence: mg.verdict.shape ? mg.fit : null,
 			money: group.reduce((n, m) => n + m.money, 0),
 			moneyShare: group.reduce((n, m) => n + m.moneyShare, 0),
@@ -952,6 +984,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				}
 			}
 			const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
+			const dd = lumpy ? lumpDays(buckets, verdict.lumps) : [];
 
 			modes.push({
 				label: modeLabel(mine),
@@ -964,8 +997,12 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				legs: mine.length,
 				shape: verdict.shape,
 				reason: verdict.reason || null,
-				days: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.day) : [],
-				wobble: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.wobble) : [],
+				days: dd.map(d => d.day),
+				wobble: dd.map(d => d.wobble),
+				//how many movements chose each day, and which of them the forecast will name
+				dayEvents: dd.map(d => d.events),
+				typical: verdict.typical === undefined ? null : verdict.typical,
+				predicted: predictedDays(dd, verdict.typical),
 				confidence: verdict.shape
 					? (verdict.fit === undefined || verdict.fit === null ? null : verdict.fit)
 					: null,
