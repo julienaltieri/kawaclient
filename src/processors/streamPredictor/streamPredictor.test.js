@@ -32,6 +32,7 @@ import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cyc
 import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape}
 	from './shapeDetermination';
 import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
+import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
@@ -40,6 +41,7 @@ const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
 const OUT_SHAPE = path.join(__dirname, 'audit-shape.html');
+const OUT_MODES = path.join(__dirname, 'audit-modes.html');
 const GROUND_TRUTH = path.join(__dirname, '..', '..', 'tests', 'fixtures',
 	'cycleGroundTruth.json');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
@@ -922,6 +924,70 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		});
 		expect(shaped).toBeGreaterThan(0);
 		console.log('§3 ANSWERS: ' + shaped + ' allocations shaped, ' + unshaped + ' not');
+	});
+
+	/* ---- THE PROTOTYPE: A STREAM AS A LIST OF MODES -------------------------------------------------
+	   ONE SHAPE PER STREAM WAS THE WRONG SHAPE OF ANSWER. Utilities is a Conservice bill and a City
+	   of Palo Alto bill, both on the 11th, two thirds and one third of the money; forcing them into
+	   one verdict describes neither. Every payee gets its own mode, and a stream is allowed to be
+	   several things at once - or, like Gas, nothing at all, which is also an answer. */
+	test('a stream decomposes into one mode per payee, with its share of the money', () => {
+		const utilities = predictor.reviewable().find(x => x.name === 'Utilities');
+		const m = predictor.modesOf(utilities.id, utilities);
+		expect(m.modes.length).toBe(2);
+		expect(m.modes.every(x => x.shape === Shape.lump)).toBe(true);
+		//the shares are a partition of the money
+		expect(m.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
+		expect(m.predictableShare).toBeCloseTo(1, 6);
+		expect(m.baseline.modes).toBe(0);
+		console.log('Utilities: ' + m.modes.map(x => x.label + ' ' + x.shape
+			+ ' d' + x.days.join(',') + ' ' + Math.round(x.moneyShare * 100) + '%').join(' | '));
+
+		/* A STREAM WITH NO PATTERN IN IT IS NOT A FAILURE. Gas is twelve fill-ups at eight stations,
+		   and "all of this is a rate, none of it is a date" is exactly what a forecast needs told. */
+		const gas = predictor.reviewable().find(x => x.name === 'Gas');
+		const g = predictor.modesOf(gas.id, gas);
+		expect(g.predictable).toBe(0);
+		expect(g.baseline.moneyShare).toBeCloseTo(1, 6);
+
+		//and the payroll separates from the disability deposits, which is where this started
+		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
+		const wm = predictor.modesOf(wages.id, wages);
+		const payroll = wm.modes[0];
+		expect(payroll.shape).toBe(Shape.lump);
+		expect(payroll.legs).toBe(16);
+		expect(wm.baseline.legs).toBe(4);
+		console.log('Wages Julien: ' + payroll.label + ' ' + payroll.shape + ' d'
+			+ payroll.days.join(',') + ' ' + Math.round(payroll.moneyShare * 100) + '% of money, '
+			+ wm.baseline.legs + ' movements in the baseline');
+	});
+
+	test('writes the modes audit page from the real results', () => {
+		const rows = modeRows(predictor);
+		const html = buildModesAuditPage(predictor, {
+			version: portfolio.version,
+			capturedAt: portfolio.capturedAt,
+			anchor: predictor.analysisAnchor()
+		});
+		fs.writeFileSync(OUT_MODES, html, 'utf8');
+		expect(html.startsWith('<!doctype html>')).toBe(true);
+
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBe(2);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
+			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
+		});
+
+		const modes = rows.reduce((n, r) => n + r.modes.length, 0);
+		const shaped = rows.reduce((n, r) => n + r.modes.filter(x => x.shape).length, 0);
+		console.log('§3 MODES: ' + rows.length + ' streams | ' + modes + ' modes | '
+			+ shaped + ' with a pattern | '
+			+ rows.filter(r => r.predictableShare >= 0.999).length + ' fully predictable | '
+			+ rows.filter(r => r.predictableShare <= 0.001).length + ' with no pattern at all');
+		console.log('MODES PAGE: ' + OUT_MODES + ' (' + fs.statSync(OUT_MODES).size + ' bytes)');
 	});
 
 	test('writes the shape audit page from the real results', () => {

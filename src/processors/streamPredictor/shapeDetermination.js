@@ -591,6 +591,121 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 	});
 }
 
+/* ---- A STREAM IS A LIST OF MODES ----------------------------------------------------------------
+   PROTOTYPE. The stage above answers one shape per account, and the portfolio kept saying that is
+   the wrong shape of answer. "Utilities" is not a monthly lump - it is a water bill on the 4th, an
+   electricity bill on the 18th, and two card top-ups nobody can predict. "Wages Julien" is a
+   semimonthly payroll plus disability deposits. Forcing those into one verdict describes none of
+   them, and the theory machinery was already doing the work of pulling them apart - it just had to
+   throw the losers away to return a single answer.
+
+   SO THE ANSWER BECOMES A LIST. One mode per payee, each with its own shape, its own days, its own
+   confidence and its own share of the money. Some modes are predictable and some are not, and a
+   stream is allowed to be both at once: three reliable bills and a tail of one-off spending is a
+   completely ordinary stream and there is no single shape that is true of it.
+
+   THE MONEY SHARE IS WHY THIS MATTERS FOR A FORECAST. A payee that is 4% of the money and completely
+   unpredictable costs almost nothing to get wrong; one that is 60% and lands on the 2nd every month
+   is most of what the forecast is. A single shape per stream hides which is which, and a list cannot.
+
+   EACH MODE IS STILL TESTED THE SAME WAY, with the same theories - as recorded, or with the bank's
+   closures undone - so nothing about how a shape is decided changes here. What changes is that every
+   payee gets its own verdict instead of one payee's verdict standing in for the stream. */
+const modeLabel = legs => {
+	//the description the payee is most often written as: a name a person recognises
+	const seen = {};
+	(legs || []).forEach(l => {
+		const d = String(l.description || '').trim();
+		if(d)seen[d] = (seen[d] || 0) + 1;
+	});
+	const keys = Object.keys(seen);
+	if(!keys.length)return '(no description)';
+	return keys.sort((a, b) => seen[b] - seen[a] || (a < b ? -1 : 1))[0];
+};
+
+const absSum = legs => (legs || []).reduce((n, l) => n + Math.abs(l.amount || 0), 0);
+
+export function streamModes(legs, partition, cycle, anchor, opts){
+	const o = opts || {};
+	const all = legs || [];
+	const money = absSum(all);
+	const yearly = !!cycle && !!YEARLY[cycle.name];
+	const modes = [];
+
+	(partition || []).forEach(alloc => {
+		const onAccount = all.filter(l => l && l.accountId === alloc.accountId);
+		if(!onAccount.length)return;
+		const realTime = alloc.accountType === AccountKind.realTime;
+
+		merchantGroups(onAccount).forEach(group => {
+			const mine = group.legs;
+			/* EVERY PAYEE IS A MODE, INCLUDING THE ONES TOO SMALL TO SHAPE. A payee with two
+			   movements is not a pattern, and it is also not nothing - it is a share of the money
+			   that arrives unpredictably, which is exactly what a forecast needs told. */
+			let chosen = null, theories = [];
+			if(cycle && !yearly){
+				theories = shapeTheories(mine, cycle, anchor,
+					{country: o.country, realTime: realTime})
+					.filter(t => t.kind === 'all');
+				const pick = chooseTheory(theories);
+				chosen = pick ? pick.chosen : null;
+			}
+
+			const buckets = chosen ? chosen.buckets
+				: (cycle ? cycleBuckets(mine, cycle, anchor) : []);
+			const bins = chosen ? chosen.bins : dayHistogram(buckets);
+			const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
+			const verdict = yearly
+				? {shape: null, reason: 'the cycle is still yearly after determination'}
+				: (chosen ? chosen.verdict : classifyShape(counts, bins));
+			const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
+
+			modes.push({
+				label: modeLabel(mine),
+				key: group.key,
+				accountId: alloc.accountId,
+				accountType: alloc.accountType || null,
+				legs: mine.length,
+				shape: verdict.shape,
+				reason: verdict.reason || null,
+				days: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.day) : [],
+				wobble: lumpy ? lumpDays(buckets, verdict.lumps).map(d => d.wobble) : [],
+				confidence: verdict.shape
+					? (verdict.tightness === undefined || verdict.tightness === null
+						? null : verdict.tightness)
+					: null,
+				moneyShare: money ? absSum(mine) / money : 0,
+				money: absSum(mine),
+				cyclesObserved: buckets.length,
+				adjusted: chosen ? chosen.snap : SNAP.none,
+				histogram: bins
+			});
+		});
+	});
+
+	/* PREDICTABLE FIRST, THEN BY HOW MUCH MONEY RIDES ON THEM. A forecast is read from the top, and
+	   what it most needs to be right about is the biggest thing it can actually predict. */
+	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.multiLump ? 1
+		: m.shape === Shape.spread ? 2 : 3);
+	modes.sort((a, b) => rank(a) - rank(b) || b.moneyShare - a.moneyShare);
+
+	const predictable = modes.filter(m => !!m.shape);
+	return {
+		modes: modes,
+		money: money,
+		predictable: predictable.length,
+		/* THE BASELINE IS WHAT IS LEFT: every payee with no pattern, taken together. It is not a
+		   failure to be explained away - it is the part of the stream that genuinely arrives when it
+		   arrives, and a forecast should carry it as a rate rather than as dates. */
+		baseline: {
+			modes: modes.length - predictable.length,
+			legs: modes.filter(m => !m.shape).reduce((n, m) => n + m.legs, 0),
+			moneyShare: modes.filter(m => !m.shape).reduce((n, m) => n + m.moneyShare, 0)
+		},
+		predictableShare: predictable.reduce((n, m) => n + m.moneyShare, 0)
+	};
+}
+
 /* ---- THE ANSWER -------------------------------------------------------------------------------
    PER ALLOCATION: {accountId, shape, days?, confidence?}. `days` appears only for a lump or a set of
    lumps - a spread has no day to name, which is what makes it a spread - and `confidence` only

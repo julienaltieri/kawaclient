@@ -19,7 +19,7 @@ import {streamLedger, terminalStreams, mapAccounts, isClosedStream} from './acco
 const YEARLY_PERIODS = {yearly: true, biyearly: true};
 import {createDate} from '../../Time';
 import {determineCycle, cycleOf as cycleFrom} from './cycleDetermination';
-import {determineShape, explainShape} from './shapeDetermination';
+import {determineShape, explainShape, streamModes} from './shapeDetermination';
 import {legsInWindow} from './cycleFit';
 import {DEFAULT_COUNTRY} from './businessCalendar';
 import {reportingConfig} from '../../reportingConfig';
@@ -201,6 +201,16 @@ export class StreamPredictor {
 			allocations: determineShape(window, this.partitionOf(streamId), cycle,
 				this.analysisAnchor())
 		};
+	}
+
+	/* THE PROTOTYPE ANSWER: a stream as a list of modes rather than one shape. */
+	modesOf(streamId, stream){
+		const node = stream || this.terminalStreams().find(s => s.id === streamId);
+		const cycle = cycleFrom(this.cycleOf(streamId, node));
+		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
+		return Object.assign({cycle: cycle},
+			streamModes(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
+				{country: this.userCountry(), offsetHours: this.userTimezoneOffset()}));
 	}
 
 	explainShapeOf(streamId, stream){
