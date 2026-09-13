@@ -1749,6 +1749,25 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			predictor.analysisAnchor(), predictor.analysisNow());
 		expect(refills.kind).toBe(ENVELOPE.refilling);
 		expect(breaksPlan(refills, -99999, 0.15)).toBe(false);
+		/* ---- AND THE COMPARISON IS PER ACCOUNT ------------------------------------------------
+		   A TRANSFER BETWEEN TWO OF YOUR OWN ACCOUNTS NETS TO NOTHING AND MOVES BOTH BALANCES.
+		   Savings sums to $0 a month across its two sides, which is true and useless; -$6,000 a
+		   month leaves Spending, and that is the number a balance forecast for Spending needs. */
+		const savings = predictor.reviewable().find(x => x.name === 'Savings');
+		const sr = predictionRows(predictor, savings.id, savings,
+			{country: predictor.userCountry()});
+		const sides = sr.accounts.map(x => Math.round(x.rate)).sort((x, y) => x - y);
+		expect(sides).toEqual([-6000, 6000]);
+		//netted at the stream it is nothing, which is why the stream-level ratio is not printed
+		expect(Math.round(sr.rebaseline.observed)).toBe(0);
+
+		//the budget is stated as an outflow, so only the side that loses money reports a ratio
+		const out = sr.accounts.find(x => x.rate < 0);
+		const into = sr.accounts.find(x => x.rate > 0);
+		expect(Math.round(out.rebaseline.ratio * 100)).toBe(150);
+		expect(into.rebaseline.ratio).toBe(null);
+		expect(Math.round(into.rebaseline.observed)).toBe(6000);
+
 		//it is compared instead: the rate against the budget, never spend-to-date against it
 		const re = rebaseline(refills, -286);
 		expect(re.ratio).toBeCloseTo(-286 / refills.budget, 6);

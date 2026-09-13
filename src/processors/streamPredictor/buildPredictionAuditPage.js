@@ -50,9 +50,10 @@ const budgetLine = r => {
 	if(r.envelope === 'plan')
 		return 'plan ' + money(r.budget) + ' ' + DOT + ' ' + pc(r.used) + ' spent at '
 			+ pc(r.elapsed) + ' of the year' + (r.capped ? ' ' + DOT + ' SPENT' : '');
-	if(r.envelope === 'refilling')
-		return 'budget ' + money(r.budget) + ' a ' + r.declared
-			+ (r.rebase === null ? '' : ' ' + DOT + ' running at ' + pc(r.rebase));
+	/* THE STREAM-LEVEL RATIO IS NOT PRINTED FOR A REFILLING ENVELOPE. It is netted across accounts,
+	   and for a transfer between two of your own it reads 0% of a real budget. The comparison that
+	   means something sits on each account, beside the money that actually moved. */
+	if(r.envelope === 'refilling')return 'budget ' + money(r.budget) + ' a ' + r.declared;
 	return '';
 };
 
@@ -84,6 +85,10 @@ export function predictionData(predictor){
 				accountType: a.accountType,
 				name: a.name || null,
 				mask: a.mask || null,
+				rate: a.rate === undefined ? 0 : a.rate,
+				rebase: (a.rebaseline && a.rebaseline.ratio !== null)
+					? a.rebaseline.ratio : null,
+				budget: (a.budget && a.budget.kind === 'refilling') ? a.budget.budget : 0,
 				modes: a.modes.map(m => ({
 					label: plain(m.label),
 					late: !!m.late,
@@ -302,14 +307,22 @@ function modeHtml(m){
 
 function accountHtml(acc){
 	var scale = scaleOf(acc), h = "", i;
+	/* WHAT THIS ACCOUNT ACTUALLY MOVES, against the budget for the stream it belongs to. A transfer
+	   between two of your own accounts nets to nothing at the stream and moves both balances, so the
+	   comparison belongs here rather than on the header. */
+	var note = acc.budget
+		? money(acc.rate) + " a cycle here"
+			+ (acc.rebase === null ? "" : " " + DOTCH + " " + Math.round(acc.rebase * 100)
+				+ "% of the " + money(acc.budget) + " budget")
+		: (acc.accountType === "deferred" ? "settles with the card"
+			: "moves the day the money does");
+
 	h = h + "<div class='ac " + (acc.accountType === "deferred" ? "def" : "rt") + "'>"
 		+ "<div class='achead'><span class='ackind'>"
 		+ (acc.accountType === "deferred" ? "deferred" : "real time") + "</span>"
 		+ "<span class='acid'>" + esc2(acc.name || acc.accountId)
 			+ (acc.mask ? " <b>••" + esc2(acc.mask) + "</b>" : "") + "</span>"
-		+ "<span class='acnote'>"
-		+ (acc.accountType === "deferred" ? "settles with the card"
-			: "moves the day the money does") + "</span></div>";
+		+ "<span class='acnote'>" + esc2(note) + "</span></div>";
 	for(i = 0; i < acc.modes.length; i++)h = h + modeHtml(acc.modes[i]);
 	h = h + "<div class='lanes'>";
 	for(i = 0; i < acc.lanes.length; i++)h = h + laneHtml(acc.lanes[i], scale);
@@ -360,6 +373,8 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 	+ '<span class="lg">a "planned" mode is one the ledger is too young to read, whose first payment '
 		+ 'arrived at exactly the amount the user declared before it - the number is theirs, not a '
 		+ 'measurement</span>'
+	+ '<span class="lg">the budget comparison sits on each ACCOUNT: a transfer between two of your '
+		+ 'own nets to nothing at the stream and still moves both balances</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'

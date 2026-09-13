@@ -32,7 +32,16 @@ export const ENVELOPE = {plan: 'plan', refilling: 'refilling', none: 'none'};
    THE ENVELOPE IS PHASED ON THE MODULE'S ANCHOR like every other lattice, so a yearly envelope runs
    from the anchor and a monthly one from the nearest seam behind today. `spent` is only the legs
    inside it, because an envelope the user has already closed is not the one being forecast. */
-export function budgetPosition(stream, legs, anchor, now){
+/* ---- THE SAME ENVELOPE, ASKED ABOUT ONE ACCOUNT ------------------------------------------------
+   A TRANSFER BETWEEN TWO OF YOUR OWN ACCOUNTS NETS TO NOTHING AND MOVES BOTH BALANCES. Julien's
+   savings transfer leaves Spending and arrives in Savings; summed over the stream it is $0 a month,
+   which is true and useless - the $6,000 that leaves Spending is exactly what a balance forecast for
+   Spending needs, and the stream-level total hides it behind its own mirror.
+
+   SO THE COMPARISON IS PER ACCOUNT. Pass an accountId and only that account's legs are counted. The
+   PLAN gate stays at stream level, because a yearly declaration is a plan for the whole stream and
+   Julien settled that; this is the refilling comparison, which is about where money actually lands. */
+export function budgetPosition(stream, legs, anchor, now, accountId){
 	const hist = (stream && stream.expAmountHistory) || [];
 	const budget = hist.length ? hist[hist.length - 1].amount : 0;
 	const period = declaredCycleOf(stream && stream.period);
@@ -46,6 +55,7 @@ export function budgetPosition(stream, legs, anchor, now){
 	const end = period.nextDate(start);
 
 	const inside = (legs || []).filter(l => {
+		if(accountId !== undefined && accountId !== null && l.accountId !== accountId)return false;
 		const t = new Date(l.date).getTime();
 		return t >= start.getTime() && t < end.getTime();
 	});
@@ -55,6 +65,7 @@ export function budgetPosition(stream, legs, anchor, now){
 	return {
 		kind: YEARLY[stream.period] ? ENVELOPE.plan : ENVELOPE.refilling,
 		period: stream.period,
+		accountId: accountId === undefined ? null : accountId,
 		budget: budget,
 		start: start,
 		end: end,
@@ -88,7 +99,18 @@ export function breaksPlan(position, claim, band){
    and it is what tells the user their budget is wrong rather than their spending. */
 export function rebaseline(position, perCycle){
 	if(!position || position.kind !== ENVELOPE.refilling || !position.budget)return null;
-	return {budget: position.budget, observed: perCycle, ratio: perCycle / position.budget};
+	/* THE BUDGET'S SIGN SAYS WHICH SIDE OF THE MOVEMENT IT DESCRIBES. A declaration of -$4,000 a
+	   month is a statement about money LEAVING, so it is compared with the account that loses money
+	   and not with the one that receives it - reporting the receiving side as -150% of an outflow
+	   budget is arithmetic, not a finding. An account moving the other way still reports its rate;
+	   what it has no business reporting is a ratio against somebody else's direction. */
+	const sameWay = perCycle === 0 || (perCycle < 0) === (position.budget < 0);
+	return {
+		budget: position.budget,
+		observed: perCycle,
+		ratio: sameWay ? perCycle / position.budget : null,
+		accountId: position.accountId
+	};
 }
 
 /* ---- WAS THIS STREAM DECLARED AND THEN PAID AS DECLARED? -----------------------------------------

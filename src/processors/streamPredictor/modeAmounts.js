@@ -339,7 +339,20 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 
 	/* AND WHERE A REFILLING BUDGET SITS AGAINST WHAT IS ACTUALLY BEING SPENT. This changes no
 	   forecast - the observed rate is already what is predicted - it is the number that says the
-	   BUDGET is wrong rather than the spending. */
+	   BUDGET is wrong rather than the spending.
+
+	   ASKED PER ACCOUNT, because a transfer between two of your own accounts nets to nothing at the
+	   stream and moves both balances. Savings reads $0 a month summed, and -$6,000 a month out of
+	   Spending, which is the number a balance forecast for Spending actually needs. */
+	const legs = predictor.legsOf(streamId) || [];
+	accounts.forEach(acc => {
+		let rate = 0;
+		acc.modes.forEach(m => { rate += m.capped ? m.cappedAmount : m.amount; });
+		acc.budget = budgetPosition(stream, legs, anchor, predictor.analysisNow(), acc.accountId);
+		acc.rate = rate;
+		acc.rebaseline = rebaseline(acc.budget, rate);
+	});
+
 	let perCycle = 0;
 	accounts.forEach(acc => acc.modes.forEach(m => { perCycle += m.capped ? m.cappedAmount : m.amount; }));
 
