@@ -191,16 +191,38 @@ export function dayHistogram(buckets){
 
    THE MIDDLE DAY OF A GROUP, NOT ITS AVERAGE. Phone lands on day 28, 32, 28, 32, 28 and once on day
    92 after a billing mistake; the average is dragged four days by that one, the middle day is not. */
-const middleOf = xs => {
+/* THE MIDDLE DAY, WITH HALF THE WEIGHT ON EITHER SIDE OF IT.
+
+   THE TAPER REACHED EVERY DECISION BUT THIS ONE. It chose which cluster wins, whether the mode may
+   claim a day at all, and how sure it is - and then the day itself was a plain median in which a
+   movement from January counted exactly as much as one from last week. Plaid drifts later all year -
+   d16 d13 d14 d17 d21 d18 d20 - and the plain median of all seven is d17 while the last four say d19.
+
+   WITH ALL WEIGHTS EQUAL THIS IS THE PLAIN MEDIAN, including the even-count interpolation: at n = 4
+   the running total reaches exactly half at the second value, which is the tie the last branch
+   handles. So nothing moves when the taper is off. */
+const middleOf = (xs, ws) => {
 	if(!xs.length)return null;
-	const a = xs.slice().sort((x, y) => x - y);
-	const m = Math.floor(a.length / 2);
-	return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2);
+	const a = xs.map((x, i) => ({x: x, w: (ws && ws[i] !== undefined) ? ws[i] : 1}))
+		.sort((p, q) => p.x - q.x);
+	const total = a.reduce((n, p) => n + p.w, 0);
+	if(!total)return a[Math.floor(a.length / 2)].x;
+	const half = total / 2;
+	let run = 0;
+	for(let i = 0; i < a.length; i++){
+		run += a[i].w;
+		if(run > half)return a[i].x;
+		//EXACTLY HALF: the middle falls between this value and the next, so it is between them
+		if(run === half)
+			return Math.round((a[i].x + a[Math.min(i + 1, a.length - 1)].x) / 2);
+	}
+	return a[a.length - 1].x;
 };
 
-//how far a group's days sit from its own middle day, typically - the wobble the reader sees
-const wobbleOf = (xs, mid) => xs.length
-	? Math.round(middleOf(xs.map(x => Math.abs(x - mid))))
+//how far a group's days sit from its own middle day, typically - the wobble the reader sees, and
+//the distances carry their own movement's weight so a stale outlier widens it less
+const wobbleOf = (xs, mid, ws) => xs.length
+	? Math.round(middleOf(xs.map(x => Math.abs(x - mid)), ws))
 	: 0;
 
 /* ---- WHICH OF THE DAYS THE FORECAST ACTUALLY NAMES ----------------------------------------------
@@ -230,8 +252,8 @@ export function predictedDays(days, typical){
 }
 
 export function lumpDays(buckets, n){
-	/* THE DAY AND THE WOBBLE ARE READ OFF THE RAW DAYS - a middle is a middle whenever it happened -
-	   but HOW BIG a cluster is counts recency, because that is what picks the day to predict. */
+	/* THE DAY, THE WOBBLE AND THE SIZE OF A CLUSTER ALL COUNT RECENCY. Which cluster wins decides
+	   which day is named; where its middle sits decides which day that is. */
 	const items = [];
 	buckets.forEach(b => b.legs.forEach(l => items.push({d: dayInCycle(l, b), w: weightOf(b)})));
 	if(!items.length)return [];
@@ -251,9 +273,9 @@ export function lumpDays(buckets, n){
 		from = to;
 	});
 	return groups.map(g => {
-		const ds = g.map(x => x.d);
-		const mid = middleOf(ds);
-		return {day: mid, wobble: wobbleOf(ds, mid),
+		const ds = g.map(x => x.d), ws = g.map(x => x.w);
+		const mid = middleOf(ds, ws);
+		return {day: mid, wobble: wobbleOf(ds, mid, ws),
 			events: g.reduce((n, x) => n + x.w, 0)};
 	});
 }

@@ -1239,6 +1239,52 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(on.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
 	});
 
+	/* ---- THE DAY IS A WEIGHTED MIDDLE TOO ----------------------------------------------------------
+	   THE TAPER REACHED EVERY DECISION BUT THIS ONE. It chose which cluster wins, whether the mode may
+	   claim a day at all and how sure it is - and then the day itself was a plain median, in which a
+	   movement from January counted exactly as much as one from last week.
+
+	   PLAID IS WHERE IT SHOWED. Its payment drifts later across the year, newest last:
+
+	       d16  d13  d14  d25  d17  d21  d18  d20
+	                      ^ its one exception, trimmed
+
+	       plain median of the kept seven   d17
+	       last four cycles                 d19
+	       weighted middle                  d18
+
+	   NOTHING ELSE IN THE PORTFOLIO MOVED, and nothing moves at all with the taper off: with equal
+	   weights this is the plain median, even-count interpolation included. */
+	test('the claimed day has half the weight on either side of it', () => {
+		const DAY = 24 * 60 * 60 * 1000;
+		const bucket = (i, days, w) => {
+			const start = new Date(Date.UTC(2026, 0, 1 + i * 30));
+			return {
+				start: start,
+				end: new Date(Date.UTC(2026, 0, 31 + i * 30)),
+				legs: days.map(d => ({date: new Date(start.getTime() + d * DAY), amount: -1})),
+				weight: w
+			};
+		};
+
+		//equal weights: the plain median, and the plain even-count interpolation
+		expect(lumpDays([bucket(0, [10], 1), bucket(1, [10], 1), bucket(2, [20], 1)], 1)[0].day)
+			.toBe(10);
+		expect(lumpDays([bucket(0, [10], 1), bucket(1, [20], 1)], 1)[0].day).toBe(15);
+
+		//faded weights: two old movements on d10 no longer outvote one recent movement on d20
+		expect(lumpDays([bucket(0, [10], 0.2), bucket(1, [10], 0.2), bucket(2, [20], 1)], 1)[0].day)
+			.toBe(20);
+		//and the wobble is measured from the day the weight actually chose
+		expect(lumpDays([bucket(0, [10], 0.2), bucket(1, [10], 0.2), bucket(2, [20], 1)], 1)[0].wobble)
+			.toBe(0);
+
+		const plaid = predictor.reviewable().find(x => x.name === 'Plaid');
+		const mode = predictor.modesOf(plaid.id, plaid).modes.find(x => /plaid hq/i.test(x.label));
+		expect(mode.shape).toBe(Shape.lump);
+		expect(mode.days).toEqual([18]);
+	});
+
 	test('writes the modes audit page from the real results', () => {
 		const rows = modeRows(predictor);
 		const html = buildModesAuditPage(predictor, {
