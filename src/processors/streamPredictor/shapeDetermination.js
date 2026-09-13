@@ -21,6 +21,8 @@
    ================================================================================================== */
 
 import {SHAPE_CONFIG} from './shapeConfig';
+import {SNAP, snapDate, isBusinessDay} from './businessCalendar';
+import {AccountKind} from './accountMapping';
 
 export const Shape = {lump: 'lump', spread: 'spread', multiLump: 'multiLump'};
 
@@ -338,6 +340,59 @@ export function rayleigh(bins, lumps){
 	return {z: z, p: p < 0 ? 0 : p > 1 ? 1 : p};
 }
 
+/* ---- DID THE BANK'S OPENING HOURS CAUSE THE SCATTER --------------------------------------------
+   ONLY EVER ASKED OF A REAL-TIME ACCOUNT. A card charge posts when the merchant presents it, so
+   adjusting one fits weekend SHOPPING rather than a bank rule - groceries tighten by 24% under this
+   and there is no bank rule anywhere near them.
+
+   BOTH DIRECTIONS ARE TRIED AND ONE HAS TO WIN CLEARLY. The arrangement is not recorded anywhere, so
+   the stream is asked: pulled back to the closure before, pushed forward to the closure after, or
+   left alone. A direction is adopted only if it tightens the stream by minSnapGain AND beats the
+   other direction by minSnapMargin. Where the two are close, neither is a rule - they are both just
+   moving a few dates and one happened to win.
+
+   THE ADJUSTED HISTOGRAM TRAVELS WITH THE VERDICT so the audit page can draw both pictures side by
+   side. A claim that the weekend explains the scatter is checkable only by looking at what it did. */
+export function snapTrial(legs, cycle, anchor, country, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const spreadUnder = how => {
+		const moved = (legs || []).map(l => ({date: snapDate(new Date(l.date), how, country)}));
+		const bins = dayHistogram(cycleBuckets(moved, cycle, anchor));
+		const sd = circularSd(bins, 1);
+		return {days: sd ? sd.days : null, bins: bins};
+	};
+
+	const none = spreadUnder(SNAP.none);
+	if(none.days === null || none.days === 0)
+		return {applied: SNAP.none, reason: 'nothing to tighten', raw: none.days, bins: none.bins};
+
+	const next = spreadUnder(SNAP.next);
+	const back = spreadUnder(SNAP.back);
+	const gain = t => t.days === null ? 0 : (none.days - t.days) / none.days;
+	const gNext = gain(next), gBack = gain(back);
+	const winner = gNext >= gBack ? SNAP.next : SNAP.back;
+	const best = winner === SNAP.next ? gNext : gBack;
+	const other = winner === SNAP.next ? gBack : gNext;
+
+	const out = {raw: none.days, gainNext: gNext, gainBack: gBack,
+		bins: none.bins, applied: SNAP.none};
+	if(best < c.minSnapGain){ out.reason = 'no direction tightens it'; return out; }
+	if(best - other < c.minSnapMargin){ out.reason = 'both directions do about the same'; return out; }
+
+	out.applied = winner;
+	out.gain = best;
+	out.adjusted = winner === SNAP.next ? next.days : back.days;
+	out.adjustedBins = winner === SNAP.next ? next.bins : back.bins;
+	return out;
+}
+
+/* WHETHER A STREAM IS EVEN ELIGIBLE: every one of its movements has to be on an account the bank
+   opens and closes. A leg landing on a closed day is itself evidence that this account does not
+   follow the rule, so it is reported rather than adjusted around. */
+export function landsOnClosedDays(legs, country){
+	return (legs || []).filter(l => !isBusinessDay(new Date(l.date), country)).length;
+}
+
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
    THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
    off the typical count and a cutoff put groceries - four or five shops a week, every week, the
@@ -421,11 +476,18 @@ export function classifyShape(counts, bins, cfg){
 /* ---- THE WORKING, FOR AN AUDIT ----------------------------------------------------------------
    Everything the decision looked at, per allocation. This is a DEBUG surface, not the answer -
    determineShape below is the answer, and it is deliberately narrow. */
-export function explainShape(legs, partition, cycle, anchor){
+export function explainShape(legs, partition, cycle, anchor, opts){
+	const o = opts || {};
 	const yearly = !!cycle && !!YEARLY[cycle.name];
 	return (partition || []).map(alloc => {
 		const mine = (legs || []).filter(l => l && l.accountId === alloc.accountId);
 		const buckets = cycle ? cycleBuckets(mine, cycle, anchor) : [];
+		/* THE WEEKEND TRIAL, REAL-TIME ACCOUNTS ONLY. A card posts when the merchant presents it, so
+		   there is no bank rule to undo and adjusting one fits weekend SHOPPING instead - groceries
+		   tighten 24% under this and no bank rule is anywhere near them. */
+		const realTime = alloc.accountType === AccountKind.realTime;
+		const snap = (realTime && cycle && !yearly && mine.length >= 4)
+			? snapTrial(mine, cycle, anchor, o.country) : null;
 		const counts = buckets.map(b => b.legs.length);
 		const bins = dayHistogram(buckets);
 		const verdict = yearly
@@ -452,7 +514,10 @@ export function explainShape(legs, partition, cycle, anchor){
 			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,
 			steadyShare: verdict.steady === undefined ? null : verdict.steady,
 			busyShare: verdict.busy === undefined ? null : verdict.busy,
-			histogram: bins
+			histogram: bins,
+			accountType: alloc.accountType || null,
+			snap: snap,
+			closedDayLegs: realTime ? landsOnClosedDays(mine, o.country) : null
 		};
 	});
 }

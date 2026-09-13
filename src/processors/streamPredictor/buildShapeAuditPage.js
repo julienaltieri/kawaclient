@@ -88,7 +88,9 @@ const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-id="' + esc(r.id)
 		+ '<span class="m-sc ' + esc(scoreCls(r.scores.tight)) + '" data-sc="1">'
 			+ esc(r.scores.tight ? r.scores.tight.t : DASH) + '</span>'
 	+ '</div>'
-	+ '<div class="c-hi">' + r.hist + '</div>'
+	+ '<div class="c-hi">' + r.hist
+		+ (r.hist2 ? '<span class="snaplab">' + esc(r.snapLabel) + '</span>' + r.hist2 : '')
+		+ '</div>'
 	+ '<div class="c-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
 		+ ' aria-label="accept ' + esc(r.name) + '"></div>'
 	+ '</div>';
@@ -125,10 +127,15 @@ export function shapeRows(predictor){
 						: {v: a.tightness, good: 1,
 							t: Math.round(a.tightness * 100) + '% ' + DOT + ' '
 								+ a.scatter.toFixed(1) + 'd off'},
+					/* FOUR STANDARD DEVIATIONS WIDE, not one. One is what the arithmetic produces and a
+					   quarter of what the eye reads: Day care Emile's bars run day 12 to day 20 and
+					   its standard deviation is 2.2 days, because a spread like that is about four
+					   deviations end to end. Reporting the window the movements actually occupy -
+					   two deviations either side - is the number that matches the picture. */
 					spread: !a.sd ? null
-						: {v: 1 - Math.min(1, a.sd.share / 0.29), good: 1,
-							t: (a.sd.share * 100).toFixed(1) + '% of cycle ' + DOT + ' '
-								+ a.sd.days.toFixed(1) + 'd'},
+						: {v: 1 - Math.min(1, a.sd.share * 4), good: 1,
+							t: (a.sd.share * 400).toFixed(0) + '% of cycle ' + DOT + ' '
+								+ (a.sd.days * 4).toFixed(1) + 'd wide'},
 					test: !a.test ? null
 						: {v: 1 - Math.min(1, a.test.p / 0.05), good: 1,
 							t: 'p ' + (a.test.p < 0.001 ? '<.001' : a.test.p.toFixed(3))
@@ -138,6 +145,17 @@ export function shapeRows(predictor){
 				concentration: a.concentration,
 				tightness: a.tightness,
 				hist: histogram(a.histogram, a.days),
+				/* THE SECOND PICTURE IS THE CLAIM. Saying the weekend explains the scatter is only
+				   checkable by seeing what undoing it did, so the adjusted histogram is drawn under
+				   the original wherever a direction was adopted. */
+				hist2: (a.snap && a.snap.adjustedBins) ? histogram(a.snap.adjustedBins, []) : '',
+				snapLabel: (a.snap && a.snap.applied !== 'none')
+					? (a.snap.applied === 'next' ? 'pulled back over the closure'
+						: 'pushed on over the closure')
+						+ ' ' + DOT + ' ' + a.snap.raw.toFixed(1) + 'd to '
+						+ a.snap.adjusted.toFixed(1) + 'd wide'
+					: '',
+				snapApplied: a.snap ? a.snap.applied : null,
 				cycles: a.cyclesObserved,
 				counts: a.eventsPerCycle,
 				steady: a.steadyShare,
@@ -231,6 +249,10 @@ export function buildShapeAuditPage(predictor, meta){
    phone screen before a single row was visible, every time the page was opened. */
 const LEGEND = '<span class="lg">bars = every cycle on top of each other ' + DOT
 		+ ' x = day of the cycle ' + DOT + ' day 0 is the seam</span>'
+	+ '<span class="lg">SPREAD = the window the movements occupy, as a share of the cycle ' + DOT
+		+ ' four standard deviations wide</span>'
+	+ '<span class="lg">a SECOND row of bars = the same cycles with the bank closures undone '
+		+ DOT + ' real-time accounts only</span>'
 	+ '<span class="lg">TIGHT = how far off its day a movement lands, on average ' + DOT
 		+ ' 1.1d off is countable on the bars</span>'
 	+ '<span class="lg">ANGLE is the older score, kept beside it while the two are compared</span>'
@@ -287,6 +309,7 @@ const CSS = `
 .cf.none{color:var(--ink-faint)}
 
 .c-hi{min-width:0}
+.snaplab{display:block;font:400 9px/1.5 var(--mono);color:var(--accent);margin:3px 0 1px}
 .hist{display:flex;align-items:flex-end;gap:1px;width:100%}
 /* THE BAR HAS ITS OWN BOX AND THE NUMBER SITS OUTSIDE IT. They used to be two flex items in one
    fixed-height column, so a full-height bar plus its label overflowed - and flex shrinks the tall
@@ -345,7 +368,7 @@ const CSS = `
    code because none of them is obviously right and the argument is settled by looking. */
 const SCORES = [
 	{key: 'tight', label: 'tight (days off)'},
-	{key: 'spread', label: 'spread (sd / cycle)'},
+	{key: 'spread', label: 'spread (width / cycle)'},
 	{key: 'angle', label: 'angle'},
 	{key: 'test', label: 'test (p)'}
 ];

@@ -21,6 +21,7 @@ import {createDate} from '../../Time';
 import {determineCycle, cycleOf as cycleFrom} from './cycleDetermination';
 import {determineShape, explainShape} from './shapeDetermination';
 import {legsInWindow} from './cycleFit';
+import {DEFAULT_COUNTRY} from './businessCalendar';
 import {reportingConfig} from '../../reportingConfig';
 
 export class StreamPredictor {
@@ -70,6 +71,32 @@ export class StreamPredictor {
 	   differently tomorrow against the same capture, and the test would drift a day at a time. */
 	analysisNow(){
 		return this.portfolio.today ? new Date(this.portfolio.today) : new Date();
+	}
+
+	/* ---- WHOSE CALENDAR AND WHOSE CLOCK -----------------------------------------------------------
+	   BOTH COME FROM THE ACCOUNT, NEVER FROM THE MACHINE. A prediction that changes because it was
+	   computed on a laptop in a different timezone is not a prediction, and a holiday list is a fact
+	   about where the user banks rather than about where this code is running.
+
+	   THE OFFSET DEFAULTS TO ZERO because a bank date arrives as a date and is stored as UTC
+	   midnight: read at zero it gives back exactly the day the bank stated. It is the capture that
+	   should carry the user's own offset, and until it does, zero is the honest reading rather than a
+	   guess dressed up as one.
+
+	   THE COUNTRY DEFAULTS TO THE ONE CALENDAR THAT IS FILLED IN. A country the calendar does not
+	   know gets no weekend adjustment at all, which is the safe direction: no adjustment leaves the
+	   dates as the bank recorded them, the wrong country's holidays move them confidently to the
+	   wrong place. */
+	userTimezoneOffset(){
+		const prefs = this.portfolio.userPreferences || {};
+		const v = prefs.timeZoneOffset !== undefined ? prefs.timeZoneOffset
+			: this.portfolio.timeZoneOffset;
+		return typeof v === 'number' ? v : 0;
+	}
+
+	userCountry(){
+		const prefs = this.portfolio.userPreferences || {};
+		return prefs.country || this.portfolio.country || DEFAULT_COUNTRY;
 	}
 
 	/* MEMOISED, because the walk is the same walk for every stage and every stream. */
@@ -185,7 +212,8 @@ export class StreamPredictor {
 			decision: decision,
 			cycle: cycle,
 			allocations: explainShape(window, this.partitionOf(streamId), cycle,
-				this.analysisAnchor())
+				this.analysisAnchor(),
+				{country: this.userCountry(), offsetHours: this.userTimezoneOffset()})
 		};
 	}
 
