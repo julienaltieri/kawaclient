@@ -49,8 +49,8 @@ between them.
 | `cycleDetermination` | where the cycle came from: **the declaration**, or **inferred from the transactions** | For most streams the cycle matches the declaration. Yearly streams are where it comes apart: a stream is often declared yearly out of uncertainty, and the pattern inside it only shows up in the transactions later — so an inferred cycle can legitimately disagree with what was declared, and which of the two produced it has to be visible. |
 | `inferredCycle` | a `Period` (`src/Time.js`) — monthly, semi-monthly, every seven days | The declared period and the cycle used are two different facts, and for an overridden yearly stream they disagree. Without this field the cycle that produced the events is named nowhere, and re-deriving it from the events is guesswork. |
 | `modes` | what §3 determined: a **list**, one entry per payee-direction-account pile of money, each a `lump` with days or a `spread` with none, each with its share of the stream's money | One shape per stream was the wrong shape of answer. Utilities is two bills on the same day; Wages Julien is a payroll plus three disability deposits; Gas is eight petrol stations and no rhythm. A single verdict describes none of them, and the money share is what tells a reader which mode is worth being right about. |
-| `inferredAmount` | the expected amount for one `inferredCycle` — −$157 a month, −$1,700 a semi-month | The number the schedule is generated from. Stating it separately makes an event list checkable against what it was meant to add up to, instead of leaving the intended total to be recovered by summing the events. |
-| `amountDetermination` | the method that produced that amount | A label rather than the reasoning: "the trailing mean". It sits on the prediction rather than on the event because it does not differ between them — the method that produced the amount is the same method for every event it produced. |
+| `inferredAmount` | the expected amount for one cycle, **per mode** — §4 answers a list, not a single number | One figure per stream cannot describe a stream that is a $9.99 subscription on a card and a reimbursement into checking. The stream's amount is the sum of its modes, and the modes are what a forecast places. |
+| `amountDetermination` | how each mode's amount was reached: the **weighted median** of the cycles a lump landed in, or the **total over the stream's cycles** for a rate | The two are different estimators answering different questions, and which one produced a number changes how much to trust it. A median resists a one-off; a rate must not, because the lumpy months ARE the spread. |
 | `transactionBase` | the transactions this prediction was derived from — the reference format is not yet decided | What makes a prediction auditable. The common disagreement is not "is this rule right" but "did it look at what I think it looked at" — a shape read from four transactions when the stream has two hundred is a different problem from a wrong rule, and the two are indistinguishable without this. |
 | `predictedEvents` | the schedule — an array of future events, of the shape below | The module's output is this array. Everything else on the prediction describes how the array was produced. |
 
@@ -61,8 +61,8 @@ between them.
 | `date` | when the event is expected | — |
 | `amount` | how much moves | — |
 | `account` | which account it moves through | — |
-| `confidence.date` | how sure the module is about *when* | Confidence is attached to each event because it varies from one event to the next, even under the same model: the next movement of a drifting stream is more certain than the fifth. |
-| `confidence.amount` | how sure the module is about *how much* | Kept separate from `confidence.date` because date and amount fail independently: a card statement is sure to land on time but not for how much, and an erratic yearly envelope can be the opposite. |
+| `confidence.date` | how sure the module is about *when* — for a lump this is `confidence.day` from §3 | Confidence is attached to each event because it varies from one event to the next, even under the same model: the next movement of a drifting stream is more certain than the fifth. |
+| `confidence.amount` | how sure the module is about *how much* — carrying §3's `confidence.arrival`, which asks whether the money comes at all | Kept separate from `confidence.date` because date and amount fail independently: a card statement is sure to land on time but not for how much, and an erratic yearly envelope can be the opposite. §3 already answers these as two numbers. |
 
 ## What this module owns, and what it does not
 
@@ -585,20 +585,26 @@ money, because one large payment from the wrong account does not relocate a habi
 small ones does. The merged mode is then reported on, and measured with the posting behaviour of,
 that account.
 
-### Two shapes, and they are two promises
+### Three answers, and two of them are promises
 
 | shape | the promise | what comes with it | worked example |
 |---|---|---|---|
-| **lump** | money lands on these days of the cycle | `days`, `confidence` | rent, day 11 · utilities, day 11 · the card payment, day 4 |
-| **spread** | money is spent at a rate, on no particular day | nothing further | groceries, all week · eight petrol stations · a payee too sparse to read |
+| **lump** | money lands on these days of the cycle | `days`, `wobble`, `confidence`, sometimes `rail` | rent, day 12 · the card payment, day 5 · the reimbursement, day 18 |
+| **spread** | money is spent at a rate, placed as whole movements | nothing further | groceries, twice a week · Social, three times a month |
+| **unknown** | nothing yet | nothing | one option exercise · a payee seen twice |
 
-**There is no third value and no null.** A forecast can do exactly two things with money — put it on a
-date or spend it across the cycle — so an observer that could not read a mode at all still produces a
-spread, because undated money is spent at a rate whether that is a finding or a shrug. What the
-observer actually saw survives in `explainShape` under `reason`.
+**`unknown` is the default and the other two are EARNED.** A spread is a real finding — groceries
+genuinely arrive at a rate — but used as the answer of last resort it turned the weakest evidence in
+the portfolio into its most confident claim: one option exercise last December became a promise of
+−$10,582 every month, because a single movement in a single cycle was too thin for a lump, fell
+through to spread, and was then divided by its own lattice.
 
-**There is no "multi-lump" either.** A mode landing on three days is a lump whose `days` has three
-entries. The count was never a different kind of answer, only a different length of one.
+**It is not the old null**, which meant "the observer could not read this" and leaked into an answer by
+accident. This is a positive statement with a consequence a caller can act on. It is also not "a
+spread of zero" — that says the mode spends nothing, and this says we do not know yet.
+
+**There is no "multi-lump".** A mode landing on three days is a lump whose `days` has three entries.
+The count was never a different kind of answer, only a different length of one.
 
 ### The rule
 
@@ -621,27 +627,39 @@ entries. The count was never a different kind of answer, only a different length
    count is pinned, not searched for: a shape that names more days than the forecast will use has not
    decided anything.
 
-5. **In focus at that count, or not.** `concentration` at k clusters clears `minConcentration` and it
-   is a lump; otherwise it is a spread — a busy one if the cycle is genuinely full, and a shrug if it
-   is not, but a spread either way.
+5. **In focus at that count? Then it is a lump, however many days it uses.** `concentration` at k
+   clusters clears `minConcentration` and the movements land on their days. Focus is asked FIRST for a
+   reason: two bills a fortnight apart are two dates, not a flow, and Utilities' pair read as one mode
+   is two movements a cycle — counting before looking would call perfectly dated bills a rate.
 
-6. **Let a pattern keep its own exceptions.** The movement furthest from the claimed day is set aside
+6. **Out of focus, the RATE decides.** A spread is when so many movements happen that precision is not
+   worth trying for and a daily amount is the better approximation. At or below `minSpreadEventsPerCycle`
+   a month the money arrives all at once, and that is a **lump whose date wanders**: it keeps its
+   median day and reports the doubt rather than being smeared or silenced.
+
+   The rate is measured **per month**, because a weekly lattice makes every rate look small — groceries
+   at 3.5 shops a month read 0.81 a cycle and would pass for one payment. As a **mean**, because
+   `commonest` answered a different question badly: cycles running 1, 1, 1, 2, 5, 8 have a modal count
+   of one and carry three. **Weighted by recency**, like everything else. And it says nothing about how
+   BUSY the mode is — that asks about arrival, which has its own confidence.
+
+7. **Let a pattern keep its own exceptions.** The movement furthest from the claimed day is set aside
    while that improves the fit, up to `maxExceptionShare` of the mode. What is set aside is the mode's
    own noise — counted and reported, not discarded. The result still has to be a lump: trimming always
    improves a score that rewards landing on a day, so a flow would otherwise shed a third of itself
    chasing one.
 
-7. **Name the day with half the weight on either side of it.** The claimed day is the weighted middle
+8. **Name the day with half the weight on either side of it.** The claimed day is the weighted middle
    of the winning cluster, so a movement from January moves it less than one from last week.
 
-8. **Charge for the claim.** A lump under `minLumpConfidence` keeps its money, loses its day, and is
-   answered as a spread.
+9. **Charge for the claim.** `minLumpConfidence` guards ARRIVAL, not the day: below it we do not know
+   whether money is coming at all, and the answer is `unknown`. A date we are unsure of is still a date
+   worth naming, and that doubt is reported as `confidence.day`.
 
-### Confidence
+### Two confidences, because one number answered two questions
 
-**How often it turns up, times how tightly it lands.**
-
-    confidence = share of cycles carrying anything  ×  1 − scatter / (cycleDays / 4k)
+    confidence.arrival    the weighted share of cycles that carried anything    will it come?
+    confidence.day        1 − scatter / (cycleDays / 4k)                        do we know when?
 
 **Both halves are the pattern.** A bill always on the 6th that skipped August is not a tight monthly
 bill — it is a monthly bill that missed a month, and a forecast built on tightness alone invents a
@@ -656,9 +674,18 @@ divides it — a weekly stream paid on the same weekday scores like a monthly on
 **Both halves are weighted by recency**, the same weights as the histogram: a cycle missed last month
 costs more than one missed in January.
 
-**There is no separate wobble in the answer.** How far the movements scatter around the day is not a
-second number for a caller to combine with the first — it is already inside the confidence. A caller
-reading both would be reading the same evidence twice.
+**They move together on an ordinary bill and come apart on a date that wanders.** Rent is 100% and
+92%. Earnin's internet reimbursement arrives in every single cycle and lands anywhere in it: arrival
+100%, day 0%. Multiplied into one number that is zero, and a payment we are certain about would be
+thrown away for a date nobody asked it to keep — which is exactly what happened while there was one
+number.
+
+**The product survives internally as `fit`**, because the collapse test wants both halves at once:
+"did absorbing this stray make the host better or worse" is a question about arrival and day together.
+
+**The wobble travels in the answer.** It was dropped while confidence was a single number that already
+carried it; with a wandering date it is the only field describing how far it wanders, and a caller
+placing money needs it.
 
 ### The answer
 
@@ -669,18 +696,20 @@ reading both would be reading the same evidence twice.
         accountId,    where it lands
         accountType,  deferred | realTime - decides when the cash actually moves
         direction,    in | out
-        shape,        lump | spread
+        shape,        lump | spread | unknown
         days?,        lump only - the days of the cycle it lands on
-        confidence?,  lump only - 0 to 1
+        wobble?,      lump only - how far each day wanders, in days
+        confidence?,  lump only - {arrival, day}, each 0 to 1
         rail?,        lump only - {closures: early | late | ignored, tests: n}
+        overdue?,     lump only - how far past its own worst wait it is
         quiet,        cycles since this mode last moved - 0 means the newest cycle
         moneyShare    how much of the stream rides on this mode
       }]
     }
 
 **An undetermined field is ABSENT, never a placeholder** — the same contract §2 answers on. A spread
-has no `days` because it has no day to name, which is what makes it a spread, and no `confidence`
-about a day it never claimed.
+and an unknown have no `days`, no `wobble` and no `confidence`: a spread has no day to name, which is
+what makes it a spread, and neither can say how sure it is about one it never claimed.
 
 ### How long since it last moved
 
@@ -739,7 +768,8 @@ reads it.
 |---|---|---|---|
 | `minConcentration` | 0.75 | how sharply movements must cluster to be a lump at all | the portfolio's bills all clear it; groceries read 0.11 |
 | `minClosureTests` | 2 | how many shut due-days before a rail is a rule | at 2 the portfolio learns six rails; the four modes with three disagreeing observations correctly learn none |
-| `minLumpConfidence` | 0.60 | what a claim on a date costs | Earnin's phone reimbursement reads 56% across a fortnight and names no day; every real bill clears it with room |
+| `minLumpConfidence` | 0.60 | the ARRIVAL a mode needs before it may name a day at all | below it we do not know whether money is coming; every mode that clears it arrives in at least two cycles of three |
+| `minSpreadEventsPerCycle` | 2 | movements a MONTH before smearing beats dating | nothing sits between 1.5 and 2.7: above are groceries at 6.8, Costco 3.5, Social 2.9; below are Laundry 1.5, Gas 1.3, every ordinary bill 1.0 |
 | `taperShoulderCycles` | 3 | how many recent cycles are never faded | a rhythm needs a few cycles at full weight to be a rhythm; without this the card payment dips from 94% to 85% at one half-life and recovers at the next |
 | `taperHalfLifeCycles` | 3 | how fast older cycles fade | short enough to follow a habit that moved, long enough that moving is what it takes |
 | `pinLumpsToEventsPerCycle` | true | clusters are the cycle's event count, not a search | Earnin read 74% as three clusters while naming one day |
@@ -750,14 +780,13 @@ reads it.
 | `minMovements` | 4 | the weighted movements needed before a day may be claimed | Whole Foods, nothing since 16 May, falls under it once the old ones fade |
 | `minCyclesObserved` | 3 | cycles needed before a rhythm is a rhythm | two payments make a line, not a habit |
 | `minSteadyShare` | 0.65 | how consistent the per-cycle count must be to read as steady | reported, not gating |
-| `minBusyShare` | 0.8 | how many cycles must carry movement for a spread to be a flow | groceries fill every week |
-| `minSpreadEventsPerCycle` | 2 | events per cycle before a flow is a flow rather than a shrug | one wandering payment a month is not a flow |
+| `minBusyShare` | 0.8 | **no longer gates anything** — kept as a reported figure | it asked about arrival, which now has its own confidence; keeping it in the flow test refused Loki's Grocery Outlet at 1.88 a cycle for being 75% busy |
 | `splitByDirection` | true | money out never completes money in | the savings transfer and its pull-backs |
 
 ### What it reads today
 
-29 streams reach this stage with a non-yearly cycle and at least one movement. 18 modes name a day,
-six of them with a learned closure rail; every other mode is a rate.
+29 streams reach this stage with a non-yearly cycle and at least one movement. **23 modes name a day**,
+seven of them with a learned closure rail; **7 are rates**; the rest are `unknown` and promise nothing.
 
 **The seam is a calendar day, not an instant.** The lattice is walked with `Time.js`, which builds
 LOCAL dates, and a ledger date is UTC midnight. West of Greenwich local midnight is later in the day,
@@ -943,6 +972,12 @@ entirely — and which of those applies depends on how the envelope is actually 
 The stakes are high because the streams are large: a $10,000 yearly budget contributes over $1,800 a
 month to a forecast whether or not a dollar of it moves.
 
+> **Partly answered by [Appendix A](#appendix-a--4-what-a-prediction-is-allowed-to-claim).** A yearly
+> declaration is now treated as a **finite plan**: the envelope can be spent, a movement that would
+> break it is refused, and a stream with no data predicts nothing rather than a twelfth of its budget
+> a month. What remains open below is how a yearly figure becomes the SIZE of one movement when the
+> stream does move — Gate 3 constrains the total and does not derive the instalment.
+
 **The scenarios are not one problem**, and each has its own arithmetic. Each is named and distinguished
 before any rule is written — a yearly bill paid once on a date, a budget drawn down in instalments, an envelope spent
 erratically, an envelope that will not be spent at all, and a yearly *income*, which is a hope rather
@@ -971,6 +1006,11 @@ account — rather than one. How is it predicted?
 **Why it is last.** It is a *composition* of everything above — each side has its own cycle, its own
 shape and its own amount — so it cannot be specified before those are settled, and it is rare enough
 that getting it wrong is cheap compared with getting the ordinary case wrong.
+
+> **Partly answered.** §3 already partitions a stream by account, direction and payee, so the two
+> halves are separate modes of one list and cannot double-count by construction. §4's budget
+> comparison is asked per account for the same reason — a transfer between two of your own accounts
+> nets to nothing at the stream and moves both balances. What remains open is the question below.
 
 **What it must guarantee.** That the two halves sum to one stream and never to two. The declared
 amount is one number; a split that gives each side the whole of it doubles the stream, which is worse
@@ -1062,16 +1102,30 @@ by accident.
 - **What the banks do to a day is learned per mode, from the raw ledger, and only on unanimous
   evidence.** A payroll pays early, a direct debit collects late, a card does not move; the rule
   belongs to the rail, not the account. Absent means not yet known, never "nothing happens".
+- **Three answers, and two of them are promises.** `unknown` is the default; `lump` and `spread` are
+  earned. A spread used as the answer of last resort turned one option exercise into a promise of
+  −$10,582 every month.
+- **Focus decides the shape before the rate does**, because two bills a fortnight apart are two dates
+  and not a flow.
+- **The rate is measured per MONTH, as a recency-weighted mean**, and says nothing about how busy the
+  mode is — that asks about arrival, which has its own confidence.
+- **Two confidences: arrival and day.** One number was answering two questions, and their product
+  threw away a payment that arrives in every cycle and lands anywhere.
+- **A declaration is evidence, not only a constraint**, where it preceded the money, matched the first
+  movement and sat next to it in time.
+- **A spread is placed, not smeared**: whole movements, counted by the weighted average, put on the
+  centres of its own clusters.
+- **The budget comparison is asked per ACCOUNT**; only the plan gate is asked per stream.
 - **Silence is observed in §3 and judged in §4.** How long since a mode last moved is a fact about the
   ledger; whether that means the money has stopped is a forecasting decision, and it lives in §4's own
   settings file.
 
 ## Still open
 
-1. **How a spread mode appears in an event schedule.** A spread promises a rate, an event schedule
-   promises dates, and the one place the output contract and the shape taxonomy have to meet is still
-   open. §3 now hands §4 a list of modes rather than one shape per stream, so the question is also
-   how several modes of one stream combine into one schedule.
+1. **How several modes of one stream combine into one schedule.** A spread's own half is answered —
+   it is placed as whole movements on the centres of its clusters — but a stream is a list of modes on
+   possibly two accounts, and how those become one ordered event list, and whether the caller wants
+   one list or one per account, is not settled.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **The trim is bounded by buckets, never by legs.** `trimBuckets` drops a fixed number of buckets
    whatever the lattice looks like. On a long weekly lattice that is two of thirty-three; on a
@@ -1082,9 +1136,20 @@ by accident.
    Exceptional Expense score quarterly at 77.1% after the trim discarded the bucket holding 14 of its
    20 legs. Capping the trim by the **share of legs** it discards, rather than by a count of buckets,
    is the proposed fix and is not implemented.
-4. **How much a prediction should account for itself.** Today: a confidence and a determination label. Whether
-   that is enough, and what a fuller explanation would cost in shape and speed, is open — deliberately,
-   because it may need to change.
+4. **How much a prediction should account for itself.** Today: two confidences and a determination
+   label. Whether that is enough, and what a fuller explanation would cost in shape and speed, is open
+   — deliberately, because it may need to change.
+5. **A cluster that wraps the seam is not seen.** `lumpDays` cuts a linear list of days, so Grocery
+   Outlet's real peak — days 6 and 0, one weekend hump split by the cycle boundary — is found as 0 and
+   4. The concentration maths already treats the cycle as a circle; the placement does not.
+6. **A rate has no evidence floor of its own.** `minCyclesForRate` was proposed and not built. The
+   evidence gate catches every case in this portfolio, but nothing yet says a rate needs as many cycles
+   as a lump, and the two disagreeing is what produced the inversion Appendix A was written to fix.
+7. **The overshoot alert is machinery only.** The module reports where a stream stands against its
+   envelope and stops at its own boundary; telling the user is a product decision that has not been
+   taken.
+8. **`budgetBand` is untuned.** Gembah projects to 139%, which clears any value from 10% to 30% alike,
+   so the portfolio cannot distinguish them. It wants a near case before it is settled.
 
 
 ---
