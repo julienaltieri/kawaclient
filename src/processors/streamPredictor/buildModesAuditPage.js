@@ -132,7 +132,7 @@ export function modeRows(predictor, taper){
 	const rows = [];
 	predictor.reviewable().forEach(stream => {
 		const m = predictor.explainShapeOf(stream.id, stream, taper);
-		if(!m.cycle || YEARLY[m.cycle.name] || !m.modes.length)return;
+		if(!m.cycle || !m.modes.length)return;
 		const legs = m.modes.reduce((n, x) => n + x.legs, 0);
 
 		/* SPLIT BY ACCOUNT TYPE AND KEEP THE ORDER FIXED - real time, then deferred - so a reader
@@ -152,6 +152,7 @@ export function modeRows(predictor, taper){
 			id: stream.id,
 			name: stream.name,
 			cycle: m.cycle.name,
+			yearly: !!YEARLY[m.cycle.name],
 			modes: m.modes,
 			groups: groups,
 			legs: legs,
@@ -162,14 +163,19 @@ export function modeRows(predictor, taper){
 				.join(' ').toLowerCase()
 		});
 	});
-	//the streams a forecast is least able to explain come first: those are the ones worth reading
-	return rows.sort((a, b) => a.predictableShare - b.predictableShare
+	/* THE STREAMS A FORECAST IS LEAST ABLE TO EXPLAIN COME FIRST, because those are the ones worth
+	   reading - but a stream §2 left yearly goes last whatever it scores. It scores nothing by
+	   construction: the window is one year and a yearly lattice cuts it into one cycle, so 220 modes
+	   all answer "only 1 cycle observed" and would otherwise bury every stream worth an argument. */
+	return rows.sort((a, b) => (a.yearly ? 1 : 0) - (b.yearly ? 1 : 0)
+		|| a.predictableShare - b.predictableShare
 		|| (String(a.name) < String(b.name) ? -1 : 1));
 }
 
 /* THE SHELL BINDS THE TICK BOXES ONCE, AT LOAD, so every stream's header and checkbox is rendered
    here and only the chart inside it is drawn by the script. */
-const streamBlock = (r, i) => '<section class="stream" data-search="' + esc(r.search) + '">'
+const streamBlock = (r, i) => '<section class="stream" data-search="' + esc(r.search) + '"'
+	+ ' data-yearly="' + (r.yearly ? '1' : '0') + '">'
 	+ '<header class="sh-head">'
 		+ '<div class="s-name"><b>' + esc(r.name) + '</b>'
 			+ '<span class="s-meta">' + esc(r.cycle) + ' ' + DOT + ' ' + r.legs
@@ -202,9 +208,13 @@ export function buildModesAuditPage(predictor, meta){
 			.forEach(r => { by[r.id] = r.groups; });
 		return by;
 	});
+	/* A YEARLY STREAM READS THE SAME AT EVERY TAPER - one cycle is one cycle however it is weighed -
+	   so it carries ONE answer repeated rather than five copies of it. That is 190KB of the page. */
 	const data = rows.map(r => ({
 		name: r.name,
-		v: variants.map(by => by[r.id] || [])
+		v: r.yearly
+			? [variants[0][r.id] || []]
+			: variants.map(by => by[r.id] || [])
 	}));
 	const bar = Math.round(SHAPE_CONFIG.minLumpConfidence * 100);
 	const startTaper = Math.max(0, TAPERS.map(t => t.h)
@@ -229,6 +239,13 @@ export function buildModesAuditPage(predictor, meta){
 					+ '" step="1" value="' + startTaper + '">'
 				+ '<b class="kv" id="taperv">' + esc(TAPERS[startTaper].label) + '</b></div>'
 			+ '<p class="cnote" id="tnote">' + esc(TAPERS[startTaper].note) + '</p>'
+			+ '<div class="knob seg"><span class="kl">cycle</span>'
+				+ '<button type="button" class="sg" data-cyc="short" aria-pressed="true">'
+					+ 'shorter than a year</button>'
+				+ '<button type="button" class="sg" data-cyc="year" aria-pressed="false">'
+					+ 'yearly</button>'
+				+ '<button type="button" class="sg" data-cyc="all" aria-pressed="false">'
+					+ 'all</button></div>'
 			+ '</section>'
 			+ '<section class="wrap">' + rows.map(streamBlock).join('') + '</section>',
 		extraScript: wiring(data, TAPERS),
@@ -293,7 +310,9 @@ function restHtml(rest){
 		legs = legs + rest[i].legs;
 		names.push(rest[i].who);
 	}
-	var who = names.length === 1 ? names[0] : "the rest " + DOTCH + " " + names.join(", ");
+	var who = names.length === 1 ? names[0]
+		: "the rest (" + names.length + ") " + DOTCH + " " + names.slice(0, 5).join(", ")
+			+ (names.length > 5 ? " and " + (names.length - 5) + " more" : "");
 	return rowHtml({who: who, pat: "spread " + DOTCH + " no day", conf: null,
 		share: share, legs: legs, exc: 0, adj: null, alt: null, per: null}, "rest");
 }
@@ -307,7 +326,8 @@ function draw(){
 	for(i = 0; i < DATA.length; i++){
 		html = "";
 		onday = 0;
-		groups = DATA[i].v[ti];
+		//a yearly stream carries ONE answer for every taper; the index clamps onto it
+		groups = DATA[i].v[Math.min(ti, DATA[i].v.length - 1)];
 		for(j = 0; j < groups.length; j++){
 			g = groups[j];
 			lumps = [];
@@ -354,16 +374,33 @@ draw();
 var q = document.getElementById("q");
 var only = document.getElementById("only");
 var blocks = [].slice.call(document.querySelectorAll(".stream"));
+var segs = [].slice.call(document.querySelectorAll(".sg"));
+var cyc = "short";
 
 function filterBlocks(){
 	var t = q ? q.value.trim().toLowerCase() : "";
 	var hideDone = !!only && only.getAttribute("aria-pressed") === "true";
+	var shown = 0;
 	blocks.forEach(function(b){
-		var hit = (!t || b.getAttribute("data-search").indexOf(t) !== -1)
+		var yr = b.getAttribute("data-yearly") === "1";
+		var hit = (cyc === "all" || (cyc === "year") === yr)
+			&& (!t || b.getAttribute("data-search").indexOf(t) !== -1)
 			&& !(hideDone && b.classList.contains("done"));
 		b.hidden = !hit;
+		if(hit)shown = shown + 1;
 	});
+	return shown;
 }
+
+segs.forEach(function(btn){
+	btn.addEventListener("click", function(){
+		cyc = btn.getAttribute("data-cyc");
+		segs.forEach(function(o){
+			o.setAttribute("aria-pressed", o === btn ? "true" : "false");
+		});
+		filterBlocks();
+	});
+});
 
 if(q)q.addEventListener("input", filterBlocks);
 //the shell toggles aria-pressed on its own listener, bound first, so it is already set by now
@@ -384,6 +421,8 @@ const LEGEND = '<span class="lg">one bar per mode, and the bars are shares of th
 		+ 'just arrives at a rate</span>'
 	+ '<span class="lg">"old cycles fade" weights each cycle by how recent it is - the newest three '
 		+ 'always count in full, then the weight halves every so many cycles</span>'
+	+ '<span class="lg">a stream §2 left yearly can never name a day here: the window is one year and '
+		+ 'a yearly cycle cuts it into one, so there is nothing to lay on top of anything</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
 		+ '<span class="lg">several clusters is not several payments - the page names as many days '
@@ -408,6 +447,10 @@ const CSS = `
 	accent-color:var(--accent)}
 .kv{font:600 12px/1 var(--mono);color:var(--ink);min-width:34px}
 .cnote{margin:3px 0 0;font:400 10px/1.4 var(--mono);color:var(--ink-faint)}
+.seg{margin-top:6px;flex-wrap:wrap;gap:5px}
+.sg{font:500 10.5px var(--sans);color:var(--ink-soft);background:var(--paper);
+	border:1px solid var(--rule);border-radius:6px;padding:3px 9px;cursor:pointer;white-space:nowrap}
+.sg[aria-pressed="true"]{color:var(--surface);background:var(--accent);border-color:var(--accent)}
 
 .wrap{max-width:1000px;margin:0 auto;padding:8px 14px 28px}
 .stream{border:1px solid var(--rule);border-radius:8px;background:var(--surface);

@@ -1345,8 +1345,10 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(blob).toBeTruthy();
 		const emitted = JSON.parse(blob[1]);
 		//every stream carries one finished answer per taper setting, in a fixed order
-		expect(emitted[0].v.length).toBeGreaterThan(1);
-		expect(emitted.every(st => st.v.length === emitted[0].v.length)).toBe(true);
+		//one finished answer per taper setting - or exactly one, where the taper cannot change it
+		const widest = emitted.reduce((n, st) => Math.max(n, st.v.length), 0);
+		expect(widest).toBeGreaterThan(1);
+		expect(emitted.every(st => st.v.length === widest || st.v.length === 1)).toBe(true);
 		const anyMode = emitted.reduce((hit, st) =>
 			hit || st.v[0].reduce((h, g) => h || g.modes[0], null), null);
 		expect(anyMode).toBeTruthy();

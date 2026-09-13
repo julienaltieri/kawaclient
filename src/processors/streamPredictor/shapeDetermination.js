@@ -991,8 +991,12 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 			/* EVERY PAYEE IS A MODE, INCLUDING THE ONES TOO SMALL TO SHAPE. A payee with two
 			   movements is not a pattern, and it is also not nothing - it is a share of the money
 			   that arrives unpredictably, which is exactly what a forecast needs told. */
+			/* A YEARLY STREAM IS READ LIKE ANY OTHER, and the reading is what says there is nothing
+			   there. It cannot be otherwise: the window is one year, a yearly lattice cuts it into
+			   one or two cycles, and minCyclesObserved wants three - so the answer is "only 1 cycle
+			   observed", which is evidence. "The cycle is still yearly" was a refusal to look. */
 			let chosen = null, theories = [];
-			if(cycle && !yearly){
+			if(cycle){
 				theories = shapeTheories(mine, cycle, anchor,
 					{country: o.country, realTime: realTime, taper: o.taper})
 					.filter(t => t.kind === 'all');
@@ -1004,15 +1008,13 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				: (cycle ? cycleBuckets(mine, cycle, anchor, o.taper) : []);
 			let bins = chosen ? chosen.bins : dayHistogram(buckets);
 			let counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
-			let verdict = yearly
-				? {shape: null, reason: 'the cycle is still yearly after determination'}
-				: (chosen ? chosen.verdict
-					: classifyShape(counts, bins, null, weightsOf(buckets)));
+			let verdict = chosen ? chosen.verdict
+				: classifyShape(counts, bins, null, weightsOf(buckets));
 
 			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT. The furthest movements are set aside
 			   while that improves the fit, and they become the mode's own exceptions. */
 			let exceptions = [];
-			if(!yearly && cycle){
+			if(cycle){
 				const trimmed = patternWithExceptions(
 					chosen ? chosen.legs : mine, cycle, anchor, null, o.taper);
 				if(trimmed.trimmed){
