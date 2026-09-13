@@ -591,6 +591,123 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 	});
 }
 
+/* ---- PUTTING MODES BACK TOGETHER ----------------------------------------------------------------
+   SPLITTING BY PAYEE CUTS TOO FINELY SOMETIMES, and the same evidence that justified the split can
+   say so. A payee with no pattern of its own may simply be a rhythm the bank spelled differently for
+   a month, and the way to find out is to put it back and look: if the movements belong to the rhythm
+   they land on its day and the merged mode is tighter or no worse; if they do not, they widen it.
+
+   THE PATTERN HAS TO SURVIVE THE MERGE. A stray is absorbed only when the combined mode still snaps
+   to a strong pattern - minCollapseFit - so nothing is merged on the strength of its NAME looking
+   similar. Wages Julien's second payroll spelling is absorbed; Day care Emile's single Zelle payment
+   is not, because merging it drops the fit from 0.81 to 0.76 and a one-off transfer is not a cheque.
+
+   WHAT IS STILL LOOSE AFTERWARDS IS GATHERED INTO ONE MODE. Twenty-one grocery payees are not
+   twenty-one facts about a forecast - they are one habit with a long tail, and a single "everything
+   else" mode that can carry its own shape says more than twenty rows of "no pattern" each holding
+   half a percent of the money. Where that gathered mode has a shape it keeps it; where it does not,
+   it is the baseline, which is a rate rather than a date. */
+const mergeLegs = (a, b) => (a || []).concat(b || []);
+
+function remeasure(legs, cycle, anchor, opts){
+	const o = opts || {};
+	const theories = shapeTheories(legs, cycle, anchor,
+		{country: o.country, realTime: o.realTime}).filter(t => t.kind === 'all');
+	const pick = chooseTheory(theories);
+	const chosen = pick ? pick.chosen : null;
+	const buckets = chosen ? chosen.buckets : cycleBuckets(legs, cycle, anchor);
+	const bins = chosen ? chosen.bins : dayHistogram(buckets);
+	const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
+	const verdict = chosen ? chosen.verdict : classifyShape(counts, bins);
+	return {verdict: verdict, buckets: buckets, bins: bins,
+		snap: chosen ? chosen.snap : SNAP.none,
+		fit: (verdict.tightness === undefined || verdict.tightness === null) ? 0 : verdict.tightness};
+}
+
+export function collapseModes(modes, cycle, anchor, opts, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const o = opts || {};
+	if(!cycle)return {modes: modes, gathered: null};
+
+	const patterned = modes.filter(m => !!m.shape);
+	let loose = modes.filter(m => !m.shape);
+
+	/* BIGGEST STRAY FIRST, and each is offered to every patterned mode on the same account. The one
+	   that keeps the strongest pattern takes it; ties go to the mode with more money riding on it,
+	   because that is the rhythm a wrong answer costs most. */
+	loose.sort((a, b) => b.moneyShare - a.moneyShare);
+	const leftover = [];
+
+	loose.forEach(stray => {
+		let best = null;
+		patterned.forEach(host => {
+			if(host.accountId !== stray.accountId)return;
+			const merged = remeasure(mergeLegs(host.rawLegs, stray.rawLegs), cycle, anchor,
+				{country: o.country, realTime: host.accountType === AccountKind.realTime});
+			const lumpy = merged.verdict.shape === Shape.lump
+				|| merged.verdict.shape === Shape.multiLump;
+			if(!lumpy || merged.fit < c.minCollapseFit)return;
+			if(!best || merged.fit > best.fit
+				|| (merged.fit === best.fit && host.moneyShare > best.host.moneyShare))
+				best = {host: host, merged: merged, fit: merged.fit};
+		});
+		if(!best){ leftover.push(stray); return; }
+
+		const host = best.host, mg = best.merged;
+		host.rawLegs = mergeLegs(host.rawLegs, stray.rawLegs);
+		host.legs = host.rawLegs.length;
+		host.money += stray.money;
+		host.moneyShare += stray.moneyShare;
+		host.absorbed = (host.absorbed || []).concat([stray.label + ' x' + stray.legs]);
+		host.shape = mg.verdict.shape;
+		host.confidence = mg.fit;
+		host.adjusted = mg.snap;
+		host.histogram = mg.bins;
+		host.cyclesObserved = mg.buckets.length;
+		const d = lumpDays(mg.buckets, mg.verdict.lumps);
+		host.days = d.map(x => x.day);
+		host.wobble = d.map(x => x.wobble);
+	});
+
+	/* EVERYTHING STILL LOOSE BECOMES ONE MODE. Per account, because a shape is per account and a
+	   rhythm on a card is not a rhythm on a current account. */
+	const gathered = [];
+	const byAccount = {};
+	leftover.forEach(m => {
+		(byAccount[m.accountId] = byAccount[m.accountId] || []).push(m);
+	});
+	Object.keys(byAccount).forEach(id => {
+		const group = byAccount[id];
+		if(group.length < 2){ gathered.push(group[0]); return; }
+		const legs = group.reduce((acc, m) => mergeLegs(acc, m.rawLegs), []);
+		const realTime = group[0].accountType === AccountKind.realTime;
+		const mg = remeasure(legs, cycle, anchor, {country: o.country, realTime: realTime});
+		const d = (mg.verdict.shape === Shape.lump || mg.verdict.shape === Shape.multiLump)
+			? lumpDays(mg.buckets, mg.verdict.lumps) : [];
+		gathered.push({
+			label: 'everything else (' + group.length + ' payees)',
+			key: '(gathered)',
+			accountId: id,
+			accountType: group[0].accountType,
+			gathered: group.map(m => m.label),
+			legs: legs.length,
+			rawLegs: legs,
+			shape: mg.verdict.shape,
+			reason: mg.verdict.reason || null,
+			days: d.map(x => x.day),
+			wobble: d.map(x => x.wobble),
+			confidence: mg.verdict.shape ? mg.fit : null,
+			money: group.reduce((n, m) => n + m.money, 0),
+			moneyShare: group.reduce((n, m) => n + m.moneyShare, 0),
+			cyclesObserved: mg.buckets.length,
+			adjusted: mg.snap,
+			histogram: mg.bins
+		});
+	});
+
+	return {modes: patterned.concat(gathered)};
+}
+
 /* ---- A STREAM IS A LIST OF MODES ----------------------------------------------------------------
    PROTOTYPE. The stage above answers one shape per account, and the portfolio kept saying that is
    the wrong shape of answer. "Utilities" is not a monthly lump - it is a water bill on the 4th, an
@@ -663,6 +780,8 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 			modes.push({
 				label: modeLabel(mine),
 				key: group.key,
+				//kept so a mode can be put back together with another; not part of the answer
+				rawLegs: mine,
 				accountId: alloc.accountId,
 				accountType: alloc.accountType || null,
 				legs: mine.length,
@@ -683,24 +802,30 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 		});
 	});
 
+	/* SPLITTING BY PAYEE CUTS TOO FINELY SOMETIMES, and the collapse puts back what belongs together
+	   before anything is reported. */
+	const collapsed = cycle && !yearly
+		? collapseModes(modes, cycle, anchor, o).modes
+		: modes;
+
 	/* PREDICTABLE FIRST, THEN BY HOW MUCH MONEY RIDES ON THEM. A forecast is read from the top, and
 	   what it most needs to be right about is the biggest thing it can actually predict. */
 	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.multiLump ? 1
 		: m.shape === Shape.spread ? 2 : 3);
-	modes.sort((a, b) => rank(a) - rank(b) || b.moneyShare - a.moneyShare);
+	collapsed.sort((a, b) => rank(a) - rank(b) || b.moneyShare - a.moneyShare);
 
-	const predictable = modes.filter(m => !!m.shape);
+	const predictable = collapsed.filter(m => !!m.shape);
 	return {
-		modes: modes,
+		modes: collapsed,
 		money: money,
 		predictable: predictable.length,
 		/* THE BASELINE IS WHAT IS LEFT: every payee with no pattern, taken together. It is not a
 		   failure to be explained away - it is the part of the stream that genuinely arrives when it
 		   arrives, and a forecast should carry it as a rate rather than as dates. */
 		baseline: {
-			modes: modes.length - predictable.length,
-			legs: modes.filter(m => !m.shape).reduce((n, m) => n + m.legs, 0),
-			moneyShare: modes.filter(m => !m.shape).reduce((n, m) => n + m.moneyShare, 0)
+			modes: collapsed.length - predictable.length,
+			legs: collapsed.filter(m => !m.shape).reduce((n, m) => n + m.legs, 0),
+			moneyShare: collapsed.filter(m => !m.shape).reduce((n, m) => n + m.moneyShare, 0)
 		},
 		predictableShare: predictable.reduce((n, m) => n + m.moneyShare, 0)
 	};

@@ -50,6 +50,10 @@ const modeRow = m => '<div class="mode' + (m.shape ? '' : ' flat') + '">'
 	+ '<div class="m-name">' + esc(m.label)
 		+ (m.adjusted && m.adjusted !== 'none'
 			? '<span class="adj">closures ' + esc(m.adjusted) + '</span>' : '')
+		+ (m.absorbed ? '<span class="abs">+ ' + esc(m.absorbed.join(', ')) + '</span>' : '')
+		+ (m.gathered ? '<span class="abs">' + esc(m.gathered.slice(0, 6).join(', '))
+			+ (m.gathered.length > 6 ? ' and ' + (m.gathered.length - 6) + ' more' : '')
+			+ '</span>' : '')
 		+ '</div>'
 	+ '<div class="' + shapeCls(m.shape) + '">' + esc(m.shape || 'no pattern') + '</div>'
 	+ '<div class="m-pat">' + esc(patternOf(m)) + '</div>'
@@ -151,6 +155,8 @@ const LEGEND = '<span class="lg">a stream is a LIST OF MODES, one per payee - it
 		+ 'things at once</span>'
 	+ '<span class="lg">share of money is why it matters: an unpredictable 1% costs nothing, an '
 		+ 'unpredictable 60% is the forecast</span>'
+	+ '<span class="lg">"+ name" = a patternless payee absorbed because the merged mode still snapped '
+		+ 'to a pattern</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
 		+ '<span class="lg">conf = how tightly the movements land on that day</span>'
@@ -186,6 +192,7 @@ const CSS = `
 .mode.flat{opacity:.62}
 .m-name{color:var(--ink);word-break:break-word;min-width:0}
 .adj{display:block;font-size:9px;color:var(--accent)}
+.abs{display:block;font-size:9px;color:var(--ink-faint);word-break:break-word}
 .sh{font-weight:600;white-space:nowrap}
 .sh.lump{color:var(--realtime)}
 .sh.multi{color:var(--accent)}

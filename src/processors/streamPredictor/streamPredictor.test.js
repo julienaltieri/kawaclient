@@ -950,13 +950,32 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(g.predictable).toBe(0);
 		expect(g.baseline.moneyShare).toBeCloseTo(1, 6);
 
-		//and the payroll separates from the disability deposits, which is where this started
+		/* THE PAYROLL SEPARATES FROM THE DISABILITY DEPOSITS - where this started - AND THEN PUTS
+		   ITSELF BACK TOGETHER. The payer is written two ways, "ACTIVEHOURS INC PAYROLL" sixteen
+		   times and "ACTIVEHOURS D B PAYROLL" once, so splitting by payee cuts one rhythm in two.
+		   The stray is offered back and absorbed because the merged mode still snaps to a pattern:
+		   17 movements, 17 cycles, one lump. The disability deposits are offered too and refused. */
 		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
 		const wm = predictor.modesOf(wages.id, wages);
 		const payroll = wm.modes[0];
 		expect(payroll.shape).toBe(Shape.lump);
-		expect(payroll.legs).toBe(16);
-		expect(wm.baseline.legs).toBe(4);
+		expect(payroll.legs).toBe(17);
+		expect(payroll.absorbed).toEqual(['ACTIVEHOURS D B PAYROLL x1']);
+		expect(wm.baseline.legs).toBe(3);
+
+		/* AND A STRAY THAT DOES NOT BELONG IS NOT ABSORBED. Day care Emile is eight cheques and one
+		   Zelle transfer; merging the transfer drops the fit from 0.81 to 0.76, and the arithmetic
+		   saying so is the whole test - no rule about what the names look like. */
+		const dc = predictor.reviewable().find(x => x.name === 'Day care Emile');
+		const dm = predictor.modesOf(dc.id, dc);
+		expect(dm.modes.length).toBe(2);
+		expect(dm.modes[0].absorbed).toBe(undefined);
+		expect(dm.modes[0].legs).toBe(8);
+
+		/* EVERYTHING STILL LOOSE IS GATHERED INTO ONE MODE. Eight petrol stations are not eight facts
+		   about a forecast - they are one habit with no rhythm, and one row saying so beats eight. */
+		expect(g.modes.length).toBe(1);
+		expect(g.modes[0].gathered.length).toBe(8);
 		console.log('Wages Julien: ' + payroll.label + ' ' + payroll.shape + ' d'
 			+ payroll.days.join(',') + ' ' + Math.round(payroll.moneyShare * 100) + '% of money, '
 			+ wm.baseline.legs + ' movements in the baseline');

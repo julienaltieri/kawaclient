@@ -65,6 +65,23 @@ export const SHAPE_CONFIG = {
 	   Its split theory is eligible - 75% of the movements - and fits 0.86. It loses anyway, because
 	   the unsplit stream fits 0.92. Nothing had to be gated for it to lose; it just fits worse. */
 
+	/* ---- COLLAPSING MODES BACK TOGETHER ------------------------------------------------------------
+	   AN ISOLATED PAYEE IS OFTEN THE SAME HABIT UNDER ANOTHER NAME. Wages Julien's payroll arrives 16
+	   times as "ACTIVEHOURS INC PAYROLL" and once as "ACTIVEHOURS D B PAYROLL" - one payer, one
+	   rhythm, two spellings, and split apart the second is a mode of one movement with nothing to say.
+	   Put back, the payroll is 17 movements in 17 cycles and reads tighter than it did without it.
+
+	   SO EVERY PATTERNLESS MODE IS OFFERED TO EVERY PATTERNED ONE, and it is absorbed only if the
+	   merged mode STILL SNAPS TO A STRONG PATTERN. That is the whole test and it needs no notion of
+	   which names look alike: if the stray movements belong to the rhythm they will land on its day,
+	   and if they do not they will widen it and be refused.
+
+	   MEASURED: at 0.80 the second payroll spelling is absorbed into the first and Day care Emile's
+	   single Zelle payment is NOT absorbed into its run of cheques - merging that one drops the fit
+	   from 0.81 to 0.76, which is the arithmetic saying a one-off bank transfer is not the monthly
+	   cheque. */
+	minCollapseFit: 0.80,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus
