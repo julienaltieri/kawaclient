@@ -91,4 +91,61 @@ export function rebaseline(position, perCycle){
 	return {budget: position.budget, observed: perCycle, ratio: perCycle / position.budget};
 }
 
+/* ---- WAS THIS STREAM DECLARED AND THEN PAID AS DECLARED? -----------------------------------------
+   THE SIGNATURE OF A PLAN BEGINNING, and the one case where a declaration may stand in for evidence
+   the ledger has not had time to produce. Four things have to be true, and all four matter:
+
+     1. THE DECLARATION CAME FIRST. A number written after the money moved is a description of it and
+        corroborates nothing. This is what stops the rule being circular.
+     2. THE FIRST MOVEMENT AFTER IT MATCHES THE AMOUNT, inside a tight band.
+     3. THEY ARE ADJACENT IN TIME, within a period or so. Earnin's $50 was declared in 2021 and first
+        paid in 2025; that is a dormant stream resuming, not a plan starting.
+     4. THE DECLARED PERIOD IS THE CYCLE §2 ANSWERED WITH. If the two disagree there is no honest way
+        to convert one into the other, and guessing is what this rule exists to avoid.
+
+   IT GRANTS EVIDENCE, NOT IMMUNITY. A planned stream still passes through the liveness and budget
+   gates like any other - Sport was declared and first paid at $100.35 of $100, and its plan is 367%
+   spent, so it is corroborated and then refused. */
+export function plannedStart(stream, legs, cycle, cfg){
+	const c = cfg || {};
+	const band = c.plannedAmountBand === undefined ? 0.02 : c.plannedAmountBand;
+	const within = c.plannedWithinPeriods === undefined ? 1 : c.plannedWithinPeriods;
+
+	const hist = ((stream && stream.expAmountHistory) || []).slice()
+		.sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+	if(!hist.length)return null;
+	const decl = hist[hist.length - 1];
+	if(!decl.amount)return null;
+
+	const period = declaredCycleOf(stream.period);
+	if(!period || !cycle || cycle.name !== stream.period)return null;
+
+	const from = new Date(decl.startDate).getTime();
+	if(isNaN(from))return null;
+
+	const after = (legs || [])
+		.filter(l => l && !isNaN(new Date(l.date).getTime())
+			&& new Date(l.date).getTime() >= from)
+		.sort((a, b) => new Date(a.date) - new Date(b.date));
+	if(!after.length)return null;
+
+	const first = after[0];
+	if(Math.abs(first.amount / decl.amount - 1) > band)return null;
+
+	//adjacent: the declaration and its first payment inside `within` periods of each other
+	let edge = new Date(decl.startDate), guard = 0;
+	for(let i = 0; i < within && guard < 50; i++){ edge = period.nextDate(edge); guard++; }
+	if(new Date(first.date).getTime() > edge.getTime())return null;
+
+	return {
+		amount: decl.amount,
+		period: stream.period,
+		declaredAt: new Date(decl.startDate),
+		firstAt: new Date(first.date),
+		firstAmount: first.amount,
+		transactionId: first.transactionId,
+		seen: after.length
+	};
+}
+
 export default budgetPosition;

@@ -62,7 +62,31 @@ export const AMOUNT_CONFIG = {
 
 	   A SUSPICION, NOT A CONCLUSION. The mode keeps its history, its money share and its identity; it
 	   stops promising. A stream that resumes is visibly the same stream. */
-	lateMultiple: 1.0
+	lateMultiple: 1.0,
+
+	/* ---- THE SIGNATURE OF A PLANNED STREAM BEGINNING ------------------------------------------------
+	   A DECLARATION IS EVIDENCE, NOT ONLY A CONSTRAINT. It is written BEFORE the money moves, so when
+	   the first movement arrives at exactly the declared amount that is two independent sources saying
+	   the same thing - and the second one could not have been fitted to the first.
+
+	   Day Care Eleonore is the case: declared -$2,400 a month on the 23rd of July with nothing behind
+	   it, first cheque -$2,400 on the 12th of August, second -$2,400 on the 4th of September. The
+	   evidence gate refuses it - two cycles is below minCyclesObserved and always will be for a stream
+	   three weeks old - and refusing it means answering "we know nothing" about a stream whose owner
+	   told us the number and whose ledger has agreed twice.
+
+	   THE AMOUNT BAND IS TIGHT ON PURPOSE. At 2% the portfolio admits exactly the streams that were
+	   declared and then paid as declared - Day Care Eleonore, Day care Emile, Car insurance at $98.76
+	   of $99, Phone at $61.18 of $62, Rent. Loosening it pulls in modes that are a SHARE of a stream
+	   rather than the whole of it, and a share cannot be corroborated by a total. */
+	plannedAmountBand: 0.02,
+
+	/* AND THE DECLARATION HAS TO BE ADJACENT TO THAT FIRST MOVEMENT, within this many declared
+	   periods. Ten streams match on amount alone; only five have the declaration next to the money.
+	   The other five are old declarations that a dormant stream happened to resume against - Earnin's
+	   $50 written in 2021 and first paid in 2025, Sport's $100 written in 2023 and first paid in 2026
+	   - and a coincidence four years wide is not the beginning of a plan. */
+	plannedWithinPeriods: 1
 };
 
 export default AMOUNT_CONFIG;

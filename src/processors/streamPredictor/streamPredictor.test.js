@@ -39,7 +39,8 @@ import {buildPredictionAuditPage, predictionData} from './buildPredictionAuditPa
 import {modeAmount, streamSpine, weightedMiddle} from './modeAmounts';
 import {AMOUNT_CONFIG} from './amountConfig';
 import {predictionRows} from './modeAmounts';
-import {budgetPosition, breaksPlan, rebaseline, ENVELOPE} from './budgetPosition';
+import {budgetPosition, breaksPlan, rebaseline, plannedStart, ENVELOPE}
+	from './budgetPosition';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
@@ -1752,6 +1753,75 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const re = rebaseline(refills, -286);
 		expect(re.ratio).toBeCloseTo(-286 / refills.budget, 6);
 		expect(rebaseline(plan, -2626)).toBe(null);
+	});
+
+	/* ---- A DECLARATION IS EVIDENCE, NOT ONLY A CONSTRAINT -----------------------------------------
+	   IT IS WRITTEN BEFORE THE MONEY MOVES. So when the first movement arrives at exactly the declared
+	   amount, that is two independent sources agreeing - and the second could not have been fitted to
+	   the first. Day Care Eleonore is the case:
+
+	       declared  -$2,400 a month, 23 July, with nothing behind it
+	       first      -$2,400 on 12 August
+	       second     -$2,400 on 4 September
+
+	   Two cycles is below minCyclesObserved and always will be for a stream three weeks old, so the
+	   evidence gate answers "we know nothing" about a stream whose owner named the number and whose
+	   ledger has agreed twice.
+
+	   FOUR CONDITIONS, AND THE LAST TWO ARE WHAT MAKE IT SAFE. The declaration must come first, or it
+	   is a description of the ledger and corroborates nothing. And it must be ADJACENT to that first
+	   payment: ten streams in the portfolio match on amount alone, and only five have the declaration
+	   next to the money. Earnin's $50 was declared in 2021 and first paid in 2025 - a dormant stream
+	   resuming, not a plan starting. */
+	test('a stream declared and then paid as declared may predict from the declaration', () => {
+		const st = predictor.reviewable().find(x => x.name === 'Day Care Eleonore');
+		const cycle = predictor.shapeOf(st.id, st).cycle;
+		const legs = predictor.legsOf(st.id);
+		const plan = plannedStart(st, legs, cycle, AMOUNT_CONFIG);
+		expect(plan).toBeTruthy();
+		expect(plan.amount).toBe(-2400);
+		expect(plan.firstAmount).toBe(-2400);
+
+		//§3 still says it cannot read a shape, and that stays honest
+		const mode = predictor.shapeOf(st.id, st).modes[0];
+		expect(mode.shape).toBe(Shape.unknown);
+
+		//§4 predicts the declared amount, and says where the number came from
+		const r = predictionRows(predictor, st.id, st, {country: predictor.userCountry()});
+		const claim = r.accounts[0].modes.find(m => m.kind === 'planned');
+		expect(claim).toBeTruthy();
+		expect(claim.amount).toBe(-2400);
+		expect(claim.planned.seen).toBe(2);
+
+		//A DECLARATION WRITTEN AFTER THE MONEY MOVED CORROBORATES NOTHING
+		const backdated = Object.assign({}, st, {expAmountHistory:
+			[{amount: -2400, startDate: '2027-01-01T00:00:00.000Z'}]});
+		expect(plannedStart(backdated, legs, cycle, AMOUNT_CONFIG)).toBe(null);
+
+		//NOR DOES ONE FOUR YEARS AWAY FROM ITS FIRST PAYMENT
+		const ancient = Object.assign({}, st, {expAmountHistory:
+			[{amount: -2400, startDate: '2021-01-01T00:00:00.000Z'}]});
+		expect(plannedStart(ancient, legs, cycle, AMOUNT_CONFIG)).toBe(null);
+
+		//NOR ONE THE FIRST PAYMENT MISSED
+		const off = Object.assign({}, st, {expAmountHistory:
+			[{amount: -2000, startDate: '2026-07-23T23:56:07.970Z'}]});
+		expect(plannedStart(off, legs, cycle, AMOUNT_CONFIG)).toBe(null);
+
+		/* IT GRANTS EVIDENCE, NOT IMMUNITY. Five streams in the portfolio are recognised as planned
+		   and only this one needed it - the other four already read as lumps from their own ledger,
+		   and the declaration merely agrees with them. */
+		let planned = 0, rescued = 0;
+		predictor.reviewable().forEach(x => {
+			const p = predictionRows(predictor, x.id, x, {country: predictor.userCountry()});
+			if(!p)return;
+			if(p.planned)planned++;
+			p.accounts.forEach(a => a.modes.forEach(m => { if(m.kind === 'planned')rescued++; }));
+		});
+		expect(planned).toBe(5);
+		expect(rescued).toBe(1);
+		console.log('§4 PLANNED: ' + planned + ' streams declared and paid as declared, '
+			+ rescued + ' mode predicting from the declaration');
 	});
 
 	test('writes the modes audit page from the real results', () => {

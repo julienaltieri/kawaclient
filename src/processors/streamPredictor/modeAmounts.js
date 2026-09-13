@@ -31,7 +31,8 @@
 import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
 import {isBusinessDay, isHoliday, settleDate} from './businessCalendar';
 import {AMOUNT_CONFIG} from './amountConfig';
-import {budgetPosition, breaksPlan, rebaseline, ENVELOPE} from './budgetPosition';
+import {budgetPosition, breaksPlan, rebaseline, plannedStart, ENVELOPE}
+	from './budgetPosition';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -194,6 +195,13 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 	const position = budgetPosition(stream, predictor.legsOf(streamId) || [], anchor,
 		predictor.analysisNow());
 
+	/* ---- A DECLARATION THE LEDGER HAS ALREADY AGREED WITH -----------------------------------
+	   Where a stream was declared and then paid as declared, the declaration is evidence and the
+	   mode carrying that first payment may predict the declared amount even though §3 could not
+	   read a shape from two cycles. It buys evidence and nothing else: the liveness and budget
+	   gates still run. */
+	const planned = plannedStart(stream, predictor.legsOf(streamId) || [], cycle, c);
+
 	const byAccount = new Map();
 	working.modes.forEach((w, i) => {
 		const a = answer.modes[i];
@@ -208,6 +216,12 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 				name: acct ? acct.name : null, mask: acct ? acct.mask : null, modes: []
 			});
 		}
+		/* THE MODE THAT CARRIES THE MATCHED PAYMENT is the one the declaration speaks for. A
+		   declaration is a statement about the STREAM, and crediting a mode that had nothing to do
+		   with the movement that matched it would be borrowing someone else's evidence. */
+		const carries = !!planned && (w.rawLegs || [])
+			.some(l => l && l.transactionId === planned.transactionId);
+
 		byAccount.get(key).modes.push({
 			label: w.label,
 			shape: a.shape,
@@ -218,12 +232,13 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			direction: w.direction,
 			exceptions: w.exceptions || 0,
 			legs: w.legs,
-			amount: amt.perCycle,
-			observed: amt.observed,
+			amount: (amt.kind === 'unknown' && carries) ? planned.amount : amt.perCycle,
+			planned: (amt.kind === 'unknown' && carries) ? planned : null,
+			observed: (amt.kind === 'unknown' && carries) ? planned.amount : amt.observed,
 			silenced: amt.silenced,
 			late: amt.late,
 			overdue: amt.overdue,
-			kind: amt.kind,
+			kind: (amt.kind === 'unknown' && carries) ? 'planned' : amt.kind,
 			rail: w.rail || null,
 			quiet: amt.quiet,
 			cyclesLanded: amt.cyclesLanded,
@@ -315,6 +330,7 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 
 	return {cycle: cycle, declared: stream.period, accounts: accounts,
 		cyclesObserved: spine.length,
+		planned: planned,
 		budget: position,
 		capped: capped,
 		rebaseline: rebaseline(position, perCycle)};

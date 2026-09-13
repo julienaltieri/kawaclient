@@ -88,6 +88,8 @@ export function predictionData(predictor){
 					overdue: (m.overdue === null || m.overdue === undefined) ? null : m.overdue,
 					capped: !!m.capped,
 					cappedAmount: m.cappedAmount === undefined ? null : m.cappedAmount,
+					plannedSeen: m.planned ? m.planned.seen : 0,
+					plannedAt: m.planned ? iso(m.planned.declaredAt) : null,
 					rail: m.rail ? m.rail.closures : null,
 					railTests: m.rail ? m.rail.tests : 0,
 					shape: m.shape,
@@ -256,6 +258,7 @@ function railWords(r){
    be able to tell "nobody could read this" from "the plan is spent". */
 function gateWords(m){
 	if(m.kind === "unknown")return "not enough yet " + DOTCH + " promises nothing";
+	if(m.kind === "planned")return "";
 	if(m.capped)return "the plan is spent " + DOTCH + " predicts nothing";
 	if(m.late)return "overdue " + DOTCH + " x" + m.overdue
 		+ " its own worst wait " + DOTCH + " probably stopped";
@@ -267,6 +270,12 @@ function modeHtml(m){
 	var rail = railWords(m.rail);
 	var gate = gateWords(m);
 	var quiet = !!gate;
+	/* A DECLARATION THE LEDGER AGREED WITH. Worth saying out loud, because the number came from the
+	   user rather than from the ledger and a reader must not mistake it for a measurement. */
+	var plan = m.kind === "planned"
+		? "declared " + esc2(m.plannedAt) + " and paid as declared "
+			+ DOTCH + " seen " + m.plannedSeen + (m.plannedSeen === 1 ? " time" : " times")
+		: "";
 	return "<div class='md" + (m.kind === "lump" ? "" : " rate")
 			+ (quiet ? " shut" : "") + "'>"
 		+ "<span class='mdsh'>" + esc2(m.kind) + "</span>"
@@ -279,9 +288,12 @@ function modeHtml(m){
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "
 			+ DOTCH + " " + Math.round(m.moneyShare * 100) + "% of the stream"
 			+ (!quiet && m.quiet > 0 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
-			+ (gate ? "</i><s>" + esc2(gate) + "</s>" : "")
-			+ (rail ? (gate ? "" : "</i>") + "<u>" + esc2(rail) + " " + DOTCH + " seen "
-				+ m.railTests + " times</u>" : (gate ? "" : "</i>"))
+			+ ((gate || plan || rail) ? "</i>" : "")
+			+ (gate ? "<s>" + esc2(gate) + "</s>" : "")
+			+ (plan ? "<em>" + plan + "</em>" : "")
+			+ (rail ? "<u>" + esc2(rail) + " " + DOTCH + " seen "
+				+ m.railTests + " times</u>" : "")
+			+ ((gate || plan || rail) ? "" : "</i>")
 			+ "</div></div>";
 }
 
@@ -342,6 +354,9 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 		+ 'it would have been, and the amber line says which gate and why</span>'
 	+ '<span class="lg">"plan" = a yearly declaration, an envelope that can be SPENT; "budget" = a '
 		+ 'cycle declaration, which refills and can only be compared</span>'
+	+ '<span class="lg">a "planned" mode is one the ledger is too young to read, whose first payment '
+		+ 'arrived at exactly the amount the user declared before it - the number is theirs, not a '
+		+ 'measurement</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'
@@ -394,6 +409,8 @@ const CSS = `
 .mdamt.hushed{color:var(--ink-faint);text-decoration:line-through;font-weight:500}
 .md.shut .mdsh,.md.shut .mdpat{color:var(--ink-faint);font-weight:400}
 .mdwho s{display:block;text-decoration:none;font-size:9.5px;color:var(--flag)}
+.mdwho em{display:block;font-style:normal;font-size:9.5px;color:var(--realtime)}
+.md .mdsh{text-transform:none}
 .mdcf{grid-area:cf;font-size:10px;color:var(--ink-faint);white-space:nowrap}
 .mdwho{grid-area:who;color:var(--ink-soft);word-break:break-word}
 .mdwho i{display:block;font-style:normal;font-size:9.5px;color:var(--ink-faint)}
