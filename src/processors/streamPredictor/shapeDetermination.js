@@ -23,6 +23,7 @@
 import {SHAPE_CONFIG} from './shapeConfig';
 import {SNAP, snapDate, isBusinessDay} from './businessCalendar';
 import {AccountKind} from './accountMapping';
+import {merchantGroups} from './cycleFit';
 
 export const Shape = {lump: 'lump', spread: 'spread', multiLump: 'multiLump'};
 
@@ -393,6 +394,52 @@ export function landsOnClosedDays(legs, country){
 	return (legs || []).filter(l => !isBusinessDay(new Date(l.date), country)).length;
 }
 
+/* ---- IS ONE PAYER THE STREAM, AND THE REST EXCEPTIONS -------------------------------------------
+   THE SAME QUESTION §2 ASKS, asked of the shape instead of the period, and with the same grouping so
+   the two stages cannot disagree about who a merchant is.
+
+   THE MAIN SERIES IS THE LARGEST MERCHANT GROUP, and it only becomes the stream's shape if it
+   carries most of the movements AND measuring it alone is tighter than measuring everything. Both
+   are needed: the share test alone lets Renter's insurance through, where the minority group is the
+   same payee spelled differently and splitting makes the answer worse; the tightness test alone lets
+   one grocery chain of twenty stand in for the whole shop.
+
+   WHAT IS LEFT OVER IS COUNTED, NEVER DISCARDED QUIETLY. Three disability deposits inside a payroll
+   stream are a real fact about that stream and the reader is told how many there were - they simply
+   do not have the cadence, and averaging them into it describes neither. */
+export function dominantSeries(legs, cycle, anchor, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const all = legs || [];
+	if(all.length < c.minMovements)return null;
+
+	const groups = merchantGroups(all);
+	if(groups.length < 2)return null;
+
+	const main = groups[0];
+	const share = main.legs.length / all.length;
+	if(share < c.minDominantShare)
+		return {applied: false, reason: 'no single payer carries the stream',
+			share: share, mainKey: main.key};
+
+	const sdOf = ls => {
+		const sd = circularSd(dayHistogram(cycleBuckets(ls, cycle, anchor)), 1);
+		return sd ? sd.days : null;
+	};
+	const whole = sdOf(all), alone = sdOf(main.legs);
+	if(whole === null || alone === null || whole === 0)return null;
+	const gain = (whole - alone) / whole;
+	if(gain < c.minSplitGain)
+		return {applied: false, reason: 'splitting does not tighten it',
+			share: share, mainKey: main.key, gain: gain};
+
+	return {
+		applied: true, mainKey: main.key, share: share, gain: gain,
+		legs: main.legs, exceptions: all.length - main.legs.length,
+		exceptionKeys: groups.slice(1).map(g => g.key + ' x' + g.legs.length),
+		whole: whole, alone: alone
+	};
+}
+
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
    THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
    off the typical count and a cutoff put groceries - four or five shops a week, every week, the
@@ -480,7 +527,13 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 	const o = opts || {};
 	const yearly = !!cycle && !!YEARLY[cycle.name];
 	return (partition || []).map(alloc => {
-		const mine = (legs || []).filter(l => l && l.accountId === alloc.accountId);
+		const onAccount = (legs || []).filter(l => l && l.accountId === alloc.accountId);
+		/* ONE PAYER MAY BE THE STREAM AND THE REST EXCEPTIONS. Where that holds, the shape is the
+		   main payer's - measuring a payroll together with three disability deposits describes
+		   neither of them. */
+		const series = cycle && !YEARLY[cycle.name]
+			? dominantSeries(onAccount, cycle, anchor) : null;
+		const mine = (series && series.applied) ? series.legs : onAccount;
 		const buckets = cycle ? cycleBuckets(mine, cycle, anchor) : [];
 		/* THE WEEKEND TRIAL, REAL-TIME ACCOUNTS ONLY. A card posts when the merchant presents it, so
 		   there is no bank rule to undo and adjusting one fits weekend SHOPPING instead - groceries
@@ -516,6 +569,8 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 			busyShare: verdict.busy === undefined ? null : verdict.busy,
 			histogram: bins,
 			accountType: alloc.accountType || null,
+			series: series,
+			legsOnAccount: onAccount.length,
 			snap: snap,
 			closedDayLegs: realTime ? landsOnClosedDays(mine, o.country) : null
 		};

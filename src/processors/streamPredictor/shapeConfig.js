@@ -46,6 +46,29 @@ export const SHAPE_CONFIG = {
 	minSnapGain: 0.10,
 	minSnapMargin: 0.05,
 
+	/* ---- WHEN ONE PAYER IS THE STREAM AND THE REST ARE EXCEPTIONS ---------------------------------
+	   A STREAM CAN CARRY TWO PAYERS AND ONLY ONE OF THEM HAS A CADENCE. Wages Julien is a semimonthly
+	   payroll plus three California disability deposits; the payroll lands once per cycle without
+	   fail and the deposits are an exception, and measured together they read as an irregular stream.
+	   Measured apart the payroll is one movement per cycle, seventeen cycles out of seventeen, and
+	   the standard deviation falls from 1.90 days to 0.86.
+
+	   BUT SPLITTING BY MERCHANT IS DANGEROUS AND HAS TO EARN ITS PLACE. Groceries is 167 movements
+	   across twenty merchants, and splitting it manufactures shapes out of shards: Whole Foods has
+	   four movements across thirteen weeks and comes out "two lumps, day 2 and day 5". Renter's
+	   insurance is ONE payee the bank writes two ways, and splitting it makes the stream measurably
+	   worse. Both gates below are needed and neither is sufficient alone.
+
+	   ONE MERCHANT HAS TO CARRY MOST OF THE STREAM. At 70% the payroll (16 of 20) and the cheques to
+	   the day care (8 of 9) are in; groceries (60 of 167) and the eight petrol stations (2 of 12) are
+	   out, which is right - those are not a main series with exceptions, they are a flow. */
+	minDominantShare: 0.70,
+
+	/* AND SPLITTING HAS TO ACTUALLY TIGHTEN IT. Renter's insurance clears the share test at 75% and
+	   gets WORSE when split, because the minority group is the same payee under another spelling.
+	   Measuring the result is the only test that catches that, and it catches it whatever the reason. */
+	minSplitGain: 0.05,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus

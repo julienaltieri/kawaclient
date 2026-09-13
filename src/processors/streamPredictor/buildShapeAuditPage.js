@@ -80,7 +80,8 @@ const scoreCls = sc => !sc ? 'm-sc none'
 const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-id="' + esc(r.id) + '"'
 	+ ' data-search="' + esc(r.search) + '">'
 	+ '<div class="c-nm"><b>' + esc(r.name) + '</b>'
-		+ (r.acct ? '<span class="acct">' + esc(r.acct) + '</span>' : '') + '</div>'
+		+ (r.acct ? '<span class="acct">' + esc(r.acct) + '</span>' : '')
+		+ (r.series ? '<span class="ser">' + esc(r.series) + '</span>' : '') + '</div>'
 	+ '<div class="c-meta">'
 		+ '<span class="m-cy">' + esc(r.cycle) + '</span>'
 		+ '<span class="m-sh ' + esc(r.shapeCls) + '">' + esc(r.shape) + '</span>'
@@ -156,6 +157,13 @@ export function shapeRows(predictor){
 						+ a.snap.adjusted.toFixed(1) + 'd wide'
 					: '',
 				snapApplied: a.snap ? a.snap.applied : null,
+				/* WHERE ONE PAYER IS THE STREAM, THE ROW SAYS SO AND SAYS WHAT IT SET ASIDE. A shape
+				   measured on 16 of 20 movements is a different claim from one measured on all 20,
+				   and the reader has to be able to see which they are looking at. */
+				series: (a.series && a.series.applied)
+					? a.series.mainKey.slice(0, 22) + ' ' + DOT + ' '
+						+ a.series.exceptions + ' set aside'
+					: '',
 				cycles: a.cyclesObserved,
 				counts: a.eventsPerCycle,
 				steady: a.steadyShare,
@@ -253,6 +261,8 @@ const LEGEND = '<span class="lg">bars = every cycle on top of each other ' + DOT
 		+ ' four standard deviations wide</span>'
 	+ '<span class="lg">a SECOND row of bars = the same cycles with the bank closures undone '
 		+ DOT + ' real-time accounts only</span>'
+	+ '<span class="lg">a name in accent under the stream = one payer carries it, and how many '
+		+ 'movements were set aside as exceptions</span>'
 	+ '<span class="lg">TIGHT = how far off its day a movement lands, on average ' + DOT
 		+ ' 1.1d off is countable on the bars</span>'
 	+ '<span class="lg">ANGLE is the older score, kept beside it while the two are compared</span>'
@@ -281,6 +291,7 @@ const CSS = `
 .c-nm{min-width:0}
 .c-nm b{font-weight:600;color:var(--ink);word-break:break-word}
 .acct{display:block;font-size:10px;color:var(--ink-faint);word-break:break-word}
+.ser{display:block;font-size:9.5px;color:var(--accent);word-break:break-word}
 
 .c-meta{display:grid;grid-template-columns:64px 66px 88px 1fr;gap:8px;align-items:center;
 	min-width:0}
