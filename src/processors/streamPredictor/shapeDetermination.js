@@ -1146,6 +1146,35 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 		? collapseModes(modes, cycle, anchor, o).modes
 		: modes;
 
+	/* ---- HOW LONG SINCE THIS MODE LAST MOVED ---------------------------------------------------
+	   MEASURED ON THE STREAM'S LATTICE, NEVER THE MODE'S OWN. A mode's buckets stop at its own last
+	   movement, so asked about itself every mode has been quiet for zero cycles and the question
+	   answers itself. Cut against every leg the stream has, a mode that stopped in February is
+	   visibly twelve cycles behind one that moved last week.
+
+	   COUNTED AFTER THE COLLAPSE, because a mode that absorbed a stray or gathered a tail is a
+	   different set of movements from the one that went into it.
+
+	   THIS IS AN OBSERVATION, NOT A DECISION. It says how long the silence is; whether a silence that
+	   long means the money has stopped coming is §4's call, and §4 has a setting for it. */
+	if(cycle && collapsed.length){
+		const spine = cycleBuckets(all, cycle, anchor, o.taper);
+		const seen = spine.map(b => {
+			const at = {};
+			b.legs.forEach(l => { if(l && l.transactionId)at[l.transactionId] = true; });
+			return at;
+		});
+		collapsed.forEach(m => {
+			let last = -1;
+			(m.rawLegs || []).forEach(l => {
+				for(let i = spine.length - 1; i > last; i--)
+					if(l && l.transactionId && seen[i][l.transactionId]){ last = i; break; }
+			});
+			m.quiet = last < 0 ? spine.length : spine.length - 1 - last;
+			m.cyclesInWindow = spine.length;
+		});
+	}else collapsed.forEach(m => { m.quiet = 0; m.cyclesInWindow = 0; });
+
 	/* PREDICTABLE FIRST, THEN BY HOW MUCH MONEY RIDES ON THEM. A forecast is read from the top, and
 	   what it most needs to be right about is the biggest thing it can actually predict. */
 	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.spread ? 1 : 2);
@@ -1235,6 +1264,10 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 				   "nothing happens" and must not be read as it. */
 				if(m.rail)out.rail = {closures: m.rail.closures, tests: m.rail.tests};
 			}
+			/* HOW LONG IT HAS BEEN SILENT, always reported, because a caller cannot tell the
+			   difference between a rhythm and a memory without it. What a long silence MEANS is
+			   §4's to decide. */
+			out.quiet = m.quiet === undefined ? 0 : m.quiet;
 			out.moneyShare = m.moneyShare;
 			return out;
 		})

@@ -68,6 +68,8 @@ export function predictionData(predictor){
 					shape: m.shape,
 					pattern: plain(patternOf(m)),
 					amount: m.amount,
+					observed: m.observed,
+					silenced: !!m.silenced,
 					kind: m.kind,
 					confidence: m.confidence,
 					moneyShare: m.moneyShare,
@@ -202,6 +204,7 @@ function laneHtml(lane, scale){
 			+ "<i>" + money(e.amount) + "</i></span>";
 	}
 	/* A RATE HAS NO POSITION, so it is the lane's own ground rather than a mark on it. */
+	//a silenced rate contributes nothing to the band, which is the whole point of silencing it
 	var band = (lane.predicted && lane.rate)
 		? "<span class='band'><i>" + money(lane.rate) + " across the cycle"
 			+ (lane.rateModes > 1 ? " " + DOTCH + " " + lane.rateModes + " modes" : "")
@@ -227,12 +230,15 @@ function modeHtml(m){
 	return "<div class='md" + (m.kind === "lump" ? "" : " rate") + "'>"
 		+ "<span class='mdsh'>" + (m.kind === "lump" ? "lump" : "rate") + "</span>"
 		+ "<span class='mdpat'>" + esc2(m.pattern) + "</span>"
-		+ "<b class='mdamt'>" + money(m.amount) + (m.kind === "lump" ? "" : " / cycle") + "</b>"
+		+ "<b class='mdamt" + (m.silenced ? " hushed" : "") + "'>"
+			+ (m.silenced ? money(m.observed) : money(m.amount))
+			+ (m.kind === "lump" ? "" : " / cycle") + "</b>"
 		+ "<span class='mdcf'>" + (m.confidence === null ? DOTCH
 			: Math.round(m.confidence * 100) + "% sure") + "</span>"
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "
 			+ DOTCH + " " + Math.round(m.moneyShare * 100) + "% of the stream"
-			+ (m.quiet > 2 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
+			+ (m.silenced ? " " + DOTCH + " silent " + m.quiet + " cycles, claiming nothing"
+				: m.quiet > 0 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
 			+ (rail ? "</i><u>" + esc2(rail) + " " + DOTCH + " seen " + m.railTests
 				+ " times</u>" : "</i>")
 			+ "</div></div>";
@@ -291,6 +297,8 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 		+ 'a holiday</span>'
 	+ '<span class="lg">a mode that has met enough shut days says what its rail does with them, and '
 		+ 'a moved claim is drawn in accent on the day it will really land</span>'
+	+ '<span class="lg">a struck-through rate has been silent too long to promise anything - the '
+		+ 'number shown is what it used to move, and nothing is carried forward</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'
@@ -340,6 +348,7 @@ const CSS = `
 .mdpat{grid-area:pat;color:var(--ink-soft)}
 .mdamt{grid-area:amt;font:600 12px/1 var(--mono);color:var(--ink);
 	font-variant-numeric:tabular-nums;white-space:nowrap}
+.mdamt.hushed{color:var(--ink-faint);text-decoration:line-through;font-weight:500}
 .mdcf{grid-area:cf;font-size:10px;color:var(--ink-faint);white-space:nowrap}
 .mdwho{grid-area:who;color:var(--ink-soft);word-break:break-word}
 .mdwho i{display:block;font-style:normal;font-size:9.5px;color:var(--ink-faint)}

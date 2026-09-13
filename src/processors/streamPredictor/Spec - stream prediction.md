@@ -673,6 +673,7 @@ reading both would be reading the same evidence twice.
         days?,        lump only - the days of the cycle it lands on
         confidence?,  lump only - 0 to 1
         rail?,        lump only - {closures: early | late | ignored, tests: n}
+        quiet,        cycles since this mode last moved - 0 means the newest cycle
         moneyShare    how much of the stream rides on this mode
       }]
     }
@@ -680,6 +681,23 @@ reading both would be reading the same evidence twice.
 **An undetermined field is ABSENT, never a placeholder** — the same contract §2 answers on. A spread
 has no `days` because it has no day to name, which is what makes it a spread, and no `confidence`
 about a day it never claimed.
+
+### How long since it last moved
+
+**`quiet` is always there**, because a caller cannot tell a rhythm from a memory without it, and zero
+is a real answer meaning "it moved in the newest cycle".
+
+**Measured on the STREAM's lattice, never the mode's own.** A mode's buckets stop at its own last
+movement, so asked about itself every mode has been quiet for zero cycles and the question answers
+itself. Cut against every leg the stream has, a mode that stopped in February is visibly twelve cycles
+behind one that moved last week.
+
+**Counted after the collapse**, because a mode that absorbed a stray or gathered a tail is a different
+set of movements from the one that went into it.
+
+**It is an observation and not a decision.** §3 says how long the silence is. Whether a silence that
+long means the money has stopped coming is §4's call, and §4 has its own setting for it — see
+`maxQuietCycles` below.
 
 ### What the banks do to the day
 
@@ -855,6 +873,29 @@ it belongs to neither.
 shape stage returns nothing for it, but the amount stage predicts all 44 of them from a single bucket.
 Whether the yearly case is answered here or only where yearly streams are specified is not settled.
 
+**A rate that has been silent too long claims nothing.** The taper models decay of relevance and
+cannot model cessation: old cycles are worth less every half-life and never worth nothing, so a mode
+that has genuinely ended keeps claiming a fraction of what it used to move. Julien's California
+disability deposits are the case — three payments inside the first two cycles of seventeen and nothing
+since, because the paternity leave ended:
+
+    raw mean      $830.59 a cycle
+    tapered       $191.46 a cycle    a real reduction, and still money that will not arrive
+    silenced          $0.00 a cycle
+
+Past `maxQuietCycles` (**2**) a rate predicts zero. It keeps its history, its money share and its place
+in the record; what it loses is the promise, so a mode that resumes is visibly the same mode. Measured
+on the captured portfolio: eight rates silenced, $473.04 of claimed money a cycle removed. Two of the
+eight have survived an internal gap of two cycles before, so the rule does cost something — at three
+it would cost nothing and let the disability deposits claim through four more cycles of silence.
+
+**A lump is never silenced by this.** How often it turns up is already half of its confidence, and a
+bill that skipped two months is a bill with a low confidence rather than a bill that has stopped.
+
+**§4 has its own settings file**, `amountConfig.js`. §3's settings decide what the money did; these
+decide what to carry forward from it, and a reading can be perfectly true about the past and still be
+the wrong thing to promise about next month.
+
 **Outliers are their own problem.** A stream with one $9,625 month among eight $7,600 months is
 telling you something, and it is not obvious what: a genuine one-off to exclude, a step change to
 adopt, or ordinary variance to keep. Discarding and keeping are both wrong some of the time.
@@ -1006,6 +1047,9 @@ by accident.
 - **What the banks do to a day is learned per mode, from the raw ledger, and only on unanimous
   evidence.** A payroll pays early, a direct debit collects late, a card does not move; the rule
   belongs to the rail, not the account. Absent means not yet known, never "nothing happens".
+- **Silence is observed in §3 and judged in §4.** How long since a mode last moved is a fact about the
+  ledger; whether that means the money has stopped is a forecasting decision, and it lives in §4's own
+  settings file.
 
 ## Still open
 

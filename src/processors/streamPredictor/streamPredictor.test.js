@@ -37,6 +37,7 @@ import {settleDate, RAIL, isBusinessDay} from './businessCalendar';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
 import {buildPredictionAuditPage, predictionData} from './buildPredictionAuditPage';
 import {modeAmount, streamSpine, weightedMiddle} from './modeAmounts';
+import {AMOUNT_CONFIG} from './amountConfig';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
@@ -918,7 +919,10 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   NO WOBBLE, NO HISTOGRAM, NO LEG COUNT, NO RAW LEGS. Those are the working, and the working has
 	   its own surface. A copy of the ledger has no business inside an answer. */
 	test('the answer is a list of modes and carries only what it determined', () => {
-		const EVERY = ['accountId', 'accountType', 'direction', 'label', 'moneyShare', 'shape'];
+		/* `quiet` is always there: a caller cannot tell a rhythm from a memory without it, and zero
+		   is a real answer meaning it moved in the newest cycle. */
+		const EVERY = ['accountId', 'accountType', 'direction', 'label', 'moneyShare', 'quiet',
+			'shape'];
 		let named = 0, rates = 0, railed = 0;
 		predictor.reviewable().forEach(st => {
 			const answer = predictor.shapeOf(st.id, st);
@@ -947,6 +951,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 					expect(keys).toEqual(EVERY);
 				}
 				expect(m.moneyShare).toBeGreaterThanOrEqual(0);
+				expect(m.quiet).toBeGreaterThanOrEqual(0);
 				expect(['in', 'out'].indexOf(m.direction)).toBeGreaterThan(-1);
 			});
 		});
@@ -1556,6 +1561,68 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			});
 		}));
 		console.log('§4 RAIL: ' + moved + ' predicted claims moved off a shut day');
+	});
+
+	/* ---- SILENCE IS AN OBSERVATION IN §3 AND A DECISION IN §4 --------------------------------------
+	   THE TAPER MODELS DECAY OF RELEVANCE AND CANNOT MODEL CESSATION. Old cycles are worth less every
+	   half-life and never worth nothing, so a mode that has genuinely ended keeps claiming a fraction
+	   of what it used to move. Julien's California disability deposits are the case:
+
+	       3 payments, both inside the first two cycles of seventeen
+	       nothing since - the paternity leave ended
+	       raw mean      $830.59 a cycle
+	       tapered       $191.46 a cycle   <- a real reduction, and still money that will not arrive
+
+	   §3 REPORTS THE SILENCE, §4 DECIDES WHAT IT MEANS. How many cycles since a mode last moved is a
+	   fact about the ledger; whether a silence that long means the money has stopped coming is a
+	   forecasting judgement, and it has its own setting in its own file.
+
+	   MEASURED ON THE STREAM'S LATTICE, NEVER THE MODE'S OWN - asked about itself, every mode has
+	   been quiet for zero cycles, because its buckets stop at its own last movement. */
+	test('a rate that has been silent too long claims nothing', () => {
+		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
+		const answer = predictor.shapeOf(wages.id, wages);
+		const edd = answer.modes.find(x => /EDD/i.test(x.label));
+
+		//§3 reports the silence and nothing more: it is still a spread with its share of the money
+		expect(edd.shape).toBe(Shape.spread);
+		expect(edd.quiet).toBe(12);
+		expect(edd.moneyShare).toBeGreaterThan(0);
+		//and the payroll beside it moved in the newest cycle
+		const payroll = answer.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
+		expect(payroll.quiet).toBe(0);
+
+		//§4 makes the call
+		const w = predictor.explainShapeOf(wages.id, wages);
+		const spine = streamSpine(w.modes, answer.cycle, predictor.analysisAnchor());
+		const wEdd = w.modes.find(x => /EDD/i.test(x.label));
+		const amt = modeAmount(wEdd, spine, Shape.spread);
+		expect(amt.silenced).toBe(true);
+		expect(amt.perCycle).toBe(0);
+		//what it used to move is kept, so the page can show what was given up
+		expect(Math.round(amt.observed)).toBe(191);
+
+		//a shorter silence is left alone
+		const loud = modeAmount(wEdd, spine, Shape.spread, {maxQuietCycles: 99});
+		expect(loud.silenced).toBe(false);
+		expect(Math.round(loud.perCycle)).toBe(191);
+
+		//A LUMP IS NEVER SILENCED - how often it turns up is already half of its confidence
+		const wPay = w.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
+		expect(modeAmount(wPay, spine, Shape.lump, {maxQuietCycles: 0}).silenced).toBe(false);
+
+		//nothing silenced anywhere in the portfolio still contributes to a predicted band
+		let silenced = 0;
+		predictionData(predictor).forEach(r => r.accounts.forEach(a => {
+			const claim = a.lanes[a.lanes.length - 1];
+			const live = a.modes.filter(m => m.kind === 'rate' && !m.silenced)
+				.reduce((n, m) => n + m.amount, 0);
+			silenced += a.modes.filter(m => m.silenced).length;
+			expect(claim.rate || 0).toBeCloseTo(live, 6);
+		}));
+		expect(silenced).toBeGreaterThan(0);
+		console.log('§4 SILENCE: ' + silenced + ' rates claim nothing after '
+			+ AMOUNT_CONFIG.maxQuietCycles + ' quiet cycles');
 	});
 
 	test('writes the modes audit page from the real results', () => {

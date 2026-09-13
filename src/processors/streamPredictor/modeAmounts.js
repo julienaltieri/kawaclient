@@ -30,6 +30,7 @@
 
 import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
 import {isBusinessDay, isHoliday, settleDate} from './businessCalendar';
+import {AMOUNT_CONFIG} from './amountConfig';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -75,7 +76,8 @@ export function weightedMiddle(values, weights){
    real - but determineShape answers it as a rate, and a page that read the working would offer a
    date §3 has already refused. Earnin's phone reimbursement is exactly that mode. Pass the ANSWER's
    shape; the mode's own is only the fallback for a caller that has nothing else. */
-export function modeAmount(mode, spine, shape){
+export function modeAmount(mode, spine, shape, cfg){
+	const ac = Object.assign({}, AMOUNT_CONFIG, cfg || {});
 	const weights = weightsOf(spine);
 	const per = new Array(spine.length).fill(0);
 	const count = new Array(spine.length).fill(0);
@@ -95,13 +97,27 @@ export function modeAmount(mode, spine, shape){
 		? weightedMiddle(landed.map(p => p.x), landed.map(p => p.w))
 		: weightedSum / wTotal;
 
+	/* SILENCE IS ITS OWN SIGNAL. The taper makes an old cycle worth less and never worth nothing, so
+	   a rate that has ended goes on claiming a fraction of itself forever - the disability deposits
+	   still asked for $191.46 a cycle twelve cycles after the leave finished. A rate quiet this long
+	   claims zero. It keeps its history and its money share; what it loses is the promise.
+
+	   A LUMP IS LEFT ALONE: how often it turns up is already half of its confidence, and a bill that
+	   skipped two months is a bill with a low confidence rather than a bill that has stopped. */
+	const quiet = mode.quiet === undefined
+		? (landed.length ? spine.length - 1 - landed[landed.length - 1].i : spine.length)
+		: mode.quiet;
+	const silenced = !lump && quiet >= ac.maxQuietCycles;
+
 	return {
 		kind: lump ? 'lump' : 'rate',
-		perCycle: amount,
+		perCycle: silenced ? 0 : amount,
+		silenced: silenced,
+		observed: amount,
 		cyclesLanded: landed.length,
 		cyclesObserved: spine.length,
 		//how many cycles since it last moved: a rate nobody has paid in months is a stale rate
-		quiet: landed.length ? spine.length - 1 - landed[landed.length - 1].i : spine.length,
+		quiet: quiet,
 		total: per.reduce((n, x) => n + x, 0),
 		perCycleTotals: per
 	};
@@ -183,6 +199,8 @@ export function predictionRows(predictor, streamId, stream, opts){
 			exceptions: w.exceptions || 0,
 			legs: w.legs,
 			amount: amt.perCycle,
+			observed: amt.observed,
+			silenced: amt.silenced,
 			kind: amt.kind,
 			rail: w.rail || null,
 			quiet: amt.quiet,
