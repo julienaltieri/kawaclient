@@ -199,7 +199,8 @@ export class StreamPredictor {
 		const cycle = cycleFrom(this.cycleOf(streamId, node));
 		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
 		return determineShape(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
-			{country: this.userCountry(), offsetHours: this.userTimezoneOffset()});
+			{country: this.userCountry(), offsetHours: this.userTimezoneOffset(),
+				now: this.analysisNow()});
 	}
 
 	/* ---- THE WORKING ------------------------------------------------------------------------
@@ -216,7 +217,7 @@ export class StreamPredictor {
 		return Object.assign({cycle: cycle},
 			explainShape(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
 				{country: this.userCountry(), offsetHours: this.userTimezoneOffset(),
-					taper: taper}));
+					now: this.analysisNow(), taper: taper}));
 	}
 
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------

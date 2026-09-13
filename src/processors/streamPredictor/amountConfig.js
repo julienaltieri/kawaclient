@@ -28,7 +28,41 @@ export const AMOUNT_CONFIG = {
 	   A LUMP IS NOT SILENCED BY THIS. Its own confidence already carries how often it turns up - the
 	   share of cycles it filled is half of that number - and a bill that skipped two months is a bill
 	   with a low confidence, not a bill that has stopped. */
-	maxQuietCycles: 2
+	maxQuietCycles: 2,
+
+	/* ---- HOW FAR PAST A FINITE PLAN A FORECAST MAY PUSH A STREAM -----------------------------------
+	   A YEARLY DECLARATION IS A PLAN AND A PLAN CAN BE SPENT. Gembah was roughly $10,000 paid in four
+	   installments of $2,626; there was never a fifth, and the stream had already spent $11,299 by the
+	   time one would have been due. Predicting it would have been wrong in a way the ledger could
+	   already see.
+
+	   THE TEST IS FORWARD-LOOKING AND AT STREAM LEVEL. Spend-to-date is not enough - Gembah sits at
+	   113%, inside any sane band - but a fifth payment takes it to 139% and that is the question worth
+	   asking. And a yearly declaration is a plan for the WHOLE stream: its modes are how the plan gets
+	   paid, and none of them carries the plan alone.
+
+	   A REFUSED MOVEMENT PREDICTS ZERO, NEVER THE REMAINING ENVELOPE. Capping Gembah's payment at the
+	   $1,299 left would invent a payment of a size that never occurs - and worse, the remainder would
+	   then be compressed into however many cycles remain in the year, inflating every later prediction
+	   until the envelope was used up.
+
+	   UNTUNED, DELIBERATELY. Gembah projects to 139%, which clears any value from 10% to 30%, so this
+	   portfolio cannot tell those apart. The number wants a near case before it is settled. */
+	budgetBand: 0.15,
+
+	/* ---- WHEN A LUMP HAS WAITED LONGER THAN IT EVER HAS ---------------------------------------------
+	   MULTIPLES OF A MODE'S OWN WORST OBSERVED GAP. Not of its wobble - wobble is deviation around the
+	   claimed day INSIDE a cycle, and the question here is the gap BETWEEN cycles. That was the first
+	   yardstick tried and it caught nothing, including the one stream that had plainly stopped.
+
+	   MEASURED ACROSS THE PORTFOLIO: Gembah is 43 days past a payment that has never taken more than
+	   31, a ratio of 1.43. The next highest mode in the portfolio sits at 0.91 of its own worst gap.
+	   At 1.0 exactly one mode qualifies and there is nothing within 9% of the line, which is the kind
+	   of margin that survives new data.
+
+	   A SUSPICION, NOT A CONCLUSION. The mode keeps its history, its money share and its identity; it
+	   stops promising. A stream that resumes is visibly the same stream. */
+	lateMultiple: 1.0
 };
 
 export default AMOUNT_CONFIG;

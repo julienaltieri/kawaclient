@@ -31,6 +31,7 @@
 import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
 import {isBusinessDay, isHoliday, settleDate} from './businessCalendar';
 import {AMOUNT_CONFIG} from './amountConfig';
+import {budgetPosition, breaksPlan, rebaseline, ENVELOPE} from './budgetPosition';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -88,7 +89,10 @@ export function modeAmount(mode, spine, shape, cfg){
 
 	const landed = [];
 	per.forEach((x, i) => { if(count[i])landed.push({x: x, w: weights[i], i: i}); });
-	const lump = (shape || mode.shape) === Shape.lump;
+	const use = shape || mode.shape;
+	const lump = use === Shape.lump;
+	//GATE 0: a mode nobody could read promises nothing, whatever the arithmetic would have said
+	const unread = use === Shape.unknown;
 
 	const wTotal = weights.reduce((n, x) => n + x, 0) || 1;
 	const weightedSum = per.reduce((n, x, i) => n + x * weights[i], 0);
@@ -109,10 +113,19 @@ export function modeAmount(mode, spine, shape, cfg){
 		: mode.quiet;
 	const silenced = !lump && quiet >= ac.maxQuietCycles;
 
+	/* AND THE SAME QUESTION FOR A LUMP, ASKED ITS OWN WAY. A rate stops by going silent for a couple
+	   of cycles; a bill stops by missing a date it has never missed. Gembah is 43 days past a payment
+	   that never took more than 31. */
+	const late = lump && mode.overdue !== null && mode.overdue !== undefined
+		&& mode.overdue > ac.lateMultiple;
+
 	return {
-		kind: lump ? 'lump' : 'rate',
-		perCycle: silenced ? 0 : amount,
+		kind: lump ? 'lump' : unread ? 'unknown' : 'rate',
+		perCycle: (silenced || unread || late) ? 0 : amount,
 		silenced: silenced,
+		late: late,
+		overdue: (mode.overdue === undefined) ? null : mode.overdue,
+		unread: unread,
 		observed: amount,
 		cyclesLanded: landed.length,
 		cyclesObserved: spine.length,
@@ -162,7 +175,8 @@ export function nextCycle(spine, cycle){
 
    THE PAST IS SHOWN BECAUSE A PREDICTION WITHOUT ITS CONTEXT IS UNCHECKABLE. Three cycles of what
    actually happened, then the one being claimed, drawn on the same axis and the same scale. */
-export function predictionRows(predictor, streamId, stream, opts){
+export function predictionRows(predictor, streamId, stream, opts, cfg){
+	const c = Object.assign({}, AMOUNT_CONFIG, cfg || {});
 	const o = opts || {};
 	const back = o.cyclesBack === undefined ? 3 : o.cyclesBack;
 	const answer = predictor.shapeOf(streamId, stream);
@@ -173,6 +187,12 @@ export function predictionRows(predictor, streamId, stream, opts){
 	const anchor = predictor.analysisAnchor();
 	const spine = streamSpine(working.modes, cycle, anchor);
 	if(!spine.length)return null;
+
+	/* ---- GATE 3: WHERE THE STREAM STANDS AGAINST ITS ENVELOPE -------------------------------
+	   ASKED ONCE, FOR THE WHOLE STREAM, because a yearly declaration is a plan for the stream and
+	   not for any one of its modes. */
+	const position = budgetPosition(stream, predictor.legsOf(streamId) || [], anchor,
+		predictor.analysisNow());
 
 	const byAccount = new Map();
 	working.modes.forEach((w, i) => {
@@ -201,6 +221,8 @@ export function predictionRows(predictor, streamId, stream, opts){
 			amount: amt.perCycle,
 			observed: amt.observed,
 			silenced: amt.silenced,
+			late: amt.late,
+			overdue: amt.overdue,
 			kind: amt.kind,
 			rail: w.rail || null,
 			quiet: amt.quiet,
@@ -208,6 +230,22 @@ export function predictionRows(predictor, streamId, stream, opts){
 			rawLegs: w.rawLegs
 		});
 	});
+
+	/* ---- WOULD THE NEXT CYCLE BREAK THE PLAN? -----------------------------------------------
+	   EVERY MODE'S NEXT CLAIM, SUMMED, AGAINST WHAT THE ENVELOPE HAS LEFT. If the stream would end
+	   up further than budgetBand past its plan, the plan is spent: every dated claim and every rate
+	   goes to zero for this cycle. Not scaled down - zero. */
+	let claimed = 0;
+	byAccount.forEach(acc => acc.modes.forEach(m => { claimed += m.amount; }));
+	/* A STREAM THAT WAS GOING TO CLAIM NOTHING CANNOT BE REFUSED ANYTHING. Voyages is 138% through a
+	   plan it has already overspent, and every one of its modes is unread - reporting it as "capped"
+	   would credit the budget gate with a silence the evidence gate had already produced. */
+	const capped = claimed !== 0 && breaksPlan(position, claimed, c.budgetBand);
+	if(capped)byAccount.forEach(acc => acc.modes.forEach(m => {
+		m.cappedAmount = m.amount;
+		m.amount = 0;
+		m.capped = true;
+	}));
 
 	/* THE LANES: the last `back` cycles as they happened, then the one being claimed. A cycle is
 	   drawn on its own day axis, so a 31-day month has one column a 30-day month never fills. */
@@ -269,8 +307,17 @@ export function predictionRows(predictor, streamId, stream, opts){
 	accounts.sort((a, b) => b.modes.reduce((n, m) => n + m.moneyShare, 0)
 		- a.modes.reduce((n, m) => n + m.moneyShare, 0));
 
+	/* AND WHERE A REFILLING BUDGET SITS AGAINST WHAT IS ACTUALLY BEING SPENT. This changes no
+	   forecast - the observed rate is already what is predicted - it is the number that says the
+	   BUDGET is wrong rather than the spending. */
+	let perCycle = 0;
+	accounts.forEach(acc => acc.modes.forEach(m => { perCycle += m.capped ? m.cappedAmount : m.amount; }));
+
 	return {cycle: cycle, declared: stream.period, accounts: accounts,
-		cyclesObserved: spine.length};
+		cyclesObserved: spine.length,
+		budget: position,
+		capped: capped,
+		rebaseline: rebaseline(position, perCycle)};
 }
 
 export default predictionRows;

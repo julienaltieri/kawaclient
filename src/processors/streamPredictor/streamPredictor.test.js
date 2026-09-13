@@ -38,6 +38,8 @@ import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
 import {buildPredictionAuditPage, predictionData} from './buildPredictionAuditPage';
 import {modeAmount, streamSpine, weightedMiddle} from './modeAmounts';
 import {AMOUNT_CONFIG} from './amountConfig';
+import {predictionRows} from './modeAmounts';
+import {budgetPosition, breaksPlan, rebaseline, ENVELOPE} from './budgetPosition';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
@@ -825,10 +827,12 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	/* ONCE A MONTH IS NOT A DAY. Earnin's phone reimbursement arrives exactly once every month and
 	   the count-based rule called it a perfect lump for that reason. It lands anywhere across a
 	   fortnight, so there is no day to predict and saying so is the answer. */
-	test('steady as clockwork but landing anywhere is not a lump', () => {
+	test('steady as clockwork but landing anywhere is a spread, not a lump', () => {
 		const v = classifyShape([1, 1, 1, 1, 1, 1, 1, 1],
 			bins(31, {15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 23: 1, 27: 1, 29: 1}));
-		expect(v.shape).toBe(null);
+		//past the evidence guards and out of focus: a spread it EARNED, and not a flow
+		expect(v.shape).toBe(Shape.spread);
+		expect(v.flow).toBe(undefined);
 		expect(v.steady).toBe(1);
 		expect(v.concentration).toBeLessThan(0.75);
 		expect(v.reason).toMatch(/do not land on a day/);
@@ -896,9 +900,11 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			return st.period === 'yearly' && !c.inferred;
 		});
 		expect(yearlyStill).toBeTruthy();
-		//a stream §2 left yearly has no cycle to read a day inside, so every mode of it is a rate
+		/* A STREAM §2 LEFT YEARLY CANNOT BE READ AT ALL. One cycle is the whole window, so the
+		   evidence guards refuse it and every mode answers `unknown` - which promises nothing,
+		   rather than a rate nobody measured. */
 		expect(predictor.shapeOf(yearlyStill.id, yearlyStill).modes
-			.every(m => m.shape === Shape.spread)).toBe(true);
+			.every(m => m.shape === Shape.unknown)).toBe(true);
 
 		const rescued = predictor.reviewable().find(st => {
 			const c = predictor.cycleOf(st.id, st);
@@ -929,12 +935,15 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			expect(Object.keys(answer).sort()).toEqual(['cycle', 'modes']);
 			answer.modes.forEach(m => {
 				const keys = Object.keys(m).sort();
-				expect([Shape.lump, Shape.spread].indexOf(m.shape)).toBeGreaterThan(-1);
+				expect([Shape.lump, Shape.spread, Shape.unknown].indexOf(m.shape))
+					.toBeGreaterThan(-1);
 				if(m.shape === Shape.lump){
 					named++;
 					/* AND A RAIL WHERE THE CLOSURES AGREED. Absent means not enough shut days have
 					   been met to know, which is not the same as "nothing happens". */
 					const want = EVERY.concat(['confidence', 'days']);
+					//how far past its own worst gap it is, where it has a gap to be past
+					if(m.overdue !== undefined)want.push('overdue');
 					if(m.rail){
 						want.push('rail');
 						railed++;
@@ -980,11 +989,14 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			+ ' d' + x.days.join(',') + ' ' + Math.round(x.moneyShare * 100) + '%').join(' | '));
 
 		/* A STREAM WITH NO PATTERN IN IT IS NOT A FAILURE. Gas is twelve fill-ups at eight stations,
-		   and "all of this is a rate, none of it is a date" is exactly what a forecast needs told. */
+		   and "all of this is a rate, none of it is a date" is exactly what a forecast needs told -
+		   and it is a rate it EARNED, on nine cycles and twelve movements with no day in them. */
 		const gas = predictor.reviewable().find(x => x.name === 'Gas');
 		const g = predictor.explainShapeOf(gas.id, gas);
-		expect(g.predictable).toBe(0);
-		expect(g.baseline.moneyShare).toBeCloseTo(1, 6);
+		const gasAnswer = predictor.shapeOf(gas.id, gas);
+		expect(gasAnswer.modes.every(m => m.shape === Shape.spread)).toBe(true);
+		expect(gasAnswer.modes.every(m => m.days === undefined)).toBe(true);
+		expect(g.baseline.moneyShare).toBeCloseTo(0, 6);
 
 		/* THE PAYROLL SEPARATES FROM THE DISABILITY DEPOSITS - where this started - AND THEN PUTS
 		   ITSELF BACK TOGETHER. The payer is written two ways, "ACTIVEHOURS INC PAYROLL" sixteen
@@ -1210,14 +1222,16 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const cycle = predictor.shapeOf(st.id, st).cycle;
 
 		const asIs = determineShape(window, partition, cycle, predictor.analysisAnchor(),
-			{country: predictor.userCountry()});
+			{country: predictor.userCountry(), now: predictor.analysisNow()});
 		const mode = asIs.modes.find(x => /expensify/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
 		expect(mode.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
 
 		const strict = determineShape(window, partition, cycle, predictor.analysisAnchor(),
-			{country: predictor.userCountry()}, {minLumpConfidence: 0.99});
+			{country: predictor.userCountry(), now: predictor.analysisNow()},
+			{minLumpConfidence: 0.99});
 		const demoted = strict.modes.find(x => /expensify/i.test(x.label));
+		//a SPREAD, not an unknown: the evidence was read, it just could not carry a date
 		expect(demoted.shape).toBe(Shape.spread);
 		expect(demoted.days).toBe(undefined);
 		expect(demoted.confidence).toBe(undefined);
@@ -1287,7 +1301,8 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 
 		const modeOn = on.modes.find(x => /expensify/i.test(x.label));
 		//it is still a mode with its money; what it lost is the right to name a day
-		expect(modeOn ? modeOn.shape : null).toBe(null);
+		expect(modeOn.shape).not.toBe(Shape.lump);
+		expect(modeOn.days).toEqual([]);
 		expect(on.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
 	});
 
@@ -1584,9 +1599,12 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const answer = predictor.shapeOf(wages.id, wages);
 		const edd = answer.modes.find(x => /EDD/i.test(x.label));
 
-		//§3 reports the silence and nothing more: it is still a spread with its share of the money
-		expect(edd.shape).toBe(Shape.spread);
-		expect(edd.quiet).toBe(12);
+		/* §3 REPORTS THE SILENCE AND NOTHING MORE. Three movements, and once the old ones fade there
+		   is not enough weight left to read a shape at all - so the evidence gate answers `unknown`
+		   before the silence gate is even asked. Two gates reaching the same answer from different
+		   evidence is the design working, not a redundancy. */
+		expect(edd.shape).toBe(Shape.unknown);
+		expect(edd.quiet).toBeGreaterThanOrEqual(12);
 		expect(edd.moneyShare).toBeGreaterThan(0);
 		//and the payroll beside it moved in the newest cycle
 		const payroll = answer.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
@@ -1623,6 +1641,117 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(silenced).toBeGreaterThan(0);
 		console.log('§4 SILENCE: ' + silenced + ' rates claim nothing after '
 			+ AMOUNT_CONFIG.maxQuietCycles + ' quiet cycles');
+	});
+
+	/* ---- FOUR GATES, AND NONE OF THEM MAY RAISE A CLAIM --------------------------------------------
+	   A prediction starts as what the ledger observed and passes through evidence, shape, liveness and
+	   budget. Each may only narrow what came in, which is what makes the order safe to reason about.
+	   The tally below is the whole portfolio seen through them at once. */
+	test('every gate only ever narrows a claim', () => {
+		let unknown = 0, lateLumps = 0, silentRates = 0, capped = 0, predicting = 0;
+		predictor.reviewable().forEach(st => {
+			const r = predictionRows(predictor, st.id, st, {country: predictor.userCountry()});
+			if(!r)return;
+			r.accounts.forEach(a => a.modes.forEach(m => {
+				//whatever a gate did, it took the claim to zero - never to something larger
+				if(m.kind === 'unknown' || m.capped || m.late || m.silenced)
+					expect(m.amount).toBe(0);
+				if(m.kind === 'unknown')unknown++;
+				else if(m.capped)capped++;
+				else if(m.late)lateLumps++;
+				else if(m.silenced)silentRates++;
+				else predicting++;
+			}));
+		});
+		expect(unknown).toBeGreaterThan(100);
+		expect(predicting).toBeGreaterThan(20);
+		console.log('§4 GATES: ' + unknown + ' unknown | ' + lateLumps + ' late lumps | '
+			+ silentRates + ' silent rates | ' + capped + ' capped by plan | '
+			+ predicting + ' still predicting');
+	});
+
+	/* ---- GATE 0: THE WEAKEST EVIDENCE MADE THE LOUDEST CLAIM ---------------------------------------
+	   One option exercise last December, a single movement in a single cycle. Too thin for a lump, it
+	   fell through to `spread` and was then divided by its own one-cycle lattice into a promise of
+	   -$10,582 EVERY MONTH - the most confident forward claim in the portfolio, resting on the least
+	   evidence in it. `unknown` is the answer, and it promises nothing. */
+	test('a single movement promises nothing at all', () => {
+		const st = predictor.reviewable().find(x => x.name === 'Option Exercise');
+		const answer = predictor.shapeOf(st.id, st);
+		const mode = answer.modes.find(x => /carta/i.test(x.label));
+		expect(mode.shape).toBe(Shape.unknown);
+		expect(mode.days).toBe(undefined);
+		expect(mode.confidence).toBe(undefined);
+		//it keeps its money: this is "we do not know", not "it spends nothing"
+		expect(mode.moneyShare).toBeGreaterThan(0);
+
+		const r = predictionRows(predictor, st.id, st, {country: predictor.userCountry()});
+		r.accounts.forEach(a => a.modes.forEach(m => {
+			expect(m.kind).toBe('unknown');
+			expect(m.amount).toBe(0);
+		}));
+	});
+
+	/* ---- GATE 2: A BILL STOPS BY MISSING A DATE IT HAS NEVER MISSED --------------------------------
+	   Gembah was four installments of $2,626 and there was never a fifth. Measured against its own
+	   spacing it is 43 days past a payment that has never taken more than 31. Nothing else in the
+	   portfolio exceeds 0.91 of its own worst gap. */
+	test('a lump past its own worst wait stops promising', () => {
+		const st = predictor.reviewable().find(x => x.name === 'Gembah');
+		const mode = predictor.shapeOf(st.id, st).modes.find(x => /^gembah$/i.test(x.label));
+		expect(mode.shape).toBe(Shape.lump);
+		expect(mode.overdue).toBeGreaterThan(AMOUNT_CONFIG.lateMultiple);
+
+		const r = predictionRows(predictor, st.id, st, {country: predictor.userCountry()});
+		const claim = r.accounts.reduce((hit, a) =>
+			hit || a.modes.find(m => /^gembah$/i.test(m.label)), null);
+		expect(claim.late).toBe(true);
+		expect(claim.amount).toBe(0);
+		//what it would have claimed is kept, so the page can show what was given up
+		expect(Math.round(claim.observed)).toBe(-2626);
+
+		//and nothing else in the portfolio is late
+		let late = 0;
+		predictor.reviewable().forEach(x => {
+			const p = predictionRows(predictor, x.id, x, {country: predictor.userCountry()});
+			if(p)p.accounts.forEach(a => a.modes.forEach(m => { if(m.late)late++; }));
+		});
+		expect(late).toBe(1);
+	});
+
+	/* ---- GATE 3: THE DECLARED PERIOD DECIDES WHETHER A BUDGET CAN CONSTRAIN ANYTHING ---------------
+	   A yearly declaration is a PLAN and a plan can be spent. A cycle declaration REFILLS, so it can
+	   only be compared - consistent overshoot there means the budget is miscalibrated, not that the
+	   spending will stop.
+
+	   ON THIS LEDGER GATE 3 REFUSES NOTHING, and that is worth pinning rather than hiding: every
+	   stream past its plan was already silenced by an earlier gate. Gembah would have been refused on
+	   the 28th of August - weeks before its silence was visible - and by the analysis date the
+	   liveness gate has already caught it. The arithmetic is tested directly instead. */
+	test('only a plan can be overspent, and only forward', () => {
+		const gembah = predictor.reviewable().find(x => x.name === 'Gembah');
+		const plan = budgetPosition(gembah, predictor.legsOf(gembah.id),
+			predictor.analysisAnchor(), predictor.analysisNow());
+		expect(plan.kind).toBe(ENVELOPE.plan);
+		expect(Math.round(plan.budget)).toBe(-10000);
+		expect(Math.round(plan.spent)).toBe(-11299);
+
+		//spend-to-date passes the band; the position AFTER a fifth installment does not
+		expect(breaksPlan(plan, 0, 0.15)).toBe(false);
+		expect(breaksPlan(plan, -2626, 0.15)).toBe(true);
+		//and it is a stream-level question, so a small claim still fits
+		expect(breaksPlan(plan, -100, 0.15)).toBe(false);
+
+		//a refilling envelope can never be broken, whatever the numbers say
+		const utilities = predictor.reviewable().find(x => x.name === 'Utilities');
+		const refills = budgetPosition(utilities, predictor.legsOf(utilities.id),
+			predictor.analysisAnchor(), predictor.analysisNow());
+		expect(refills.kind).toBe(ENVELOPE.refilling);
+		expect(breaksPlan(refills, -99999, 0.15)).toBe(false);
+		//it is compared instead: the rate against the budget, never spend-to-date against it
+		const re = rebaseline(refills, -286);
+		expect(re.ratio).toBeCloseTo(-286 / refills.budget, 6);
+		expect(rebaseline(plan, -2626)).toBe(null);
 	});
 
 	test('writes the modes audit page from the real results', () => {

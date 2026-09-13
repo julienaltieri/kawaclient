@@ -25,15 +25,26 @@ import {SNAP, snapDate, isBusinessDay, RAIL} from './businessCalendar';
 import {AccountKind} from './accountMapping';
 import {merchantGroups} from './cycleFit';
 
-/* TWO SHAPES, AND THEY ARE TWO PROMISES.
+/* THREE ANSWERS, AND TWO OF THEM ARE PROMISES.
 
-   A LUMP NAMES DAYS. A SPREAD NAMES A RATE. That is the whole vocabulary, because it is the whole of
-   what a forecast can do with an answer: put money on a date, or spend it evenly across the cycle.
+   A LUMP NAMES DAYS. A SPREAD NAMES A RATE. Those are the two things a forecast can do with money:
+   put it on a date, or spend it across the cycle.
+
+   UNKNOWN IS THE THIRD, AND IT IS THE DEFAULT. A spread has to be EARNED by watching enough activity
+   fail to form a pattern; it cannot be the answer of last resort. Used that way it turns the weakest
+   evidence in the portfolio into its most confident claim - one option exercise last December became
+   a promise of -$10,582 every month, because a single movement in a single cycle was too thin for a
+   lump, fell through to spread, and was then divided by its lattice.
+
+   UNKNOWN IS NOT THE OLD NULL. That null meant "the observer could not read this" and leaked into an
+   answer by accident. This is a positive statement with a consequence a caller can act on: promise
+   nothing, and say why. It is also not "a spread of zero" - a spread of zero says the mode spends
+   nothing, and unknown says we do not know yet, which is what a reader needs to see beside a stream
+   declared at $10,000 that has moved twice.
 
    THERE IS NO "MULTI-LUMP". A mode that lands on three days is a lump whose `days` has three entries
-   - the count was never a different kind of answer, only a different length of one, and carrying it
-   as a separate name meant every reader had to remember that two words meant one thing. */
-export const Shape = {lump: 'lump', spread: 'spread'};
+   - the count was never a different kind of answer, only a different length of one. */
+export const Shape = {lump: 'lump', spread: 'spread', unknown: 'unknown'};
 
 const YEARLY = {yearly: true, biyearly: true};
 
@@ -698,15 +709,18 @@ export function classifyShape(counts, bins, cfg, weights){
 	   what is being claimed - a perfectly flat cycle is a perfectly certain spread, and reporting
 	   0.11 there would read as doubt about the one row the picture is clearest on. */
 	if(busy >= c.minBusyShare && typical >= c.minSpreadEventsPerCycle)
-		return Object.assign({shape: Shape.spread,
+		return Object.assign({shape: Shape.spread, flow: true,
 			confidence: 1 - (focus.concentration === null ? 0 : focus.concentration)}, base);
 
-	/* OUT OF FOCUS AND NOT BUSY: nothing to say, and saying so is not the same as calling it a flow.
-	   THIS NULL NEVER REACHES AN ANSWER - determineShape maps it to a spread, because a forecast can
-	   only do one of two things with money and "I could not tell" spends it at a rate like any other
-	   undated money. It exists here because an observer that cannot tell should say it cannot tell. */
-	return Object.assign({shape: null,
-		reason: 'the movements do not land on a day and the stream is not a flow'}, base);
+	/* OUT OF FOCUS AND NOT BUSY, BUT PAST THE EVIDENCE GUARDS ABOVE: a spread, earned. It has enough
+	   cycles and enough movements to have shown a pattern and has not shown one, which is a finding
+	   rather than a shrug. The shrug is the null the guards return, and that one becomes `unknown`.
+
+	   THE CONFIDENCE IS HOW FAR OUT OF FOCUS IT IS, as for the busy branch above: what is being
+	   claimed is the absence of a day, so a cycle with no focus at all is a certain spread. */
+	return Object.assign({shape: Shape.spread,
+		confidence: 1 - (focus.concentration === null ? 0 : focus.concentration),
+		reason: 'the movements do not land on a day'}, base);
 }
 
 /* ---- WHICH WAY THIS RAIL MOVES WHEN THE BANKS ARE SHUT -------------------------------------------
@@ -791,8 +805,13 @@ export function patternWithExceptions(legs, cycle, anchor, cfg, taper){
 	const start = fitOf(all, cycle, anchor, taper);
 	if(all.length < c.minMovements)return {kept: all, exceptions: [], result: start, trimmed: false};
 
-	//a spread has no day to be near, so there is nothing here for it to be trimmed towards
-	if(start.verdict.shape === Shape.spread)
+	/* A FLOW HAS NO DAY TO BE NEAR, so there is nothing here for it to be trimmed towards. The test
+	   is `flow`, not `spread`: since spread became the earned answer for anything past the evidence
+	   guards, a mode that is merely OUT OF FOCUS is a spread too - and those are exactly the ones
+	   the trim exists to rescue. Savings reads two clusters half a cycle apart until two movements
+	   are set aside, and testing the shape name instead of the flow lost every lump in the
+	   portfolio that needed an exception to find its day. */
+	if(start.verdict.flow)
 		return {kept: all, exceptions: [], result: start, trimmed: false};
 
 	const floor = Math.max(c.minMovements, Math.ceil(all.length * (1 - c.maxExceptionShare)));
@@ -1159,6 +1178,23 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 	   long means the money has stopped coming is §4's call, and §4 has a setting for it. */
 	if(cycle && collapsed.length){
 		const spine = cycleBuckets(all, cycle, anchor, o.taper);
+
+		/* THE LATTICE STOPS AT THE STREAM'S NEWEST LEG - cycleBuckets says so deliberately, because
+		   dormancy is not its finding to make. Counted against that lattice a stream that stopped
+		   ENTIRELY reads as perfectly current: its last movement sits in the last bucket that
+		   exists. Gembah read quiet 0 having not paid in 43 days.
+
+		   SO THE CYCLES BETWEEN THE LATTICE AND TODAY ARE COUNTED TOO. Silence is measured against
+		   the analysis date, which is the only date a forecast is made from. */
+		let elapsed = 0;
+		if(spine.length && o.now){
+			let edge = new Date(spine[spine.length - 1].end), guard = 0;
+			while(edge.getTime() <= new Date(o.now).getTime() && ++guard < MAX_CYCLES){
+				edge = cycle.nextDate(edge);
+				elapsed++;
+			}
+			elapsed = Math.max(0, elapsed - 1);
+		}
 		const seen = spine.map(b => {
 			const at = {};
 			b.legs.forEach(l => { if(l && l.transactionId)at[l.transactionId] = true; });
@@ -1170,10 +1206,30 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				for(let i = spine.length - 1; i > last; i--)
 					if(l && l.transactionId && seen[i][l.transactionId]){ last = i; break; }
 			});
-			m.quiet = last < 0 ? spine.length : spine.length - 1 - last;
-			m.cyclesInWindow = spine.length;
+			m.quiet = (last < 0 ? spine.length : spine.length - 1 - last) + elapsed;
+			m.cyclesInWindow = spine.length + elapsed;
+
+			/* ---- HAS IT WAITED LONGER THAN IT HAS EVER WAITED ---------------------------------
+			   WOBBLE IS THE WRONG YARDSTICK and was the first thing tried: it measures deviation
+			   around the claimed day INSIDE a cycle, and the question here is the gap BETWEEN
+			   cycles. Measured against a mode's own spacing, one mode in the portfolio has waited
+			   longer than it ever has - Gembah, 43 days against a worst-ever 31 - and nothing else
+			   exceeds 0.91 of its own worst gap.
+
+			   REPORTED AS A RATIO, NOT A VERDICT. Whether 1.43 means the money has stopped is §4's
+			   call; this says how far past its own record the mode is. */
+			const dated = (m.rawLegs || []).map(l => new Date(l.date).getTime())
+				.filter(t => !isNaN(t)).sort((x, y) => x - y);
+			m.overdue = null;
+			if(dated.length > 1 && o.now){
+				const gaps = [];
+				for(let i = 1; i < dated.length; i++)gaps.push(dated[i] - dated[i - 1]);
+				const worst = Math.max.apply(null, gaps);
+				const since = new Date(o.now).getTime() - dated[dated.length - 1];
+				if(worst > 0)m.overdue = Math.round((since / worst) * 100) / 100;
+			}
 		});
-	}else collapsed.forEach(m => { m.quiet = 0; m.cyclesInWindow = 0; });
+	}else collapsed.forEach(m => { m.quiet = 0; m.cyclesInWindow = 0; m.overdue = null; });
 
 	/* PREDICTABLE FIRST, THEN BY HOW MUCH MONEY RIDES ON THEM. A forecast is read from the top, and
 	   what it most needs to be right about is the biggest thing it can actually predict. */
@@ -1249,12 +1305,21 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 				&& m.confidence !== null && m.confidence !== undefined
 				&& m.confidence >= c.minLumpConfidence
 				&& m.days.length > 0;
+			/* ONLY THE OBSERVER'S NULL BECOMES UNKNOWN. It means the guards refused to read the mode
+			   at all - too few cycles, too few movements once the old ones faded - and a mode nobody
+			   could read must not be turned into a rate by arithmetic.
+
+			   A LUMP UNDER THE CONFIDENCE BAR IS A SPREAD, NOT AN UNKNOWN. The evidence was there and
+			   was read; what it could not carry was a date. It still spends its money, so it is
+			   forecast as a rate. */
+			const shape = named ? Shape.lump
+				: ((m.shape === null || m.shape === undefined) ? Shape.unknown : Shape.spread);
 			const out = {
 				label: m.label,
 				accountId: m.accountId,
 				accountType: m.accountType || null,
 				direction: m.direction,
-				shape: named ? Shape.lump : Shape.spread
+				shape: shape
 			};
 			if(named){
 				out.days = m.days.slice();
@@ -1268,6 +1333,9 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 			   difference between a rhythm and a memory without it. What a long silence MEANS is
 			   §4's to decide. */
 			out.quiet = m.quiet === undefined ? 0 : m.quiet;
+			/* HOW FAR PAST ITS OWN WORST GAP IT IS, on a mode that has a gap to be past. Absent
+			   where there is only one movement, because one movement has no spacing. */
+			if(named && m.overdue !== null && m.overdue !== undefined)out.overdue = m.overdue;
 			out.moneyShare = m.moneyShare;
 			return out;
 		})

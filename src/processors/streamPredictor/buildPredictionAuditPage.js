@@ -41,6 +41,19 @@ const patternOf = m => {
 		.join(' ' + DOT + ' ');
 };
 
+/* WHERE THE STREAM STANDS AGAINST THE ENVELOPE THE USER DREW, in the words that envelope deserves:
+   a yearly declaration is a PLAN that can be spent, a cycle declaration is a budget that refills. */
+const budgetLine = r => {
+	const pc = v => Math.round(v * 100) + '%';
+	if(r.envelope === 'plan')
+		return 'plan ' + money(r.budget) + ' ' + DOT + ' ' + pc(r.used) + ' spent at '
+			+ pc(r.elapsed) + ' of the year' + (r.capped ? ' ' + DOT + ' SPENT' : '');
+	if(r.envelope === 'refilling')
+		return 'budget ' + money(r.budget) + ' a ' + r.declared
+			+ (r.rebase === null ? '' : ' ' + DOT + ' running at ' + pc(r.rebase));
+	return '';
+};
+
 export function predictionData(predictor){
 	const out = [];
 	predictor.reviewable().forEach(stream => {
@@ -50,12 +63,20 @@ export function predictionData(predictor){
 		/* A STREAM STILL YEARLY AFTER §2 HAS NO LANES WORTH DRAWING - one cycle is the whole window,
 		   so there is no "past three" and nothing to compare a claim against. */
 		if(YEARLY[r.cycle.name])return;
+		const b = r.budget || {};
 		out.push({
 			id: stream.id,
 			name: stream.name,
 			cycle: r.cycle.name,
 			declared: r.declared,
 			overridden: !!YEARLY[r.declared] && !YEARLY[r.cycle.name],
+			envelope: b.kind || 'none',
+			budget: b.budget || 0,
+			spent: b.spent || 0,
+			used: (b.used === null || b.used === undefined) ? null : b.used,
+			elapsed: (b.elapsed === null || b.elapsed === undefined) ? null : b.elapsed,
+			capped: !!r.capped,
+			rebase: r.rebaseline ? r.rebaseline.ratio : null,
 			accounts: r.accounts.map(a => ({
 				accountId: a.accountId,
 				accountType: a.accountType,
@@ -63,6 +84,10 @@ export function predictionData(predictor){
 				mask: a.mask || null,
 				modes: a.modes.map(m => ({
 					label: plain(m.label),
+					late: !!m.late,
+					overdue: (m.overdue === null || m.overdue === undefined) ? null : m.overdue,
+					capped: !!m.capped,
+					cappedAmount: m.cappedAmount === undefined ? null : m.cappedAmount,
 					rail: m.rail ? m.rail.closures : null,
 					railTests: m.rail ? m.rail.tests : 0,
 					shape: m.shape,
@@ -116,7 +141,9 @@ const streamBlock = (r, i) => '<section class="stream" data-search="'
 			+ '<span class="s-meta">' + esc(r.cycle)
 				+ (r.overridden ? ' <i>declared ' + esc(r.declared) + '</i>' : '')
 				+ ' ' + DOT + ' ' + r.accounts.length + ' account'
-				+ (r.accounts.length === 1 ? '' : 's') + '</span></div>'
+				+ (r.accounts.length === 1 ? '' : 's')
+				+ (r.envelope !== 'none' ? ' ' + DOT + ' ' + esc(budgetLine(r)) : '')
+				+ '</span></div>'
 		+ '<div class="s-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
 			+ ' aria-label="accept ' + esc(r.name) + '"></div>'
 	+ '</header>'
@@ -225,22 +252,36 @@ function railWords(r){
 	return "";
 }
 
+/* WHICH GATE CLOSED THIS MODE. Four can, and they close it for different reasons - a reader has to
+   be able to tell "nobody could read this" from "the plan is spent". */
+function gateWords(m){
+	if(m.kind === "unknown")return "not enough yet " + DOTCH + " promises nothing";
+	if(m.capped)return "the plan is spent " + DOTCH + " predicts nothing";
+	if(m.late)return "overdue " + DOTCH + " x" + m.overdue
+		+ " its own worst wait " + DOTCH + " probably stopped";
+	if(m.silenced)return "silent " + m.quiet + " cycles " + DOTCH + " claiming nothing";
+	return "";
+}
+
 function modeHtml(m){
 	var rail = railWords(m.rail);
-	return "<div class='md" + (m.kind === "lump" ? "" : " rate") + "'>"
-		+ "<span class='mdsh'>" + (m.kind === "lump" ? "lump" : "rate") + "</span>"
+	var gate = gateWords(m);
+	var quiet = !!gate;
+	return "<div class='md" + (m.kind === "lump" ? "" : " rate")
+			+ (quiet ? " shut" : "") + "'>"
+		+ "<span class='mdsh'>" + esc2(m.kind) + "</span>"
 		+ "<span class='mdpat'>" + esc2(m.pattern) + "</span>"
-		+ "<b class='mdamt" + (m.silenced ? " hushed" : "") + "'>"
-			+ (m.silenced ? money(m.observed) : money(m.amount))
+		+ "<b class='mdamt" + (quiet ? " hushed" : "") + "'>"
+			+ (quiet ? money(m.capped ? m.cappedAmount : m.observed) : money(m.amount))
 			+ (m.kind === "lump" ? "" : " / cycle") + "</b>"
 		+ "<span class='mdcf'>" + (m.confidence === null ? DOTCH
 			: Math.round(m.confidence * 100) + "% sure") + "</span>"
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "
 			+ DOTCH + " " + Math.round(m.moneyShare * 100) + "% of the stream"
-			+ (m.silenced ? " " + DOTCH + " silent " + m.quiet + " cycles, claiming nothing"
-				: m.quiet > 0 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
-			+ (rail ? "</i><u>" + esc2(rail) + " " + DOTCH + " seen " + m.railTests
-				+ " times</u>" : "</i>")
+			+ (!quiet && m.quiet > 0 ? " " + DOTCH + " quiet " + m.quiet + " cycles" : "")
+			+ (gate ? "</i><s>" + esc2(gate) + "</s>" : "")
+			+ (rail ? (gate ? "" : "</i>") + "<u>" + esc2(rail) + " " + DOTCH + " seen "
+				+ m.railTests + " times</u>" : (gate ? "" : "</i>"))
 			+ "</div></div>";
 }
 
@@ -297,8 +338,10 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 		+ 'a holiday</span>'
 	+ '<span class="lg">a mode that has met enough shut days says what its rail does with them, and '
 		+ 'a moved claim is drawn in accent on the day it will really land</span>'
-	+ '<span class="lg">a struck-through rate has been silent too long to promise anything - the '
-		+ 'number shown is what it used to move, and nothing is carried forward</span>'
+	+ '<span class="lg">a struck-through amount is a claim a gate refused - the number shown is what '
+		+ 'it would have been, and the amber line says which gate and why</span>'
+	+ '<span class="lg">"plan" = a yearly declaration, an envelope that can be SPENT; "budget" = a '
+		+ 'cycle declaration, which refills and can only be compared</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'
@@ -349,6 +392,8 @@ const CSS = `
 .mdamt{grid-area:amt;font:600 12px/1 var(--mono);color:var(--ink);
 	font-variant-numeric:tabular-nums;white-space:nowrap}
 .mdamt.hushed{color:var(--ink-faint);text-decoration:line-through;font-weight:500}
+.md.shut .mdsh,.md.shut .mdpat{color:var(--ink-faint);font-weight:400}
+.mdwho s{display:block;text-decoration:none;font-size:9.5px;color:var(--flag)}
 .mdcf{grid-area:cf;font-size:10px;color:var(--ink-faint);white-space:nowrap}
 .mdwho{grid-area:who;color:var(--ink-soft);word-break:break-word}
 .mdwho i{display:block;font-style:normal;font-size:9.5px;color:var(--ink-faint)}
