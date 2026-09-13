@@ -29,6 +29,7 @@
    ================================================================================================== */
 
 import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
+import {isBusinessDay, isHoliday} from './businessCalendar';
 
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
@@ -67,8 +68,14 @@ export function weightedMiddle(values, weights){
 
    `perCycle` is the number a forecast adds up, whatever the shape: for a lump it is the amount that
    lands on its day, for a rate it is the amount spent across the whole cycle. `kind` says which of
-   the two promises it is, because they are drawn differently and a caller must not confuse them. */
-export function modeAmount(mode, spine, cycle){
+   the two promises it is, because they are drawn differently and a caller must not confuse them.
+
+   THE SHAPE IS AN ARGUMENT BECAUSE THE ANSWER'S SHAPE IS NOT THE WORKING'S. A mode under
+   minLumpConfidence still holds its day in explainShape - that is the working, and the reading is
+   real - but determineShape answers it as a rate, and a page that read the working would offer a
+   date §3 has already refused. Earnin's phone reimbursement is exactly that mode. Pass the ANSWER's
+   shape; the mode's own is only the fallback for a caller that has nothing else. */
+export function modeAmount(mode, spine, shape){
 	const weights = weightsOf(spine);
 	const per = new Array(spine.length).fill(0);
 	const count = new Array(spine.length).fill(0);
@@ -79,7 +86,7 @@ export function modeAmount(mode, spine, cycle){
 
 	const landed = [];
 	per.forEach((x, i) => { if(count[i])landed.push({x: x, w: weights[i], i: i}); });
-	const lump = mode.shape === Shape.lump;
+	const lump = (shape || mode.shape) === Shape.lump;
 
 	const wTotal = weights.reduce((n, x) => n + x, 0) || 1;
 	const weightedSum = per.reduce((n, x, i) => n + x * weights[i], 0);
@@ -98,6 +105,27 @@ export function modeAmount(mode, spine, cycle){
 		total: per.reduce((n, x) => n + x, 0),
 		perCycleTotals: per
 	};
+}
+
+/* ---- WHICH DAYS OF A CYCLE THE BANKS WERE SHUT --------------------------------------------------
+   A PAYMENT THAT SLID IS NOT A PAYMENT THAT MOVED. §3 already undoes the bank's weekend to read a
+   rhythm; the lanes have to show the same calendar or a reader sees a mark two days off its day and
+   concludes the stream is unreliable rather than that the 15th was a Saturday.
+
+   HOLIDAYS AND WEEKENDS ARE TOLD APART because they read differently: a weekend is every week and a
+   reader stops seeing it, while a holiday is the explanation for the one month that looks wrong.
+
+   DRAWN ON EVERY LANE, ADJUSTED ON NONE OF THEM. A card is never snapped for closures - it posts
+   when the merchant presents it - but the calendar is still the calendar, and seeing that a card
+   charge landed on a Sunday is how a reader knows the rule is doing what it says. */
+export function closedDays(start, days, country){
+	const out = [];
+	for(let d = 0; d < days; d++){
+		const on = new Date(start.getTime() + d * ONE_DAY);
+		if(isBusinessDay(on, country))continue;
+		out.push({day: d, holiday: isHoliday(on, country)});
+	}
+	return out;
 }
 
 /* THE NEXT CYCLE, DRAWN. The lattice is walked one step past its end and every lump is placed on the
@@ -133,7 +161,7 @@ export function predictionRows(predictor, streamId, stream, opts){
 	const byAccount = new Map();
 	working.modes.forEach((w, i) => {
 		const a = answer.modes[i];
-		const amt = modeAmount(w, spine, cycle);
+		const amt = modeAmount(w, spine, a.shape);
 		const key = w.accountId;
 		if(!byAccount.has(key)){
 			/* THE ACCOUNT'S OWN NAME, NOT ITS HASH. A reader checking a forecast knows the account by
@@ -173,6 +201,8 @@ export function predictionRows(predictor, streamId, stream, opts){
 		const lanes = window.map(b => ({
 			start: b.start, end: b.end,
 			days: Math.max(1, Math.round((b.end.getTime() - b.start.getTime()) / ONE_DAY)),
+			closed: closedDays(b.start,
+				Math.max(1, Math.round((b.end.getTime() - b.start.getTime()) / ONE_DAY)), o.country),
 			predicted: false,
 			events: mine.reduce((out, m) => out.concat((m.rawLegs || [])
 				.filter(l => {
@@ -184,7 +214,9 @@ export function predictionRows(predictor, streamId, stream, opts){
 		}));
 
 		if(nxt)lanes.push({
-			start: nxt.start, end: nxt.end, days: nxt.days, predicted: true,
+			start: nxt.start, end: nxt.end, days: nxt.days,
+			closed: closedDays(nxt.start, nxt.days, o.country),
+			predicted: true,
 			events: mine.filter(m => m.kind === 'lump')
 				.reduce((out, m) => out.concat(m.days.map((d, k) => ({
 					day: d, amount: m.amount, label: m.label,

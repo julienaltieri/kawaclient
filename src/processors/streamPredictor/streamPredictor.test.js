@@ -1340,14 +1340,14 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const spine = streamSpine(w.modes, predictor.shapeOf(savings.id, savings).cycle,
 			predictor.analysisAnchor());
 		const lump = w.modes.find(x => x.shape === Shape.lump);
-		const amt = modeAmount(lump, spine, null);
+		const amt = modeAmount(lump, spine, Shape.lump);
 		expect(amt.kind).toBe('lump');
 		//the calendar reminder, not the mean of it and the two large transfers
 		expect(Math.abs(amt.perCycle)).toBe(6000);
 		expect(amt.cyclesObserved).toBe(spine.length);
 
 		const rate = w.modes.find(x => x.shape !== Shape.lump);
-		const rateAmt = modeAmount(rate, spine, null);
+		const rateAmt = modeAmount(rate, spine, Shape.spread);
 		expect(rateAmt.kind).toBe('rate');
 		//measured over every cycle of the stream, so it is smaller than its own-bucket average
 		expect(rateAmt.cyclesObserved).toBe(spine.length);
@@ -1420,6 +1420,21 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			expect(Object.prototype.hasOwnProperty.call(lane, k)).toBe(true));
 
 		const rows = predictionData(predictor);
+
+		/* THE PAGE MAY NOT PROMISE A DATE §3 REFUSED. modeAmount used to read the WORKING shape,
+		   where a mode under the confidence bar still holds its day, so Earnin's phone reimbursement
+		   was drawn as a dated claim while the answer called it a rate. The two counts are the same
+		   count and the suite says so. */
+		let named = 0;
+		predictor.reviewable().forEach(st => {
+			const ans = predictor.shapeOf(st.id, st);
+			if(!ans.cycle || /yearly/i.test(ans.cycle.name))return;
+			named += ans.modes.filter(m => m.shape === Shape.lump).length;
+		});
+		const drawn = rows.reduce((n, r) => n + r.accounts.reduce((k, a) =>
+			k + a.modes.filter(x => x.kind === 'lump').length, 0), 0);
+		expect(drawn).toBe(named);
+
 		const accounts = rows.reduce((n, r) => n + r.accounts.length, 0);
 		const lumps = rows.reduce((n, r) => n + r.accounts.reduce((k, a) =>
 			k + a.modes.filter(x => x.kind === 'lump').length, 0), 0);

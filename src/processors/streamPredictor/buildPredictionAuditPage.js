@@ -44,7 +44,8 @@ const patternOf = m => {
 export function predictionData(predictor){
 	const out = [];
 	predictor.reviewable().forEach(stream => {
-		const r = predictionRows(predictor, stream.id, stream);
+		const r = predictionRows(predictor, stream.id, stream,
+			{country: predictor.userCountry()});
 		if(!r || !r.accounts.length)return;
 		/* A STREAM STILL YEARLY AFTER §2 HAS NO LANES WORTH DRAWING - one cycle is the whole window,
 		   so there is no "past three" and nothing to compare a claim against. */
@@ -78,6 +79,7 @@ export function predictionData(predictor){
 					to: iso(l.end),
 					days: l.days,
 					predicted: !!l.predicted,
+					closed: l.closed || [],
 					rate: l.rate === undefined ? null : l.rate,
 					rateModes: l.rateModes || 0,
 					events: l.events.map(e => ({
@@ -88,7 +90,14 @@ export function predictionData(predictor){
 			}))
 		});
 	});
-	return out.sort((a, b) => (String(a.name) < String(b.name) ? -1 : 1));
+	/* THE MOST PREDICTABLE STREAM LEADS. The earlier benches led with the least, because the argument
+	   was about what the reader disagreed with; this page makes a CLAIM, and a claim is checked by
+	   reading the ones it should obviously get right first. A stream whose rent lands on the 11th
+	   every month either shows that in the lanes or the page is wrong about something basic. */
+	const dated = r => r.accounts.reduce((n, a) => n + a.modes
+		.filter(m => m.kind === 'lump').reduce((k, m) => k + m.moneyShare, 0), 0);
+	return out.sort((a, b) => dated(b) - dated(a)
+		|| (String(a.name) < String(b.name) ? -1 : 1));
 }
 
 /* THE SHELL BINDS ITS TICK BOXES ONCE AT LOAD, so every stream's frame is rendered here and only
@@ -168,7 +177,15 @@ function scaleOf(acc){
 }
 
 function laneHtml(lane, scale){
-	var marks = "", i, e, left, h, cls;
+	var marks = "", i, e, left, h, cls, w = 100 / lane.days;
+
+	/* THE SHUT DAYS ARE THE LANE'S GROUND, drawn behind everything, so a mark sitting on one reads
+	   as an explanation rather than as a mark in the wrong place. */
+	var shut = "";
+	for(i = 0; i < lane.closed.length; i++)
+		shut = shut + "<span class='sd" + (lane.closed[i].holiday ? " hol" : "") + "'"
+			+ " style='left:" + (lane.closed[i].day * w) + "%;width:" + w + "%'></span>";
+
 	for(i = 0; i < lane.events.length; i++){
 		e = lane.events[i];
 		left = Math.max(0, Math.min(100, (e.day / lane.days) * 100));
@@ -187,7 +204,7 @@ function laneHtml(lane, scale){
 	return "<div class='lane" + (lane.predicted ? " next" : "") + "'>"
 		+ "<div class='lb'>" + esc2(lane.from) + " " + DOTCH + " " + esc2(lane.to)
 			+ (lane.predicted ? "<b>predicted</b>" : "") + "</div>"
-		+ "<div class='track'>" + band + marks + "</div>"
+		+ "<div class='track'>" + shut + band + marks + "</div>"
 		+ "</div>";
 }
 
@@ -253,6 +270,8 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 		+ 'axis and one scale</span>'
 	+ '<span class="lg">a mark is a dated claim; a band is money with no date, spread across the '
 		+ 'cycle</span>'
+	+ '<span class="lg">shaded columns are days the banks were shut - grey for a weekend, amber for '
+		+ 'a holiday</span>'
 	+ '<span class="lg">one section per ACCOUNT - a card settles once a month, a current account '
 		+ 'moves the day the money does</span>'
 	+ '<details class="more"><summary>more</summary>'
@@ -263,6 +282,10 @@ const LEGEND = '<span class="lg">three cycles of what happened, then the one bei
 			+ 'moved in</span>'
 		+ '<span class="lg">"declared yearly" = §2 read a shorter rhythm off the ledger and the '
 			+ 'lanes are those cycles</span>'
+		+ '<span class="lg">closures are drawn on every lane and applied to none: a card posts when '
+			+ 'the merchant presents it, so only a real-time account is ever read around them</span>'
+		+ '<span class="lg">most predictable first - a stream that should obviously be right is '
+			+ 'where a wrong page shows itself</span>'
 	+ '</details>';
 
 const CSS = `
@@ -306,7 +329,10 @@ const CSS = `
 .lane{margin-bottom:2px}
 .lb{font:400 9px/1.3 var(--mono);color:var(--ink-faint);display:flex;gap:6px}
 .lb b{color:var(--accent);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
-.track{position:relative;height:34px;margin-top:2px;background:var(--sunk);border-radius:3px}
+.track{position:relative;height:34px;margin-top:2px;background:var(--sunk);border-radius:3px;
+	overflow:hidden}
+.sd{position:absolute;top:0;bottom:0;background:var(--rule);opacity:.55}
+.sd.hol{background:var(--flag);opacity:.28}
 .lane.next .track{background:transparent;border:1px dashed var(--accent-soft)}
 .mk{position:absolute;bottom:0;width:5px;margin-left:-2px;border-radius:2px 2px 0 0;
 	background:var(--realtime)}
