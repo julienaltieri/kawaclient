@@ -28,7 +28,7 @@
    module so it can be tested and so the page stays a renderer rather than a calculator.
    ================================================================================================== */
 
-import {cycleBuckets, dayInCycle, weightsOf, Shape} from './shapeDetermination';
+import {cycleBuckets, dayInCycle, weightsOf, lumpDays, Shape} from './shapeDetermination';
 import {isBusinessDay, isHoliday, settleDate} from './businessCalendar';
 import {AMOUNT_CONFIG} from './amountConfig';
 import {budgetPosition, breaksPlan, rebaseline, plannedStart, ENVELOPE}
@@ -222,11 +222,24 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 		const carries = !!planned && (w.rawLegs || [])
 			.some(l => l && l.transactionId === planned.transactionId);
 
+		/* ---- A PLANNED CLAIM STILL NEEDS A DAY ----------------------------------------------
+		   AN AMOUNT WITH NOWHERE TO PUT IT IS NOT A FORECAST. The declaration says how much and how
+		   often; it says nothing about when in the cycle, and §3 could not read a day from two
+		   movements. So the day falls back to the middle of the days this mode has actually used -
+		   the same weighted middle every other lump gets, from the same function, so a planned day
+		   and a measured one are not two different kinds of number.
+
+		   THE WOBBLE TRAVELS WITH IT, and on thin evidence it will be wide. That is the honest
+		   shape of the claim: Day Care Eleonore's two cheques landed on day 22 and day 14, so the
+		   middle is day 18 and it is worth eight days of doubt. */
+		const plannedAt = (carries && amt.kind === 'unknown' && cycle)
+			? lumpDays(cycleBuckets(w.rawLegs, cycle, anchor, o.taper), 1)[0] : null;
+
 		byAccount.get(key).modes.push({
 			label: w.label,
 			shape: a.shape,
-			days: a.days || [],
-			wobble: w.wobble || [],
+			days: plannedAt ? [plannedAt.day] : (a.days || []),
+			wobble: plannedAt ? [plannedAt.wobble] : (w.wobble || []),
 			confidence: a.confidence === undefined ? null : a.confidence,
 			moneyShare: a.moneyShare,
 			direction: w.direction,
@@ -297,7 +310,9 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			start: nxt.start, end: nxt.end, days: nxt.days,
 			closed: closedDays(nxt.start, nxt.days, o.country),
 			predicted: true,
-			events: mine.filter(m => m.kind === 'lump')
+			/* A PLANNED CLAIM IS DRAWN LIKE A LUMP, because it is one: an amount on a day. Where it
+			   differs is the source of both numbers, and the mode says so. */
+			events: mine.filter(m => m.kind === 'lump' || m.kind === 'planned')
 				.reduce((out, m) => out.concat(m.days.map((d, k) => {
 					const due = new Date(nxt.start.getTime() + d * ONE_DAY);
 					const rule = m.rail ? m.rail.closures : null;

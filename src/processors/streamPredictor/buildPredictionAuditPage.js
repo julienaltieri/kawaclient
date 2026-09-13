@@ -36,8 +36,10 @@ const iso = d => {
 
 /* WHAT THE MODE PROMISES, in the vocabulary its shape uses. */
 const patternOf = m => {
-	if(m.shape !== Shape.lump)return 'a rate ' + DOT + ' no day';
-	return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : ''))
+	/* THE DAYS DECIDE, NOT THE SHAPE NAME. A planned mode is `unknown` to §3 and still carries a day,
+	   because §4 fell back to the middle of the days it has used. */
+	if(!m.days || !m.days.length)return 'a rate ' + DOT + ' no day';
+	return m.days.map((d, i) => 'd' + d + (m.wobble && m.wobble[i] ? '±' + m.wobble[i] : ''))
 		.join(' ' + DOT + ' ');
 };
 
@@ -273,8 +275,9 @@ function modeHtml(m){
 	/* A DECLARATION THE LEDGER AGREED WITH. Worth saying out loud, because the number came from the
 	   user rather than from the ledger and a reader must not mistake it for a measurement. */
 	var plan = m.kind === "planned"
-		? "declared " + esc2(m.plannedAt) + " and paid as declared "
+		? "amount declared " + esc2(m.plannedAt) + " and paid as declared "
 			+ DOTCH + " seen " + m.plannedSeen + (m.plannedSeen === 1 ? " time" : " times")
+			+ DOTCH + " day is the middle of the ones it has used"
 		: "";
 	return "<div class='md" + (m.kind === "lump" ? "" : " rate")
 			+ (quiet ? " shut" : "") + "'>"
@@ -282,7 +285,7 @@ function modeHtml(m){
 		+ "<span class='mdpat'>" + esc2(m.pattern) + "</span>"
 		+ "<b class='mdamt" + (quiet ? " hushed" : "") + "'>"
 			+ (quiet ? money(m.capped ? m.cappedAmount : m.observed) : money(m.amount))
-			+ (m.kind === "lump" ? "" : " / cycle") + "</b>"
+			+ ((m.kind === "lump" || m.kind === "planned") ? "" : " / cycle") + "</b>"
 		+ "<span class='mdcf'>" + (m.confidence === null ? DOTCH
 			: Math.round(m.confidence * 100) + "% sure") + "</span>"
 		+ "<div class='mdwho'>" + esc2(m.label) + "<i>" + m.legs + " movements "

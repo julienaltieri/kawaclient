@@ -1793,6 +1793,20 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(claim.amount).toBe(-2400);
 		expect(claim.planned.seen).toBe(2);
 
+		/* AND IT NEEDS A DAY, OR IT IS AN AMOUNT WITH NOWHERE TO PUT IT. The declaration says how
+		   much and how often and nothing about when, so the day falls back to the middle of the days
+		   this mode has used - the same weighted middle every other lump gets. The two cheques
+		   landed on day 22 and day 14, so the middle is day 18 and it is worth four days of doubt. */
+		expect(claim.days).toEqual([18]);
+		expect(claim.wobble).toEqual([4]);
+		//and it is drawn as a mark on that day, not as a rate across the cycle
+		const lane = r.accounts[0].lanes[r.accounts[0].lanes.length - 1];
+		expect(lane.predicted).toBe(true);
+		expect(lane.events.length).toBe(1);
+		expect(lane.events[0].day).toBe(18);
+		expect(Math.round(lane.events[0].amount)).toBe(-2400);
+		expect(lane.rate || 0).toBe(0);
+
 		//A DECLARATION WRITTEN AFTER THE MONEY MOVED CORROBORATES NOTHING
 		const backdated = Object.assign({}, st, {expAmountHistory:
 			[{amount: -2400, startDate: '2027-01-01T00:00:00.000Z'}]});
