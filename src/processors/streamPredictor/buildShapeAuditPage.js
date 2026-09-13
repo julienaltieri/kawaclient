@@ -64,15 +64,11 @@ const histogram = (bins, days) => {
 		+ '</span>';
 };
 
-const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + '%';
-
-/* THE COLUMN IS FOCUS, NOT CONFIDENCE, and the difference is the point. Focus is how tightly the
-   movements land on one day - high for a lump, near zero for a spread. Labelling it "confidence"
-   made the clearest row on the page, groceries at 0.11, read as the least trustworthy one: a spread
-   is DEFINED by having no focus, so a low number there is the evidence for the answer rather than
-   doubt about it. */
-const focusCls = v => v === null || v === undefined ? 'cf none'
-	: (v >= 0.9 ? 'cf full' : v >= SHAPE_CONFIG.minConcentration ? 'cf part' : 'cf low');
+/* A SCORE IS COLOURED BY HOW GOOD IT IS, not by its raw value, because the four candidates do not
+   share a scale: a p-value of 0.001 is excellent and a tightness of 0.001 is hopeless. Each reading
+   carries a normalised 0..1 `v` for exactly this. */
+const scoreCls = sc => !sc ? 'm-sc none'
+	: (sc.v >= 0.8 ? 'm-sc full' : sc.v >= 0.5 ? 'm-sc part' : 'm-sc low');
 
 /* A GRID, NOT A TABLE. Seven table columns do not fit a phone, and the three that fell off the
    right edge - the histogram, the confidence and the tick - are the three the review is done with.
@@ -81,15 +77,16 @@ const focusCls = v => v === null || v === undefined ? 'cf none'
 
    THE FOUR FACTS SIT IN ONE CELL that is itself a grid, so they line up column-wise across rows on a
    wide screen and become a wrapping line on a phone. */
-const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-search="' + esc(r.search) + '">'
+const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-id="' + esc(r.id) + '"'
+	+ ' data-search="' + esc(r.search) + '">'
 	+ '<div class="c-nm"><b>' + esc(r.name) + '</b>'
 		+ (r.acct ? '<span class="acct">' + esc(r.acct) + '</span>' : '') + '</div>'
 	+ '<div class="c-meta">'
 		+ '<span class="m-cy">' + esc(r.cycle) + '</span>'
 		+ '<span class="m-sh ' + esc(r.shapeCls) + '">' + esc(r.shape) + '</span>'
 		+ '<span class="m-dy">' + esc(r.days) + '</span>'
-		+ '<span class="m-cf ' + esc(r.confCls) + '">' + esc(r.conf) + '</span>'
-		+ '<span class="m-tg ' + esc(r.tightCls) + '">' + esc(r.tight) + '</span>'
+		+ '<span class="m-sc ' + esc(scoreCls(r.scores.tight)) + '" data-sc="1">'
+			+ esc(r.scores.tight ? r.scores.tight.t : DASH) + '</span>'
 	+ '</div>'
 	+ '<div class="c-hi">' + r.hist + '</div>'
 	+ '<div class="c-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
@@ -118,12 +115,25 @@ export function shapeRows(predictor){
 				shapeCls: a.shape ? ('s-' + a.shape) : 's-none',
 				reason: a.reason || '',
 				days: shapeText(a),
-				conf: pct(a.concentration),
-				confCls: focusCls(a.concentration),
-				tight: (a.tightness === null || a.tightness === undefined) ? DASH
-					: Math.round(a.tightness * 100) + '% ' + DOT + ' '
-						+ a.scatter.toFixed(1) + 'd off',
-				tightCls: focusCls(a.tightness),
+				/* FOUR READINGS TRAVEL WITH EVERY ROW and the page shows one of them at a time. The
+				   selector rewrites the cell rather than the page being rebuilt, so switching is
+				   instant and the comparison is made on the same rows in the same order. */
+				scores: {
+					angle: a.concentration === null ? null
+						: {v: a.concentration, t: Math.round(a.concentration * 100) + '%', good: 1},
+					tight: (a.tightness === null || a.tightness === undefined) ? null
+						: {v: a.tightness, good: 1,
+							t: Math.round(a.tightness * 100) + '% ' + DOT + ' '
+								+ a.scatter.toFixed(1) + 'd off'},
+					spread: !a.sd ? null
+						: {v: 1 - Math.min(1, a.sd.share / 0.29), good: 1,
+							t: (a.sd.share * 100).toFixed(1) + '% of cycle ' + DOT + ' '
+								+ a.sd.days.toFixed(1) + 'd'},
+					test: !a.test ? null
+						: {v: 1 - Math.min(1, a.test.p / 0.05), good: 1,
+							t: 'p ' + (a.test.p < 0.001 ? '<.001' : a.test.p.toFixed(3))
+								+ ' ' + DOT + ' Z ' + a.test.z.toFixed(1)}
+				},
 				confidence: a.confidence,
 				concentration: a.concentration,
 				tightness: a.tightness,
@@ -180,10 +190,18 @@ export function buildShapeAuditPage(predictor, meta){
 	const head = '<div class="srow shead">'
 		+ '<div class="c-nm">stream</div>'
 		+ '<div class="c-meta"><span>cycle</span><span>shape</span><span>days</span>'
-			+ '<span>angle</span><span>tight</span></div>'
+			+ '<span id="scname">tight</span></div>'
 		+ '<div class="c-hi">every cycle, laid on top of each other</div>'
 		+ '<div class="c-ck">ok</div></div>';
-	const table = '<section class="shp">' + head
+	const picker = '<div class="picker">'
+		+ SCORES.map(o => '<label><input type="radio" name="score" value="' + esc(o.key) + '"'
+			+ (o.key === 'tight' ? ' checked' : '') + '><span>' + esc(o.label) + '</span></label>')
+			.join('')
+		+ '</div>';
+	const blob = {};
+	ordered.forEach(r => { blob[r.id] = r.scores; });
+
+	const table = '<section class="shp">' + picker + head
 		+ '<div id="shrows">' + ordered.map(row).join('') + '</div></section>';
 
 	return renderAuditPage({
@@ -195,7 +213,7 @@ export function buildShapeAuditPage(predictor, meta){
 		extraCss: CSS,
 		legendHtml: LEGEND,
 		panelHtml: table,
-		extraScript: SCRIPT,
+		extraScript: 'var SCORES = ' + JSON.stringify(blob) + ';' + SCRIPT,
 		metaLine: [
 			{label: 'rows', value: rows.length},
 			{label: 'shaped', value: shaped.length},
@@ -242,9 +260,18 @@ const CSS = `
 .c-nm b{font-weight:600;color:var(--ink);word-break:break-word}
 .acct{display:block;font-size:10px;color:var(--ink-faint);word-break:break-word}
 
-.c-meta{display:grid;grid-template-columns:64px 66px 82px 42px 96px;gap:6px;align-items:center;
+.c-meta{display:grid;grid-template-columns:64px 66px 88px 1fr;gap:8px;align-items:center;
 	min-width:0}
-.m-tg{font-size:11px;white-space:nowrap}
+.m-sc{font-size:11px;white-space:nowrap}
+.m-sc.full{color:var(--realtime);font-weight:600}
+.m-sc.part{color:var(--ink-soft)}
+.m-sc.low{color:var(--ink-faint)}
+.m-sc.none{color:var(--ink-faint)}
+.picker{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 6px}
+.picker label{display:inline-flex;align-items:center;gap:4px;font:400 11px/1 var(--sans);
+	color:var(--ink-soft);background:var(--paper);border:1px solid var(--rule);border-radius:5px;
+	padding:4px 8px;cursor:pointer;white-space:nowrap}
+.picker input{margin:0;width:12px;height:12px;accent-color:var(--accent)}
 .m-cy{color:var(--ink-faint)}
 .m-sh{font-weight:600;white-space:nowrap}
 .s-lump{color:var(--realtime)}
@@ -306,7 +333,6 @@ const CSS = `
 	.c-meta{grid-area:meta;display:flex;flex-wrap:wrap;gap:4px 10px}
 	.m-dy{overflow:visible}
 	.m-cf{text-align:left}
-	.m-tg{font-size:11px}
 	.c-hi{grid-area:hi}
 	.hw{height:40px}
 	.hs b{font-size:7.5px}
@@ -315,8 +341,43 @@ const CSS = `
 
 /* THE SEARCH BOX FILTERS THE TABLE. The shell filters cards and this page has none, so the filter
    would otherwise be visibly present and do nothing. */
+/* THE FOUR CANDIDATES, AND THE ONE WORD EACH IS DESCRIBED BY. Chosen on the page rather than in the
+   code because none of them is obviously right and the argument is settled by looking. */
+const SCORES = [
+	{key: 'tight', label: 'tight (days off)'},
+	{key: 'spread', label: 'spread (sd / cycle)'},
+	{key: 'angle', label: 'angle'},
+	{key: 'test', label: 'test (p)'}
+];
+
 const SCRIPT = `
 var q = document.getElementById("q");
+var scname = document.getElementById("scname");
+var LABEL = {tight: "tight", spread: "spread", angle: "angle", test: "p-value"};
+
+function cls(sc){
+	if(!sc)return "m-sc none";
+	return sc.v >= 0.8 ? "m-sc full" : sc.v >= 0.5 ? "m-sc part" : "m-sc low";
+}
+
+function drawScores(){
+	var picked = document.querySelector("input[name='score']:checked");
+	var key = picked ? picked.value : "tight";
+	if(scname)scname.textContent = LABEL[key] || key;
+	[].slice.call(document.querySelectorAll("#shrows .srow")).forEach(function(tr){
+		var cell = tr.querySelector("[data-sc]");
+		if(!cell)return;
+		var all = SCORES[tr.getAttribute("data-id")];
+		var sc = all ? all[key] : null;
+		cell.textContent = sc ? sc.t : String.fromCharCode(8212);
+		cell.className = cls(sc);
+	});
+}
+[].slice.call(document.querySelectorAll(".picker input")).forEach(function(el){
+	el.addEventListener("change", drawScores);
+});
+drawScores();
+
 var rows = [].slice.call(document.querySelectorAll("#shrows .srow"));
 function filterRows(){
 	var t = q ? q.value.trim().toLowerCase() : "";

@@ -301,6 +301,43 @@ export function tightness(bins, lumps){
 	return t < 0 ? 0 : t > 1 ? 1 : t;
 }
 
+/* ---- TWO MORE READINGS OF THE SAME BARS, FOR COMPARISON ----------------------------------------
+   None of these decides anything yet. They are on the audit page behind a selector so the one that
+   matches what a person sees can be chosen on evidence rather than argued about.
+
+   SPREAD: the standard deviation of the movements' days, as a fraction of the cycle. The usual
+   circular form - sqrt(-2 ln R) in radians, converted to days. It is the plainest statement of the
+   question: 0.036 means the movements sit within about three and a half percent of the cycle, which
+   on a month is a day. It separates the top end where the angle cannot: Internet 0.025 against
+   Utilities 0.046, where the angle reads 0.99 against 0.96.
+
+   TEST: the Rayleigh test, which asks whether the movements are distinguishable from landing
+   ANYWHERE in the cycle. Z = n x R squared, and p is the chance of seeing a clustering this tight
+   from a stream with no day at all. It is the only one of the four that accounts for how many
+   movements there are, so it needs no minimum-movement gate: Shopping's four movements score a
+   respectable angle of 0.76 and a p of 0.094, which is a fair way of saying four is not enough. */
+export function circularSd(bins, lumps){
+	const days = bins.length;
+	const k = Math.max(1, lumps || 1);
+	const R = concentration(bins, k);
+	if(R === null || !days)return null;
+	const radians = Math.sqrt(-2 * Math.log(Math.max(R, 1e-9)));
+	const inDays = (days / (k * 2 * Math.PI)) * radians;
+	//as a share of one cluster's worth of cycle, so cycle length and cluster count drop out
+	return {days: inDays, share: inDays / (days / k)};
+}
+
+export function rayleigh(bins, lumps){
+	const k = Math.max(1, lumps || 1);
+	const R = concentration(bins, k);
+	const n = bins.reduce((t, x) => t + x, 0);
+	if(R === null || !n)return null;
+	const z = n * R * R;
+	//the standard small-sample correction; clamped because it can overshoot at tiny n
+	const p = Math.exp(-z) * (1 + (2 * z - z * z) / (4 * n));
+	return {z: z, p: p < 0 ? 0 : p > 1 ? 1 : p};
+}
+
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
    THE COUNT ALONE DOES NOT NAME THE SHAPE, and that was the defect this replaces. Reading the shape
    off the typical count and a cutoff put groceries - four or five shops a week, every week, the
@@ -360,7 +397,9 @@ export function classifyShape(counts, bins, cfg){
 		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump,
 		scatter: dayScatter(bins || [], lumps),
 		cycleDays: (bins || []).length,
-		tightness: tightness(bins || [], lumps)};
+		tightness: tightness(bins || [], lumps),
+		sd: circularSd(bins || [], lumps),
+		test: rayleigh(bins || [], lumps)};
 
 	//IN FOCUS: the movements land on a day, or on k days. That is a lump, or k of them.
 	if(focus.lumps === 1)return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
@@ -405,6 +444,8 @@ export function explainShape(legs, partition, cycle, anchor){
 			lumps: verdict.lumps === undefined ? null : verdict.lumps,
 			tightness: verdict.tightness === undefined ? null : verdict.tightness,
 			scatter: verdict.scatter === undefined ? null : verdict.scatter,
+			sd: verdict.sd === undefined ? null : verdict.sd,
+			test: verdict.test === undefined ? null : verdict.test,
 			cycleDays: verdict.cycleDays === undefined ? null : verdict.cycleDays,
 			cyclesObserved: buckets.length,
 			eventsPerCycle: counts,
