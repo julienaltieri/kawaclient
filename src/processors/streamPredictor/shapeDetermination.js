@@ -710,6 +710,36 @@ export function patternWithExceptions(legs, cycle, anchor, cfg){
    it is the baseline, which is a rate rather than a date. */
 const mergeLegs = (a, b) => (a || []).concat(b || []);
 
+/* WHICH WAY THE MONEY WENT. The sign is the whole of it: a stream's legs are already signed against
+   the account they moved through, so a deposit and a withdrawal on the same account, under nearly the
+   same payee name, are told apart without knowing anything about either. */
+export const directionOf = leg => (leg && leg.amount < 0) ? 'out' : 'in';
+
+/* A PAYEE IS SPLIT BEFORE IT IS MEASURED, biggest side first. Two directions under one name are two
+   facts - the savings deposit and the pull-back that funds a large expense - and measuring them
+   together lets the second fill a cycle the first missed. */
+export function byDirection(legs){
+	const parts = [];
+	(legs || []).forEach(l => {
+		const d = directionOf(l);
+		const hit = parts.find(p => p.direction === d);
+		if(hit)hit.legs.push(l);
+		else parts.push({direction: d, legs: [l]});
+	});
+	return parts.sort((a, b) => b.legs.length - a.legs.length
+		|| (a.direction < b.direction ? -1 : 1));
+}
+
+/* WHERE A SET OF MOVEMENTS MOSTLY HAPPENED, counted in transactions rather than money - one large
+   payment from the wrong account does not relocate a habit, and a majority of small ones does. */
+export function dominantAccount(legs){
+	const n = {};
+	(legs || []).forEach(l => { if(l)n[l.accountId] = (n[l.accountId] || 0) + 1; });
+	const ids = Object.keys(n).sort((a, b) => n[b] - n[a] || (a < b ? -1 : 1));
+	if(!ids.length)return {accountId: null, share: 0};
+	return {accountId: ids[0], share: n[ids[0]] / (legs || []).length};
+}
+
 function remeasure(legs, cycle, anchor, opts){
 	const o = opts || {};
 	const theories = shapeTheories(legs, cycle, anchor,
@@ -725,7 +755,8 @@ function remeasure(legs, cycle, anchor, opts){
 		fit: (verdict.fit === undefined || verdict.fit === null) ? 0 : verdict.fit};
 }
 
-export function collapseModes(modes, cycle, anchor, opts){
+export function collapseModes(modes, cycle, anchor, opts, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
 	const o = opts || {};
 	if(!cycle)return {modes: modes, gathered: null};
 
@@ -741,9 +772,21 @@ export function collapseModes(modes, cycle, anchor, opts){
 	loose.forEach(stray => {
 		let best = null;
 		patterned.forEach(host => {
-			if(host.accountId !== stray.accountId)return;
-			const merged = remeasure(mergeLegs(host.rawLegs, stray.rawLegs), cycle, anchor,
-				{country: o.country, realTime: host.accountType === AccountKind.realTime});
+			/* A REVERSAL IS NOT A LATE PAYMENT. Money out cannot complete a rhythm of money in, so
+			   direction is checked before anything is measured - the arithmetic would otherwise be
+			   happy to let a withdrawal fill the cycle a deposit missed. */
+			if(host.direction !== stray.direction)return;
+
+			/* AND A PATTERN CONCLUDES ON ONE ACCOUNT. Crossing is allowed only where the result is
+			   plainly one account's habit with a few movements made elsewhere; the merged mode is
+			   then reported on that account, and measured with THAT account's posting behaviour. */
+			const legs = mergeLegs(host.rawLegs, stray.rawLegs);
+			const dom = dominantAccount(legs);
+			if(dom.share < c.minDominantAccountShare)return;
+			const domType = dom.accountId === host.accountId ? host.accountType
+				: dom.accountId === stray.accountId ? stray.accountType : host.accountType;
+			const merged = remeasure(legs, cycle, anchor,
+				{country: o.country, realTime: domType === AccountKind.realTime});
 			const lumpy = merged.verdict.shape === Shape.lump
 				|| merged.verdict.shape === Shape.multiLump;
 			/* NO BAR - A COMPARISON. The question is whether adding this made the host better or
@@ -753,13 +796,17 @@ export function collapseModes(modes, cycle, anchor, opts){
 			if(!lumpy || merged.fit < host.confidence)return;
 			if(!best || merged.fit > best.fit
 				|| (merged.fit === best.fit && host.moneyShare > best.host.moneyShare))
-				best = {host: host, merged: merged, fit: merged.fit};
+				best = {host: host, merged: merged, fit: merged.fit,
+					accountId: dom.accountId, accountType: domType};
 		});
 		if(!best){ leftover.push(stray); return; }
 
 		const host = best.host, mg = best.merged;
 		host.rawLegs = mergeLegs(host.rawLegs, stray.rawLegs);
 		host.legs = host.rawLegs.length;
+		//the pattern concludes on the account it mostly happened on, which may not be the host's
+		host.accountId = best.accountId;
+		host.accountType = best.accountType;
 		host.money += stray.money;
 		host.moneyShare += stray.moneyShare;
 		host.absorbed = (host.absorbed || []).concat([stray.label + ' x' + stray.legs]);
@@ -774,14 +821,17 @@ export function collapseModes(modes, cycle, anchor, opts){
 	});
 
 	/* EVERYTHING STILL LOOSE BECOMES ONE MODE. Per account, because a shape is per account and a
-	   rhythm on a card is not a rhythm on a current account. */
+	   rhythm on a card is not a rhythm on a current account - and per direction, because gathering
+	   deposits and withdrawals into one row would hide the two behind their net. */
 	const gathered = [];
 	const byAccount = {};
 	leftover.forEach(m => {
-		(byAccount[m.accountId] = byAccount[m.accountId] || []).push(m);
+		const k = m.accountId + '|' + m.direction;
+		(byAccount[k] = byAccount[k] || []).push(m);
 	});
-	Object.keys(byAccount).forEach(id => {
-		const group = byAccount[id];
+	Object.keys(byAccount).forEach(k => {
+		const group = byAccount[k];
+		const id = group[0].accountId;
 		if(group.length < 2){ gathered.push(group[0]); return; }
 		const legs = group.reduce((acc, m) => mergeLegs(acc, m.rawLegs), []);
 		const realTime = group[0].accountType === AccountKind.realTime;
@@ -793,6 +843,7 @@ export function collapseModes(modes, cycle, anchor, opts){
 			key: '(gathered)',
 			accountId: id,
 			accountType: group[0].accountType,
+			direction: group[0].direction,
 			gathered: group.map(m => m.label),
 			legs: legs.length,
 			rawLegs: legs,
@@ -858,7 +909,13 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 		if(!onAccount.length)return;
 		const realTime = alloc.accountType === AccountKind.realTime;
 
-		merchantGroups(onAccount).forEach(group => {
+		/* A PAYEE IS NOT A MODE UNTIL ITS DIRECTION IS SETTLED. Money in and money out under the same
+		   name are two facts, and one cannot complete the other's cycle. */
+		const groups = [];
+		merchantGroups(onAccount).forEach(g => byDirection(g.legs).forEach(part => groups.push(
+			{key: g.key + ' ' + part.direction, direction: part.direction, legs: part.legs})));
+
+		groups.forEach(group => {
 			const mine = group.legs;
 			/* EVERY PAYEE IS A MODE, INCLUDING THE ONES TOO SMALL TO SHAPE. A payee with two
 			   movements is not a pattern, and it is also not nothing - it is a share of the money
@@ -903,6 +960,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				rawLegs: mine,
 				accountId: alloc.accountId,
 				accountType: alloc.accountType || null,
+				direction: group.direction,
 				legs: mine.length,
 				shape: verdict.shape,
 				reason: verdict.reason || null,

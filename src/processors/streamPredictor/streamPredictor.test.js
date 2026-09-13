@@ -29,7 +29,8 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 	from './cycleDecision';
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
-import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape}
+import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape,
+	directionOf, byDirection, dominantAccount}
 	from './shapeDetermination';
 import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
@@ -1036,6 +1037,74 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const m = predictor.modesOf(go.id, go);
 		m.modes.forEach(x => {
 			if(x.shape === Shape.spread)expect(x.exceptions || 0).toBe(0);
+		});
+	});
+
+	/* ---- A REVERSAL IS NOT A LATE PAYMENT ----------------------------------------------------------
+	   THE SAVINGS STREAM CARRIES BOTH DIRECTIONS UNDER ALMOST THE SAME NAME. Julien moves money to
+	   savings on the 15th and occasionally pulls some back to fund something large. The pull-backs
+	   land on no day, which makes them a patternless stray sitting next to a rhythm the collapse is
+	   allowed to offer them to - and absorbing one would let a withdrawal fill a cycle the deposit
+	   missed and count as the deposit having happened.
+
+	   SO DIRECTION PARTITIONS A MODE BEFORE ANYTHING IS MEASURED and no merge crosses it. */
+	test('money out never joins a rhythm of money in', () => {
+		expect(directionOf({amount: -40})).toBe('out');
+		expect(directionOf({amount: 40})).toBe('in');
+		const parts = byDirection([{amount: -1}, {amount: 2}, {amount: -3}, {amount: -4}]);
+		expect(parts.length).toBe(2);
+		//biggest side first, so the mode a reader meets first is the one most of the money took
+		expect(parts[0].direction).toBe('out');
+		expect(parts[0].legs.length).toBe(3);
+
+		//no mode anywhere in the portfolio mixes the two, however it was built or merged
+		let mixed = 0, modes = 0;
+		predictor.reviewable().forEach(stream => {
+			const m = predictor.modesOf(stream.id, stream);
+			if(!m.cycle || !m.modes.length)return;
+			m.modes.forEach(x => {
+				modes++;
+				const dirs = {};
+				(x.rawLegs || []).forEach(l => { dirs[directionOf(l)] = true; });
+				if(Object.keys(dirs).length > 1)mixed++;
+			});
+		});
+		expect(modes).toBeGreaterThan(20);
+		expect(mixed).toBe(0);
+
+		//and Savings keeps its two pull-back payees out of the two deposit rhythms
+		const savings = predictor.reviewable().find(x => x.name === 'Savings');
+		const sm = predictor.modesOf(savings.id, savings);
+		expect(sm.modes.filter(x => x.shape === Shape.lump).length).toBe(2);
+		expect(sm.modes.filter(x => !x.shape).length).toBe(2);
+		sm.modes.filter(x => x.shape).forEach(x => expect(x.absorbed).toBe(undefined));
+	});
+
+	/* ---- A PATTERN CONCLUDES ON ONE ACCOUNT --------------------------------------------------------
+	   A CARD SETTLES ONCE A MONTH AND A CURRENT ACCOUNT MOVES THE DAY THE MONEY DOES, so a rhythm read
+	   across the two is two different forecasts. The collapse may cross accounts only where the result
+	   is plainly one account's habit with a few movements made elsewhere, and the merged mode is then
+	   reported on - and measured with the posting behaviour of - that account.
+
+	   COUNTED IN TRANSACTIONS, NOT MONEY: one large payment from the wrong account does not relocate a
+	   habit, and a majority of small ones does.
+
+	   ON THIS LEDGER THE GATE NEVER FIRES - no merge crosses an account at all - so the assertion is
+	   that every mode is where it says it is, which is the invariant the rule exists to keep. */
+	test('a merged mode is reported on the account it mostly happened on', () => {
+		expect(dominantAccount([{accountId: 'a'}, {accountId: 'a'}, {accountId: 'b'}]))
+			.toEqual({accountId: 'a', share: 2 / 3});
+		expect(dominantAccount([]).accountId).toBe(null);
+
+		predictor.reviewable().forEach(stream => {
+			const m = predictor.modesOf(stream.id, stream);
+			if(!m.cycle || !m.modes.length)return;
+			m.modes.forEach(x => {
+				const dom = dominantAccount(x.rawLegs || []);
+				if(!dom.accountId)return;
+				expect(dom.accountId).toBe(x.accountId);
+				expect(dom.share).toBeGreaterThanOrEqual(SHAPE_CONFIG.minDominantAccountShare);
+			});
 		});
 	});
 

@@ -7,24 +7,31 @@
    plus disability deposits. "Gas" is twelve fill-ups at eight stations and there is no pattern in it
    at all - which is itself the answer, and a useful one.
 
-   SO A STREAM IS A LIST OF MODES, ONE PER PAYEE, and each mode carries its own shape, its own days,
-   its own confidence, and its own share of the money. A stream may be entirely predictable, entirely
-   not, or - most often - some of each.
+   THE PAGE READS AS A BAR CHART, ONE BAR PER MODE, because the question it answers is "how much of
+   this stream lands on a known day". A table of twenty payees answered that question in the reader's
+   head; a bar answers it in the eye. The bars are shares of the STREAM's money, so the whole chart
+   sums to the stream and two sub-sections can be compared without arithmetic.
 
-   THE MONEY COLUMN IS THE POINT OF THE PAGE. A payee that is 1% of the stream and unpredictable
-   costs nothing to get wrong; one that is 67% and lands on the 11th is most of what a forecast is.
-   Ordering by shape and then by money puts the rows that matter at the top of every stream, and the
-   percentage at the top of the block says how much of the stream is forecastable at all.
+   SPLIT BY ACCOUNT TYPE, because a date on a card is not a date in a current account. A card settles
+   once a month whatever day the purchase happened; a current account moves the day the money does.
+   The two forecasts are made differently, so the page shows them apart.
 
-   THE HISTOGRAM IS GONE. It was the right instrument for judging ONE shape against ONE set of bars,
-   and it cannot show a stream that is four different things at once. The days and the confidence
-   carry what it was being read for.
+   EVERYTHING WITHOUT A DAY IS ONE BAR. Twenty patternless payees are not twenty facts - they are the
+   part of the stream that arrives when it arrives, forecastable as a rate, and one bar saying so
+   beats twenty rows saying nothing each.
 
-   THE EMITTED SCRIPT CARRIES NO BACKSLASH AND NO BACKTICK - see buildFitAuditPage.js.
+   THE LUMP BAR IS A KNOB. A day is a promise, and how sure the movements have to be before the page
+   makes one is a number worth moving with the answers in front of you rather than settling in the
+   code. Below the bar a mode keeps its money and loses its date: it joins the rest.
+
+   THE EMITTED SCRIPT CARRIES NO BACKSLASH AND NO BACKTICK - see buildFitAuditPage.js. The data blob
+   is concatenated rather than interpolated, so JSON's own escapes reach the browser intact.
    ================================================================================================== */
 
 import {renderAuditPage, esc} from './auditShell';
 import {Shape} from './shapeDetermination';
+import {SHAPE_CONFIG} from './shapeConfig';
+import {AccountKind} from './accountMapping';
 
 const YEARLY = {yearly: true, biyearly: true};
 const DASH = '—';
@@ -32,64 +39,56 @@ const DOT = '·';
 
 const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + '%';
 
-const shapeCls = sh => sh === Shape.lump ? 'sh lump'
-	: sh === Shape.multiLump ? 'sh multi'
-	: sh === Shape.spread ? 'sh spread' : 'sh none';
-
 /* WHAT THE MODE PREDICTS, in the vocabulary the shape uses. A lump predicts a day; a spread predicts
    a rate and deliberately names no day, because naming one would be the error the shape exists to
    avoid. */
 const patternOf = m => {
 	if(m.shape === Shape.lump || m.shape === Shape.multiLump)
-		return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : '')).join(' ' + DOT + ' ')
-			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT, and the reader has to see how many
-			   movements the pattern did not account for before trusting the day. */
-			+ (m.exceptions ? ' ' + DOT + ' ' + m.exceptions + ' off-pattern' : '');
-	if(m.shape === Shape.spread)return 'no day ' + DOT + ' a rate';
-	return m.reason || DASH;
+		return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : ''))
+			.join(' ' + DOT + ' ');
+	return 'no day ' + DOT + ' a rate';
 };
 
-const modeRow = m => '<div class="mode' + (m.shape ? '' : ' flat') + '">'
-	+ '<div class="m-name">' + esc(m.label)
-		+ (m.adjusted && m.adjusted !== 'none'
-			? '<span class="adj">closures ' + esc(m.adjusted) + '</span>' : '')
-		+ (m.absorbed ? '<span class="abs">+ ' + esc(m.absorbed.join(', ')) + '</span>' : '')
-		+ (m.gathered ? '<span class="abs">' + esc(m.gathered.slice(0, 6).join(', '))
-			+ (m.gathered.length > 6 ? ' and ' + (m.gathered.length - 6) + ' more' : '')
-			+ '</span>' : '')
-		+ '</div>'
-	+ '<div class="' + shapeCls(m.shape) + '">' + esc(m.shape || 'no pattern') + '</div>'
-	+ '<div class="m-pat">' + esc(patternOf(m)) + '</div>'
-	+ '<div class="m-cf">' + esc(pct(m.confidence)) + '</div>'
-	+ '<div class="m-money"><span class="bar" style="width:'
-		+ Math.max(2, Math.round(m.moneyShare * 100)) + '%"></span>'
-		+ '<b>' + esc(pct(m.moneyShare)) + '</b></div>'
-	+ '<div class="m-legs">' + m.legs + '</div>'
-	+ '</div>';
+/* THE PAYEES BEHIND THE BAR. A merged mode is several names and the reader has to see all of them -
+   that is the merge showing its work - but a gathered "everything else" is a long tail and the first
+   few are enough to recognise it by. */
+const whoOf = m => {
+	const tail = m.gathered || [];
+	if(tail.length)
+		return tail.slice(0, 4).join(', ')
+			+ (tail.length > 4 ? ' and ' + (tail.length - 4) + ' more' : '');
+	return [m.label].concat(m.absorbed || []).join(' + ');
+};
 
-const streamBlock = r => '<section class="stream" data-search="' + esc(r.search) + '">'
-	+ '<header class="sh-head">'
-		+ '<div class="s-name"><b>' + esc(r.name) + '</b>'
-			+ '<span class="s-meta">' + esc(r.cycle) + ' ' + DOT + ' ' + r.modes.length
-				+ ' mode' + (r.modes.length === 1 ? '' : 's') + ' ' + DOT + ' '
-				+ r.legs + ' movements</span></div>'
-		+ '<div class="s-pred ' + esc(r.predCls) + '">' + esc(pct(r.predictableShare))
-			+ '<span>of the money is predictable</span></div>'
-		+ '<div class="s-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
-			+ ' aria-label="accept ' + esc(r.name) + '"></div>'
-	+ '</header>'
-	+ '<div class="modes"><div class="mode head">'
-		+ '<div class="m-name">payee</div><div class="sh">shape</div>'
-		+ '<div class="m-pat">pattern</div><div class="m-cf">conf</div>'
-		+ '<div class="m-money">share of money</div><div class="m-legs">n</div></div>'
-	+ r.modes.map(modeRow).join('') + '</div>'
-	+ (r.baseline.modes
-		? '<p class="base">baseline ' + DOT + ' ' + r.baseline.modes + ' payee'
-			+ (r.baseline.modes === 1 ? '' : 's') + ' with no pattern ' + DOT + ' '
-			+ r.baseline.legs + ' movements ' + DOT + ' '
-			+ pct(r.baseline.moneyShare) + ' of the money, forecastable only as a rate</p>'
-		: '')
-	+ '</section>';
+const KINDS = [
+	{key: AccountKind.realTime, label: 'real time', note: 'moves the day the money does'},
+	{key: AccountKind.deferred, label: 'deferred', note: 'settles with the card'}
+];
+
+/* ---- WHAT THE BROWSER IS GIVEN -----------------------------------------------------------------
+   ONE ENTRY PER MODE, CARRYING ITS SHAPE AND ITS CONFIDENCE SEPARATELY, so the page can re-decide
+   what counts as a lump when the knob moves without asking for the ledger again. Everything the
+   arithmetic already settled - the day, the wobble, the exceptions - arrives as the string it will
+   be printed as. */
+/* BANK DESCRIPTIONS CARRY WHATEVER THE PAYMENT NETWORK PUT IN THEM, backslashes included, and
+   JSON escapes those - which would put a backslash into the emitted script and break the rule at
+   the top of this file. Display text is cleaned on the way out: a wire memo separated by a stray
+   slash reads the same with a space there. */
+const plain = s => String(s === null || s === undefined ? '' : s)
+	.split(String.fromCharCode(92)).join(' ')
+	.replace(/"/g, "'")
+	.replace(/\s+/g, ' ').trim();
+
+const modeData = m => ({
+	wo: plain(whoOf(m)),
+	shape: m.shape || null,
+	pat: plain(patternOf(m)),
+	conf: (m.confidence === null || m.confidence === undefined) ? null : m.confidence,
+	share: m.moneyShare,
+	legs: m.legs,
+	exc: m.exceptions || 0,
+	adj: (m.adjusted && m.adjusted !== 'none') ? m.adjusted : null
+});
 
 export function modeRows(predictor){
 	const rows = [];
@@ -97,16 +96,29 @@ export function modeRows(predictor){
 		const m = predictor.modesOf(stream.id, stream);
 		if(!m.cycle || YEARLY[m.cycle.name] || !m.modes.length)return;
 		const legs = m.modes.reduce((n, x) => n + x.legs, 0);
+
+		/* SPLIT BY ACCOUNT TYPE AND KEEP THE ORDER FIXED - real time, then deferred - so a reader
+		   scanning thirty streams finds the same thing in the same place every time. */
+		const groups = KINDS.map(k => {
+			const mine = m.modes.filter(x => (x.accountType || AccountKind.realTime) === k.key);
+			return {
+				kind: k.label,
+				note: k.note,
+				cls: k.key === AccountKind.deferred ? 'def' : 'rt',
+				share: mine.reduce((n, x) => n + x.moneyShare, 0),
+				modes: mine.map(modeData)
+			};
+		}).filter(g => g.modes.length);
+
 		rows.push({
 			id: stream.id,
 			name: stream.name,
 			cycle: m.cycle.name,
 			modes: m.modes,
+			groups: groups,
 			legs: legs,
 			baseline: m.baseline,
 			predictableShare: m.predictableShare,
-			predCls: m.predictableShare >= 0.8 ? 'good'
-				: m.predictableShare >= 0.4 ? 'part' : 'low',
 			search: [stream.name, m.cycle.name,
 				m.modes.map(x => x.label + ' ' + (x.shape || 'no pattern')).join(' ')]
 				.join(' ').toLowerCase()
@@ -117,20 +129,34 @@ export function modeRows(predictor){
 		|| (String(a.name) < String(b.name) ? -1 : 1));
 }
 
+/* THE SHELL BINDS THE TICK BOXES ONCE, AT LOAD, so every stream's header and checkbox is rendered
+   here and only the chart inside it is drawn by the script. */
+const streamBlock = (r, i) => '<section class="stream" data-search="' + esc(r.search) + '">'
+	+ '<header class="sh-head">'
+		+ '<div class="s-name"><b>' + esc(r.name) + '</b>'
+			+ '<span class="s-meta">' + esc(r.cycle) + ' ' + DOT + ' ' + r.legs
+				+ ' movements</span></div>'
+		+ '<div class="s-pred" id="p' + i + '"><b>' + DASH + '</b>'
+			+ '<span>lands on a known day</span></div>'
+		+ '<div class="s-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
+			+ ' aria-label="accept ' + esc(r.name) + '"></div>'
+	+ '</header>'
+	+ '<div class="chart" id="c' + i + '"></div>'
+	+ '</section>';
+
 export function buildModesAuditPage(predictor, meta){
 	const m = meta || {};
 	const rows = modeRows(predictor);
 	const allModes = rows.reduce((n, r) => n + r.modes.length, 0);
-	const predictableModes = rows.reduce((n, r) =>
-		n + r.modes.filter(x => !!x.shape).length, 0);
-	const fully = rows.filter(r => r.predictableShare >= 0.999).length;
-	const none = rows.filter(r => r.predictableShare <= 0.001).length;
 
 	const anchor = m.anchor ? new Date(m.anchor) : null;
 	const anchorText = anchor
 		? anchor.getFullYear() + '-' + String(anchor.getMonth() + 1).padStart(2, '0')
 			+ '-' + String(anchor.getDate()).padStart(2, '0')
 		: DASH;
+
+	const data = rows.map(r => ({name: r.name, groups: r.groups}));
+	const bar = Math.round(SHAPE_CONFIG.minLumpConfidence * 100);
 
 	return renderAuditPage({
 		title: 'Stream modes',
@@ -140,37 +166,146 @@ export function buildModesAuditPage(predictor, meta){
 		versionTitle: m.version,
 		extraCss: CSS,
 		legendHtml: LEGEND,
-		panelHtml: '<section class="wrap">' + rows.map(streamBlock).join('') + '</section>',
-		extraScript: SCRIPT,
+		panelHtml: '<section class="ctl">'
+			+ '<div class="knob"><span class="kl">call it a lump above</span>'
+				+ '<input type="range" id="lumpbar" min="0" max="95" step="1" value="' + bar + '">'
+				+ '<b class="kv" id="lumpbarv">' + bar + '%</b></div>'
+			+ '<p class="cnote" id="cnote">a mode below the bar keeps its money and loses its date'
+			+ '</p></section>'
+			+ '<section class="wrap">' + rows.map(streamBlock).join('') + '</section>',
+		extraScript: wiring(data),
 		metaLine: [
 			{label: 'streams', value: rows.length},
 			{label: 'modes', value: allModes},
-			{label: 'with a pattern', value: predictableModes},
-			{label: 'fully predictable', value: fully},
-			{label: 'no pattern at all', value: none},
 			{label: 'anchor', value: anchorText}
 		],
 		groups: []
 	});
 }
 
-const LEGEND = '<span class="lg">a stream is a LIST OF MODES, one per payee - it can be several '
-		+ 'things at once</span>'
-	+ '<span class="lg">share of money is why it matters: an unpredictable 1% costs nothing, an '
-		+ 'unpredictable 60% is the forecast</span>'
-	+ '<span class="lg">"+ name" = a patternless payee absorbed because the merged mode still snapped '
-		+ 'to a pattern</span>'
-	+ '<span class="lg">"N off-pattern" = movements the habit did not account for - a late month, a '
-		+ 'one-off - counted, not hidden</span>'
+/* ---- THE PAGE'S OWN SCRIPT ---------------------------------------------------------------------
+   NO BACKSLASH, NO BACKTICK. Attribute quoting inside these strings is done with apostrophes, so no
+   character written here ever needs an escape; the data blob is CONCATENATED rather than dropped in
+   a template literal, because JSON's own escapes would otherwise be eaten on the way through. */
+const wiring = data => 'var DATA = ' + JSON.stringify(data) + ';' + `
+var bar = document.getElementById("lumpbar");
+var barv = document.getElementById("lumpbarv");
+var cnote = document.getElementById("cnote");
+var DOTCH = "${DOT}";
+
+function esc2(s){
+	return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+function pc(v){ return Math.round(v * 100) + "%"; }
+
+/* A LUMP IS A CLAIM ON A DAY, AND THE BAR IS THE PRICE OF MAKING IT. Below it the mode is not wrong,
+   it is only not a date - so it keeps everything except the day, and joins the rest. */
+function isLump(m, t){
+	if(m.shape !== "lump" && m.shape !== "multiLump")return false;
+	return (m.conf === null ? 0 : m.conf) >= t;
+}
+
+function rowHtml(m, cls){
+	var w = Math.max(1.5, m.share * 100);
+	var note = m.exc ? " " + DOTCH + " " + m.exc + " off-pattern" : "";
+	if(m.adj)note = note + " " + DOTCH + " closures " + m.adj;
+	return "<div class='mrow " + cls + "'>"
+		+ "<div class='mbar'><span style='width:" + w + "%'></span></div>"
+		+ "<b class='mpct'>" + pc(m.share) + "</b>"
+		+ "<span class='mpat'>" + esc2(m.pat) + "</span>"
+		+ "<div class='mwho'>" + esc2(m.who) + "<i>" + m.legs + " movements"
+			+ (m.conf === null ? "" : " " + DOTCH + " " + pc(m.conf) + " sure")
+			+ esc2(note) + "</i></div>"
+		+ "</div>";
+}
+
+/* EVERYTHING WITHOUT A DAY BECOMES ONE BAR, and it is called a spread on purpose: the stream really
+   does spend this money, it simply does not spend it on a date. */
+function restHtml(rest){
+	var share = 0, legs = 0, names = [], i;
+	for(i = 0; i < rest.length; i++){
+		share = share + rest[i].share;
+		legs = legs + rest[i].legs;
+		names.push(rest[i].who);
+	}
+	var who = names.length === 1 ? names[0] : "the rest " + DOTCH + " " + names.join(", ");
+	return rowHtml({who: who, pat: "spread " + DOTCH + " no day", conf: null,
+		share: share, legs: legs, exc: 0, adj: null}, "rest");
+}
+
+function draw(){
+	var t = Number(bar.value) / 100, i, j, k, g, demoted = 0, html, lumps, rest, onday, p;
+	barv.textContent = Math.round(t * 100) + "%";
+
+	for(i = 0; i < DATA.length; i++){
+		html = "";
+		onday = 0;
+		for(j = 0; j < DATA[i].groups.length; j++){
+			g = DATA[i].groups[j];
+			lumps = [];
+			rest = [];
+			for(k = 0; k < g.modes.length; k++){
+				if(isLump(g.modes[k], t)){
+					lumps.push(g.modes[k]);
+					onday = onday + g.modes[k].share;
+				}else{
+					rest.push(g.modes[k]);
+					if(g.modes[k].shape === "lump" || g.modes[k].shape === "multiLump")
+						demoted = demoted + 1;
+				}
+			}
+			lumps.sort(function(a, b){ return b.share - a.share; });
+			html = html + "<div class='grp " + g.cls + "'><div class='ghead'>"
+				+ "<span class='gk'>" + esc2(g.kind) + "</span>"
+				+ "<span class='gn'>" + esc2(g.note) + "</span>"
+				+ "<b class='gs'>" + pc(g.share) + " of the stream</b></div>";
+			for(k = 0; k < lumps.length; k++)html = html + rowHtml(lumps[k], "lump");
+			if(rest.length)html = html + restHtml(rest);
+			html = html + "</div>";
+		}
+		document.getElementById("c" + i).innerHTML = html;
+		p = document.getElementById("p" + i);
+		p.firstChild.textContent = pc(onday);
+		p.className = "s-pred " + (onday >= 0.8 ? "good" : onday >= 0.4 ? "part" : "low");
+	}
+	cnote.textContent = demoted
+		? demoted + " mode" + (demoted === 1 ? "" : "s") + " lose their day at this bar"
+		: "a mode below the bar keeps its money and loses its date";
+}
+
+bar.addEventListener("input", draw);
+draw();
+`;
+
+const LEGEND = '<span class="lg">one bar per mode, and the bars are shares of the STREAM - a stream '
+		+ 'can be several things at once</span>'
+	+ '<span class="lg">real time and deferred are shown apart: a date on a card is not a date in a '
+		+ 'current account</span>'
+	+ '<span class="lg">everything with no day is one bar, called a spread - that money is real, it '
+		+ 'just arrives at a rate</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
-		+ '<span class="lg">conf = how tightly the movements land on that day</span>'
-		+ '<span class="lg">a spread names no day on purpose - it is forecastable as a rate</span>'
+		+ '<span class="lg">"sure" = how tightly the movements land on that day AND how many cycles '
+			+ 'they turned up in</span>'
+		+ '<span class="lg">"N off-pattern" = movements the habit did not account for - a late '
+			+ 'month, a one-off - counted, not hidden</span>'
+		+ '<span class="lg">"+ name" = a payee absorbed because the merged mode still snapped to a '
+			+ 'pattern</span>'
 		+ '<span class="lg">"closures next/back" = the bank’s weekend was undone to read it</span>'
 		+ '<span class="lg">least predictable streams first, because those are the ones to read</span>'
 	+ '</details>';
 
 const CSS = `
+.ctl{max-width:1000px;margin:0 auto;padding:6px 14px 0}
+.knob{display:flex;align-items:center;gap:9px;min-width:0}
+.kl{font:500 10px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+	color:var(--ink-faint);white-space:nowrap}
+.knob input[type=range]{flex:1 1 auto;min-width:70px;max-width:260px;height:18px;
+	accent-color:var(--accent)}
+.kv{font:600 12px/1 var(--mono);color:var(--ink);min-width:34px}
+.cnote{margin:3px 0 0;font:400 10px/1.4 var(--mono);color:var(--ink-faint)}
+
 .wrap{max-width:1000px;margin:0 auto;padding:8px 14px 28px}
 .stream{border:1px solid var(--rule);border-radius:8px;background:var(--surface);
 	padding:9px 11px;margin:0 0 9px}
@@ -179,42 +314,45 @@ const CSS = `
 	padding-bottom:6px;border-bottom:1px dashed var(--rule)}
 .s-name b{font:600 13px/1.3 var(--sans);color:var(--ink)}
 .s-meta{display:block;font:400 10px/1.4 var(--mono);color:var(--ink-faint)}
-.s-pred{font:600 13px/1 var(--mono);text-align:right;white-space:nowrap}
-.s-pred span{display:block;font:400 9px/1.3 var(--sans);color:var(--ink-faint);font-weight:400}
-.s-pred.good{color:var(--realtime)}
-.s-pred.part{color:var(--ink-soft)}
-.s-pred.low{color:var(--flag)}
+.s-pred{text-align:right;white-space:nowrap}
+.s-pred b{font:600 13px/1 var(--mono);color:var(--ink-soft)}
+.s-pred span{display:block;font:400 9px/1.3 var(--sans);color:var(--ink-faint)}
+.s-pred.good b{color:var(--realtime)}
+.s-pred.part b{color:var(--ink-soft)}
+.s-pred.low b{color:var(--flag)}
 .s-ck{text-align:right}
 .s-ck .okbox{width:20px;height:20px;accent-color:var(--accent);margin:0}
 
-.modes{margin-top:5px}
-.mode{display:grid;grid-template-columns:1.5fr 82px 1.2fr 46px 130px 34px;gap:8px;
-	align-items:center;padding:4px 0;font:400 12px/1.4 var(--mono);
-	font-variant-numeric:tabular-nums;border-bottom:1px solid var(--rule)}
-.mode:last-child{border-bottom:0}
-.mode.head{font:500 9px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.05em;
-	color:var(--ink-faint);padding-bottom:3px}
-.mode.flat{opacity:.62}
-.m-name{color:var(--ink);word-break:break-word;min-width:0}
-.adj{display:block;font-size:9px;color:var(--accent)}
-.abs{display:block;font-size:9px;color:var(--ink-faint);word-break:break-word}
-.sh{font-weight:600;white-space:nowrap}
-.sh.lump{color:var(--realtime)}
-.sh.multi{color:var(--accent)}
-.sh.spread{color:var(--ink-soft)}
-.sh.none{color:var(--ink-faint);font-weight:400}
-.mode.head .sh{font-weight:500;color:var(--ink-faint)}
-.m-pat{color:var(--ink-soft);font-size:11px;word-break:break-word;min-width:0}
-.m-cf{font-size:11px;text-align:right;color:var(--ink-soft)}
-.m-money{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
-.m-money .bar{display:block;height:9px;background:var(--accent-soft);border-radius:2px;
-	flex:0 0 auto;max-width:76px}
-.m-money b{font:500 11px/1 var(--mono);color:var(--ink)}
-.mode.head .m-money{display:block}
-.m-legs{text-align:right;font-size:10.5px;color:var(--ink-faint)}
+.grp{margin-top:7px}
+.ghead{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;
+	font:500 9px/1.3 var(--mono);text-transform:uppercase;letter-spacing:.05em;
+	padding-bottom:3px;border-bottom:1px solid var(--rule)}
+.gk{color:var(--ink)}
+.grp.rt .gk{color:var(--realtime)}
+.grp.def .gk{color:var(--deferred)}
+.gn{color:var(--ink-faint);text-transform:none;letter-spacing:0;font-weight:400}
+.gs{margin-left:auto;color:var(--ink-soft);font-weight:600;white-space:nowrap}
 
-.base{margin:6px 0 0;padding-top:5px;border-top:1px dashed var(--rule);
-	font:400 10.5px/1.45 var(--mono);color:var(--ink-faint)}
+.mrow{display:grid;grid-template-columns:1fr 44px 116px;
+	grid-template-areas:"bar pct pat" "who who who";
+	gap:2px 9px;align-items:center;padding:5px 0;border-bottom:1px solid var(--rule)}
+.mrow:last-child{border-bottom:0}
+.mbar{grid-area:bar;height:11px;background:var(--sunk);border-radius:2px;overflow:hidden;
+	min-width:0}
+.mbar span{display:block;height:100%;background:var(--realtime);border-radius:2px}
+.grp.def .mbar span{background:var(--deferred)}
+.mrow.rest .mbar span{background:var(--ink-faint);opacity:.5}
+.mpct{grid-area:pct;font:600 12px/1 var(--mono);color:var(--ink);text-align:right;
+	font-variant-numeric:tabular-nums}
+.mpat{grid-area:pat;font:500 11px/1.2 var(--mono);color:var(--realtime);white-space:nowrap;
+	overflow:hidden;text-overflow:ellipsis}
+.grp.def .mpat{color:var(--deferred)}
+.mrow.rest .mpat{color:var(--ink-faint);font-weight:400}
+.mwho{grid-area:who;font:400 11px/1.35 var(--mono);color:var(--ink-soft);word-break:break-word;
+	min-width:0}
+.mwho i{display:block;font-style:normal;font-size:9.5px;color:var(--ink-faint)}
+.mrow.rest .mwho{color:var(--ink-faint)}
+
 .lg{display:inline-flex;align-items:center;gap:4px;margin-right:11px}
 .more{display:inline}
 .more summary{display:inline;cursor:pointer;color:var(--accent);list-style:none}
@@ -224,32 +362,13 @@ const CSS = `
 @media (max-width:760px){
 	header.top{position:static}
 	.wrap{padding:6px 10px 28px}
-	.mode{grid-template-columns:1fr 74px 44px;
-		grid-template-areas:"name name name" "shape pat pat" "money money conf";
-		gap:3px 8px;padding:7px 0}
-	.mode.head{display:none}
-	.m-name{grid-area:name}
-	.sh{grid-area:shape}
-	.m-pat{grid-area:pat}
-	.m-cf{grid-area:conf;text-align:right}
-	.m-money{grid-area:money}
-	.m-legs{display:none}
+	.ctl{padding:6px 10px 0}
+	.mrow{grid-template-columns:1fr 42px;grid-template-areas:"bar pct" "pat pat" "who who";
+		gap:2px 8px}
+	.mpat{white-space:normal}
 	.sh-head{grid-template-columns:1fr auto 26px}
-	.s-pred{font-size:12px}
+	.s-pred b{font-size:12px}
 }
-`;
-
-/* THE FILTER FROM THE SHELL APPLIES TO STREAM BLOCKS, since this page has no card groups. */
-const SCRIPT = `
-var q = document.getElementById("q");
-var blocks = [].slice.call(document.querySelectorAll(".stream"));
-function filterBlocks(){
-	var t = q ? q.value.trim().toLowerCase() : "";
-	blocks.forEach(function(b){
-		b.hidden = !!t && b.getAttribute("data-search").indexOf(t) === -1;
-	});
-}
-if(q)q.addEventListener("input", filterBlocks);
 `;
 
 export default buildModesAuditPage;

@@ -103,6 +103,39 @@ export const SHAPE_CONFIG = {
 	   where it produces a pattern, and a spread is left exactly as it is. */
 	maxExceptionShare: 0.34,
 
+	/* ---- A MERGE MAY NOT WANDER OFF ITS ACCOUNT -----------------------------------------------------
+	   A PATTERN HAS TO CONCLUDE SOMEWHERE, and where it concludes is an account - a card is settled
+	   once a month and a current account moves the day the money does, so the same rhythm read across
+	   the two is two different forecasts. A merge is therefore allowed to cross accounts only when the
+	   result is plainly ONE account's habit with a few movements that happened elsewhere, and the
+	   merged mode is then reported on that account.
+
+	   MEASURED AS A SHARE OF TRANSACTIONS, not of money: one large payment made from the wrong account
+	   does not relocate a habit, and a majority of small ones does. Below this share the two are two
+	   rhythms and are left apart. */
+	minDominantAccountShare: 0.75,
+
+	/* ---- MONEY OUT CANNOT COMPLETE MONEY IN --------------------------------------------------------
+	   THE SAVINGS TRANSFER IS THE CASE. Julien moves money to savings on the 15th and occasionally
+	   pulls some back to fund something large. The two share an account and very nearly share a payee
+	   name, and the pull-backs land on no day at all - so as far as the arithmetic is concerned they
+	   are a patternless stray sitting next to a rhythm it could be offered to.
+
+	   A REVERSAL IS NOT A LATE PAYMENT. Absorbing it would let a withdrawal fill a cycle the deposit
+	   missed and count as the deposit having happened, which is the one thing it certainly was not.
+	   So direction partitions a mode before anything is measured, and no merge crosses it. */
+	splitByDirection: true,
+
+	/* ---- HOW SURE IS SURE ENOUGH TO CALL IT A LUMP -------------------------------------------------
+	   A DAY IS A PROMISE AND THIS IS THE PRICE OF MAKING ONE. Below the bar the mode still has its
+	   money and its movements; what it loses is the right to name a date, and it is forecast as a rate
+	   with the rest.
+
+	   ZERO BY DEFAULT, AND THAT IS DELIBERATE: every shape the classifier calls a lump is still a lump,
+	   so this setting changes nothing until a number is chosen for it. The bench carries the slider -
+	   today's lumps run from 0.42 to 0.82 - and the value belongs here once it is picked, not before. */
+	minLumpConfidence: 0,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus
