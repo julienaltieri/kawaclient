@@ -19,7 +19,7 @@ import {streamLedger, terminalStreams, mapAccounts, isClosedStream} from './acco
 const YEARLY_PERIODS = {yearly: true, biyearly: true};
 import {createDate} from '../../Time';
 import {determineCycle, cycleOf as cycleFrom} from './cycleDetermination';
-import {determineShape, explainShape, streamModes} from './shapeDetermination';
+import {determineShape, explainShape} from './shapeDetermination';
 import {legsInWindow} from './cycleFit';
 import {DEFAULT_COUNTRY} from './businessCalendar';
 import {reportingConfig} from '../../reportingConfig';
@@ -191,45 +191,32 @@ export class StreamPredictor {
 
 	/* §3 CONSUMES §2's ANSWER, never the declaration directly. A stream that declared yearly and was
 	   read as monthly is shaped monthly, and one still yearly after §2 is not shaped at all. */
+	/* ---- THE ANSWER --------------------------------------------------------------------------
+	   A STREAM IS A LIST OF MODES, each one promise about one pile of money. The cycle travels with
+	   it because a day means nothing without the rhythm it is a day of. */
 	shapeOf(streamId, stream){
 		const node = stream || this.terminalStreams().find(s => s.id === streamId);
-		const decision = this.cycleOf(streamId, node);
-		const cycle = cycleFrom(decision);
+		const cycle = cycleFrom(this.cycleOf(streamId, node));
 		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
-		return {
-			cycle: cycle,
-			allocations: determineShape(window, this.partitionOf(streamId), cycle,
-				this.analysisAnchor())
-		};
+		return determineShape(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
+			{country: this.userCountry(), offsetHours: this.userTimezoneOffset()});
 	}
 
-	/* THE PROTOTYPE ANSWER: a stream as a list of modes rather than one shape.
+	/* ---- THE WORKING ------------------------------------------------------------------------
+	   THE SAME READING WITH EVERYTHING IT LOOKED AT STILL ATTACHED, which is what the bench page is
+	   drawn from. Nothing downstream of this module should read it.
 
-	   THE TAPER IS AN ARGUMENT HERE AND NOWHERE ELSE IN THE MODULE, because the bench asks the same
-	   stream the same question at several half-lives and lays the answers side by side. Left out, the
-	   configured setting applies - which is the same rule the anchor follows. */
-	modesOf(streamId, stream, taper){
+	   THE TAPER IS AN ARGUMENT HERE AND NOWHERE ELSE, because the bench asks the same stream the same
+	   question at several half-lives and lays the answers side by side. Left out, the configured
+	   setting applies - the same rule the anchor follows. */
+	explainShapeOf(streamId, stream, taper){
 		const node = stream || this.terminalStreams().find(s => s.id === streamId);
 		const cycle = cycleFrom(this.cycleOf(streamId, node));
 		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
 		return Object.assign({cycle: cycle},
-			streamModes(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
+			explainShape(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
 				{country: this.userCountry(), offsetHours: this.userTimezoneOffset(),
 					taper: taper}));
-	}
-
-	explainShapeOf(streamId, stream){
-		const node = stream || this.terminalStreams().find(s => s.id === streamId);
-		const decision = this.cycleOf(streamId, node);
-		const cycle = cycleFrom(decision);
-		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
-		return {
-			decision: decision,
-			cycle: cycle,
-			allocations: explainShape(window, this.partitionOf(streamId), cycle,
-				this.analysisAnchor(),
-				{country: this.userCountry(), offsetHours: this.userTimezoneOffset()})
-		};
 	}
 
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------

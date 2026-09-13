@@ -47,7 +47,7 @@ const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + 
    clusters and happens once a week, so one of the two is the answer and the other is where it
    sometimes goes - printing both as though both were due would read as two payments a week. */
 const patternOf = m => {
-	if(m.shape !== Shape.lump && m.shape !== Shape.multiLump)return 'no day ' + DOT + ' a rate';
+	if(m.shape !== Shape.lump)return 'no day ' + DOT + ' a rate';
 	const pick = m.predicted && m.predicted.length ? m.predicted : m.days;
 	return m.days.map((d, i) => ({d: d, w: m.wobble[i]}))
 		.filter(x => pick.indexOf(x.d) >= 0)
@@ -59,7 +59,7 @@ const patternOf = m => {
    has to be able to see that 17 of them chose d4 - the page names one day, and it owes the reader the
    margin it named it by. */
 const spreadOfDays = m => {
-	if(m.shape !== Shape.lump && m.shape !== Shape.multiLump)return '';
+	if(m.shape !== Shape.lump)return '';
 	if(!m.days || m.days.length < 2)return '';
 	const pick = m.predicted && m.predicted.length ? m.predicted : m.days;
 	const part = (d, i) => 'd' + d + ' x' + (m.dayEvents ? m.dayEvents[i] : '?')
@@ -131,7 +131,7 @@ const SHOULDER = 3;
 export function modeRows(predictor, taper){
 	const rows = [];
 	predictor.reviewable().forEach(stream => {
-		const m = predictor.modesOf(stream.id, stream, taper);
+		const m = predictor.explainShapeOf(stream.id, stream, taper);
 		if(!m.cycle || YEARLY[m.cycle.name] || !m.modes.length)return;
 		const legs = m.modes.reduce((n, x) => n + x.legs, 0);
 
@@ -264,7 +264,7 @@ function pc(v){ return Math.round(v * 100) + "%"; }
 /* A LUMP IS A CLAIM ON A DAY, AND THE BAR IS THE PRICE OF MAKING IT. Below it the mode is not wrong,
    it is only not a date - so it keeps everything except the day, and joins the rest. */
 function isLump(m, t){
-	if(m.shape !== "lump" && m.shape !== "multiLump")return false;
+	if(m.shape !== "lump")return false;
 	return (m.conf === null ? 0 : m.conf) >= t;
 }
 
@@ -313,15 +313,14 @@ function draw(){
 			lumps = [];
 			rest = [];
 			for(k = 0; k < g.modes.length; k++){
-				if(g.modes[k].shape === "lump" || g.modes[k].shape === "multiLump")plain = plain + 1;
+				if(g.modes[k].shape === "lump")plain = plain + 1;
 				if(isLump(g.modes[k], t)){
 					lumps.push(g.modes[k]);
 					onday = onday + g.modes[k].share;
 					dayful = dayful + 1;
 				}else{
 					rest.push(g.modes[k]);
-					if(g.modes[k].shape === "lump" || g.modes[k].shape === "multiLump")
-						demoted = demoted + 1;
+					if(g.modes[k].shape === "lump")demoted = demoted + 1;
 				}
 			}
 			lumps.sort(function(a, b){ return b.share - a.share; });

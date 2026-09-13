@@ -32,7 +32,6 @@ import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cyc
 import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape,
 	directionOf, byDirection, dominantAccount, predictedDays, cycleWeights}
 	from './shapeDetermination';
-import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
@@ -41,7 +40,6 @@ const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio
 const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
-const OUT_SHAPE = path.join(__dirname, 'audit-shape.html');
 const OUT_MODES = path.join(__dirname, 'audit-modes.html');
 const GROUND_TRUTH = path.join(__dirname, '..', '..', 'tests', 'fixtures',
 	'cycleGroundTruth.json');
@@ -783,7 +781,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	});
 
 	/* TWO CLUSTERS HALF A CYCLE APART CANCEL when the circle is counted once round, and come back
-	   into focus when it is wrapped twice. That is what finds a multiLump. */
+	   into focus when it is wrapped twice. That is what finds a lump with two days in it. */
 	test('wrapping the circle k times finds k lumps', () => {
 		const twice = bins(30, {4: 5, 19: 5});
 		expect(concentration(twice, 1)).toBeLessThan(0.3);
@@ -812,9 +810,10 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		//AND ITS CONFIDENCE IS HIGH. A flat cycle is a certain spread, not a doubtful lump.
 		expect(groceries.confidence).toBeGreaterThan(0.8);
 
-		//two bills a month, a fortnight apart
+		//two bills a month, a fortnight apart: one lump with two days in it, not a second kind of shape
 		const twice = classifyShape([2, 2, 2, 2, 2, 2], bins(30, {4: 6, 19: 6}));
-		expect(twice.shape).toBe(Shape.multiLump);
+		expect(twice.shape).toBe(Shape.lump);
+		expect(twice.lumps).toBe(2);
 	});
 
 	/* ONCE A MONTH IS NOT A DAY. Earnin's phone reimbursement arrives exactly once every month and
@@ -891,8 +890,9 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			return st.period === 'yearly' && !c.inferred;
 		});
 		expect(yearlyStill).toBeTruthy();
-		expect(predictor.shapeOf(yearlyStill.id, yearlyStill).allocations
-			.every(a => a.shape === null)).toBe(true);
+		//a stream §2 left yearly has no cycle to read a day inside, so every mode of it is a rate
+		expect(predictor.shapeOf(yearlyStill.id, yearlyStill).modes
+			.every(m => m.shape === Shape.spread)).toBe(true);
 
 		const rescued = predictor.reviewable().find(st => {
 			const c = predictor.cycleOf(st.id, st);
@@ -902,29 +902,58 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(predictor.shapeOf(rescued.id, rescued).cycle.name).not.toBe('yearly');
 	});
 
-	/* THE ANSWER IS {accountId, shape, days?, confidence?} AND NOTHING ELSE - an undetermined field
-	   is absent, not a placeholder, the same contract §2 answers on. */
-	test('determineShape returns only the fields it determined', () => {
-		let shaped = 0, unshaped = 0;
+	/* ---- THE ANSWER AND NOTHING BUT ----------------------------------------------------------------
+	   EIGHT FIELDS, AND `days` AND `confidence` ONLY WHERE A DAY WAS NAMED. An undetermined field is
+	   absent, not a placeholder - the same contract §2 answers on.
+
+	   TWO SHAPES AND NO NULL. A lump names days; a spread names a rate. A mode the observer could not
+	   read at all is a spread here, because a forecast can only do one of two things with money, and
+	   what the observer actually saw is still in explainShape under `reason`.
+
+	   NO WOBBLE, NO HISTOGRAM, NO LEG COUNT, NO RAW LEGS. Those are the working, and the working has
+	   its own surface. A copy of the ledger has no business inside an answer. */
+	test('the answer is a list of modes and carries only what it determined', () => {
+		const EVERY = ['accountId', 'accountType', 'direction', 'label', 'moneyShare', 'shape'];
+		let named = 0, rates = 0;
 		predictor.reviewable().forEach(st => {
-			predictor.shapeOf(st.id, st).allocations.forEach(a => {
-				const keys = Object.keys(a).sort();
-				if(a.shape === Shape.lump || a.shape === Shape.multiLump){
-					shaped++;
-					expect(keys).toEqual(['accountId', 'confidence', 'days', 'shape']);
-					expect(a.days.length).toBeGreaterThan(0);
-				}else if(a.shape === Shape.spread){
-					shaped++;
-					expect(keys).toEqual(['accountId', 'confidence', 'shape']);
+			const answer = predictor.shapeOf(st.id, st);
+			expect(Object.keys(answer).sort()).toEqual(['cycle', 'modes']);
+			answer.modes.forEach(m => {
+				const keys = Object.keys(m).sort();
+				expect([Shape.lump, Shape.spread].indexOf(m.shape)).toBeGreaterThan(-1);
+				if(m.shape === Shape.lump){
+					named++;
+					expect(keys).toEqual(EVERY.concat(['confidence', 'days']).sort());
+					expect(m.days.length).toBeGreaterThan(0);
+					expect(m.confidence).toBeGreaterThanOrEqual(SHAPE_CONFIG.minLumpConfidence);
 				}else{
-					unshaped++;
-					expect(keys).toEqual(['accountId', 'shape']);
-					expect(a.shape).toBe(null);
+					rates++;
+					expect(keys).toEqual(EVERY);
 				}
+				expect(m.moneyShare).toBeGreaterThanOrEqual(0);
+				expect(['in', 'out'].indexOf(m.direction)).toBeGreaterThan(-1);
 			});
 		});
-		expect(shaped).toBeGreaterThan(0);
-		console.log('§3 ANSWERS: ' + shaped + ' allocations shaped, ' + unshaped + ' not');
+		expect(named).toBeGreaterThan(10);
+		expect(rates).toBeGreaterThan(10);
+		console.log('§3 ANSWER: ' + named + ' modes name a day, ' + rates + ' are a rate');
+	});
+
+	/* THE BAR IS A DECISION, NOT A DISPLAY. Earnin's phone reimbursement lands anywhere across a
+	   fortnight and reads 56% against the one day its cycle carries. The working still holds that
+	   reading; the answer does not offer a date it cannot keep. */
+	test('a mode under the bar names no day in the answer', () => {
+		const st = predictor.reviewable().find(x => /^earnin phone/i.test(x.name));
+		const working = predictor.explainShapeOf(st.id, st)
+			.modes.find(x => /expensify/i.test(x.label));
+		expect(working.shape).toBe(Shape.lump);
+		expect(working.days).toEqual([18]);
+		expect(working.confidence).toBeLessThan(SHAPE_CONFIG.minLumpConfidence);
+
+		const answer = predictor.shapeOf(st.id, st).modes.find(x => /expensify/i.test(x.label));
+		expect(answer.shape).toBe(Shape.spread);
+		expect(answer.days).toBe(undefined);
+		expect(answer.confidence).toBe(undefined);
 	});
 
 	/* ---- THE PROTOTYPE: A STREAM AS A LIST OF MODES -------------------------------------------------
@@ -934,7 +963,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   several things at once - or, like Gas, nothing at all, which is also an answer. */
 	test('a stream decomposes into one mode per payee, with its share of the money', () => {
 		const utilities = predictor.reviewable().find(x => x.name === 'Utilities');
-		const m = predictor.modesOf(utilities.id, utilities);
+		const m = predictor.explainShapeOf(utilities.id, utilities);
 		expect(m.modes.length).toBe(2);
 		expect(m.modes.every(x => x.shape === Shape.lump)).toBe(true);
 		//the shares are a partition of the money
@@ -947,7 +976,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		/* A STREAM WITH NO PATTERN IN IT IS NOT A FAILURE. Gas is twelve fill-ups at eight stations,
 		   and "all of this is a rate, none of it is a date" is exactly what a forecast needs told. */
 		const gas = predictor.reviewable().find(x => x.name === 'Gas');
-		const g = predictor.modesOf(gas.id, gas);
+		const g = predictor.explainShapeOf(gas.id, gas);
 		expect(g.predictable).toBe(0);
 		expect(g.baseline.moneyShare).toBeCloseTo(1, 6);
 
@@ -957,7 +986,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		   The stray is offered back and absorbed because the merged mode still snaps to a pattern:
 		   17 movements, 17 cycles, one lump. The disability deposits are offered too and refused. */
 		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
-		const wm = predictor.modesOf(wages.id, wages);
+		const wm = predictor.explainShapeOf(wages.id, wages);
 		const payroll = wm.modes[0];
 		expect(payroll.shape).toBe(Shape.lump);
 		expect(payroll.legs).toBe(17);
@@ -975,7 +1004,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		   A tightness-only score reads 0.806 -> 0.756, refuses, and leaves the year with a hole in
 		   August that a forecast would then invent a missing payment for. */
 		const dc = predictor.reviewable().find(x => x.name === 'Day care Emile');
-		const dm = predictor.modesOf(dc.id, dc);
+		const dm = predictor.explainShapeOf(dc.id, dc);
 		expect(dm.modes.length).toBe(1);
 		expect(dm.modes[0].legs).toBe(9);
 		expect(dm.modes[0].shape).toBe(Shape.lump);
@@ -1007,12 +1036,12 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   Savings. Two mirrored modes is the ledger having two sides, not the model finding two rhythms. */
 	test('Savings reads one lump on the 15th plus its own exceptions', () => {
 		const savings = predictor.reviewable().find(x => x.name === 'Savings');
-		const m = predictor.modesOf(savings.id, savings);
+		const m = predictor.explainShapeOf(savings.id, savings);
 		const lumps = m.modes.filter(x => x.shape === Shape.lump);
 
-		//one lump per account leg, and each is a SINGLE lump - never multiLump
+		//one lump per account leg, and each names exactly one day
 		expect(lumps.length).toBe(2);
-		expect(m.modes.some(x => x.shape === Shape.multiLump)).toBe(false);
+		expect(lumps.every(x => x.days.length === 1)).toBe(true);
 		lumps.forEach(x => {
 			expect(x.days.length).toBe(1);
 			//d23 on a cycle seamed the 21st is the 14th - the reminder, read off the recent transfers
@@ -1035,7 +1064,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	test('a spread is never trimmed into a lump', () => {
 		const go = predictor.reviewable().find(x => /grocery outlet/i.test(x.name || ''));
 		if(!go)return;
-		const m = predictor.modesOf(go.id, go);
+		const m = predictor.explainShapeOf(go.id, go);
 		m.modes.forEach(x => {
 			if(x.shape === Shape.spread)expect(x.exceptions || 0).toBe(0);
 		});
@@ -1061,7 +1090,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		//no mode anywhere in the portfolio mixes the two, however it was built or merged
 		let mixed = 0, modes = 0;
 		predictor.reviewable().forEach(stream => {
-			const m = predictor.modesOf(stream.id, stream);
+			const m = predictor.explainShapeOf(stream.id, stream);
 			if(!m.cycle || !m.modes.length)return;
 			m.modes.forEach(x => {
 				modes++;
@@ -1075,7 +1104,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 
 		//and Savings keeps its two pull-back payees out of the two deposit rhythms
 		const savings = predictor.reviewable().find(x => x.name === 'Savings');
-		const sm = predictor.modesOf(savings.id, savings);
+		const sm = predictor.explainShapeOf(savings.id, savings);
 		expect(sm.modes.filter(x => x.shape === Shape.lump).length).toBe(2);
 		expect(sm.modes.filter(x => !x.shape).length).toBe(2);
 		sm.modes.filter(x => x.shape).forEach(x => expect(x.absorbed).toBe(undefined));
@@ -1098,7 +1127,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(dominantAccount([]).accountId).toBe(null);
 
 		predictor.reviewable().forEach(stream => {
-			const m = predictor.modesOf(stream.id, stream);
+			const m = predictor.explainShapeOf(stream.id, stream);
 			if(!m.cycle || !m.modes.length)return;
 			m.modes.forEach(x => {
 				const dom = dominantAccount(x.rawLegs || []);
@@ -1138,10 +1167,10 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		//THE INVARIANT: nowhere in the portfolio does a shape hold a day the forecast will not use
 		let shaped = 0;
 		predictor.reviewable().forEach(stream => {
-			const m = predictor.modesOf(stream.id, stream);
+			const m = predictor.explainShapeOf(stream.id, stream);
 			if(!m.cycle || !m.modes.length)return;
 			m.modes.forEach(x => {
-				if(x.shape !== Shape.lump && x.shape !== Shape.multiLump)return;
+				if(x.shape !== Shape.lump)return;
 				shaped++;
 				expect({mode: x.label, named: x.predicted.length, held: x.days.length})
 					.toEqual({mode: x.label, named: x.days.length, held: x.days.length});
@@ -1151,7 +1180,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(shaped).toBeGreaterThan(10);
 
 		const cc = predictor.reviewable().find(x => x.name === 'Credit Card Payments');
-		const robin = predictor.modesOf(cc.id, cc).modes.find(x => /robinhood/i.test(x.label));
+		const robin = predictor.explainShapeOf(cc.id, cc).modes.find(x => /robinhood/i.test(x.label));
 		expect(robin.shape).toBe(Shape.lump);
 		expect(robin.typical).toBe(1);
 		expect(robin.days).toEqual([4]);
@@ -1166,7 +1195,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   day its cycle carries it reads 56%, under the bar, so it keeps its money and names no date. */
 	test('a mode that lands in two windows is a rate, not a date', () => {
 		const st = predictor.reviewable().find(x => /^earnin phone/i.test(x.name));
-		const m = predictor.modesOf(st.id, st);
+		const m = predictor.explainShapeOf(st.id, st);
 		const mode = m.modes.find(x => /expensify/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
 		expect(mode.days.length).toBe(1);
@@ -1207,9 +1236,9 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		   missed the day - 26 December on d4, against sixteen later ones on d6 to d8 - and fading it
 		   is the difference between a rhythm with an exception in it and a rhythm. */
 		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
-		const pOff = predictor.modesOf(wages.id, wages, {halfLife: 0, shoulder: 3})
+		const pOff = predictor.explainShapeOf(wages.id, wages, {halfLife: 0, shoulder: 3})
 			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
-		const pOn = predictor.modesOf(wages.id, wages, {halfLife: 3, shoulder: 3})
+		const pOn = predictor.explainShapeOf(wages.id, wages, {halfLife: 3, shoulder: 3})
 			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
 		expect(pOff.days).toEqual([8]);
 		expect(pOn.days).toEqual([8]);
@@ -1226,8 +1255,8 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 	   the question, and it becomes part of the stream's baseline instead. */
 	test('a mode whose movements have all faded stops claiming a day', () => {
 		const st = predictor.reviewable().find(x => /^earnin internet/i.test(x.name));
-		const off = predictor.modesOf(st.id, st, {halfLife: 0, shoulder: 3});
-		const on = predictor.modesOf(st.id, st, {halfLife: 3, shoulder: 3});
+		const off = predictor.explainShapeOf(st.id, st, {halfLife: 0, shoulder: 3});
+		const on = predictor.explainShapeOf(st.id, st, {halfLife: 3, shoulder: 3});
 
 		const modeOff = off.modes.find(x => /expensify/i.test(x.label));
 		expect(modeOff.shape).toBe(Shape.lump);
@@ -1280,7 +1309,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			.toBe(0);
 
 		const plaid = predictor.reviewable().find(x => x.name === 'Plaid');
-		const mode = predictor.modesOf(plaid.id, plaid).modes.find(x => /plaid hq/i.test(x.label));
+		const mode = predictor.explainShapeOf(plaid.id, plaid).modes.find(x => /plaid hq/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
 		expect(mode.days).toEqual([18]);
 	});
@@ -1343,31 +1372,4 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		console.log('MODES PAGE: ' + OUT_MODES + ' (' + fs.statSync(OUT_MODES).size + ' bytes)');
 	});
 
-	test('writes the shape audit page from the real results', () => {
-		const rows = shapeRows(predictor);
-		const by = summarizeShapes(rows);
-		const html = buildShapeAuditPage(predictor, {
-			version: portfolio.version,
-			capturedAt: portfolio.capturedAt,
-			anchor: predictor.analysisAnchor()
-		});
-		fs.writeFileSync(OUT_SHAPE, html, 'utf8');
-		expect(html.startsWith('<!doctype html>')).toBe(true);
-
-		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
-		expect(scripts.length).toBe(2);
-		scripts.forEach(block => {
-			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
-			expect(() => new Function(src)).not.toThrow();
-			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
-			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
-		});
-
-		//no row for a stream §2 left yearly - 51 empty rows would bury the ones worth checking
-		expect(rows.every(r => r.cycle !== 'yearly')).toBe(true);
-
-		console.log('§3 SHAPE: ' + rows.length + ' rows | '
-			+ Object.keys(by).sort().map(k => by[k] + ' ' + k).join(' | '));
-		console.log('SHAPE PAGE: ' + OUT_SHAPE + ' (' + fs.statSync(OUT_SHAPE).size + ' bytes)');
-	});
 });

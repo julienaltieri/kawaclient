@@ -48,7 +48,7 @@ between them.
 | `stream` | which stream this is about | — |
 | `cycleDetermination` | where the cycle came from: **the declaration**, or **inferred from the transactions** | For most streams the cycle matches the declaration. Yearly streams are where it comes apart: a stream is often declared yearly out of uncertainty, and the pattern inside it only shows up in the transactions later — so an inferred cycle can legitimately disagree with what was declared, and which of the two produced it has to be visible. |
 | `inferredCycle` | a `Period` (`src/Time.js`) — monthly, semi-monthly, every seven days | The declared period and the cycle used are two different facts, and for an overridden yearly stream they disagree. Without this field the cycle that produced the events is named nowhere, and re-deriving it from the events is guesswork. |
-| `inferredShape` | which shape was determined | Some streams behave like a spread, some like one big transaction, some like a few medium ones. This field characterises which of those to expect, as the logic determined it. |
+| `modes` | what §3 determined: a **list**, one entry per payee-direction-account pile of money, each a `lump` with days or a `spread` with none, each with its share of the stream's money | One shape per stream was the wrong shape of answer. Utilities is two bills on the same day; Wages Julien is a payroll plus three disability deposits; Gas is eight petrol stations and no rhythm. A single verdict describes none of them, and the money share is what tells a reader which mode is worth being right about. |
 | `inferredAmount` | the expected amount for one `inferredCycle` — −$157 a month, −$1,700 a semi-month | The number the schedule is generated from. Stating it separately makes an event list checkable against what it was meant to add up to, instead of leaving the intended total to be recovered by summing the events. |
 | `amountDetermination` | the method that produced that amount | A label rather than the reasoning: "the trailing mean". It sits on the prediction rather than on the event because it does not differ between them — the method that produced the amount is the same method for every event it produced. |
 | `transactionBase` | the transactions this prediction was derived from — the reference format is not yet decided | What makes a prediction auditable. The common disagreement is not "is this rule right" but "did it look at what I think it looked at" — a shape read from four transactions when the stream has two hundred is a different problem from a wrong rule, and the two are indistinguishable without this. |
@@ -524,7 +524,7 @@ The yearly decisions Julien accepted are recorded per stream id in
 
 ---
 
-## §3 — Determining what shape the money movements have during a cycle
+## §3 — Determining what shape the money movements have during a cycle — **SOLVED**
 
 **The question.** For a stream whose cycle is not yearly, determine what shape the money movements
 have during a cycle.
@@ -532,36 +532,214 @@ have during a cycle.
 **Not yearly means the cycle it ENDED UP WITH**, not what it declared. §2 hands back a declared cycle
 and, where the ledger earned it, an inferred one; this stage runs on whichever of the two §2 answered
 with. Six streams in the captured portfolio declare yearly and come out of §2 as weekly or monthly —
-they are shaped here like any other. A stream that is still yearly after §2 is not this stage's to
-shape.
+they are shaped here like any other. A stream still yearly after §2 gets an answer too, and that
+answer is that every mode of it is a rate: there is no day inside a year worth naming.
 
-**In:** the cycle §2 answered with, the stream's `accountAllocation` partition, and the history of its
-declared amount.
+**In:** the cycle §2 answered with, the stream's `accountAllocation` partition, and the stream's legs
+inside the analysis window.
 
 **The analysis anchor is NOT an input to this stage.** It is the one seam the whole module is cut on,
-it is settled once from the module's own inputs — the portfolio and the as-of date — and every stage
-reads that same one. Handing it to a stage as an argument would let a caller give §3 a different seam
-from the one §2 used, and the two would then disagree about where a cycle begins while both looking
+settled once from the module's own inputs — the portfolio and the as-of date — and every stage reads
+that same one. Handing it to a stage as an argument would let a caller give §3 a different seam from
+the one §2 used, and the two would then disagree about where a cycle begins while both looking
 correct. Same for every other stage: the seam is the module's, not the stage's.
 
-**Out:** for each `accountAllocation`, one of a small set of shapes, the pattern that shape returns, and
-a confidence. A stream split across two accounts can have a different shape on each side, and each
-side's confidence is its own — a partition does not inherit a single verdict.
+**Out:** a list of **modes**. Not one shape per stream, and not one shape per account.
 
-**Three shapes are known to exist and must be told apart.**
+### A stream is a list of modes
 
-| shape | what it looks like | pattern returned | worked example |
+**One shape per stream was the wrong shape of answer, and the portfolio kept saying so.** Utilities is
+a Conservice bill and a City of Palo Alto bill, both on the 11th, two thirds and one third of the
+money. Wages Julien is a payroll plus three California disability deposits. Gas is twelve fill-ups at
+eight stations with no rhythm at all — which is itself an answer, and a useful one. Forcing any of
+those into a single verdict describes none of them.
+
+**A mode is one promise about one pile of money.** A stream may be several things at once, and the
+money share is what makes the list readable: an unpredictable 1% costs nothing to get wrong, an
+unpredictable 60% is the forecast.
+
+**A mode starts as a payee, in one direction, on one account.** Three things split it before anything
+is measured:
+
+- **The payee**, because a stream's merchants keep their own rhythms and merging them describes
+  neither.
+- **The direction**, because money out cannot complete a rhythm of money in. Julien's savings
+  transfer goes out on the 15th and occasionally comes back to fund something large; absorbing a
+  pull-back would let a withdrawal fill a cycle the deposit missed and count as the deposit having
+  happened.
+- **The account**, because a date on a card is not a date in a current account. A card settles once a
+  month whatever day the purchase happened; a current account moves the day the money does.
+
+**Then what was cut too finely is put back.** A payee with no pattern of its own is offered to every
+patterned mode in the same direction, and absorbed when the merged mode fits **at least as well as
+the host did alone** — a comparison, not a bar. Wages Julien's payroll is written two ways,
+`ACTIVEHOURS INC PAYROLL` sixteen times and `ACTIVEHOURS D B PAYROLL` once; put back it is 17
+movements in 17 cycles. Day care Emile is eight cheques and one Zelle transfer, and August has no
+cheque because the transfer **is** August's payment. Whatever is still loose afterwards is gathered
+into one "everything else" mode per account and direction: twenty-one grocery payees are not
+twenty-one facts about a forecast.
+
+**A merge may cross accounts only when the result is plainly one account's habit** — at least
+`minDominantAccountShare` of the merged movements on one account, counted in transactions rather than
+money, because one large payment from the wrong account does not relocate a habit and a majority of
+small ones does. The merged mode is then reported on, and measured with the posting behaviour of,
+that account.
+
+### Two shapes, and they are two promises
+
+| shape | the promise | what comes with it | worked example |
 |---|---|---|---|
-| **lump** | one event, on a day it keeps | day *X* of the cycle | rent, on the 1st — day 1 |
-| **spread** | continuous, no single event | none; the shape itself is the pattern | groceries, all week |
-| **multi-lump** | several distinct events, each with its own day and size | days *X, Y…* of the cycle | utilities: water on the 4th, electricity on the 18th — days 4, 18 |
+| **lump** | money lands on these days of the cycle | `days`, `confidence` | rent, day 11 · utilities, day 11 · the card payment, day 4 |
+| **spread** | money is spent at a rate, on no particular day | nothing further | groceries, all week · eight petrol stations · a payee too sparse to read |
 
-**An account with no movements has no shape, and that is its own answer.** It is not "yearly, deferred"
-and it is not "the dates were unreadable", and one shared empty answer for all three would make a
-partition with a dormant side indistinguishable from a broken one. Each is named separately.
+**There is no third value and no null.** A forecast can do exactly two things with money — put it on a
+date or spend it across the cycle — so an observer that could not read a mode at all still produces a
+spread, because undated money is spent at a rate whether that is a finding or a shrug. What the
+observer actually saw survives in `explainShape` under `reason`.
 
-**The open question.** How a lump or a multi-lump determines which day, or days, of the cycle it falls
-on.
+**There is no "multi-lump" either.** A mode landing on three days is a lump whose `days` has three
+entries. The count was never a different kind of answer, only a different length of one.
+
+### The rule
+
+1. **Lay every cycle on top of every other.** `cycleBuckets` cuts the legs into cycles phased on the
+   module's anchor, and `dayHistogram` counts how many movements ever landed on day 0, day 1, and so
+   on. Day 0 is the seam.
+
+2. **Weight each cycle by how recent it is.** The newest `taperShoulderCycles` sit at full weight;
+   after that the weight halves every `taperHalfLifeCycles`. Cycles, not days, so a weekly stream and
+   a monthly one fade at the same rate against their own rhythm. The weights ride on the buckets, so
+   the histogram carries fractional counts and everything downstream sums over them unchanged.
+
+3. **Try every reading of the movements and let the stream pick one.** For a real-time account the
+   bank's closures are undone two ways — every movement pulled back to the previous business day, or
+   pushed on to the next — and whichever reading explains the stream best wins. A card is never
+   adjusted: it posts when the merchant presents it.
+
+4. **Ask for as many clusters as the cycle carries movements.** A cycle that typically carries one
+   movement is measured against **one** day; one that carries three is measured against three. The
+   count is pinned, not searched for: a shape that names more days than the forecast will use has not
+   decided anything.
+
+5. **In focus at that count, or not.** `concentration` at k clusters clears `minConcentration` and it
+   is a lump; otherwise it is a spread — a busy one if the cycle is genuinely full, and a shrug if it
+   is not, but a spread either way.
+
+6. **Let a pattern keep its own exceptions.** The movement furthest from the claimed day is set aside
+   while that improves the fit, up to `maxExceptionShare` of the mode. What is set aside is the mode's
+   own noise — counted and reported, not discarded. The result still has to be a lump: trimming always
+   improves a score that rewards landing on a day, so a flow would otherwise shed a third of itself
+   chasing one.
+
+7. **Name the day with half the weight on either side of it.** The claimed day is the weighted middle
+   of the winning cluster, so a movement from January moves it less than one from last week.
+
+8. **Charge for the claim.** A lump under `minLumpConfidence` keeps its money, loses its day, and is
+   answered as a spread.
+
+### Confidence
+
+**How often it turns up, times how tightly it lands.**
+
+    confidence = share of cycles carrying anything  ×  1 − scatter / (cycleDays / 4k)
+
+**Both halves are the pattern.** A bill always on the 6th that skipped August is not a tight monthly
+bill — it is a monthly bill that missed a month, and a forecast built on tightness alone invents a
+payment that never came. Tightness only looks at where movements landed, never at the cycles where
+none did.
+
+**The yardstick is a quarter of the cycle, divided by the cluster count.** Movements landing anywhere
+sit a quarter of the cycle from any given day on average, so that is the zero point; landing on the
+claimed day every time is 1. With k clusters the cycle is effectively k times shorter, which is why k
+divides it — a weekly stream paid on the same weekday scores like a monthly one paid on the same date.
+
+**Both halves are weighted by recency**, the same weights as the histogram: a cycle missed last month
+costs more than one missed in January.
+
+**There is no separate wobble in the answer.** How far the movements scatter around the day is not a
+second number for a caller to combine with the first — it is already inside the confidence. A caller
+reading both would be reading the same evidence twice.
+
+### The answer
+
+    {
+      cycle: Period,
+      modes: [{
+        label,        the payee name a person recognises
+        accountId,    where it lands
+        accountType,  deferred | realTime - decides when the cash actually moves
+        direction,    in | out
+        shape,        lump | spread
+        days?,        lump only - the days of the cycle it lands on
+        confidence?,  lump only - 0 to 1
+        moneyShare    how much of the stream rides on this mode
+      }]
+    }
+
+**An undetermined field is ABSENT, never a placeholder** — the same contract §2 answers on. A spread
+has no `days` because it has no day to name, which is what makes it a spread, and no `confidence`
+about a day it never claimed.
+
+**Everything else is the working, and the working has its own surface.** `explainShape` returns the
+same modes carrying the movements they were read from, the histogram, the cycles observed, which
+closure theory won, what was set aside as exceptions, which payees were merged in, the wobble, and the
+reason where there is no lump. The bench page is drawn from it. Nothing downstream of this module
+reads it.
+
+### The settings
+
+| setting | value | what it decides | measured on |
+|---|---|---|---|
+| `minConcentration` | 0.75 | how sharply movements must cluster to be a lump at all | the portfolio's bills all clear it; groceries read 0.11 |
+| `minLumpConfidence` | 0.60 | what a claim on a date costs | Earnin's phone reimbursement reads 56% across a fortnight and names no day; every real bill clears it with room |
+| `taperShoulderCycles` | 3 | how many recent cycles are never faded | a rhythm needs a few cycles at full weight to be a rhythm; without this the card payment dips from 94% to 85% at one half-life and recovers at the next |
+| `taperHalfLifeCycles` | 3 | how fast older cycles fade | short enough to follow a habit that moved, long enough that moving is what it takes |
+| `pinLumpsToEventsPerCycle` | true | clusters are the cycle's event count, not a search | Earnin read 74% as three clusters while naming one day |
+| `maxLumps` | 4 | the most days a mode may ever claim | no stream in the portfolio needs more |
+| `maxExceptionShare` | 0.34 | how much of a mode may be set aside as its own noise | two of six is a late month; twenty of sixty is a different stream |
+| `minDominantAccountShare` | 0.75 | when a merge may cross accounts | never fires on the captured portfolio; it is a guard on future data |
+| `minTheoryShare` | 0.60 | how much of the stream a reading must explain to be eligible | the payroll theory reads 0.71 of Wages Julien |
+| `minMovements` | 4 | the weighted movements needed before a day may be claimed | Whole Foods, nothing since 16 May, falls under it once the old ones fade |
+| `minCyclesObserved` | 3 | cycles needed before a rhythm is a rhythm | two payments make a line, not a habit |
+| `minSteadyShare` | 0.65 | how consistent the per-cycle count must be to read as steady | reported, not gating |
+| `minBusyShare` | 0.8 | how many cycles must carry movement for a spread to be a flow | groceries fill every week |
+| `minSpreadEventsPerCycle` | 2 | events per cycle before a flow is a flow rather than a shrug | one wandering payment a month is not a flow |
+| `splitByDirection` | true | money out never completes money in | the savings transfer and its pull-backs |
+
+### What it reads today
+
+29 streams reach this stage with a non-yearly cycle and at least one movement. 17 modes name a day;
+every other mode is a rate.
+
+**Worked example — the credit card payment.** 38 movements over 37 weekly cycles, almost exactly one a
+week, in two clusters:
+
+    d0   22 Dec .. 2 Mar    12 movements
+    d4   6 Mar .. 4 Sep     26 movements, every week
+
+Read freely that is two clusters and a 91% claim on a model with two payment days a week in it.
+Pinned to the one movement the cycle carries, the 26 are the rhythm and the 12 are the habit it
+replaced, leaving as exceptions: **lump, day 4, 100%, 11 off-pattern**.
+
+**Worked example — the savings transfer.** A calendar reminder on the 15th, sometimes paid late, and
+occasionally a transfer back out to fund something large. Made to account for all six movements the
+model read two lumps half a cycle apart, because March's stray sits opposite the real cluster and
+wrapping the circle twice lands them on top of each other. Allowed one exception it reads **lump, day
+23 — the 14th — at 73%**, with the pull-backs kept apart by direction and answered as a rate.
+
+**Worked example — Hobby mdm.**
+
+    {
+      cycle: Period(monthly),
+      modes: [
+        {label: "Claude by Anthropic", accountId: "ins_54::9869::credit",
+         accountType: "deferred", direction: "out",
+         shape: "lump", days: [25], confidence: 0.935, moneyShare: 0.571},
+        {label: "everything else (3 payees)", accountId: "ins_54::9869::credit",
+         accountType: "deferred", direction: "out",
+         shape: "spread", moneyShare: 0.429}
+      ]
+    }
 
 **Solved when:** every stream in the captured portfolio is shaped correctly, validated by Julien.
 
@@ -761,11 +939,29 @@ by accident.
 | Is confidence a number, a band, or a label? | **A number, in [0.5, 1], and only where something was measured.** 100% when the reading lands on the declaration; otherwise the fit rescaled from the threshold onto a floor of 50%, so sitting on the threshold reads 50%. It is meant to map to how often the answer holds up, hedged against false positives. Settled 2026-09-12. |
 | Does it predict, or also explain? | **Predicts, plus a confidence and how it was determined.** How much further it should explain itself is deliberately not settled — see below. |
 
+### §3, decided
+
+- **A stream is a list of modes, not one shape.** A mode is a payee, in one direction, on one account.
+- **Two shapes: `lump` names days, `spread` names a rate.** No third value, no null, no "multi-lump" —
+  a mode landing on three days is a lump whose `days` has three entries.
+- **Money out never completes money in.** Direction partitions a mode before anything is measured.
+- **A pattern may keep its own exceptions**, up to a third of the mode, and what is set aside is the
+  mode's own noise rather than something discarded.
+- **Recent cycles count for more than old ones**, with the newest three never faded — a half-life from
+  the newest cycle lets one movement outvote a year, and a rhythm needs a few cycles at full weight to
+  be a rhythm.
+- **As many clusters as the cycle carries movements.** A shape that names more days than the forecast
+  will use has not decided anything.
+- **The confidence bar is a decision, not a display.** A lump under it is answered as a spread.
+- **The answer carries no wobble, no histogram, no leg counts and no legs.** Those are the working, and
+  the working has its own surface in `explainShape`.
+
 ## Still open
 
-1. **How a spread stream appears in an event schedule.** A question about shape, and the one place the
-   output
-   contract and the shape taxonomy have to meet.
+1. **How a spread mode appears in an event schedule.** A spread promises a rate, an event schedule
+   promises dates, and the one place the output contract and the shape taxonomy have to meet is still
+   open. §3 now hands §4 a list of modes rather than one shape per stream, so the question is also
+   how several modes of one stream combine into one schedule.
 2. **What the horizon actually is**, and whether one horizon serves a weekly stream and a yearly one.
 3. **The trim is bounded by buckets, never by legs.** `trimBuckets` drops a fixed number of buckets
    whatever the lattice looks like. On a long weekly lattice that is two of thirty-three; on a

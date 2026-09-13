@@ -25,7 +25,15 @@ import {SNAP, snapDate, isBusinessDay} from './businessCalendar';
 import {AccountKind} from './accountMapping';
 import {merchantGroups} from './cycleFit';
 
-export const Shape = {lump: 'lump', spread: 'spread', multiLump: 'multiLump'};
+/* TWO SHAPES, AND THEY ARE TWO PROMISES.
+
+   A LUMP NAMES DAYS. A SPREAD NAMES A RATE. That is the whole vocabulary, because it is the whole of
+   what a forecast can do with an answer: put money on a date, or spend it evenly across the cycle.
+
+   THERE IS NO "MULTI-LUMP". A mode that lands on three days is a lump whose `days` has three entries
+   - the count was never a different kind of answer, only a different length of one, and carrying it
+   as a separate name meant every reader had to remember that two words meant one thing. */
+export const Shape = {lump: 'lump', spread: 'spread'};
 
 const YEARLY = {yearly: true, biyearly: true};
 
@@ -659,10 +667,9 @@ export function classifyShape(counts, bins, cfg, weights){
 		sd: circularSd(bins || [], lumps),
 		test: rayleigh(bins || [], lumps)};
 
-	//IN FOCUS: the movements land on a day, or on k days. That is a lump, or k of them.
-	if(focus.lumps === 1)return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
-	if(focus.lumps > 1)
-		return Object.assign({shape: Shape.multiLump, confidence: focus.concentration}, base);
+	//IN FOCUS: the movements land on a day, or on k days. Either way that is a lump; k is its length.
+	if(focus.lumps >= 1)
+		return Object.assign({shape: Shape.lump, confidence: focus.concentration}, base);
 
 	/* OUT OF FOCUS AND BUSY: a flow. The confidence is how far OUT of focus it is, because that is
 	   what is being claimed - a perfectly flat cycle is a perfectly certain spread, and reporting
@@ -671,76 +678,12 @@ export function classifyShape(counts, bins, cfg, weights){
 		return Object.assign({shape: Shape.spread,
 			confidence: 1 - (focus.concentration === null ? 0 : focus.concentration)}, base);
 
-	//OUT OF FOCUS AND NOT BUSY: nothing to say. Not a shape with low confidence - no shape.
+	/* OUT OF FOCUS AND NOT BUSY: nothing to say, and saying so is not the same as calling it a flow.
+	   THIS NULL NEVER REACHES AN ANSWER - determineShape maps it to a spread, because a forecast can
+	   only do one of two things with money and "I could not tell" spends it at a rate like any other
+	   undated money. It exists here because an observer that cannot tell should say it cannot tell. */
 	return Object.assign({shape: null,
 		reason: 'the movements do not land on a day and the stream is not a flow'}, base);
-}
-
-/* ---- THE WORKING, FOR AN AUDIT ----------------------------------------------------------------
-   Everything the decision looked at, per allocation. This is a DEBUG surface, not the answer -
-   determineShape below is the answer, and it is deliberately narrow. */
-export function explainShape(legs, partition, cycle, anchor, opts){
-	const o = opts || {};
-	const yearly = !!cycle && !!YEARLY[cycle.name];
-	return (partition || []).map(alloc => {
-		const onAccount = (legs || []).filter(l => l && l.accountId === alloc.accountId);
-		const realTime = alloc.accountType === AccountKind.realTime;
-
-		/* EVERY READING OF THIS ACCOUNT'S MOVEMENTS IS TRIED and the stream picks one. Nothing here
-		   is gated on a merchant being dominant enough or an adjustment helping enough - a theory
-		   either explains most of the stream tightly or it does not win. */
-		const theories = (cycle && !yearly)
-			? shapeTheories(onAccount, cycle, anchor,
-				{country: o.country, realTime: realTime, taper: o.taper})
-			: [];
-		const pick = chooseTheory(theories);
-		const chosen = pick ? pick.chosen : null;
-
-		const buckets = chosen ? chosen.buckets
-			: (cycle ? cycleBuckets(onAccount, cycle, anchor, o.taper) : []);
-		const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
-		const bins = chosen ? chosen.bins : dayHistogram(buckets);
-		const verdict = yearly
-			? {shape: null, reason: 'the cycle is still yearly after determination'}
-			: (chosen ? chosen.verdict : classifyShape(counts, bins, null, weightsOf(buckets)));
-		const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
-
-		return {
-			accountId: alloc.accountId,
-			shape: verdict.shape,
-			reason: verdict.reason || null,
-			//HOW MANY LUMPS COMES FROM THE FOCUS, not from the count: the cycle that brought the
-			//movements into focus is the one that says how many clusters there are.
-			days: lumpy ? lumpDays(buckets, verdict.lumps) : [],
-			confidence: verdict.shape ? verdict.confidence : null,
-			concentration: verdict.concentration === undefined ? null : verdict.concentration,
-			lumps: verdict.lumps === undefined ? null : verdict.lumps,
-			tightness: verdict.tightness === undefined ? null : verdict.tightness,
-			scatter: verdict.scatter === undefined ? null : verdict.scatter,
-			sd: verdict.sd === undefined ? null : verdict.sd,
-			test: verdict.test === undefined ? null : verdict.test,
-			cyclesObserved: buckets.length,
-			eventsPerCycle: counts,
-			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,
-			steadyShare: verdict.steady === undefined ? null : verdict.steady,
-			busyShare: verdict.busy === undefined ? null : verdict.busy,
-			histogram: bins,
-			accountType: alloc.accountType || null,
-			legsOnAccount: onAccount.length,
-			//the whole picture as recorded, so the page can draw what the theory changed
-			baseHistogram: pick ? pick.base.bins : bins,
-			theory: chosen ? {label: chosen.label, kind: chosen.kind, snap: chosen.snap,
-				share: chosen.share, tightness: chosen.tightness,
-				exceptions: onAccount.length - chosen.legs.length} : null,
-			displaced: pick ? pick.displaced : false,
-			runnerUp: (pick && pick.runnerUp)
-				? {label: pick.runnerUp.label, tightness: pick.runnerUp.tightness} : null,
-			theories: theories.map(t => ({label: t.label, kind: t.kind, snap: t.snap,
-				share: t.share, tightness: t.tightness, tightness: t.tightness, eligible: t.eligible,
-				shape: t.verdict.shape})),
-			closedDayLegs: realTime ? landsOnClosedDays(onAccount, o.country) : null
-		};
-	});
 }
 
 /* ---- A PATTERN AND ITS OWN EXCEPTIONS -----------------------------------------------------------
@@ -804,7 +747,7 @@ export function patternWithExceptions(legs, cycle, anchor, cfg, taper){
 		exceptions.push(worst);
 	}
 
-	const lumpy = best.verdict.shape === Shape.lump || best.verdict.shape === Shape.multiLump;
+	const lumpy = best.verdict.shape === Shape.lump;
 	if(!exceptions.length || !lumpy)
 		return {kept: all, exceptions: [], result: start, trimmed: false};
 	return {kept: kept, exceptions: exceptions, result: best, trimmed: true};
@@ -910,8 +853,7 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 				: dom.accountId === stray.accountId ? stray.accountType : host.accountType;
 			const merged = remeasure(legs, cycle, anchor,
 				{country: o.country, realTime: domType === AccountKind.realTime});
-			const lumpy = merged.verdict.shape === Shape.lump
-				|| merged.verdict.shape === Shape.multiLump;
+			const lumpy = merged.verdict.shape === Shape.lump;
 			/* NO BAR - A COMPARISON. The question is whether adding this made the host better or
 			   worse, not whether the result is good in the abstract. A stray that belongs to the
 			   rhythm lands on its day, or fills a cycle the rhythm had missed, and cannot make it
@@ -962,7 +904,7 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		const legs = group.reduce((acc, m) => mergeLegs(acc, m.rawLegs), []);
 		const realTime = group[0].accountType === AccountKind.realTime;
 		const mg = remeasure(legs, cycle, anchor, {country: o.country, realTime: realTime});
-		const d = (mg.verdict.shape === Shape.lump || mg.verdict.shape === Shape.multiLump)
+		const d = mg.verdict.shape === Shape.lump
 			? lumpDays(mg.buckets, mg.verdict.lumps) : [];
 		gathered.push({
 			label: 'everything else (' + group.length + ' payees)',
@@ -1081,7 +1023,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 					exceptions = trimmed.exceptions;
 				}
 			}
-			const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
+			const lumpy = verdict.shape === Shape.lump;
 			const dd = lumpy ? lumpDays(buckets, verdict.lumps) : [];
 
 			modes.push({
@@ -1122,8 +1064,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 
 	/* PREDICTABLE FIRST, THEN BY HOW MUCH MONEY RIDES ON THEM. A forecast is read from the top, and
 	   what it most needs to be right about is the biggest thing it can actually predict. */
-	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.multiLump ? 1
-		: m.shape === Shape.spread ? 2 : 3);
+	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.spread ? 1 : 2);
 	collapsed.sort((a, b) => rank(a) - rank(b) || b.moneyShare - a.moneyShare);
 
 	const predictable = collapsed.filter(m => !!m.shape);
@@ -1143,21 +1084,71 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 	};
 }
 
+/* ---- THE WORKING, FOR AN AUDIT ----------------------------------------------------------------
+   EVERYTHING THE DECISION LOOKED AT, per mode: the movements it read, the picture they make, how
+   many cycles it saw, which closure theory won, what it set aside as exceptions, which payees were
+   merged into it and why there is no shape where there is none. This is a DEBUG surface - the bench
+   page is built from it - and nothing downstream of this module should read it. */
+export function explainShape(legs, partition, cycle, anchor, opts){
+	return streamModes(legs, partition, cycle, anchor, opts);
+}
+
 /* ---- THE ANSWER -------------------------------------------------------------------------------
-   PER ALLOCATION: {accountId, shape, days?, confidence?}. `days` appears only for a lump or a set of
-   lumps - a spread has no day to name, which is what makes it a spread - and `confidence` only
-   where a shape was determined at all. An undetermined field is ABSENT, never a placeholder: a
-   stream with no shape is not a shape with an empty day list.
+   A STREAM IS A LIST OF MODES, and a mode is one promise about one pile of money:
+
+       {label, accountId, accountType, direction, shape, days?, confidence?, moneyShare}
+
+   IT IS A LIST BECAUSE ONE SHAPE PER STREAM WAS THE WRONG SHAPE OF ANSWER. Utilities is a Conservice
+   bill and a City of Palo Alto bill, both on the 11th, two thirds and one third of the money; Gas is
+   twelve fill-ups at eight stations and no rhythm at all. Forcing either into a single verdict
+   describes neither, and the money share is what makes the list readable: an unpredictable 1% costs
+   nothing to get wrong, an unpredictable 60% is the forecast.
+
+   TWO SHAPES AND NO THIRD. A lump names days; a spread names a rate. There is no null: a mode the
+   observer could not read is a spread, because a forecast can only do one of two things with money
+   and undated money is spent at a rate whether that is a finding or a shrug. What the observer saw
+   is still in explainShape, under `reason`.
+
+   DAYS AND CONFIDENCE ARE THE LUMP'S PAIR and are ABSENT on a spread - a spread has no day to name,
+   which is what makes it a spread, and it has no confidence about a day it never claimed. An
+   undetermined field is absent, never a placeholder.
+
+   THE BAR IS APPLIED HERE, NOT ON A PAGE. minLumpConfidence is what a claim on a date costs; under
+   it a mode keeps its money, loses its day, and is forecast as a rate. It lived in the audit page's
+   browser script for exactly one session and in that time the answer said "lump d18 at 56%" while
+   the page said "no day", which is one system with two opinions.
+
+   NO WOBBLE. How far the movements scatter around the day is not a second answer a caller has to
+   combine with the first - it is already the confidence, which is built from how tightly they land
+   and how many cycles they turned up in. A caller reading both would be reading the same evidence
+   twice.
 
    THE ANCHOR IS NOT CHOSEN HERE AND SHOULD NOT BE CHOSEN BY A CALLER EITHER. It is the module's one
    seam, settled once from the portfolio and the as-of date; StreamPredictor.shapeOf() is the entry
-   point that supplies it, and this signature exists so the classifier can be tested in isolation. */
-export function determineShape(legs, partition, cycle, anchor){
-	return explainShape(legs, partition, cycle, anchor).map(e => {
-		const out = {accountId: e.accountId, shape: e.shape};
-		if(e.shape === Shape.lump || e.shape === Shape.multiLump)
-			out.days = e.days.map(d => d.day);
-		if(e.shape)out.confidence = e.confidence;
-		return out;
-	});
+   point that supplies it, and this signature exists so the stage can be tested in isolation. */
+export function determineShape(legs, partition, cycle, anchor, opts, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const read = streamModes(legs, partition, cycle, anchor, opts);
+	return {
+		cycle: cycle || null,
+		modes: read.modes.map(m => {
+			const named = m.shape === Shape.lump
+				&& m.confidence !== null && m.confidence !== undefined
+				&& m.confidence >= c.minLumpConfidence
+				&& m.days.length > 0;
+			const out = {
+				label: m.label,
+				accountId: m.accountId,
+				accountType: m.accountType || null,
+				direction: m.direction,
+				shape: named ? Shape.lump : Shape.spread
+			};
+			if(named){
+				out.days = m.days.slice();
+				out.confidence = m.confidence;
+			}
+			out.moneyShare = m.moneyShare;
+			return out;
+		})
+	};
 }
