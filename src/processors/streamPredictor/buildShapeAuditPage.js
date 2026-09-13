@@ -89,8 +89,9 @@ const row = r => '<div class="srow ' + esc(r.rowCls) + '" data-id="' + esc(r.id)
 		+ '<span class="m-sc ' + esc(scoreCls(r.scores.tight)) + '" data-sc="1">'
 			+ esc(r.scores.tight ? r.scores.tight.t : DASH) + '</span>'
 	+ '</div>'
-	+ '<div class="c-hi">' + r.hist
-		+ (r.hist2 ? '<span class="snaplab">' + esc(r.snapLabel) + '</span>' + r.hist2 : '')
+	+ '<div class="c-hi">'
+		+ (r.displaced ? r.histBase + '<span class="snaplab">' + esc(r.theoryLabel) + '</span>'
+			+ r.hist2 : r.hist)
 		+ '</div>'
 	+ '<div class="c-ck"><input type="checkbox" class="okbox" data-sid="' + esc(r.id) + '"'
 		+ ' aria-label="accept ' + esc(r.name) + '"></div>'
@@ -149,21 +150,19 @@ export function shapeRows(predictor){
 				/* THE SECOND PICTURE IS THE CLAIM. Saying the weekend explains the scatter is only
 				   checkable by seeing what undoing it did, so the adjusted histogram is drawn under
 				   the original wherever a direction was adopted. */
-				hist2: (a.snap && a.snap.adjustedBins) ? histogram(a.snap.adjustedBins, []) : '',
-				snapLabel: (a.snap && a.snap.applied !== 'none')
-					? (a.snap.applied === 'next' ? 'pulled back over the closure'
-						: 'pushed on over the closure')
-						+ ' ' + DOT + ' ' + a.snap.raw.toFixed(1) + 'd to '
-						+ a.snap.adjusted.toFixed(1) + 'd wide'
+				/* WHERE A THEORY DISPLACED THE PLAIN READING, THE ROW SHOWS BOTH PICTURES: the stream
+				   as the ledger recorded it, and the same stream under the theory that won. A claim
+				   that one payer is the stream, or that the bank's weekend caused the scatter, is
+				   only checkable by seeing what it did to the bars. */
+				hist2: a.displaced ? histogram(a.histogram, a.days) : '',
+				histBase: a.displaced ? histogram(a.baseHistogram, []) : '',
+				theoryLabel: a.displaced
+					? a.theory.label.slice(0, 46)
+						+ (a.theory.exceptions
+							? ' ' + DOT + ' ' + a.theory.exceptions + ' set aside' : '')
+						+ ' ' + DOT + ' fit ' + a.theory.tightness.toFixed(2)
 					: '',
-				snapApplied: a.snap ? a.snap.applied : null,
-				/* WHERE ONE PAYER IS THE STREAM, THE ROW SAYS SO AND SAYS WHAT IT SET ASIDE. A shape
-				   measured on 16 of 20 movements is a different claim from one measured on all 20,
-				   and the reader has to be able to see which they are looking at. */
-				series: (a.series && a.series.applied)
-					? a.series.mainKey.slice(0, 22) + ' ' + DOT + ' '
-						+ a.series.exceptions + ' set aside'
-					: '',
+				displaced: a.displaced,
 				cycles: a.cyclesObserved,
 				counts: a.eventsPerCycle,
 				steady: a.steadyShare,
@@ -259,10 +258,10 @@ const LEGEND = '<span class="lg">bars = every cycle on top of each other ' + DOT
 		+ ' x = day of the cycle ' + DOT + ' day 0 is the seam</span>'
 	+ '<span class="lg">SPREAD = the window the movements occupy, as a share of the cycle ' + DOT
 		+ ' four standard deviations wide</span>'
-	+ '<span class="lg">a SECOND row of bars = the same cycles with the bank closures undone '
-		+ DOT + ' real-time accounts only</span>'
-	+ '<span class="lg">a name in accent under the stream = one payer carries it, and how many '
-		+ 'movements were set aside as exceptions</span>'
+	+ '<span class="lg">TWO rows of bars = the stream as recorded, then under the theory that won '
+		+ DOT + ' the label says which and how strong</span>'
+	+ '<span class="lg">a theory is scored: share of the movements it explains x how tightly they '
+		+ 'land ' + DOT + ' the plain reading wins unless one beats it clearly</span>'
 	+ '<span class="lg">TIGHT = how far off its day a movement lands, on average ' + DOT
 		+ ' 1.1d off is countable on the bars</span>'
 	+ '<span class="lg">ANGLE is the older score, kept beside it while the two are compared</span>'

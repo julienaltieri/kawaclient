@@ -341,103 +341,109 @@ export function rayleigh(bins, lumps){
 	return {z: z, p: p < 0 ? 0 : p > 1 ? 1 : p};
 }
 
-/* ---- DID THE BANK'S OPENING HOURS CAUSE THE SCATTER --------------------------------------------
-   ONLY EVER ASKED OF A REAL-TIME ACCOUNT. A card charge posts when the merchant presents it, so
-   adjusting one fits weekend SHOPPING rather than a bank rule - groceries tighten by 24% under this
-   and there is no bank rule anywhere near them.
+/* ---- THE THEORIES ------------------------------------------------------------------------------
+   A STREAM'S MOVEMENTS CAN BE READ SEVERAL WAYS AND EACH READING IS A THEORY. Rather than gate the
+   readings behind thresholds - is this merchant dominant enough, did that adjustment help enough -
+   every reading is tried and scored the same way, and the stream says which one is true of it.
 
-   BOTH DIRECTIONS ARE TRIED AND ONE HAS TO WIN CLEARLY. The arrangement is not recorded anywhere, so
-   the stream is asked: pulled back to the closure before, pushed forward to the closure after, or
-   left alone. A direction is adopted only if it tightens the stream by minSnapGain AND beats the
-   other direction by minSnapMargin. Where the two are close, neither is a rule - they are both just
-   moving a few dates and one happened to win.
+   THE READINGS:
 
-   THE ADJUSTED HISTOGRAM TRAVELS WITH THE VERDICT so the audit page can draw both pictures side by
-   side. A claim that the weekend explains the scatter is checkable only by looking at what it did. */
-export function snapTrial(legs, cycle, anchor, country, cfg){
-	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
-	const spreadUnder = how => {
-		const moved = (legs || []).map(l => ({date: snapDate(new Date(l.date), how, country)}));
-		const bins = dayHistogram(cycleBuckets(moved, cycle, anchor));
-		const sd = circularSd(bins, 1);
-		return {days: sd ? sd.days : null, bins: bins};
+     everything             the ledger as recorded. Invents nothing, so it is the default.
+     closures undone        real-time accounts only, one theory per direction. A bank posts only on
+                            an open day, so a payment due on a Sunday lands Friday or Monday and the
+                            stream reads as scattered by up to three days. Which way the payer's
+                            arrangement goes is not recorded anywhere, so both are tried.
+     one payer only         a stream can carry two payers and only one of them has a cadence. Wages
+                            Julien is a semimonthly payroll plus three disability deposits; together
+                            they describe neither. The rest are counted as exceptions, never dropped
+                            quietly.
+     one payer, closures undone     the two together.
+
+   HOW ONE WINS. A theory has to be ABOUT the stream - it must use at least minTheoryShare of the
+   movements, which is what keeps a reading of four of Groceries' 167 out of the running. Among those
+   that are, the TIGHTEST fit wins. And a theory that invents something - sets movements aside, moves
+   dates around - may only displace the plain reading of the ledger if it fits very well indeed.
+
+   THE TWO ARE NOT TRADED AGAINST EACH OTHER. Multiplying them buries the case this exists for:
+   Wages Julien's payroll fits 0.89 on 80% of the movements and the unsplit stream fits 0.72 on all
+   of them, and a product prefers the unsplit one by a hundredth of a point - leaving three
+   disability deposits mixed into a payroll to protect a coverage figure.
+
+   A CARD IS NEVER ADJUSTED FOR CLOSURES. It posts when the merchant presents it, so those theories
+   are not even generated - offering them would fit weekend SHOPPING, and groceries tighten 24% under
+   an adjustment no bank rule is anywhere near. */
+const theoryLegs = (legs, how, country) => (legs || [])
+	.map(l => ({date: snapDate(new Date(l.date), how, country), accountId: l.accountId,
+		description: l.description, amount: l.amount}));
+
+function scoreTheory(legs, total, cycle, anchor){
+	const buckets = cycleBuckets(legs, cycle, anchor);
+	const bins = dayHistogram(buckets);
+	const counts = buckets.map(b => b.legs.length);
+	const verdict = classifyShape(counts, bins);
+	const tight = verdict.tightness === undefined || verdict.tightness === null
+		? 0 : verdict.tightness;
+	const share = total ? legs.length / total : 0;
+	return {legs: legs, buckets: buckets, bins: bins, counts: counts, verdict: verdict,
+		share: share, tightness: tight, eligible: share >= SHAPE_CONFIG.minTheoryShare};
+}
+
+export function shapeTheories(legs, cycle, anchor, opts){
+	const o = opts || {};
+	const all = legs || [];
+	const made = [];
+	if(!cycle || !all.length)return made;
+
+	const add = (label, kind, ls, how) => {
+		if(ls.length < 1)return;
+		const t = scoreTheory(theoryLegs(ls, how, o.country), all.length, cycle, anchor);
+		t.label = label;
+		t.kind = kind;
+		t.snap = how;
+		made.push(t);
 	};
 
-	const none = spreadUnder(SNAP.none);
-	if(none.days === null || none.days === 0)
-		return {applied: SNAP.none, reason: 'nothing to tighten', raw: none.days, bins: none.bins};
-
-	const next = spreadUnder(SNAP.next);
-	const back = spreadUnder(SNAP.back);
-	const gain = t => t.days === null ? 0 : (none.days - t.days) / none.days;
-	const gNext = gain(next), gBack = gain(back);
-	const winner = gNext >= gBack ? SNAP.next : SNAP.back;
-	const best = winner === SNAP.next ? gNext : gBack;
-	const other = winner === SNAP.next ? gBack : gNext;
-
-	const out = {raw: none.days, gainNext: gNext, gainBack: gBack,
-		bins: none.bins, applied: SNAP.none};
-	if(best < c.minSnapGain){ out.reason = 'no direction tightens it'; return out; }
-	if(best - other < c.minSnapMargin){ out.reason = 'both directions do about the same'; return out; }
-
-	out.applied = winner;
-	out.gain = best;
-	out.adjusted = winner === SNAP.next ? next.days : back.days;
-	out.adjustedBins = winner === SNAP.next ? next.bins : back.bins;
-	return out;
-}
-
-/* WHETHER A STREAM IS EVEN ELIGIBLE: every one of its movements has to be on an account the bank
-   opens and closes. A leg landing on a closed day is itself evidence that this account does not
-   follow the rule, so it is reported rather than adjusted around. */
-export function landsOnClosedDays(legs, country){
-	return (legs || []).filter(l => !isBusinessDay(new Date(l.date), country)).length;
-}
-
-/* ---- IS ONE PAYER THE STREAM, AND THE REST EXCEPTIONS -------------------------------------------
-   THE SAME QUESTION §2 ASKS, asked of the shape instead of the period, and with the same grouping so
-   the two stages cannot disagree about who a merchant is.
-
-   THE MAIN SERIES IS THE LARGEST MERCHANT GROUP, and it only becomes the stream's shape if it
-   carries most of the movements AND measuring it alone is tighter than measuring everything. Both
-   are needed: the share test alone lets Renter's insurance through, where the minority group is the
-   same payee spelled differently and splitting makes the answer worse; the tightness test alone lets
-   one grocery chain of twenty stand in for the whole shop.
-
-   WHAT IS LEFT OVER IS COUNTED, NEVER DISCARDED QUIETLY. Three disability deposits inside a payroll
-   stream are a real fact about that stream and the reader is told how many there were - they simply
-   do not have the cadence, and averaging them into it describes neither. */
-export function dominantSeries(legs, cycle, anchor, cfg){
-	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
-	const all = legs || [];
-	if(all.length < c.minMovements)return null;
+	add('everything, as recorded', 'all', all, SNAP.none);
+	if(o.realTime){
+		add('everything, closures pulled back', 'all', all, SNAP.next);
+		add('everything, closures pushed on', 'all', all, SNAP.back);
+	}
 
 	const groups = merchantGroups(all);
-	if(groups.length < 2)return null;
+	if(groups.length > 1)groups.forEach(g => {
+		if(g.legs.length < SHAPE_CONFIG.minMovements)return;
+		add(g.key + ' only', 'payer', g.legs, SNAP.none);
+		if(o.realTime){
+			add(g.key + ' only, closures pulled back', 'payer', g.legs, SNAP.next);
+			add(g.key + ' only, closures pushed on', 'payer', g.legs, SNAP.back);
+		}
+	});
 
-	const main = groups[0];
-	const share = main.legs.length / all.length;
-	if(share < c.minDominantShare)
-		return {applied: false, reason: 'no single payer carries the stream',
-			share: share, mainKey: main.key};
+	//tightest first, and a theory that uses more of the stream breaks a tie
+	return made.sort((a, b) => b.tightness - a.tightness || b.share - a.share);
+}
 
-	const sdOf = ls => {
-		const sd = circularSd(dayHistogram(cycleBuckets(ls, cycle, anchor)), 1);
-		return sd ? sd.days : null;
-	};
-	const whole = sdOf(all), alone = sdOf(main.legs);
-	if(whole === null || alone === null || whole === 0)return null;
-	const gain = (whole - alone) / whole;
-	if(gain < c.minSplitGain)
-		return {applied: false, reason: 'splitting does not tighten it',
-			share: share, mainKey: main.key, gain: gain};
+/* THE ONE THE STREAM CHOSE. The default is "everything, as recorded" and it holds unless another
+   theory is strong enough to displace it - a reading that invents nothing does not have to earn its
+   place, and every other one does. */
+export function chooseTheory(theories){
+	if(!theories.length)return null;
+	const base = theories.filter(t => t.kind === 'all' && t.snap === SNAP.none)[0] || theories[0];
+	const best = theories.filter(t => t.eligible)[0];
+	if(!best || best === base)return {chosen: base, base: base, displaced: false};
+	/* THE BEST FIT WINS, AND THERE IS NO BAR TO CLEAR. The plain reading of the ledger is one theory
+	   among the others and it competes on the same terms; a bar on top of that would only be a
+	   second opinion about a comparison already made. Eligibility - using enough of the stream to be
+	   about it - is the only thing a theory has to satisfy before its fit is believed. */
+	if(best.tightness <= base.tightness)
+		return {chosen: base, base: base, displaced: false, runnerUp: best};
+	return {chosen: best, base: base, displaced: true};
+}
 
-	return {
-		applied: true, mainKey: main.key, share: share, gain: gain,
-		legs: main.legs, exceptions: all.length - main.legs.length,
-		exceptionKeys: groups.slice(1).map(g => g.key + ' x' + g.legs.length),
-		whole: whole, alone: alone
-	};
+/* WHETHER A STREAM'S MOVEMENTS EVEN LAND ON OPEN DAYS, reported because a leg on a closed day is
+   itself evidence that this account does not follow the rule. */
+export function landsOnClosedDays(legs, country){
+	return (legs || []).filter(l => !isBusinessDay(new Date(l.date), country)).length;
 }
 
 /* ---- THE CLASSIFIER ---------------------------------------------------------------------------
@@ -528,25 +534,25 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 	const yearly = !!cycle && !!YEARLY[cycle.name];
 	return (partition || []).map(alloc => {
 		const onAccount = (legs || []).filter(l => l && l.accountId === alloc.accountId);
-		/* ONE PAYER MAY BE THE STREAM AND THE REST EXCEPTIONS. Where that holds, the shape is the
-		   main payer's - measuring a payroll together with three disability deposits describes
-		   neither of them. */
-		const series = cycle && !YEARLY[cycle.name]
-			? dominantSeries(onAccount, cycle, anchor) : null;
-		const mine = (series && series.applied) ? series.legs : onAccount;
-		const buckets = cycle ? cycleBuckets(mine, cycle, anchor) : [];
-		/* THE WEEKEND TRIAL, REAL-TIME ACCOUNTS ONLY. A card posts when the merchant presents it, so
-		   there is no bank rule to undo and adjusting one fits weekend SHOPPING instead - groceries
-		   tighten 24% under this and no bank rule is anywhere near them. */
 		const realTime = alloc.accountType === AccountKind.realTime;
-		const snap = (realTime && cycle && !yearly && mine.length >= 4)
-			? snapTrial(mine, cycle, anchor, o.country) : null;
-		const counts = buckets.map(b => b.legs.length);
-		const bins = dayHistogram(buckets);
+
+		/* EVERY READING OF THIS ACCOUNT'S MOVEMENTS IS TRIED and the stream picks one. Nothing here
+		   is gated on a merchant being dominant enough or an adjustment helping enough - a theory
+		   either explains most of the stream tightly or it does not win. */
+		const theories = (cycle && !yearly)
+			? shapeTheories(onAccount, cycle, anchor, {country: o.country, realTime: realTime})
+			: [];
+		const pick = chooseTheory(theories);
+		const chosen = pick ? pick.chosen : null;
+
+		const buckets = chosen ? chosen.buckets : (cycle ? cycleBuckets(onAccount, cycle, anchor) : []);
+		const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
+		const bins = chosen ? chosen.bins : dayHistogram(buckets);
 		const verdict = yearly
 			? {shape: null, reason: 'the cycle is still yearly after determination'}
-			: classifyShape(counts, bins);
+			: (chosen ? chosen.verdict : classifyShape(counts, bins));
 		const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
+
 		return {
 			accountId: alloc.accountId,
 			shape: verdict.shape,
@@ -561,7 +567,6 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 			scatter: verdict.scatter === undefined ? null : verdict.scatter,
 			sd: verdict.sd === undefined ? null : verdict.sd,
 			test: verdict.test === undefined ? null : verdict.test,
-			cycleDays: verdict.cycleDays === undefined ? null : verdict.cycleDays,
 			cyclesObserved: buckets.length,
 			eventsPerCycle: counts,
 			typicalEventsPerCycle: verdict.typical === undefined ? null : verdict.typical,
@@ -569,10 +574,19 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 			busyShare: verdict.busy === undefined ? null : verdict.busy,
 			histogram: bins,
 			accountType: alloc.accountType || null,
-			series: series,
 			legsOnAccount: onAccount.length,
-			snap: snap,
-			closedDayLegs: realTime ? landsOnClosedDays(mine, o.country) : null
+			//the whole picture as recorded, so the page can draw what the theory changed
+			baseHistogram: pick ? pick.base.bins : bins,
+			theory: chosen ? {label: chosen.label, kind: chosen.kind, snap: chosen.snap,
+				share: chosen.share, tightness: chosen.tightness,
+				exceptions: onAccount.length - chosen.legs.length} : null,
+			displaced: pick ? pick.displaced : false,
+			runnerUp: (pick && pick.runnerUp)
+				? {label: pick.runnerUp.label, tightness: pick.runnerUp.tightness} : null,
+			theories: theories.map(t => ({label: t.label, kind: t.kind, snap: t.snap,
+				share: t.share, tightness: t.tightness, tightness: t.tightness, eligible: t.eligible,
+				shape: t.verdict.shape})),
+			closedDayLegs: realTime ? landsOnClosedDays(onAccount, o.country) : null
 		};
 	});
 }
