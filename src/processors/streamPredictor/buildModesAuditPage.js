@@ -28,7 +28,7 @@
    is concatenated rather than interpolated, so JSON's own escapes reach the browser intact.
    ================================================================================================== */
 
-import {renderAuditPage, esc} from './auditShell';
+import {renderAuditPage, esc, plain} from './auditShell';
 import {Shape} from './shapeDetermination';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {AccountKind} from './accountMapping';
@@ -88,15 +88,6 @@ const KINDS = [
    what counts as a lump when the knob moves without asking for the ledger again. Everything the
    arithmetic already settled - the day, the wobble, the exceptions - arrives as the string it will
    be printed as. */
-/* BANK DESCRIPTIONS CARRY WHATEVER THE PAYMENT NETWORK PUT IN THEM, backslashes included, and
-   JSON escapes those - which would put a backslash into the emitted script and break the rule at
-   the top of this file. Display text is cleaned on the way out: a wire memo separated by a stray
-   slash reads the same with a space there. */
-const plain = s => String(s === null || s === undefined ? '' : s)
-	.split(String.fromCharCode(92)).join(' ')
-	.replace(/"/g, "'")
-	.replace(/\s+/g, ' ').trim();
-
 const modeData = m => ({
 	who: plain(whoOf(m)),
 	shape: m.shape || null,

@@ -74,6 +74,15 @@ const section = g => '<section class="group group-' + esc(g.key) + '" data-group
    `extraScript` IS SUBJECT TO THE NO-BACKSLASH RULE AT THE TOP OF THIS FILE, and more sharply than
    anything else here: it is interpolated verbatim, so whatever the caller built is what the browser
    parses. A backslash in that string is a backslash on the page. */
+/* BANK DESCRIPTIONS CARRY WHATEVER THE PAYMENT NETWORK PUT IN THEM, backslashes included, and JSON
+   escapes those - which would put a backslash into an emitted page script and break the rule at the
+   top of this file. Display text is cleaned on the way out: a wire memo separated by a stray slash
+   reads the same with a space there. */
+export const plain = s => String(s === null || s === undefined ? '' : s)
+	.split(String.fromCharCode(92)).join(' ')
+	.replace(/"/g, "'")
+	.replace(/\s+/g, ' ').trim();
+
 export function renderAuditPage(opts){
 	const o = opts || {};
 	const groups = (o.groups || []).filter(g => g && g.cards);

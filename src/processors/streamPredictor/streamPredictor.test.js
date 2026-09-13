@@ -33,6 +33,8 @@ import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistog
 	directionOf, byDirection, dominantAccount, predictedDays, cycleWeights}
 	from './shapeDetermination';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
+import {buildPredictionAuditPage, predictionData} from './buildPredictionAuditPage';
+import {modeAmount, streamSpine, weightedMiddle} from './modeAmounts';
 import {SHAPE_CONFIG} from './shapeConfig';
 import {Period} from '../../Time';
 
@@ -41,6 +43,7 @@ const OUT = path.join(__dirname, 'audit-account-mapping.html');
 const OUT_CYCLE = path.join(__dirname, 'audit-cycle.html');
 const OUT_FIT = path.join(__dirname, 'audit-cycle-fit.html');
 const OUT_MODES = path.join(__dirname, 'audit-modes.html');
+const OUT_PRED = path.join(__dirname, 'audit-prediction.html');
 const GROUND_TRUTH = path.join(__dirname, '..', '..', 'tests', 'fixtures',
 	'cycleGroundTruth.json');
 const HAS_FIXTURE = fs.existsSync(FIXTURE);
@@ -1312,6 +1315,120 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		const mode = predictor.explainShapeOf(plaid.id, plaid).modes.find(x => /plaid hq/i.test(x.label));
 		expect(mode.shape).toBe(Shape.lump);
 		expect(mode.days).toEqual([18]);
+	});
+
+	/* ---- §4, PROTOTYPE: HOW MUCH, AND WHEN THE NEXT ONE LANDS --------------------------------------
+	   MEDIAN FOR A LUMP, MEAN FOR A RATE, AND THE SHAPE DECIDES WHICH. A lump is a repeated thing and
+	   a one-off should not move it - the savings transfer is four months at exactly $6,000 and two
+	   larger transfers to fund something, and $6,000 is the habit. A rate is a total over time and the
+	   median destroys it: most cycles of a spread are empty, so the median cycle is $0.00, which
+	   answers "nothing usually happens" to a question about how much money moves.
+
+	   THE STREAM'S OWN LATTICE IS THE DENOMINATOR, NEVER THE MODE'S. Business Expenses' loose card
+	   spend appeared in three cycles of nine; over its own three it reads -$73.82 a month against a
+	   real -$24.61, because its buckets only exist where it moved. */
+	test('a lump takes the middle of the cycles it landed in, a rate the total over all of them', () => {
+		//half the weight either side, and with equal weights the plain median
+		expect(weightedMiddle([10, 20, 30], [1, 1, 1])).toBe(20);
+		expect(weightedMiddle([10, 20], [1, 1])).toBe(15);
+		//two faded values do not outvote one recent one
+		expect(weightedMiddle([10, 10, 20], [0.2, 0.2, 1])).toBe(20);
+		expect(weightedMiddle([], [])).toBe(0);
+
+		const savings = predictor.reviewable().find(x => x.name === 'Savings');
+		const w = predictor.explainShapeOf(savings.id, savings);
+		const spine = streamSpine(w.modes, predictor.shapeOf(savings.id, savings).cycle,
+			predictor.analysisAnchor());
+		const lump = w.modes.find(x => x.shape === Shape.lump);
+		const amt = modeAmount(lump, spine, null);
+		expect(amt.kind).toBe('lump');
+		//the calendar reminder, not the mean of it and the two large transfers
+		expect(Math.abs(amt.perCycle)).toBe(6000);
+		expect(amt.cyclesObserved).toBe(spine.length);
+
+		const rate = w.modes.find(x => x.shape !== Shape.lump);
+		const rateAmt = modeAmount(rate, spine, null);
+		expect(rateAmt.kind).toBe('rate');
+		//measured over every cycle of the stream, so it is smaller than its own-bucket average
+		expect(rateAmt.cyclesObserved).toBe(spine.length);
+		expect(rateAmt.cyclesLanded).toBeLessThan(spine.length);
+		expect(Math.abs(rateAmt.perCycle))
+			.toBeLessThan(Math.abs(rateAmt.total) / rateAmt.cyclesLanded);
+	});
+
+	/* THE LANES ARE THE CHECK. A claim of "-$9.99 on the 27th" is either obviously right or obviously
+	   wrong depending on what the last three cycles did, and a reader cannot tell which from the claim
+	   alone - so the past is drawn on the same axis as the promise. */
+	test('every account gets three cycles of history and one predicted', () => {
+		const rows = predictionData(predictor);
+		expect(rows.length).toBeGreaterThan(10);
+		rows.forEach(r => {
+			expect(r.accounts.length).toBeGreaterThan(0);
+			r.accounts.forEach(a => {
+				expect(['deferred', 'realTime'].indexOf(a.accountType)).toBeGreaterThan(-1);
+				expect(a.lanes.length).toBeGreaterThan(1);
+				expect(a.lanes.length).toBeLessThanOrEqual(4);
+				//exactly one lane is the promise, and it is the last
+				const claims = a.lanes.filter(l => l.predicted);
+				expect(claims.length).toBe(1);
+				expect(a.lanes[a.lanes.length - 1].predicted).toBe(true);
+				//a predicted lane only ever carries dated claims; undated money is the band
+				claims[0].events.forEach(e => expect(typeof e.day).toBe('number'));
+				//and every mark sits inside the cycle it is drawn on
+				a.lanes.forEach(l => l.events.forEach(e => {
+					expect(e.day).toBeGreaterThanOrEqual(0);
+					expect(e.day).toBeLessThanOrEqual(l.days);
+				}));
+			});
+		});
+
+		//no stream §2 left yearly: one cycle is the whole window, so there is no past to draw
+		expect(rows.every(r => !/yearly/i.test(r.cycle))).toBe(true);
+	});
+
+	test('writes the prediction audit page from the real results', () => {
+		const html = buildPredictionAuditPage(predictor, {
+			version: portfolio.version,
+			capturedAt: portfolio.capturedAt,
+			anchor: predictor.analysisAnchor()
+		});
+		fs.writeFileSync(OUT_PRED, html, 'utf8');
+		expect(html.startsWith('<!doctype html>')).toBe(true);
+
+		const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
+		expect(scripts.length).toBe(2);
+		scripts.forEach(block => {
+			const src = block.replace(/^<script>/, '').replace(/<\/script>$/, '');
+			expect(() => new Function(src)).not.toThrow();
+			expect(src.indexOf(String.fromCharCode(92))).toBe(-1);
+			expect(src.indexOf(String.fromCharCode(96))).toBe(-1);
+		});
+
+		//every field the emitted script reads off a mode or a lane has to exist in the data
+		const page = scripts[1].replace(/^<script>/, '').replace(/<\/script>$/, '');
+		const blob = page.match(/^var DATA = ([\s\S]*?);\nvar DOTCH/);
+		expect(blob).toBeTruthy();
+		const emitted = JSON.parse(blob[1]);
+		const mode = emitted[0].accounts[0].modes[0];
+		const lane = emitted[0].accounts[0].lanes[0];
+		const reads = {};
+		(page.match(/\bm\.[a-z]+/gi) || []).forEach(r => { reads[r.slice(2)] = true; });
+		Object.keys(reads).forEach(k =>
+			expect({field: k, present: Object.prototype.hasOwnProperty.call(mode, k)})
+				.toEqual({field: k, present: true}));
+		['from', 'to', 'days', 'predicted', 'events'].forEach(k =>
+			expect(Object.prototype.hasOwnProperty.call(lane, k)).toBe(true));
+
+		const rows = predictionData(predictor);
+		const accounts = rows.reduce((n, r) => n + r.accounts.length, 0);
+		const lumps = rows.reduce((n, r) => n + r.accounts.reduce((k, a) =>
+			k + a.modes.filter(x => x.kind === 'lump').length, 0), 0);
+		const rates = rows.reduce((n, r) => n + r.accounts.reduce((k, a) =>
+			k + a.modes.filter(x => x.kind === 'rate').length, 0), 0);
+		console.log('§4 PREDICTION: ' + rows.length + ' streams | ' + accounts + ' accounts | '
+			+ lumps + ' dated claims | ' + rates + ' rates');
+		console.log('PREDICTION PAGE: ' + OUT_PRED + ' ('
+			+ fs.statSync(OUT_PRED).size + ' bytes)');
 	});
 
 	test('writes the modes audit page from the real results', () => {
