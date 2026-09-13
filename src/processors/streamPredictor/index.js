@@ -203,14 +203,19 @@ export class StreamPredictor {
 		};
 	}
 
-	/* THE PROTOTYPE ANSWER: a stream as a list of modes rather than one shape. */
-	modesOf(streamId, stream){
+	/* THE PROTOTYPE ANSWER: a stream as a list of modes rather than one shape.
+
+	   THE TAPER IS AN ARGUMENT HERE AND NOWHERE ELSE IN THE MODULE, because the bench asks the same
+	   stream the same question at several half-lives and lays the answers side by side. Left out, the
+	   configured setting applies - which is the same rule the anchor follows. */
+	modesOf(streamId, stream, taper){
 		const node = stream || this.terminalStreams().find(s => s.id === streamId);
 		const cycle = cycleFrom(this.cycleOf(streamId, node));
 		const window = legsInWindow(this.legsOf(streamId), this.analysisAnchor());
 		return Object.assign({cycle: cycle},
 			streamModes(window, this.partitionOf(streamId), cycle, this.analysisAnchor(),
-				{country: this.userCountry(), offsetHours: this.userTimezoneOffset()}));
+				{country: this.userCountry(), offsetHours: this.userTimezoneOffset(),
+					taper: taper}));
 	}
 
 	explainShapeOf(streamId, stream){

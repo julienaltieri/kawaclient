@@ -60,7 +60,44 @@ const MAX_CYCLES = 5000;
    EXPORTED because amountPrediction buckets the same legs with the same period and the two stages
    must not be able to disagree about where a cycle begins. A near-copy would drift the moment either
    side was edited.  */
-export function cycleBuckets(legs, cycle, anchor){
+/* ---- HOW MUCH EACH CYCLE COUNTS ------------------------------------------------------------------
+   A HABIT THAT CHANGED IS NOT A HABIT THAT IS UNRELIABLE, and weighing every cycle the same cannot
+   tell the two apart. The weekly card payment ran on day 0 until the 2nd of March and has run on day
+   4 every week since; evenly weighed that is two clusters and a claim on the wrong day.
+
+   THE NEWEST CYCLES ARE FLAT, THEN A HALF-LIFE. The flat shoulder is the part that makes this safe: a
+   rhythm needs a few cycles at full weight to be a rhythm at all, and a taper that starts at the
+   newest cycle lets one movement outvote a year. After the shoulder the weight halves every half-life
+   cycles - cycles, not days, so a weekly stream and a monthly one fade at the same rate against their
+   own rhythm.
+
+   WEIGHTS RIDE ON THE BUCKETS, which is why almost nothing else in this file had to change: the
+   histogram adds a bucket's weight instead of 1, and everything downstream - the circular mean, the
+   scatter, the cluster sizes, the share of cycles filled - already sums over those counts. With no
+   taper configured every weight is exactly 1 and every number is what it was.
+
+       cycle 0 back   1.00        shoulder 3, half-life 12
+       cycle 3 back   1.00
+       cycle 9 back   0.71
+       cycle 15 back  0.50
+       cycle 27 back  0.25 */
+export function cycleWeights(n, taper){
+	const t = taper || {};
+	const half = t.halfLife === undefined ? SHAPE_CONFIG.taperHalfLifeCycles : t.halfLife;
+	const shoulder = t.shoulder === undefined ? SHAPE_CONFIG.taperShoulderCycles : t.shoulder;
+	const w = [];
+	for(let i = 0; i < n; i++){
+		const back = n - 1 - i;
+		if(!half || back <= shoulder){ w.push(1); continue; }
+		w.push(Math.pow(0.5, (back - shoulder) / half));
+	}
+	return w;
+}
+
+const weightOf = b => (b && b.weight !== undefined) ? b.weight : 1;
+export const weightsOf = buckets => (buckets || []).map(weightOf);
+
+export function cycleBuckets(legs, cycle, anchor, taper){
 	if(!cycle)return [];
 	const list = (legs || [])
 		.filter(l => l && l.date)
@@ -104,6 +141,8 @@ export function cycleBuckets(legs, cycle, anchor){
 		//a leg older than the guard-capped walk has no bucket and is not counted
 		if(x.t >= buckets[b].start.getTime() && x.t < buckets[b].end.getTime())buckets[b].legs.push(x.leg);
 	});
+	const w = cycleWeights(buckets.length, taper);
+	buckets.forEach((bk, i) => { bk.weight = w[i]; });
 	return buckets;
 }
 
@@ -133,9 +172,10 @@ export function dayHistogram(buckets){
 		if(days > span)span = days;
 	});
 	const bins = new Array(Math.max(span, 1)).fill(0);
+	//A BUCKET'S WEIGHT, NOT A COUNT OF ONE. With no taper every weight is 1 and this is the old sum.
 	buckets.forEach(b => b.legs.forEach(l => {
 		const d = dayInCycle(l, b);
-		if(d >= 0 && d < bins.length)bins[d]++;
+		if(d >= 0 && d < bins.length)bins[d] += weightOf(b);
 	}));
 	return bins;
 }
@@ -190,10 +230,13 @@ export function predictedDays(days, typical){
 }
 
 export function lumpDays(buckets, n){
-	const days = [];
-	buckets.forEach(b => b.legs.forEach(l => days.push(dayInCycle(l, b))));
-	if(!days.length)return [];
-	days.sort((a, b) => a - b);
+	/* THE DAY AND THE WOBBLE ARE READ OFF THE RAW DAYS - a middle is a middle whenever it happened -
+	   but HOW BIG a cluster is counts recency, because that is what picks the day to predict. */
+	const items = [];
+	buckets.forEach(b => b.legs.forEach(l => items.push({d: dayInCycle(l, b), w: weightOf(b)})));
+	if(!items.length)return [];
+	items.sort((a, b) => a.d - b.d);
+	const days = items.map(x => x.d);
 
 	//the n-1 biggest gaps between consecutive days are where the groups are cut
 	const cuts = [];
@@ -204,12 +247,14 @@ export function lumpDays(buckets, n){
 	const groups = [];
 	let from = 0;
 	edges.concat([days.length]).forEach(to => {
-		if(to > from)groups.push(days.slice(from, to));
+		if(to > from)groups.push(items.slice(from, to));
 		from = to;
 	});
 	return groups.map(g => {
-		const mid = middleOf(g);
-		return {day: mid, wobble: wobbleOf(g, mid), events: g.length};
+		const ds = g.map(x => x.d);
+		const mid = middleOf(ds);
+		return {day: mid, wobble: wobbleOf(ds, mid),
+			events: g.reduce((n, x) => n + x.w, 0)};
 	});
 }
 
@@ -350,12 +395,16 @@ export function tightness(bins, lumps){
    nine points cannot help piling onto a handful of weekday slots, so they look tight, and 0.31 x 0.57
    says what they are worth. Nothing is gated - a stray can still complete a sparse mode and raise it -
    the score simply stops mistaking arithmetic for a habit. */
-export function patternFit(bins, counts, lumps){
+export function patternFit(bins, counts, lumps, weights){
 	const t = tightness(bins, lumps);
 	if(t === null)return null;
 	if(!counts || !counts.length)return null;
-	const fills = counts.filter(c => c > 0).length / counts.length;
-	return fills * t;
+	//A CYCLE THE STREAM MISSED LAST MONTH COSTS MORE THAN ONE IT MISSED IN JANUARY.
+	const w = i => (weights && weights[i] !== undefined) ? weights[i] : 1;
+	let filled = 0, total = 0;
+	counts.forEach((c, i) => { total += w(i); if(c > 0)filled += w(i); });
+	if(!total)return null;
+	return (filled / total) * t;
 }
 
 /* ---- TWO MORE READINGS OF THE SAME BARS, FOR COMPARISON ----------------------------------------
@@ -430,11 +479,11 @@ const theoryLegs = (legs, how, country) => (legs || [])
 	.map(l => ({date: snapDate(new Date(l.date), how, country), accountId: l.accountId,
 		description: l.description, amount: l.amount}));
 
-function scoreTheory(legs, total, cycle, anchor){
-	const buckets = cycleBuckets(legs, cycle, anchor);
+function scoreTheory(legs, total, cycle, anchor, taper){
+	const buckets = cycleBuckets(legs, cycle, anchor, taper);
 	const bins = dayHistogram(buckets);
 	const counts = buckets.map(b => b.legs.length);
-	const verdict = classifyShape(counts, bins);
+	const verdict = classifyShape(counts, bins, null, weightsOf(buckets));
 	//THE FIT, NOT THE TIGHTNESS. A theory that lands tightly but skips cycles has not explained them.
 	const tight = verdict.fit === undefined || verdict.fit === null ? 0 : verdict.fit;
 	const share = total ? legs.length / total : 0;
@@ -450,7 +499,7 @@ export function shapeTheories(legs, cycle, anchor, opts){
 
 	const add = (label, kind, ls, how) => {
 		if(ls.length < 1)return;
-		const t = scoreTheory(theoryLegs(ls, how, o.country), all.length, cycle, anchor);
+		const t = scoreTheory(theoryLegs(ls, how, o.country), all.length, cycle, anchor, o.taper);
 		t.label = label;
 		t.kind = kind;
 		t.snap = how;
@@ -534,7 +583,7 @@ const commonest = xs => {
 	return Object.keys(seen).map(Number).sort((a, b) => seen[b] - seen[a] || a - b)[0];
 };
 
-export function classifyShape(counts, bins, cfg){
+export function classifyShape(counts, bins, cfg, weights){
 	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
 	if(!counts.length)return {shape: null, reason: 'no cycles'};
 
@@ -543,15 +592,22 @@ export function classifyShape(counts, bins, cfg){
 	if(counts.length < c.minCyclesObserved)
 		return {shape: null, reason: 'only ' + counts.length + ' cycle'
 			+ (counts.length === 1 ? '' : 's') + ' observed'};
-	if(placed < c.minMovements)
-		return {shape: null, reason: 'only ' + placed + ' movement'
-			+ (placed === 1 ? '' : 's') + ' to read'};
+
+	/* THE FLOOR COUNTS WEIGHTED MOVEMENTS, and under a taper that is the guard that keeps the whole
+	   idea honest. Four Amazon deliveries scattered across a year weigh less than four movements once
+	   the old ones fade, and without this they would read as a confident monthly lump on the strength
+	   of the newest one. With no taper every weight is 1 and this is the raw count. */
+	const carried = counts.reduce((n, x, i) =>
+		n + x * ((weights && weights[i] !== undefined) ? weights[i] : 1), 0);
+	if(carried < c.minMovements)
+		return {shape: null, reason: 'only ' + (Math.round(carried * 10) / 10) + ' movement'
+			+ (carried === 1 ? '' : 's') + ' to read once the old ones fade'};
 
 	const typical = commonest(counts);
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
 	const focus = focusOf(bins || [], c);
-	const fit = patternFit(bins || [], counts, focus.lumps);
+	const fit = patternFit(bins || [], counts, focus.lumps, weights);
 	/* REPORTED, NOT YET DECIDING. The width is the number a person can check against the bars; the
 	   angular focus is what still picks the shape and finds how many clusters there are. Both travel
 	   so the two can be compared on the audit page before either is given the gate. */
@@ -596,17 +652,19 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 		   is gated on a merchant being dominant enough or an adjustment helping enough - a theory
 		   either explains most of the stream tightly or it does not win. */
 		const theories = (cycle && !yearly)
-			? shapeTheories(onAccount, cycle, anchor, {country: o.country, realTime: realTime})
+			? shapeTheories(onAccount, cycle, anchor,
+				{country: o.country, realTime: realTime, taper: o.taper})
 			: [];
 		const pick = chooseTheory(theories);
 		const chosen = pick ? pick.chosen : null;
 
-		const buckets = chosen ? chosen.buckets : (cycle ? cycleBuckets(onAccount, cycle, anchor) : []);
+		const buckets = chosen ? chosen.buckets
+			: (cycle ? cycleBuckets(onAccount, cycle, anchor, o.taper) : []);
 		const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
 		const bins = chosen ? chosen.bins : dayHistogram(buckets);
 		const verdict = yearly
 			? {shape: null, reason: 'the cycle is still yearly after determination'}
-			: (chosen ? chosen.verdict : classifyShape(counts, bins));
+			: (chosen ? chosen.verdict : classifyShape(counts, bins, null, weightsOf(buckets)));
 		const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
 
 		return {
@@ -666,18 +724,18 @@ export function explainShape(legs, partition, cycle, anchor, opts){
    one - Grocery Outlet sheds 18 of 60 shops before the arithmetic stops encouraging it, and is a
    flow at every step. A trim that does not produce a pattern is discarded and the mode is left as it
    was. */
-function fitOf(legs, cycle, anchor){
-	const buckets = cycleBuckets(legs, cycle, anchor);
+function fitOf(legs, cycle, anchor, taper){
+	const buckets = cycleBuckets(legs, cycle, anchor, taper);
 	const bins = dayHistogram(buckets);
 	const counts = buckets.map(b => b.legs.length);
-	const verdict = classifyShape(counts, bins);
+	const verdict = classifyShape(counts, bins, null, weightsOf(buckets));
 	return {fit: verdict.fit || 0, verdict: verdict, buckets: buckets, bins: bins, counts: counts};
 }
 
-export function patternWithExceptions(legs, cycle, anchor, cfg){
+export function patternWithExceptions(legs, cycle, anchor, cfg, taper){
 	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
 	const all = legs || [];
-	const start = fitOf(all, cycle, anchor);
+	const start = fitOf(all, cycle, anchor, taper);
 	if(all.length < c.minMovements)return {kept: all, exceptions: [], result: start, trimmed: false};
 
 	//a spread has no day to be near, so there is nothing here for it to be trimmed towards
@@ -689,7 +747,7 @@ export function patternWithExceptions(legs, cycle, anchor, cfg){
 	const exceptions = [];
 
 	while(kept.length > floor){
-		const buckets = cycleBuckets(kept, cycle, anchor);
+		const buckets = cycleBuckets(kept, cycle, anchor, taper);
 		const claimed = lumpDays(buckets, 1)[0];
 		if(!claimed)break;
 		const span = dayHistogram(buckets).length || 1;
@@ -701,7 +759,7 @@ export function patternWithExceptions(legs, cycle, anchor, cfg){
 		}));
 		if(!worst || worstGap <= 0)break;
 		const trial = kept.filter(l => l !== worst);
-		const t = fitOf(trial, cycle, anchor);
+		const t = fitOf(trial, cycle, anchor, taper);
 		if(t.fit <= best.fit)break;
 		kept = trial;
 		best = t;
@@ -769,13 +827,14 @@ export function dominantAccount(legs){
 function remeasure(legs, cycle, anchor, opts){
 	const o = opts || {};
 	const theories = shapeTheories(legs, cycle, anchor,
-		{country: o.country, realTime: o.realTime}).filter(t => t.kind === 'all');
+		{country: o.country, realTime: o.realTime, taper: o.taper}).filter(t => t.kind === 'all');
 	const pick = chooseTheory(theories);
 	const chosen = pick ? pick.chosen : null;
-	const buckets = chosen ? chosen.buckets : cycleBuckets(legs, cycle, anchor);
+	const buckets = chosen ? chosen.buckets : cycleBuckets(legs, cycle, anchor, o.taper);
 	const bins = chosen ? chosen.bins : dayHistogram(buckets);
 	const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
-	const verdict = chosen ? chosen.verdict : classifyShape(counts, bins);
+	const verdict = chosen ? chosen.verdict
+		: classifyShape(counts, bins, null, weightsOf(buckets));
 	return {verdict: verdict, buckets: buckets, bins: bins,
 		snap: chosen ? chosen.snap : SNAP.none,
 		fit: (verdict.fit === undefined || verdict.fit === null) ? 0 : verdict.fit};
@@ -955,26 +1014,27 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 			let chosen = null, theories = [];
 			if(cycle && !yearly){
 				theories = shapeTheories(mine, cycle, anchor,
-					{country: o.country, realTime: realTime})
+					{country: o.country, realTime: realTime, taper: o.taper})
 					.filter(t => t.kind === 'all');
 				const pick = chooseTheory(theories);
 				chosen = pick ? pick.chosen : null;
 			}
 
 			let buckets = chosen ? chosen.buckets
-				: (cycle ? cycleBuckets(mine, cycle, anchor) : []);
+				: (cycle ? cycleBuckets(mine, cycle, anchor, o.taper) : []);
 			let bins = chosen ? chosen.bins : dayHistogram(buckets);
 			let counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
 			let verdict = yearly
 				? {shape: null, reason: 'the cycle is still yearly after determination'}
-				: (chosen ? chosen.verdict : classifyShape(counts, bins));
+				: (chosen ? chosen.verdict
+					: classifyShape(counts, bins, null, weightsOf(buckets)));
 
 			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT. The furthest movements are set aside
 			   while that improves the fit, and they become the mode's own exceptions. */
 			let exceptions = [];
 			if(!yearly && cycle){
 				const trimmed = patternWithExceptions(
-					chosen ? chosen.legs : mine, cycle, anchor);
+					chosen ? chosen.legs : mine, cycle, anchor, null, o.taper);
 				if(trimmed.trimmed){
 					buckets = trimmed.result.buckets;
 					bins = trimmed.result.bins;

@@ -30,7 +30,7 @@ import {summarizeAll, resolveOne, explainCycle, confidenceOf, DEFAULT_KNOBS}
 import {FIT_CONFIG} from './fitConfig';
 import {fitTable, legsInWindow, emptyCyclesSince, CANDIDATE_PERIODS} from './cycleFit';
 import {cycleBuckets, classifyShape, concentration, focusOf, lumpDays, dayHistogram, Shape,
-	directionOf, byDirection, dominantAccount, predictedDays}
+	directionOf, byDirection, dominantAccount, predictedDays, cycleWeights}
 	from './shapeDetermination';
 import {buildShapeAuditPage, shapeRows, summarizeShapes} from './buildShapeAuditPage';
 import {buildModesAuditPage, modeRows} from './buildModesAuditPage';
@@ -1144,6 +1144,68 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(robin.predicted).toEqual([4]);
 	});
 
+	/* ---- RECENT CYCLES COUNT FOR MORE THAN OLD ONES ------------------------------------------------
+	   A HABIT THAT CHANGED IS NOT A HABIT THAT IS UNRELIABLE. The weekly card payment to Robinhood ran
+	   on day 0 from the 22nd of December to the 2nd of March and has run on day 4 every week since:
+
+	       d0   12-22 .. 03-02    12 payments
+	       d4   03-06 .. 09-04    26 payments, every week
+
+	   Weighed evenly that is two clusters and a 91% claim; weighed by recency it is one payment on d4
+	   and the twelve old ones are history rather than evidence against it.
+
+	   THE FLAT SHOULDER IS WHAT MAKES IT WORK, and leaving it out is visible in the numbers. A bare
+	   exponential from the newest cycle reads 91 -> 93 -> 94 -> 85 -> 95 across half-lives 24, 12, 6, 3
+	   - the dip at 6 is the model buying a second cluster to hold a dying one. With three cycles flat
+	   before the decay starts it is 91 -> 93 -> 94 -> 100 -> 100, one lump, no dip. */
+	test('the newest cycles are flat, then the weight halves', () => {
+		//no half-life is no taper at all, whatever the shoulder says
+		expect(cycleWeights(5, {halfLife: 0, shoulder: 3})).toEqual([1, 1, 1, 1, 1]);
+		expect(cycleWeights(0, {halfLife: 6, shoulder: 3})).toEqual([]);
+
+		//oldest first, newest last: the shoulder covers the last four (0, 1, 2 and 3 cycles back)
+		const w = cycleWeights(10, {halfLife: 6, shoulder: 3});
+		expect(w.slice(6)).toEqual([1, 1, 1, 1]);
+		//four cycles back is one step past the shoulder
+		expect(w[5]).toBeCloseTo(Math.pow(0.5, 1 / 6), 9);
+		//nine cycles back is six steps past the shoulder, which is exactly one half-life
+		expect(w[0]).toBeCloseTo(0.5, 9);
+		//and it never rises going back in time
+		w.forEach((x, i) => { if(i)expect(x).toBeGreaterThanOrEqual(w[i - 1]); });
+
+		const cc = predictor.reviewable().find(x => x.name === 'Credit Card Payments');
+		const off = predictor.modesOf(cc.id, cc, {halfLife: 0, shoulder: 3});
+		const on = predictor.modesOf(cc.id, cc, {halfLife: 6, shoulder: 3});
+		const robinOff = off.modes.find(x => /robinhood/i.test(x.label));
+		const robinOn = on.modes.find(x => /robinhood/i.test(x.label));
+
+		expect(robinOff.shape).toBe(Shape.multiLump);
+		expect(robinOff.days).toEqual([0, 4]);
+		expect(robinOn.shape).toBe(Shape.lump);
+		expect(robinOn.days).toEqual([4]);
+		expect(robinOn.predicted).toEqual([4]);
+		expect(robinOn.confidence).toBeGreaterThan(robinOff.confidence);
+		expect(Math.round(robinOn.confidence * 100)).toBe(100);
+	});
+
+	/* ---- AND THE FLOOR THAT KEEPS IT HONEST ---------------------------------------------------------
+	   A TAPER MAKES A SPARSE MODE LOOK CONFIDENT unless the movement floor is weighed too. Whole Foods
+	   is seven shops across thirteen weeks with nothing since the 16th of May; untapered it claims a
+	   day at 46%, and letting the newest of those seven dominate would raise it rather than lower it.
+	   Counting WEIGHTED movements against minMovements is what turns a stale claim into no claim. */
+	test('a mode whose movements have all faded stops claiming a day', () => {
+		const g = predictor.reviewable().find(x => x.name === 'Groceries & Hygiene');
+		const off = predictor.modesOf(g.id, g, {halfLife: 0, shoulder: 3});
+		const on = predictor.modesOf(g.id, g, {halfLife: 6, shoulder: 3});
+		const wfOff = off.modes.find(x => /whole foods/i.test(x.label));
+		expect(wfOff.shape).toBe(Shape.multiLump);
+
+		const wfOn = on.modes.find(x => /whole foods/i.test(x.label));
+		//it is still a mode with its money; what it lost is the right to name a day
+		expect(wfOn ? wfOn.shape : null).toBe(null);
+		expect(on.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
+	});
+
 	test('writes the modes audit page from the real results', () => {
 		const rows = modeRows(predictor);
 		const html = buildModesAuditPage(predictor, {
@@ -1171,11 +1233,14 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		   READ OFF THE EMITTED SCRIPT rather than from a list kept by hand, because a list kept by
 		   hand is the same bug one level up. */
 		const page = scripts[1].replace(/^<script>/, '').replace(/<\/script>$/, '');
-		const blob = page.match(/^var DATA = ([\s\S]*?);\nvar bar/);
+		const blob = page.match(/^var DATA = ([\s\S]*?);var TAPERS = /);
 		expect(blob).toBeTruthy();
 		const emitted = JSON.parse(blob[1]);
+		//every stream carries one finished answer per taper setting, in a fixed order
+		expect(emitted[0].v.length).toBeGreaterThan(1);
+		expect(emitted.every(st => st.v.length === emitted[0].v.length)).toBe(true);
 		const anyMode = emitted.reduce((hit, st) =>
-			hit || st.groups.reduce((h, g) => h || g.modes[0], null), null);
+			hit || st.v[0].reduce((h, g) => h || g.modes[0], null), null);
 		expect(anyMode).toBeTruthy();
 
 		const reads = {};
@@ -1186,7 +1251,7 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 				.toEqual({field: k, present: true}));
 
 		//and the group fields the chart is laid out from
-		const anyGroup = emitted[0].groups[0];
+		const anyGroup = emitted[0].v[0][0];
 		['kind', 'note', 'cls', 'share', 'modes'].forEach(k =>
 			expect(Object.prototype.hasOwnProperty.call(anyGroup, k)).toBe(true));
 

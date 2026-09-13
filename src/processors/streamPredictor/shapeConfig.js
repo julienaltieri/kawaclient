@@ -136,6 +136,31 @@ export const SHAPE_CONFIG = {
 	   today's lumps run from 0.42 to 0.82 - and the value belongs here once it is picked, not before. */
 	minLumpConfidence: 0,
 
+	/* ---- RECENT CYCLES COUNT FOR MORE THAN OLD ONES ------------------------------------------------
+	   A HABIT THAT CHANGED IS NOT A HABIT THAT IS UNRELIABLE. The weekly card payment to Robinhood ran
+	   on day 0 from December to the 2nd of March and has run on day 4 every week since. Weighed evenly
+	   that is two clusters and a 91% claim on the wrong day; weighed by recency it is one payment on
+	   day 4, and the twelve old ones are history rather than evidence against it.
+
+	   THE NEWEST CYCLES ARE NOT TAPERED AT ALL. A rhythm needs a few cycles at full weight to be a
+	   rhythm - taper inside them and the single newest movement starts to outvote everything, which is
+	   how a payee with four movements in a year reads as a confident monthly lump. This many cycles
+	   sit at weight 1 before the decay starts.
+
+	   THEN A HALF-LIFE, MEASURED IN CYCLES rather than days, so a weekly stream and a monthly one fade
+	   at the same rate relative to their own rhythm. Zero means no taper at all, which is where this
+	   ships: the numbers below are the bench's to pick from, and picking one changes every shape in
+	   the portfolio.
+
+	       weight of a cycle n back  =  1                        while n <= shoulder
+	                                 =  0.5 ^ ((n - shoulder) / halfLife)   after that
+
+	   MEASURED at a half-life of 12 cycles: the card payment reads one lump on d4 instead of two, Plaid
+	   follows its drift from d13 to d20 (35% -> 58%), and Whole Foods - nothing since the 16th of May -
+	   decays from 46% to 43% instead of holding its claim for the rest of the year. */
+	taperShoulderCycles: 3,
+	taperHalfLifeCycles: 0,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus

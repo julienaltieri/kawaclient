@@ -110,10 +110,28 @@ const modeData = m => ({
 	adj: (m.adjusted && m.adjusted !== 'none') ? m.adjusted : null
 });
 
-export function modeRows(predictor){
+/* ---- HOW FAR BACK THE PAST STILL COUNTS ---------------------------------------------------------
+   THE TAPER CANNOT BE RECOMPUTED IN THE BROWSER the way the lump bar can - it changes the arithmetic,
+   not the labelling - so every setting is measured here and the selector switches between finished
+   answers. Five runs of the whole portfolio is cheap; asking the reader to rebuild the page to try a
+   number is not.
+
+   THE SHOULDER IS FIXED AT THREE CYCLES in every option. It is not a dial to explore: it is the part
+   that makes a taper safe at all, because a rhythm needs a few cycles at full weight before anything
+   is allowed to fade. */
+const TAPERS = [
+	{h: 0, label: 'off', note: 'every cycle counts the same'},
+	{h: 24, label: 'half-life 24', note: 'two years of monthly history to halve'},
+	{h: 12, label: 'half-life 12', note: 'a year of monthly history to halve'},
+	{h: 6, label: 'half-life 6', note: 'six cycles to halve - the card payment reads d4 alone here'},
+	{h: 3, label: 'half-life 3', note: 'three cycles to halve - only the recent habit survives'}
+];
+const SHOULDER = 3;
+
+export function modeRows(predictor, taper){
 	const rows = [];
 	predictor.reviewable().forEach(stream => {
-		const m = predictor.modesOf(stream.id, stream);
+		const m = predictor.modesOf(stream.id, stream, taper);
 		if(!m.cycle || YEARLY[m.cycle.name] || !m.modes.length)return;
 		const legs = m.modes.reduce((n, x) => n + x.legs, 0);
 
@@ -175,8 +193,22 @@ export function buildModesAuditPage(predictor, meta){
 			+ '-' + String(anchor.getDate()).padStart(2, '0')
 		: DASH;
 
-	const data = rows.map(r => ({name: r.name, groups: r.groups}));
+	/* EVERY STREAM ANSWERED AT EVERY TAPER, IN THE ORDER THE UNTAPERED RUN PUT THEM IN. The order
+	   holding still is the point: a reader moving the selector is comparing one stream against itself,
+	   and a list that reshuffles under the hand is a list that cannot be compared. */
+	const variants = TAPERS.map(t => {
+		const by = {};
+		modeRows(predictor, {halfLife: t.h, shoulder: SHOULDER})
+			.forEach(r => { by[r.id] = r.groups; });
+		return by;
+	});
+	const data = rows.map(r => ({
+		name: r.name,
+		v: variants.map(by => by[r.id] || [])
+	}));
 	const bar = Math.round(SHAPE_CONFIG.minLumpConfidence * 100);
+	const startTaper = Math.max(0, TAPERS.map(t => t.h)
+		.indexOf(SHAPE_CONFIG.taperHalfLifeCycles));
 
 	return renderAuditPage({
 		title: 'Stream modes',
@@ -191,9 +223,15 @@ export function buildModesAuditPage(predictor, meta){
 				+ '<input type="range" id="lumpbar" min="0" max="95" step="1" value="' + bar + '">'
 				+ '<b class="kv" id="lumpbarv">' + bar + '%</b></div>'
 			+ '<p class="cnote" id="cnote">a mode below the bar keeps its money and loses its date'
-			+ '</p></section>'
+			+ '</p>'
+			+ '<div class="knob"><span class="kl">old cycles fade</span>'
+				+ '<input type="range" id="taper" min="0" max="' + (TAPERS.length - 1)
+					+ '" step="1" value="' + startTaper + '">'
+				+ '<b class="kv" id="taperv">' + esc(TAPERS[startTaper].label) + '</b></div>'
+			+ '<p class="cnote" id="tnote">' + esc(TAPERS[startTaper].note) + '</p>'
+			+ '</section>'
 			+ '<section class="wrap">' + rows.map(streamBlock).join('') + '</section>',
-		extraScript: wiring(data),
+		extraScript: wiring(data, TAPERS),
 		metaLine: [
 			{label: 'streams', value: rows.length},
 			{label: 'modes', value: allModes},
@@ -207,10 +245,14 @@ export function buildModesAuditPage(predictor, meta){
    NO BACKSLASH, NO BACKTICK. Attribute quoting inside these strings is done with apostrophes, so no
    character written here ever needs an escape; the data blob is CONCATENATED rather than dropped in
    a template literal, because JSON's own escapes would otherwise be eaten on the way through. */
-const wiring = data => 'var DATA = ' + JSON.stringify(data) + ';' + `
+const wiring = (data, tapers) => 'var DATA = ' + JSON.stringify(data) + ';'
+	+ 'var TAPERS = ' + JSON.stringify(tapers) + ';' + `
 var bar = document.getElementById("lumpbar");
 var barv = document.getElementById("lumpbarv");
 var cnote = document.getElementById("cnote");
+var taper = document.getElementById("taper");
+var taperv = document.getElementById("taperv");
+var tnote = document.getElementById("tnote");
 var DOTCH = "${DOT}";
 
 function esc2(s){
@@ -257,20 +299,25 @@ function restHtml(rest){
 }
 
 function draw(){
-	var t = Number(bar.value) / 100, i, j, k, g, demoted = 0, html, lumps, rest, onday, p;
+	var t = Number(bar.value) / 100, ti = Number(taper.value), groups;
+	var i, j, k, g, demoted = 0, html, lumps, rest, onday, p, dayful = 0, plain = 0;
 	barv.textContent = Math.round(t * 100) + "%";
+	taperv.textContent = TAPERS[ti].label;
 
 	for(i = 0; i < DATA.length; i++){
 		html = "";
 		onday = 0;
-		for(j = 0; j < DATA[i].groups.length; j++){
-			g = DATA[i].groups[j];
+		groups = DATA[i].v[ti];
+		for(j = 0; j < groups.length; j++){
+			g = groups[j];
 			lumps = [];
 			rest = [];
 			for(k = 0; k < g.modes.length; k++){
+				if(g.modes[k].shape === "lump" || g.modes[k].shape === "multiLump")plain = plain + 1;
 				if(isLump(g.modes[k], t)){
 					lumps.push(g.modes[k]);
 					onday = onday + g.modes[k].share;
+					dayful = dayful + 1;
 				}else{
 					rest.push(g.modes[k]);
 					if(g.modes[k].shape === "lump" || g.modes[k].shape === "multiLump")
@@ -294,9 +341,12 @@ function draw(){
 	cnote.textContent = demoted
 		? demoted + " mode" + (demoted === 1 ? "" : "s") + " lose their day at this bar"
 		: "a mode below the bar keeps its money and loses its date";
+	tnote.textContent = TAPERS[ti].note + " " + DOTCH + " " + dayful + " modes name a day"
+		+ (plain === dayful ? "" : " (" + plain + " before the bar)");
 }
 
 bar.addEventListener("input", draw);
+taper.addEventListener("input", draw);
 draw();
 `;
 
@@ -306,6 +356,8 @@ const LEGEND = '<span class="lg">one bar per mode, and the bars are shares of th
 		+ 'current account</span>'
 	+ '<span class="lg">everything with no day is one bar, called a spread - that money is real, it '
 		+ 'just arrives at a rate</span>'
+	+ '<span class="lg">"old cycles fade" weights each cycle by how recent it is - the newest three '
+		+ 'always count in full, then the weight halves every so many cycles</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
 		+ '<span class="lg">several clusters is not several payments - the page names as many days '
