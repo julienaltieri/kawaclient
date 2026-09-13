@@ -222,7 +222,7 @@ export class StreamPredictor {
 
 	/* ---- STAGES 2-4 ATTACH HERE -------------------------------------------------------------------
 	   §2 cycle determination, §3 shape determination and §4 amount prediction live in their own files
-	   (cycleDetermination.js, shapeDetermination.js, amountPrediction.js) and are composed from this
+	   (cycleDetermination.js, shapeDetermination.js, modeAmounts.js) and are composed from this
 	   object: each takes a stream's legs, its declaration and this object's `analysisAnchor()`, and
 	   hands back a decision. Nothing above this line knows they exist, which is what keeps §1
 	   checkable on its own. */

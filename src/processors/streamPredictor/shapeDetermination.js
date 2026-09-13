@@ -76,7 +76,7 @@ const MAX_CYCLES = 5000;
    so that leg sits inside the newest bucket rather than on its exclusive upper edge - so an outside
    caller cannot be broken by the new argument. Every call inside this module passes a real anchor.
 
-   EXPORTED because amountPrediction buckets the same legs with the same period and the two stages
+   EXPORTED because modeAmounts buckets the same legs with the same period and the two stages
    must not be able to disagree about where a cycle begins. A near-copy would drift the moment either
    side was edited.  */
 /* ---- HOW MUCH EACH CYCLE COUNTS ------------------------------------------------------------------

@@ -827,10 +827,22 @@ transaction history.
 
 **Out:** an amount per cycle, for each `accountAllocation`, with a confidence.
 
-**Only the latest chunk of expectation-change history is read.** The window starts at the most recent
-change to the declared amount and everything before it is ignored, the same rule the cycle follows.
-An arrangement that has changed is two amounts overlaid, and a figure drawn across the change
-describes neither.
+**An amount change is evidence about the AMOUNT and says nothing about the RHYTHM, so the two stages
+read different windows.** This section originally said the amount window and the cycle window were
+the same rule; they are not, and the cycle stage never followed it.
+
+- **The rhythm reads the whole analysis year.** `legsInWindow` cuts at the module anchor and nowhere
+  else. Day care Emile is why: its budget was revised on 17 August 2026, and cutting there would leave
+  one leg of nine, discarding 214 days of a cheque that has arrived monthly all year. The amount
+  changed; the cheque did not move.
+- **The amount reads from the latest declaration change.** An arrangement that has changed is two
+  amounts overlaid, and a figure drawn across the change describes neither — Day care Emile really is
+  -$1,700 since August and something else before it.
+
+Measured on the captured portfolio: 15 streams have a declaration change inside the analysis window
+and 59 legs sit before one. Cutting the rhythm there would cost exactly one stream its rhythm — Day
+care Emile — and weaken two more that survive it: Phone discards 3 of 9 legs across 60 days for a
+revision from $62 to $62, and Savings discards 8 of 20.
 
 **The declared amount is the base.** It is what the user intends, and it stands until the ledger has
 enough history to say otherwise.
@@ -1261,6 +1273,30 @@ onto. They are alert-only by the rule and alert-only by necessity, which is a go
 Two streams rebaseline today. **The alert itself is out of scope**: build the machinery so the module
 reports the position, and stop at the module boundary. Telling the user is a product decision for
 later.
+
+---
+
+## Two windows, not one
+
+**An amount change is evidence about the amount and says nothing about the rhythm.** §4 as written
+said both stages read from the latest declaration change; the cycle stage never did, and it was right
+not to.
+
+    the rhythm     the whole analysis year          legsInWindow cuts at the anchor, nowhere else
+    the amount     from the latest declaration      two amounts overlaid describe neither
+
+**Day care Emile is the case for keeping them apart.** Its budget was revised on 17 August 2026 — one
+of the five declarations the ledger corroborated, so the new amount is real — and cutting the rhythm
+there leaves ONE leg of nine, discarding 214 days of a cheque that has arrived monthly all year. A
+76%-confidence monthly lump would become `unknown` because a number changed.
+
+**Measured:** 15 streams have a declaration change inside the window and 59 legs sit before one.
+Cutting the rhythm at the declaration costs exactly one stream its rhythm and weakens two more —
+Phone discards 3 of 9 legs across 60 days for a revision from $62 to $62.
+
+**`amountPrediction.js` is deleted.** It was the only code that segmented the rhythm at a declaration
+change, nothing had called it since §3 began answering with modes, and leaving it in the tree left two
+contradictory §4 implementations for the next reader to choose between.
 
 ---
 
