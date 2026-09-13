@@ -1015,8 +1015,9 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(m.modes.some(x => x.shape === Shape.multiLump)).toBe(false);
 		lumps.forEach(x => {
 			expect(x.days.length).toBe(1);
-			expect(x.days[0]).toBe(24);
-			expect(x.exceptions).toBe(2);
+			//d23 on a cycle seamed the 21st is the 14th - the reminder, read off the recent transfers
+			expect(x.days[0]).toBe(23);
+			expect(x.exceptions).toBe(1);
 		});
 
 		//and what was set aside is patternless noise, which is where unpredictable money belongs
@@ -1108,21 +1109,21 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		});
 	});
 
-	/* ---- SEVERAL CLUSTERS IS NOT SEVERAL PAYMENTS -------------------------------------------------
-	   THE CREDIT CARD PAYMENT IS THE CASE. Robinhood is 38 movements over 37 weekly cycles - almost
-	   exactly one a week - sitting in two clusters:
+	/* ---- THE SHAPE NAMES THE DAYS THE FORECAST USES, AND NO OTHERS ---------------------------------
+	   A SHAPE THAT NAMES MORE DAYS THAN THE FORECAST WILL USE HAS NOT DECIDED ANYTHING. Read freely,
+	   the Earnin reimbursement is three clusters scoring 74% - the fit of a three-day model - while
+	   the forecast goes on to name one day. The number flatters a claim nobody is making.
 
-	       d0  x12
-	       d4  x26     38 movements / 37 cycles = 1.03 a week
+	   SO THE CLUSTER COUNT IS PINNED TO THE CYCLE'S OWN EVENT COUNT. A cycle carrying one movement is
+	   measured against ONE day: it lands on it and is a lump, or it does not and names no day at all.
+	   The invariant below is the whole of it - every shaped mode in the portfolio names exactly the
+	   days it claims - and it holds by construction rather than by luck.
 
-	   That is ONE payment landing on one of two days, not two payments. Naming both would put a second
-	   card payment in every week of the forecast, so the cycle's own event count decides how many days
-	   are named and the biggest clusters get them: d4, and d0 is where it sometimes goes instead.
-
-	   AT LEAST ONE DAY IS ALWAYS NAMED. A sparse mode - Whole Foods, seven shops across thirteen weeks
-	   - has a commonest count of ZERO, and answering "no day" there is the shape's decision to make
-	   before this is called, not this function's. */
-	test('as many days are named as the cycle typically carries movements', () => {
+	   THE CARD PAYMENT IS WHAT IT BUYS. Robinhood ran on d0 until the 2nd of March and on d4 every
+	   week since: 12 movements against 26, one a week. Read freely that is two clusters and a 91%
+	   claim on a model with two payment days in it. Pinned to one, the 26 are the rhythm, the 12 are
+	   the habit it replaced, and they leave as exceptions - one lump, d4, and nothing left over. */
+	test('a shape names exactly as many days as it claims', () => {
 		const two = [{day: 0, events: 12}, {day: 4, events: 26}];
 		expect(predictedDays(two, 1)).toEqual([4]);
 		expect(predictedDays(two, 2)).toEqual([0, 4]);
@@ -1134,14 +1135,43 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		expect(predictedDays([{day: 6, events: 4}, {day: 17, events: 5}, {day: 29, events: 3}], 2))
 			.toEqual([6, 17]);
 
+		//THE INVARIANT: nowhere in the portfolio does a shape hold a day the forecast will not use
+		let shaped = 0;
+		predictor.reviewable().forEach(stream => {
+			const m = predictor.modesOf(stream.id, stream);
+			if(!m.cycle || !m.modes.length)return;
+			m.modes.forEach(x => {
+				if(x.shape !== Shape.lump && x.shape !== Shape.multiLump)return;
+				shaped++;
+				expect({mode: x.label, named: x.predicted.length, held: x.days.length})
+					.toEqual({mode: x.label, named: x.days.length, held: x.days.length});
+				expect(x.days.length).toBeLessThanOrEqual(Math.max(1, x.typical));
+			});
+		});
+		expect(shaped).toBeGreaterThan(10);
+
 		const cc = predictor.reviewable().find(x => x.name === 'Credit Card Payments');
-		const m = predictor.modesOf(cc.id, cc);
-		const robin = m.modes.find(x => /robinhood/i.test(x.label));
-		expect(robin.shape).toBe(Shape.multiLump);
-		expect(robin.days).toEqual([0, 4]);
-		expect(robin.dayEvents).toEqual([12, 26]);
+		const robin = predictor.modesOf(cc.id, cc).modes.find(x => /robinhood/i.test(x.label));
+		expect(robin.shape).toBe(Shape.lump);
 		expect(robin.typical).toBe(1);
+		expect(robin.days).toEqual([4]);
 		expect(robin.predicted).toEqual([4]);
+		expect(robin.exceptions).toBe(11);
+		expect(Math.round(robin.confidence * 100)).toBe(100);
+	});
+
+	/* ---- AND A MODE THAT CANNOT PICK ONE NAMES NONE -------------------------------------------------
+	   THE EARNIN REIMBURSEMENT IS ONE PAYMENT A MONTH LANDING IN ONE OF TWO WINDOWS - d15 to d18, or
+	   d26 to d29 - and there is no third answer between "a day" and "a rate". Measured against the one
+	   day its cycle carries it reads 56%, under the bar, so it keeps its money and names no date. */
+	test('a mode that lands in two windows is a rate, not a date', () => {
+		const st = predictor.reviewable().find(x => /^earnin phone/i.test(x.name));
+		const m = predictor.modesOf(st.id, st);
+		const mode = m.modes.find(x => /expensify/i.test(x.label));
+		expect(mode.shape).toBe(Shape.lump);
+		expect(mode.days.length).toBe(1);
+		//it holds a day, and the bar is what decides whether the page is allowed to say it
+		expect(mode.confidence).toBeLessThan(SHAPE_CONFIG.minLumpConfidence);
 	});
 
 	/* ---- RECENT CYCLES COUNT FOR MORE THAN OLD ONES ------------------------------------------------
@@ -1173,36 +1203,39 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 		//and it never rises going back in time
 		w.forEach((x, i) => { if(i)expect(x).toBeGreaterThanOrEqual(w[i - 1]); });
 
-		const cc = predictor.reviewable().find(x => x.name === 'Credit Card Payments');
-		const off = predictor.modesOf(cc.id, cc, {halfLife: 0, shoulder: 3});
-		const on = predictor.modesOf(cc.id, cc, {halfLife: 6, shoulder: 3});
-		const robinOff = off.modes.find(x => /robinhood/i.test(x.label));
-		const robinOn = on.modes.find(x => /robinhood/i.test(x.label));
-
-		expect(robinOff.shape).toBe(Shape.multiLump);
-		expect(robinOff.days).toEqual([0, 4]);
-		expect(robinOn.shape).toBe(Shape.lump);
-		expect(robinOn.days).toEqual([4]);
-		expect(robinOn.predicted).toEqual([4]);
-		expect(robinOn.confidence).toBeGreaterThan(robinOff.confidence);
-		expect(Math.round(robinOn.confidence * 100)).toBe(100);
+		/* WHERE IT BITES ON THIS LEDGER IS THE PAYROLL. Its oldest movement is the only one that
+		   missed the day - 26 December on d4, against sixteen later ones on d6 to d8 - and fading it
+		   is the difference between a rhythm with an exception in it and a rhythm. */
+		const wages = predictor.reviewable().find(x => x.name === 'Wages Julien');
+		const pOff = predictor.modesOf(wages.id, wages, {halfLife: 0, shoulder: 3})
+			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
+		const pOn = predictor.modesOf(wages.id, wages, {halfLife: 3, shoulder: 3})
+			.modes.find(x => /ACTIVEHOURS INC PAYROLL/i.test(x.label));
+		expect(pOff.days).toEqual([8]);
+		expect(pOn.days).toEqual([8]);
+		expect(pOn.confidence).toBeGreaterThan(pOff.confidence);
 	});
 
 	/* ---- AND THE FLOOR THAT KEEPS IT HONEST ---------------------------------------------------------
-	   A TAPER MAKES A SPARSE MODE LOOK CONFIDENT unless the movement floor is weighed too. Whole Foods
-	   is seven shops across thirteen weeks with nothing since the 16th of May; untapered it claims a
-	   day at 46%, and letting the newest of those seven dominate would raise it rather than lower it.
-	   Counting WEIGHTED movements against minMovements is what turns a stale claim into no claim. */
-	test('a mode whose movements have all faded stops claiming a day', () => {
-		const g = predictor.reviewable().find(x => x.name === 'Groceries & Hygiene');
-		const off = predictor.modesOf(g.id, g, {halfLife: 0, shoulder: 3});
-		const on = predictor.modesOf(g.id, g, {halfLife: 6, shoulder: 3});
-		const wfOff = off.modes.find(x => /whole foods/i.test(x.label));
-		expect(wfOff.shape).toBe(Shape.multiLump);
+	   A TAPER MAKES A SPARSE MODE LOOK CONFIDENT unless the movement floor is weighed too: letting the
+	   newest of a handful of stale movements dominate RAISES a claim that should be falling. Counting
+	   WEIGHTED movements against minMovements is what turns a stale claim into no claim.
 
-		const wfOn = on.modes.find(x => /whole foods/i.test(x.label));
+	   THE EARNIN INTERNET REIMBURSEMENT IS THE CASE. Eight movements, the last on the 21st of July,
+	   and untapered it still holds a day at 58%. Faded, there is not enough weight left in it to ask
+	   the question, and it becomes part of the stream's baseline instead. */
+	test('a mode whose movements have all faded stops claiming a day', () => {
+		const st = predictor.reviewable().find(x => /^earnin internet/i.test(x.name));
+		const off = predictor.modesOf(st.id, st, {halfLife: 0, shoulder: 3});
+		const on = predictor.modesOf(st.id, st, {halfLife: 3, shoulder: 3});
+
+		const modeOff = off.modes.find(x => /expensify/i.test(x.label));
+		expect(modeOff.shape).toBe(Shape.lump);
+		expect(modeOff.days).toEqual([17]);
+
+		const modeOn = on.modes.find(x => /expensify/i.test(x.label));
 		//it is still a mode with its money; what it lost is the right to name a day
-		expect(wfOn ? wfOn.shape : null).toBe(null);
+		expect(modeOn ? modeOn.shape : null).toBe(null);
 		expect(on.modes.reduce((n, x) => n + x.moneyShare, 0)).toBeCloseTo(1, 6);
 	});
 

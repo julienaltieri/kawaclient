@@ -288,10 +288,22 @@ export function concentration(bins, k){
 /* THE FEWEST LUMPS THAT BRING IT INTO FOCUS. One is tried first and wins ties, because a stream that
    is already in focus as a single lump is a single lump - two lumps on the same day is not a second
    reading of it, it is the same reading counted twice. */
-export function focusOf(bins, cfg){
+export function focusOf(bins, cfg, pin){
 	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
 	const at = [];
 	for(let k = 1; k <= c.maxLumps; k++)at.push(concentration(bins, k));
+
+	/* PINNED: the cycle already said how many movements it carries, so that is how many days the
+	   model is allowed to claim. It clears the bar at that k or it claims no day at all - there is no
+	   third answer where the shape names more days than the forecast will use. */
+	if(pin){
+		const k = Math.min(Math.max(1, pin), c.maxLumps);
+		const v = at[k - 1];
+		return {lumps: (v !== null && v >= c.minConcentration) ? k : 0,
+			concentration: v, perLump: at};
+	}
+
+	//FREE: the first k that brings the movements into focus, which is what the audit page explores
 	for(let k = 1; k <= c.maxLumps; k++)
 		if(at[k - 1] !== null && at[k - 1] >= c.minConcentration)
 			return {lumps: k, concentration: at[k - 1], perLump: at};
@@ -606,7 +618,11 @@ export function classifyShape(counts, bins, cfg, weights){
 	const typical = commonest(counts);
 	const steady = counts.filter(x => x === typical).length / counts.length;
 	const busy = counts.filter(x => x > 0).length / counts.length;
-	const focus = focusOf(bins || [], c);
+	/* AS MANY CLUSTERS AS THE CYCLE HAS MOVEMENTS. A cycle that typically carries nothing is still
+	   asked about one day - whether it should have been asked at all is the movement floor's job,
+	   already answered above. */
+	const focus = focusOf(bins || [], c,
+		c.pinLumpsToEventsPerCycle ? Math.max(1, typical) : 0);
 	const fit = patternFit(bins || [], counts, focus.lumps, weights);
 	/* REPORTED, NOT YET DECIDING. The width is the number a person can check against the bars; the
 	   angular focus is what still picks the shape and finds how many clusters there are. Both travel

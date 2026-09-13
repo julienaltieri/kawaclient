@@ -348,6 +348,33 @@ function draw(){
 bar.addEventListener("input", draw);
 taper.addEventListener("input", draw);
 draw();
+
+/* THE SEARCH BOX AND THE "UNVALIDATED ONLY" BUTTON BELONG TO THE SHELL, and the shell filters the
+   CARDS INSIDE ITS GROUPS. This page has no groups - it is a list of stream blocks - so the filtering
+   has to be done here or the two controls do nothing at all, which is what they did. */
+var q = document.getElementById("q");
+var only = document.getElementById("only");
+var blocks = [].slice.call(document.querySelectorAll(".stream"));
+
+function filterBlocks(){
+	var t = q ? q.value.trim().toLowerCase() : "";
+	var hideDone = !!only && only.getAttribute("aria-pressed") === "true";
+	blocks.forEach(function(b){
+		var hit = (!t || b.getAttribute("data-search").indexOf(t) !== -1)
+			&& !(hideDone && b.classList.contains("done"));
+		b.hidden = !hit;
+	});
+}
+
+if(q)q.addEventListener("input", filterBlocks);
+//the shell toggles aria-pressed on its own listener, bound first, so it is already set by now
+if(only)only.addEventListener("click", filterBlocks);
+//and it adds or removes "done" on its own change listener, also bound first
+document.addEventListener("change", function(e){
+	if(e.target && e.target.className && String(e.target.className).indexOf("okbox") >= 0)
+		filterBlocks();
+});
+filterBlocks();
 `;
 
 const LEGEND = '<span class="lg">one bar per mode, and the bars are shares of the STREAM - a stream '

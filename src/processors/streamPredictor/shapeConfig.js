@@ -131,10 +131,10 @@ export const SHAPE_CONFIG = {
 	   money and its movements; what it loses is the right to name a date, and it is forecast as a rate
 	   with the rest.
 
-	   ZERO BY DEFAULT, AND THAT IS DELIBERATE: every shape the classifier calls a lump is still a lump,
-	   so this setting changes nothing until a number is chosen for it. The bench carries the slider -
-	   today's lumps run from 0.42 to 0.82 - and the value belongs here once it is picked, not before. */
-	minLumpConfidence: 0,
+	   PICKED FROM THE BENCH AT 0.60. Below it a mode is not wrong, it is only not a date: Plaid's
+	   wandering 42% and Loki's 11% stop naming days they cannot hold, while every bill that actually
+	   lands on a day clears it with room. */
+	minLumpConfidence: 0.60,
 
 	/* ---- RECENT CYCLES COUNT FOR MORE THAN OLD ONES ------------------------------------------------
 	   A HABIT THAT CHANGED IS NOT A HABIT THAT IS UNRELIABLE. The weekly card payment to Robinhood ran
@@ -148,9 +148,10 @@ export const SHAPE_CONFIG = {
 	   sit at weight 1 before the decay starts.
 
 	   THEN A HALF-LIFE, MEASURED IN CYCLES rather than days, so a weekly stream and a monthly one fade
-	   at the same rate relative to their own rhythm. Zero means no taper at all, which is where this
-	   ships: the numbers below are the bench's to pick from, and picking one changes every shape in
-	   the portfolio.
+	   at the same rate relative to their own rhythm. Zero means no taper at all. PICKED FROM THE BENCH
+	   AT 3: with the shoulder in front of it that is the newest four cycles at full weight and half
+	   weight seven cycles back, which is short enough to follow a habit that moved and long enough
+	   that moving is what it takes.
 
 	       weight of a cycle n back  =  1                        while n <= shoulder
 	                                 =  0.5 ^ ((n - shoulder) / halfLife)   after that
@@ -159,7 +160,22 @@ export const SHAPE_CONFIG = {
 	   follows its drift from d13 to d20 (35% -> 58%), and Whole Foods - nothing since the 16th of May -
 	   decays from 46% to 43% instead of holding its claim for the rest of the year. */
 	taperShoulderCycles: 3,
-	taperHalfLifeCycles: 0,
+	taperHalfLifeCycles: 3,
+
+	/* ---- AS MANY CLUSTERS AS THE CYCLE HAS MOVEMENTS -----------------------------------------------
+	   A SHAPE THAT NAMES MORE DAYS THAN THE FORECAST WILL USE HAS NOT DECIDED ANYTHING. The Earnin
+	   reimbursement is one payment a month landing in one of two windows - d15 to d18, or d26 to d29 -
+	   and reading it as three clusters scores the fit of a three-day model while the forecast goes on
+	   to name one day. The number flatters a claim nobody is making.
+
+	   SO THE CLUSTER COUNT IS PINNED TO THE CYCLE'S OWN EVENT COUNT, not searched for. A cycle that
+	   typically carries one movement is measured against ONE day: it lands on it, and is a lump, or it
+	   does not, and is a spread with no day at all. A cycle that carries three is measured against
+	   three. Either way the confidence describes the same model the forecast uses.
+
+	   THIS CAN ONLY TAKE LUMPS AWAY, never invent one - the free search already tried every k up to
+	   maxLumps and took the first that passed, so pinning tests a subset of what passed before. */
+	pinLumpsToEventsPerCycle: true,
 
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
