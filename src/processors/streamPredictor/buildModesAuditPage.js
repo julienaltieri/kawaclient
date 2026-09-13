@@ -41,7 +41,10 @@ const shapeCls = sh => sh === Shape.lump ? 'sh lump'
    avoid. */
 const patternOf = m => {
 	if(m.shape === Shape.lump || m.shape === Shape.multiLump)
-		return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : '')).join(' ' + DOT + ' ');
+		return m.days.map((d, i) => 'd' + d + (m.wobble[i] ? '±' + m.wobble[i] : '')).join(' ' + DOT + ' ')
+			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT, and the reader has to see how many
+			   movements the pattern did not account for before trusting the day. */
+			+ (m.exceptions ? ' ' + DOT + ' ' + m.exceptions + ' off-pattern' : '');
 	if(m.shape === Shape.spread)return 'no day ' + DOT + ' a rate';
 	return m.reason || DASH;
 };
@@ -157,6 +160,8 @@ const LEGEND = '<span class="lg">a stream is a LIST OF MODES, one per payee - it
 		+ 'unpredictable 60% is the forecast</span>'
 	+ '<span class="lg">"+ name" = a patternless payee absorbed because the merged mode still snapped '
 		+ 'to a pattern</span>'
+	+ '<span class="lg">"N off-pattern" = movements the habit did not account for - a late month, a '
+		+ 'one-off - counted, not hidden</span>'
 	+ '<details class="more"><summary>more</summary>'
 		+ '<span class="lg">dN = the day of the cycle, day 0 being the seam</span>'
 		+ '<span class="lg">conf = how tightly the movements land on that day</span>'

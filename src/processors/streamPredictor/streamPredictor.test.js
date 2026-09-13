@@ -991,6 +991,54 @@ suite('StreamPredictor §3 - the shape inside a cycle', () => {
 			+ wm.baseline.legs + ' movements in the baseline');
 	});
 
+	/* ---- A PATTERN IS ALLOWED ITS OWN EXCEPTIONS ---------------------------------------------------
+	   JULIEN'S SAVINGS TRANSFER IS A CALENDAR REMINDER ON THE 15th AND NOTHING ELSE. He is sometimes
+	   late, the bank's ACH timing moves it, and occasionally he transfers out to fund something large.
+	   That is one habit plus noise, and a mode made to account for every movement it ever made cannot
+	   say so - it has to describe the noise as though it were part of the rhythm.
+
+	   MADE TO EXPLAIN ALL SIX MOVEMENTS IT READ TWO LUMPS HALF A CYCLE APART, which is an artefact:
+	   March's stray sits opposite the real cluster, and wrapping the circle twice lands the two on top
+	   of each other. Allowed to set two aside it reads ONE lump on d24 - and d24 of a cycle seamed on
+	   the 21st is the 14th/15th, which is the reminder.
+
+	   THE STREAM RUNS ON TWO ACCOUNTS, so the same transfer is read twice - out of Spending and into
+	   Savings. Two mirrored modes is the ledger having two sides, not the model finding two rhythms. */
+	test('Savings reads one lump on the 15th plus its own exceptions', () => {
+		const savings = predictor.reviewable().find(x => x.name === 'Savings');
+		const m = predictor.modesOf(savings.id, savings);
+		const lumps = m.modes.filter(x => x.shape === Shape.lump);
+
+		//one lump per account leg, and each is a SINGLE lump - never multiLump
+		expect(lumps.length).toBe(2);
+		expect(m.modes.some(x => x.shape === Shape.multiLump)).toBe(false);
+		lumps.forEach(x => {
+			expect(x.days.length).toBe(1);
+			expect(x.days[0]).toBe(24);
+			expect(x.exceptions).toBe(2);
+		});
+
+		//and what was set aside is patternless noise, which is where unpredictable money belongs
+		const loose = m.modes.filter(x => !x.shape);
+		expect(loose.length).toBeGreaterThan(0);
+		expect(m.baseline.moneyShare).toBeGreaterThan(0);
+		console.log('Savings: ' + m.modes.map(x => x.label + ' ' + (x.shape || 'no pattern')
+			+ (x.shape ? ' d' + x.days.join(',') + ' ' + x.exceptions + 'exc' : '')
+			+ ' ' + Math.round(x.moneyShare * 100) + '%').join(' | '));
+	});
+
+	/* A TRIM THAT DOES NOT PRODUCE A PATTERN IS THROWN AWAY. Trimming always improves a score that
+	   rewards landing on a day, so a flow will happily give up a third of itself chasing one - Grocery
+	   Outlet sheds shops for as long as the arithmetic encourages it and is a spread at every step. */
+	test('a spread is never trimmed into a lump', () => {
+		const go = predictor.reviewable().find(x => /grocery outlet/i.test(x.name || ''));
+		if(!go)return;
+		const m = predictor.modesOf(go.id, go);
+		m.modes.forEach(x => {
+			if(x.shape === Shape.spread)expect(x.exceptions || 0).toBe(0);
+		});
+	});
+
 	test('writes the modes audit page from the real results', () => {
 		const rows = modeRows(predictor);
 		const html = buildModesAuditPage(predictor, {

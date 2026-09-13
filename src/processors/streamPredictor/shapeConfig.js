@@ -81,6 +81,28 @@ export const SHAPE_CONFIG = {
 	   completed the year - while passing a merge that degraded a host from 0.95 to 0.88 because both
 	   sides of that cleared the bar. */
 
+	/* ---- A PATTERN MAY HAVE ITS OWN EXCEPTIONS -----------------------------------------------------
+	   A MODE IS OTHERWISE ALL-OR-NOTHING: either every movement belongs to the pattern or there is no
+	   pattern. Real habits are not like that. Julien's savings transfer has a calendar reminder on the
+	   15th and that is the whole of the rhythm - but he is sometimes late, the bank's ACH timing moves
+	   it, and occasionally he transfers OUT to fund something large. Four transfers on the 14th/15th
+	   and two one-off movements is a lump with two exceptions, not a two-lump rhythm, and the second
+	   reading is what the model was forced into.
+
+	   SO THE FURTHEST MOVEMENT FROM THE CLAIMED DAY IS DROPPED WHILE DOING SO IMPROVES THE FIT, and
+	   what is dropped is the mode's own noise - counted, reported, and part of the stream's baseline
+	   rather than thrown away.
+
+	   AT MOST THIS SHARE, because past some point dropping movements is not finding the pattern in a
+	   habit, it is inventing one by deleting the evidence. Two of six is a late month; twenty of sixty
+	   is a different stream.
+
+	   THE RESULT STILL HAS TO BE A LUMP. Trimming a spread always "improves" a score that rewards
+	   landing on a day, and a flow has no day - Grocery Outlet gives up 18 of its 60 shops before the
+	   arithmetic stops saying that helps, and it is a spread the entire time. The trim is kept only
+	   where it produces a pattern, and a spread is left exactly as it is. */
+	maxExceptionShare: 0.34,
+
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
 	   twice, then three times, then four, and the first wrapping that brings the movements into focus

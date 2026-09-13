@@ -621,6 +621,73 @@ export function explainShape(legs, partition, cycle, anchor, opts){
 	});
 }
 
+/* ---- A PATTERN AND ITS OWN EXCEPTIONS -----------------------------------------------------------
+   DROP THE MOVEMENT FURTHEST FROM THE CLAIMED DAY WHILE THAT IMPROVES THE FIT. A habit with a late
+   month is still that habit, and a mode that has to account for every movement it ever made cannot
+   say so - it is forced to describe the exceptions as though they were part of the rhythm.
+
+   Savings is the case. A calendar reminder on the 15th, sometimes paid late, sometimes joined by a
+   one-off transfer out to fund something large. Six movements: four on the 14th/15th and two strays
+   in March. Made to explain all six, the model reads TWO lumps half a cycle apart - because the
+   March stray happens to sit opposite the real cluster, and wrapping the circle twice lands them on
+   top of each other. Allowed two exceptions, it reads one lump on d24, which is the 15th.
+
+   WHAT IS DROPPED IS NOT DISCARDED. It is the mode's own noise: counted, reported, and carried into
+   the stream's baseline, which is where unpredictable money belongs.
+
+   THE RESULT STILL HAS TO BE A LUMP, and that guard is load-bearing. Trimming always improves a score
+   that rewards landing on a day, so a spread will happily give up a third of its movements chasing
+   one - Grocery Outlet sheds 18 of 60 shops before the arithmetic stops encouraging it, and is a
+   flow at every step. A trim that does not produce a pattern is discarded and the mode is left as it
+   was. */
+function fitOf(legs, cycle, anchor){
+	const buckets = cycleBuckets(legs, cycle, anchor);
+	const bins = dayHistogram(buckets);
+	const counts = buckets.map(b => b.legs.length);
+	const verdict = classifyShape(counts, bins);
+	return {fit: verdict.fit || 0, verdict: verdict, buckets: buckets, bins: bins, counts: counts};
+}
+
+export function patternWithExceptions(legs, cycle, anchor, cfg){
+	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
+	const all = legs || [];
+	const start = fitOf(all, cycle, anchor);
+	if(all.length < c.minMovements)return {kept: all, exceptions: [], result: start, trimmed: false};
+
+	//a spread has no day to be near, so there is nothing here for it to be trimmed towards
+	if(start.verdict.shape === Shape.spread)
+		return {kept: all, exceptions: [], result: start, trimmed: false};
+
+	const floor = Math.max(c.minMovements, Math.ceil(all.length * (1 - c.maxExceptionShare)));
+	let kept = all.slice(), best = start;
+	const exceptions = [];
+
+	while(kept.length > floor){
+		const buckets = cycleBuckets(kept, cycle, anchor);
+		const claimed = lumpDays(buckets, 1)[0];
+		if(!claimed)break;
+		const span = dayHistogram(buckets).length || 1;
+		let worst = null, worstGap = -1;
+		buckets.forEach(b => b.legs.forEach(l => {
+			const raw = Math.abs(dayInCycle(l, b) - claimed.day) % span;
+			const gap = raw > span / 2 ? span - raw : raw;
+			if(gap > worstGap){ worstGap = gap; worst = l; }
+		}));
+		if(!worst || worstGap <= 0)break;
+		const trial = kept.filter(l => l !== worst);
+		const t = fitOf(trial, cycle, anchor);
+		if(t.fit <= best.fit)break;
+		kept = trial;
+		best = t;
+		exceptions.push(worst);
+	}
+
+	const lumpy = best.verdict.shape === Shape.lump || best.verdict.shape === Shape.multiLump;
+	if(!exceptions.length || !lumpy)
+		return {kept: all, exceptions: [], result: start, trimmed: false};
+	return {kept: kept, exceptions: exceptions, result: best, trimmed: true};
+}
+
 /* ---- PUTTING MODES BACK TOGETHER ----------------------------------------------------------------
    SPLITTING BY PAYEE CUTS TOO FINELY SOMETIMES, and the same evidence that justified the split can
    say so. A payee with no pattern of its own may simply be a rhythm the bank spelled differently for
@@ -805,13 +872,28 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				chosen = pick ? pick.chosen : null;
 			}
 
-			const buckets = chosen ? chosen.buckets
+			let buckets = chosen ? chosen.buckets
 				: (cycle ? cycleBuckets(mine, cycle, anchor) : []);
-			const bins = chosen ? chosen.bins : dayHistogram(buckets);
-			const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
-			const verdict = yearly
+			let bins = chosen ? chosen.bins : dayHistogram(buckets);
+			let counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
+			let verdict = yearly
 				? {shape: null, reason: 'the cycle is still yearly after determination'}
 				: (chosen ? chosen.verdict : classifyShape(counts, bins));
+
+			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT. The furthest movements are set aside
+			   while that improves the fit, and they become the mode's own exceptions. */
+			let exceptions = [];
+			if(!yearly && cycle){
+				const trimmed = patternWithExceptions(
+					chosen ? chosen.legs : mine, cycle, anchor);
+				if(trimmed.trimmed){
+					buckets = trimmed.result.buckets;
+					bins = trimmed.result.bins;
+					counts = trimmed.result.counts;
+					verdict = trimmed.result.verdict;
+					exceptions = trimmed.exceptions;
+				}
+			}
 			const lumpy = verdict.shape === Shape.lump || verdict.shape === Shape.multiLump;
 
 			modes.push({
@@ -833,6 +915,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				money: absSum(mine),
 				cyclesObserved: buckets.length,
 				adjusted: chosen ? chosen.snap : SNAP.none,
+				exceptions: exceptions.length,
 				histogram: bins
 			});
 		});
