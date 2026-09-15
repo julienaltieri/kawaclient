@@ -7,6 +7,8 @@ import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {AccountTypes} from '../Bank';
 import ApiCaller from '../ApiCaller.js';
+import {capturePortfolio} from '../processors/capturePortfolio.js';
+import {benchForecast} from '../processors/balancePrediction/benchForecast.js';
 import {observedSeries, forecast, trough, peak, eventsIn, dayKey, buildModel,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
@@ -320,6 +322,18 @@ export default class BalanceChart extends BaseComponent{
 		/* explained by the line that DREW it: the backtest owns the past, the forecast owns the
 		   future, and they do not run the same model */
 		const a = this.series()
+		/* THE LINE THAT DREW THIS POINT EXPLAINS IT. The forecast owns the future and the benchmark
+		   owns the past, and under the module they are two runs rather than two models - so the rows
+		   come from whichever run produced the point, never from the other algorithm's explainer. */
+		const run = point.actual === false ? a.liveRun : (a.benchRun || a.liveRun)
+		if(run)return (function(){
+			const predicted = (run.rows[k] || []).map(r =>
+				({name: r.name, amount: r.amount, refused: r.refused}))
+			const sum = xs => xs.reduce((x, y) => x + y.amount, 0)
+			return {date: k, balance: point.value, actual: actual, predicted: predicted,
+				silent: [], actualTotal: sum(actual), predictedTotal: sum(predicted),
+				projected: point.actual === false}
+		})()
 		const opts = (point.actual === false ? a.live : (a.bench || a.live))
 		const ex = opts ? explainOn(new Date(point.date), opts) : {rows: [], silent: []}
 		const predicted = ex.rows
@@ -512,6 +526,39 @@ export default class BalanceChart extends BaseComponent{
 		return this._models[key]
 	}
 
+	/* ---- THE OTHER ALGORITHM ---------------------------------------------------------------------
+	   SAME TWO CALLS AS `model()`, SAME TWO DATES. The chart draws a live forecast from today and a
+	   benchmark from the left edge of the window; both are one as-of date handed to a forecaster, so
+	   swapping the forecaster is the whole change and the picture is otherwise assembled identically.
+
+	   THE MODULE TAKES PLAIN JSON, so the portfolio is captured once per transaction set. Its own
+	   rewind at the as-of date is what keeps the benchmark out of sample - the same guarantee
+	   `buildModel` gives by refusing to read past its as-of.
+
+	   NULL WHEN THE READER HAS NOT PICKED IT, so nothing expensive runs for a reader looking at the
+	   shipped tile. */
+	usingModule(){return this.props.algo === "new"}
+	portfolio(){
+		if(!this._portfolio)this._portfolio = capturePortfolio(this.props.transactions,
+			this.state.accounts || [], {today: this.ledgerToday(),
+				cards: this.creditHashes(), settlementDay: this.settlementDay()})
+		return this._portfolio
+	}
+	moduleRun(asOf, until){
+		if(!this.usingModule() || !(this.state.accounts || []).length)return null
+		const key = asOf.getTime() + "|" + until.getTime() + "|" + this.source()
+		this._runs = this._runs || {}
+		if(this._runs[key] === undefined){
+			try{
+				this._runs[key] = benchForecast(this.portfolio(), asOf, until, this.covered(), {})
+			}catch(e){
+				//a failed run draws no forecast rather than taking the page down
+				this._runs[key] = null
+			}
+		}
+		return this._runs[key]
+	}
+
 	/* every terminal, scored. Memoised with the grouped ledger it is derived from. */
 	classification(){
 		if(this._classes)return this._classes
@@ -610,16 +657,32 @@ export default class BalanceChart extends BaseComponent{
 		   it landed - for the life of the component. The picture would be correct only for a reader
 		   whose balance history happened to arrive first. */
 		const mem = this.state.remembered
+		//the algorithm is an input like any other, so a change of it invalidates the drawn series
+		const algo = this.props.algo || "legacy"
 		const k = this._seriesKey
-		if(this._series && k && k.src === src && k.txns === txns && k.acc === acc
-			&& k.basis === basis && k.mem === mem)return this._series
-		const out = {}
-		WHENS.forEach(o => {out[o[0]] = this.computeSeries(o[0])})
-		this._series = out
-		this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, mem: mem}
-		return out
+		const same = this._series && k && k.src === src && k.txns === txns && k.acc === acc
+			&& k.basis === basis && k.mem === mem && k.algo === algo
+		if(!same){
+			this._series = {}
+			this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, mem: mem, algo: algo}
+		}
+		/* EAGER FOR THE SHIPPED MODEL, ON DEMAND FOR THE MODULE. Both windows cost microseconds under
+		   buildModel and both were therefore built up front, which is what makes the zoom ready
+		   before the tap lands. A module run is seconds - the amplitude correction rewinds the whole
+		   capture once per past cycle - so building a window nobody is looking at would freeze the
+		   page on arrival for a picture that may never be asked for. */
+		if(!this.usingModule())
+			WHENS.forEach(o => {
+				if(!this._series[o[0]])this._series[o[0]] = this.computeSeries(o[0])
+			})
+		return this._series
 	}
-	series(when){return this.allSeries()[when || this.state.when]}
+	series(when){
+		const all = this.allSeries()
+		const w = when || this.state.when
+		if(!all[w])all[w] = this.computeSeries(w)
+		return all[w]
+	}
 
 	computeSeries(when){
 		const now = this.ledgerToday()
@@ -650,21 +713,25 @@ export default class BalanceChart extends BaseComponent{
 		let past = built.points
 		if(win.to)past = past.filter(p => p.date <= win.to)
 
-		const live = win.fwd ? this.model(now, new Date(now.getTime() + win.fwd*DAY)) : null
-		const future = live
-			? forecast(Object.assign({now: now, balanceNow: bal, days: win.fwd}, live)) : []
+		const liveUntil = win.fwd ? new Date(now.getTime() + win.fwd*DAY) : null
+		const live = win.fwd ? this.model(now, liveUntil) : null
+		const liveRun = win.fwd ? this.moduleRun(now, liveUntil) : null
+		const future = liveRun ? liveRun.seriesFrom(bal)
+			: (live ? forecast(Object.assign({now: now, balanceNow: bal, days: win.fwd}, live)) : [])
 
 		/* THE BENCHMARK: the same model, asked from the START of what is on screen, over days that
 		   have since actually happened. Where it parts company with the reconstruction is a
 		   discrepancy worth chasing - a stream mis-timed, an amount out of date, or money moving that
 		   the master does not know about. It is out of sample because buildModel reads nothing dated
 		   on or after its as-of date, not because anything here arranges for that. */
-		let backtest = [], bench = null
+		let backtest = [], bench = null, benchRun = null
 		if(past.length > 1){
 			const opened = past[0].date, closed = past[past.length - 1].date
 			bench = this.model(opened, closed)
-			backtest = forecast(Object.assign({now: opened, balanceNow: past[0].value,
-				days: Math.round((closed - opened)/DAY)}, bench))
+			benchRun = this.moduleRun(opened, closed)
+			backtest = benchRun ? benchRun.seriesFrom(past[0].value)
+				: forecast(Object.assign({now: opened, balanceNow: past[0].value,
+					days: Math.round((closed - opened)/DAY)}, bench))
 			backtest = [{date: opened, value: past[0].value, bench: true}]
 				.concat(backtest.map(p => ({date: p.date, value: p.value, bench: true})))
 		}
@@ -672,7 +739,9 @@ export default class BalanceChart extends BaseComponent{
 		   overwritten by whichever window allSeries() computed last, and a hovered day was then
 		   explained with another month's model. */
 		return {past: past, future: future, backtest: backtest, txns: txns, now: now,
-			live: live || bench, bench: bench}
+			live: live || bench, bench: bench,
+			//the module runs that drew those two lines, so the day audit explains the line it sees
+			liveRun: liveRun, benchRun: benchRun}
 	}
 
 	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts
@@ -1020,12 +1089,12 @@ export default class BalanceChart extends BaseComponent{
 	   the reader watches the picture change shape when nothing about the money moved at all. What
 	   actually happened is that the frame got wider, so the DOMAIN is what interpolates. */
 	zoomTo(){
-		//both are already built, so the frame the animation starts on is ready before the tap lands
-		const cached = this.allSeries()
-		const before = cached[this.state.when]
+		//built through series(), which under the module builds the window being asked for rather than
+		//assuming both are already in hand
+		const before = this.series(this.state.when)
 		this.animating = true
 		this.setState({when:this.next(WHENS,"when"), at:null}, () => {
-			const after = this.allSeries()[this.state.when]
+			const after = this.series(this.state.when)
 			const f0 = this.frameOf(before), f1 = this.frameOf(after)
 			/* THE CONTENT IS THE UNION OF BOTH WINDOWS, not the wider of the two.
 			   Two months that merely OVERLAP are not a zoom, they are a pan, and the wider window does
@@ -1178,6 +1247,7 @@ export default class BalanceChart extends BaseComponent{
 		//the shapes are memoised on the instance and must be dropped when the transactions change
 		if(this._txns !== this.props.transactions){
 			this._txns = this.props.transactions; this._models = null
+			this._portfolio = null; this._runs = null
 			this._names = null; this._byStream = null; this._classes = null
 		}
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",

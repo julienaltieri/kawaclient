@@ -27,6 +27,24 @@ import DayAudit from './DayAudit';
 //    StreamAuditView.js), composed from HeaderRowDrawer - the same drawer that row uses in production.
 
 const titleStyle = {marginBottom:DS.spacing.xxs+"rem",textAlign:"left",fontWeight:"bold"};
+
+/* ---- WHICH FORECASTER THE WHOLE PAGE IS LOOKING AT ------------------------------------------------
+   ONE SWITCH, THREE VIEWS. The curve, the accuracy tile and the day table are three readings of the
+   same forecast, and comparing two algorithms means comparing all three - a toggle that moved only
+   the headline would leave the picture and the rows describing the other one.
+
+   IT SITS AT THE TOP because it governs everything below it. Inside the bench it read as a property
+   of the bench, which is exactly what it is not. */
+const ALGOS = [["legacy", "legacy"], ["new", "stream predictor"]];
+const algoBtn = on => ({
+	appearance:"none", cursor:"pointer", font:"inherit",
+	fontSize:DS.fontSize.little+"rem", padding:"0.3rem 0.9rem",
+	borderRadius:DS.borderRadiusSmall, marginRight:DS.spacing.xxs+"rem",
+	fontWeight: on ? 600 : 400,
+	border:"1px "+(on ? "solid" : "dashed")+" "+DS.getStyle().borderColor,
+	background: on ? DS.getStyle().UIElementBackground : "none",
+	color: DS.getStyle().bodyText
+});
 const ringConfig = {timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001};
 
 //Same reporting-date logic StreamAuditView keeps privately (it isn't exported): the end of the current
@@ -100,7 +118,7 @@ function pickStreams(){
 export default class Sandbox extends BaseComponent{
 	constructor(props){
 		super(props);
-		this.state = {fetching:true,transactions:[],day:null};
+		this.state = {fetching:true,transactions:[],day:null,algo:"legacy"};
 	}
 	//Same loading lifecycle every page follows (see StreamView.js's MasterStreamView): fetching starts
 	//true, loadData() waits on Core.loadData() before touching Core for anything, then flips fetching
@@ -136,16 +154,25 @@ export default class Sandbox extends BaseComponent{
 			    job is comparing a point on the curve against the rows that made it. It opens on LAST
 			    month and the spending account, because that is the window being audited: a settled
 			    month, on the account the forecast is scored against. */}
+			{/* the switch first, because it governs every reading under it */}
+			<div style={{...titleStyle,display:"flex",alignItems:"baseline",gap:DS.spacing.xs+"rem",flexWrap:"wrap"}}>
+				<span>Forecast by</span>
+				<span>{ALGOS.map(a => <button key={a[0]} type="button"
+					style={algoBtn(this.state.algo===a[0])}
+					onClick={() => this.updateState({algo:a[0],day:null})}>{a[1]}</button>)}</span>
+			</div>
 			<div style={titleStyle}>The tile, as shipped</div>
 			<div style={{maxWidth:"24.4rem"}}>
 				{/* sticky: the table below is meant to be READ and copied, which needs the finger
 				    somewhere else. Tapping the same day again clears it. */}
-				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
+				<BalanceChart key={this.state.algo}
+					stream={Core.getMasterStream()} transactions={this.state.transactions}
+					algo={this.state.algo}
 					defaultWhen="last" sticky={true} onDay={d => this.updateState({day:d})}/>
 			</div>
 			<DayAudit day={this.state.day}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>
-			<BalanceBench transactions={this.state.transactions}/>
+			<BalanceBench transactions={this.state.transactions} algo={this.state.algo}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Header rows</div>
 			{streams.map(s => <CompoundStreamHeaderRow key={s.id} stream={s} transactions={this.getTransactionsForStream(s)}/>)}
 		</div>

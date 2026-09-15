@@ -34,36 +34,26 @@ export const SHAPE_CONFIG = {
 	   as one. */
 	minConcentration: 0.75,
 
-	/* ---- HOW STRONG A THEORY HAS TO BE TO BE BELIEVED ----------------------------------------------
-	   A STREAM'S MOVEMENTS CAN BE READ SEVERAL WAYS and the readings are theories, not settings. All
-	   of them are tried on every stream and each is scored the same way, so which one is right is
-	   measured rather than gated:
+	/* ---- WHICH READING OF A MODE WINS, AND WHY THERE IS NO KNOB FOR IT ----------------------------
+	   A MODE'S MOVEMENTS CAN BE READ THREE WAYS, and the readings are theories rather than settings.
+	   All three are tried and scored the same way, so which is right is measured, not gated:
 
-	       everything, as the ledger recorded it            the theory with nothing to prove
-	       everything, with the bank's closures undone      one per direction
-	       one payer only, the rest set aside as exceptions  one per merchant
-	       one payer only, with closures undone             the two combined
+	       everything, as the ledger recorded it        the theory with nothing to prove
+	       everything, closures pulled back             only on a real-time account
+	       everything, closures pushed on               only on a real-time account
 
-	   SHARE DECIDES WHICH THEORIES ARE ABOUT THE STREAM AT ALL. A reading of four of Groceries' 167
-	   movements lands them beautifully and is a theory about four transactions, not about groceries.
-	   Below this share a theory is not eligible, whatever it fits.
+	   THE TIGHTEST FIT SIMPLY WINS. The plain reading is one theory among the three and competes on
+	   the same terms; a bar on top of that would be a second opinion about a comparison already
+	   made, and every value tried for one either let a marginal reading through or shut out the case
+	   the idea came from.
 
-	   A first pass multiplied the two instead - strength = share x fit - and it quietly buried the
-	   case the whole idea came from. Wages Julien's payroll fits at 0.89 using 80% of the movements
-	   (0.71) and the unsplit stream fits at 0.72 using all of them (0.72), so the product preferred
-	   leaving three disability deposits mixed into a payroll by a hundredth of a point. Coverage is a
-	   question of eligibility, not something to trade a real fit away for. */
-	minTheoryShare: 0.60,
-
-	/* AND AMONG THE ELIGIBLE, THE TIGHTEST FIT SIMPLY WINS - there is no bar to clear. The plain
-	   reading of the ledger is one theory among the rest and competes on the same terms; a bar on top
-	   of that would be a second opinion about a comparison already made, and every value for it that
-	   was tried either let a marginal split through or shut out the case the whole idea came from.
-	   Wages Julien's payroll fits 0.84 and a bar at 0.85 kept it out by a hundredth.
-
-	   THE CONTROL THAT SAYS THIS IS SAFE: Renter's insurance is one payee the bank spells two ways.
-	   Its split theory is eligible - 75% of the movements - and fits 0.86. It loses anyway, because
-	   the unsplit stream fits 0.92. Nothing had to be gated for it to lose; it just fits worse. */
+	   THERE WERE ONCE TWO MORE, AND A SHARE THRESHOLD TO POLICE THEM. Back when this stage answered
+	   one shape per STREAM, a theory could propose "read only the Conservice half and set the rest
+	   aside" - and a reading of four of Groceries' 167 movements lands them beautifully while being
+	   a theory about four transactions. `minTheoryShare` existed to refuse those. The stage now
+	   splits by payee BEFORE any theory is built, so every theory covers every leg it was handed,
+	   every share is 1, and the threshold could only ever pass. It and the payer theories are gone
+	   together; what replaced them is the split that made them unnecessary. */
 
 	/* ---- COLLAPSING MODES BACK TOGETHER ------------------------------------------------------------
 	   AN ISOLATED PAYEE IS OFTEN THE SAME HABIT UNDER ANOTHER NAME, or the same bill paid another way
@@ -123,8 +113,12 @@ export const SHAPE_CONFIG = {
 
 	   A REVERSAL IS NOT A LATE PAYMENT. Absorbing it would let a withdrawal fill a cycle the deposit
 	   missed and count as the deposit having happened, which is the one thing it certainly was not.
-	   So direction partitions a mode before anything is measured, and no merge crosses it. */
-	splitByDirection: true,
+	   So direction partitions a mode before anything is measured, and no merge crosses it.
+
+	   THIS IS STRUCTURE, NOT A SETTING. `splitByDirection` was a flag here and was never read: the
+	   partition happens in `streamModes`, which builds one mode per payee PER DIRECTION, and the
+	   merge refuses a direction change outright. There is no code path in which turning it off would
+	   have meant anything, so the flag is gone and the rule is stated where it happens. */
 
 	/* ---- HOW SURE IS SURE ENOUGH TO CALL IT A LUMP -------------------------------------------------
 	   A DAY IS A PROMISE AND THIS IS THE PRICE OF MAKING ONE. Below the bar the mode still has its
@@ -190,7 +184,7 @@ export const SHAPE_CONFIG = {
 	   collects late 4 out of 4, GEICO late 2 out of 2, and three card modes post on the closed day
 	   itself. Four more modes have three observations each and disagree with themselves; they get no
 	   rule, which is correct. */
-	minClosureTests: 2,
+	minClosureTests: 1,
 
 	/* HOW MANY LUMPS TO LOOK FOR before giving up and calling it a spread. Two clusters half a cycle
 	   apart are invisible to a single-cluster measurement - they cancel - so the cycle is wrapped
@@ -215,19 +209,16 @@ export const SHAPE_CONFIG = {
 	       Hobby mdm     1 0 0 2 2 1 1                          43%
 
 	   Nothing in this portfolio lands between 43% and 88%, so the value is set in the middle of the
-	   empty band rather than tight against either side of it. */
-	minSteadyShare: 0.65,
+	   empty band rather than tight against either side of it.
 
-	/* HOW OFTEN A CYCLE HAS TO CARRY ANYTHING AT ALL for an unsteady stream to count as a flow rather
-	   than as noise. Groceries has 4 to 10 transactions in nearly every week and no cycle rhythm at
-	   all - that is a spread, and it is a real answer. A stream that is unsteady AND frequently empty
-	   is not a shape, it is an irregularity, and it gets no shape rather than the nearest one. */
-	minBusyShare: 0.8,
-
-	/* AND A FLOW HAS TO BE BUSY WHILE IT RUNS. Savings is non-empty in 6 of 7 months but carries a
-	   fading 4, 6, 4, 2, 0, 2, 1 - present, but not a flow. Requiring more than one movement in the
-	   typical cycle separates a spread from a stream that simply moves once in a while and is bad at
-	   it. */
+	   AND NONE OF IT GATES ANYTHING ANY MORE. `minSteadyShare` and `minBusyShare` were the original
+	   way of naming a shape - steady and single meant a lump, unsteady and busy meant a flow - and
+	   they are what put groceries and a twice-monthly utility bill in the same bucket, because both
+	   typically carry four or fewer movements. FOCUS replaced them: whether the days cluster is a
+	   different question from how many there are, and it is the one that separates the two. The
+	   thresholds were left declared and unread for a while after; they are gone, and the questions
+	   they measured - how steady, how busy - are now asked by ARRIVAL, which has its own confidence
+	   and reaches the answer. */
 	/* ---- ONE MOVEMENT A CYCLE IS NOT A FLOW -------------------------------------------------------
 	   A SPREAD IS WHEN SO MANY MOVEMENTS HAPPEN THAT PRECISION IS NOT WORTH TRYING FOR, and a daily
 	   amount is the better approximation. One payment a cycle is the opposite: the money arrives all

@@ -65,8 +65,21 @@ export const AMOUNT_CONFIG = {
 	   only other one above 1.0 at all, at 1.06, and the scaling is what keeps it alive.
 
 	   A SUSPICION, NOT A CONCLUSION. The mode keeps its history, its money share and its identity; it
-	   stops promising. A stream that resumes is visibly the same stream. */
+	   stops promising. A stream that resumes is visibly the same stream.
+
+	   ONLY A PLAN CAN RUN OUT, AND THAT IS THE WHOLE OF THE DIFFERENCE BETWEEN THE TWO CASES THIS
+	   GATE HAS TO TELL APART. Gembah is a fixed sum being paid down: a payment that does not arrive
+	   is evidence the sum is finished, because there was always going to be a last one. Julien's
+	   savings transfer has nothing to finish - money moved into savings is not spent - so a month it
+	   skipped is a month it skipped, and the stream is exactly as alive as it was. The envelope
+	   already carries that distinction: a yearly declaration is a PLAN, a cycle declaration REFILLS.
+
+	   SO THE STRICT BAR IS FOR PLANS ONLY, and an open-ended stream is judged against the same
+	   standard a rate is: one missed cycle is an ordinary late payment, two is a habit that stopped.
+	   At 1.6 a monthly lump that keeps its day to 0.9 survives to 1.78 of its worst wait - about two
+	   missed dates - which is `maxQuietCycles` said in the units a lump is measured in. */
 	lateMultiple: 1.0,
+	lateMultipleOpenEnded: 1.6,
 
 	/* ---- THE SIGNATURE OF A PLANNED STREAM BEGINNING ------------------------------------------------
 	   A DECLARATION IS EVIDENCE, NOT ONLY A CONSTRAINT. It is written BEFORE the money moves, so when
@@ -90,7 +103,37 @@ export const AMOUNT_CONFIG = {
 	   The other five are old declarations that a dormant stream happened to resume against - Earnin's
 	   $50 written in 2021 and first paid in 2025, Sport's $100 written in 2023 and first paid in 2026
 	   - and a coincidence four years wide is not the beginning of a plan. */
-	plannedWithinPeriods: 1
+	plannedWithinPeriods: 1,
+
+	/* ---- WHEN A YEARLY ENVELOPE IS SPENT STEADILY ENOUGH TO CARRY A RATE --------------------------
+	   THE LAST RESCUE, AND THE ONLY THREE NUMBERS IT TAKES. A yearly stream predicts nothing unless
+	   it moved money in nearly every month, often enough to be a habit, with no single month carrying
+	   most of the year.
+
+	   MEASURED ON THE CAPTURED PORTFOLIO, and the gap between the two groups is wide:
+
+	       Eléonore              69 legs  12 months  biggest month 30%
+	       Emile                 54       12                       21%
+	       Cadeaux Mr & Mdm      25       11                       31%
+	       Exceptional Expense   36       11                       28%
+	       Repair/replacements   36       10                       26%
+	       Equipment             35       10                       26%
+	       Hobby mr              32        9                       25%
+	       ---------------------------------------------- the line
+	       Cadeaux famille Mdm   15        6                       27%
+	       Voyages               78        5                       48%
+	       Voyages Famille       29        4                       77%
+	       Ahsoka                 5        4                       95%
+	       DMV fee                8        3                       99%
+
+	   VOYAGES HAS MORE MOVEMENTS THAN ELÉONORE and is a holiday rather than a habit; months touched
+	   is what tells them apart, and the biggest-month share is what catches a burst that happens to
+	   be spread over enough months. A stream that nets to zero - a reimbursement - produces a share
+	   above 100% and is refused by the same test, which is right: there is no rate in a year that
+	   sums to nothing. */
+	rescueMinMonthShare: 0.75,
+	rescueMinMovements: 12,
+	rescueMaxMonthShare: 0.50
 };
 
 export default AMOUNT_CONFIG;

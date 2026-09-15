@@ -46,6 +46,13 @@ import {merchantGroups} from './cycleFit';
    - the count was never a different kind of answer, only a different length of one. */
 export const Shape = {lump: 'lump', spread: 'spread', unknown: 'unknown'};
 
+/* THREE ANSWERS, AND `unknown` IS ONE OF THEM. The observer used to say `shape: null` and the answer
+   stage translated that into `Shape.unknown`, so half the module tested truthiness and the other
+   half tested a name - and every reader had to know which half it was in. One vocabulary, and a
+   mode with no readable shape says so in the same word everywhere. */
+export const readable = m => !!m && m.shape !== Shape.unknown
+	&& m.shape !== null && m.shape !== undefined;
+
 const YEARLY = {yearly: true, biyearly: true};
 
 /* A stream with a weekly cycle and a decade of history is ~520 buckets; the cap is far above any
@@ -532,32 +539,30 @@ export function rayleigh(bins, lumps){
 }
 
 /* ---- THE THEORIES ------------------------------------------------------------------------------
-   A STREAM'S MOVEMENTS CAN BE READ SEVERAL WAYS AND EACH READING IS A THEORY. Rather than gate the
-   readings behind thresholds - is this merchant dominant enough, did that adjustment help enough -
-   every reading is tried and scored the same way, and the stream says which one is true of it.
+   ONE PILE OF MONEY CAN BE READ THREE WAYS AND EACH READING IS A THEORY. Rather than gate the
+   readings behind thresholds - did that adjustment help enough? - every reading is tried and scored
+   the same way, and the mode says which one is true of it.
 
    THE READINGS:
 
      everything             the ledger as recorded. Invents nothing, so it is the default.
-     closures undone        real-time accounts only, one theory per direction. A bank posts only on
-                            an open day, so a payment due on a Sunday lands Friday or Monday and the
-                            stream reads as scattered by up to three days. Which way the payer's
-                            arrangement goes is not recorded anywhere, so both are tried.
-     one payer only         a stream can carry two payers and only one of them has a cadence. Wages
-                            Julien is a semimonthly payroll plus three disability deposits; together
-                            they describe neither. The rest are counted as exceptions, never dropped
-                            quietly.
-     one payer, closures undone     the two together.
+     closures pulled back   real-time accounts only. A bank posts only on an open day, so a payment
+     closures pushed on     due on a Sunday lands Friday or Monday and the mode reads as scattered by
+                            up to three days. Which way the payer's arrangement goes is recorded
+                            nowhere, so both are tried and the ledger decides.
 
-   HOW ONE WINS. A theory has to be ABOUT the stream - it must use at least minTheoryShare of the
-   movements, which is what keeps a reading of four of Groceries' 167 out of the running. Among those
-   that are, the TIGHTEST fit wins. And a theory that invents something - sets movements aside, moves
-   dates around - may only displace the plain reading of the ledger if it fits very well indeed.
+   HOW ONE WINS. The TIGHTEST fit, with the plain reading competing on the same terms as the other
+   two - there is no bar on top of the comparison, because a bar would only be a second opinion about
+   a comparison already made.
 
-   THE TWO ARE NOT TRADED AGAINST EACH OTHER. Multiplying them buries the case this exists for:
-   Wages Julien's payroll fits 0.89 on 80% of the movements and the unsplit stream fits 0.72 on all
-   of them, and a product prefers the unsplit one by a hundredth of a point - leaving three
-   disability deposits mixed into a payroll to protect a coverage figure.
+   THERE WERE TWO MORE, AND THEY ARE THE HISTORY OF THIS FILE. A theory could once propose reading
+   ONE PAYER and setting the rest aside: Wages Julien is a semimonthly payroll plus three disability
+   deposits, and together they describe neither. That mattered when this stage answered one shape per
+   STREAM. It now answers a LIST OF MODES split by payee before any theory is built, so the payer
+   theories were being generated on every mode, scored, sorted and then discarded by every caller -
+   and `minTheoryShare`, which existed to stop a reading of four of Groceries' 167 movements from
+   winning, could only ever pass on a theory that covers all of them. The split made both unnecessary
+   and they went together.
 
    A CARD IS NEVER ADJUSTED FOR CLOSURES. It posts when the merchant presents it, so those theories
    are not even generated - offering them would fit weekend SHOPPING, and groceries tighten 24% under
@@ -566,51 +571,44 @@ const theoryLegs = (legs, how, country) => (legs || [])
 	.map(l => ({date: snapDate(new Date(l.date), how, country), accountId: l.accountId,
 		description: l.description, amount: l.amount}));
 
-function scoreTheory(legs, total, cycle, anchor, taper){
+function scoreTheory(legs, cycle, anchor, taper){
 	const buckets = cycleBuckets(legs, cycle, anchor, taper);
 	const bins = dayHistogram(buckets);
 	const counts = buckets.map(b => b.legs.length);
 	const verdict = classifyShape(counts, bins, null, weightsOf(buckets));
 	//THE FIT, NOT THE TIGHTNESS. A theory that lands tightly but skips cycles has not explained them.
 	const tight = verdict.fit === undefined || verdict.fit === null ? 0 : verdict.fit;
-	const share = total ? legs.length / total : 0;
 	return {legs: legs, buckets: buckets, bins: bins, counts: counts, verdict: verdict,
-		share: share, tightness: tight, eligible: share >= SHAPE_CONFIG.minTheoryShare};
+		tightness: tight};
 }
 
+/* EVERY THEORY IS ABOUT THE WHOLE MODE, so the only question left is what the bank did to the dates.
+
+   THIS ONCE ALSO SPLIT BY PAYEE. Back when this stage answered one shape per STREAM, a theory could
+   propose "read only the Conservice half and throw the rest away", and that is how Utilities was
+   pulled apart. The stage now splits by payee BEFORE any of this runs - every caller here already
+   passes one payee's legs - so those theories were generated on every mode, scored, sorted, and
+   then filtered out again by both callers. With them gone a theory always covers every leg it was
+   handed, which is why `share`, `eligible` and the minTheoryShare knob went with them. */
 export function shapeTheories(legs, cycle, anchor, opts){
 	const o = opts || {};
 	const all = legs || [];
 	const made = [];
 	if(!cycle || !all.length)return made;
 
-	const add = (label, kind, ls, how) => {
-		if(ls.length < 1)return;
-		const t = scoreTheory(theoryLegs(ls, how, o.country), all.length, cycle, anchor, o.taper);
+	const add = (label, how) => {
+		const t = scoreTheory(theoryLegs(all, how, o.country), cycle, anchor, o.taper);
 		t.label = label;
-		t.kind = kind;
 		t.snap = how;
 		made.push(t);
 	};
 
-	add('everything, as recorded', 'all', all, SNAP.none);
+	add('everything, as recorded', SNAP.none);
 	if(o.realTime){
-		add('everything, closures pulled back', 'all', all, SNAP.next);
-		add('everything, closures pushed on', 'all', all, SNAP.back);
+		add('everything, closures pulled back', SNAP.next);
+		add('everything, closures pushed on', SNAP.back);
 	}
-
-	const groups = merchantGroups(all);
-	if(groups.length > 1)groups.forEach(g => {
-		if(g.legs.length < SHAPE_CONFIG.minMovements)return;
-		add(g.key + ' only', 'payer', g.legs, SNAP.none);
-		if(o.realTime){
-			add(g.key + ' only, closures pulled back', 'payer', g.legs, SNAP.next);
-			add(g.key + ' only, closures pushed on', 'payer', g.legs, SNAP.back);
-		}
-	});
-
-	//tightest first, and a theory that uses more of the stream breaks a tie
-	return made.sort((a, b) => b.tightness - a.tightness || b.share - a.share);
+	return made.sort((a, b) => b.tightness - a.tightness);
 }
 
 /* THE ONE THE STREAM CHOSE. The default is "everything, as recorded" and it holds unless another
@@ -618,15 +616,14 @@ export function shapeTheories(legs, cycle, anchor, opts){
    place, and every other one does. */
 export function chooseTheory(theories){
 	if(!theories.length)return null;
-	const base = theories.filter(t => t.kind === 'all' && t.snap === SNAP.none)[0] || theories[0];
-	const best = theories.filter(t => t.eligible)[0];
-	if(!best || best === base)return {chosen: base, base: base, displaced: false};
+	const base = theories.filter(t => t.snap === SNAP.none)[0] || theories[0];
+	const best = theories[0];
 	/* THE BEST FIT WINS, AND THERE IS NO BAR TO CLEAR. The plain reading of the ledger is one theory
 	   among the others and it competes on the same terms; a bar on top of that would only be a
-	   second opinion about a comparison already made. Eligibility - using enough of the stream to be
-	   about it - is the only thing a theory has to satisfy before its fit is believed. */
-	if(best.tightness <= base.tightness)
-		return {chosen: base, base: base, displaced: false, runnerUp: best};
+	   second opinion about a comparison already made. */
+	if(best === base || best.tightness <= base.tightness)
+		return {chosen: base, base: base, displaced: false,
+			runnerUp: best === base ? undefined : best};
 	return {chosen: best, base: base, displaced: true};
 }
 
@@ -672,12 +669,12 @@ const commonest = xs => {
 
 export function classifyShape(counts, bins, cfg, weights){
 	const c = Object.assign({}, SHAPE_CONFIG, cfg || {});
-	if(!counts.length)return {shape: null, reason: 'no cycles'};
+	if(!counts.length)return {shape: Shape.unknown, reason: 'no cycles'};
 
 	const placed = counts.reduce((n, x) => n + x, 0);
-	if(!placed)return {shape: null, reason: 'no movements on this account'};
+	if(!placed)return {shape: Shape.unknown, reason: 'no movements on this account'};
 	if(counts.length < c.minCyclesObserved)
-		return {shape: null, reason: 'only ' + counts.length + ' cycle'
+		return {shape: Shape.unknown, reason: 'only ' + counts.length + ' cycle'
 			+ (counts.length === 1 ? '' : 's') + ' observed'};
 
 	/* THE FLOOR COUNTS WEIGHTED MOVEMENTS, and under a taper that is the guard that keeps the whole
@@ -687,12 +684,11 @@ export function classifyShape(counts, bins, cfg, weights){
 	const carried = counts.reduce((n, x, i) =>
 		n + x * ((weights && weights[i] !== undefined) ? weights[i] : 1), 0);
 	if(carried < c.minMovements)
-		return {shape: null, reason: 'only ' + (Math.round(carried * 10) / 10) + ' movement'
+		return {shape: Shape.unknown, reason: 'only '
+			+ (Math.round(carried * 10) / 10) + ' movement'
 			+ (carried === 1 ? '' : 's') + ' to read once the old ones fade'};
 
 	const typical = commonest(counts);
-	const steady = counts.filter(x => x === typical).length / counts.length;
-	const busy = counts.filter(x => x > 0).length / counts.length;
 	/* HOW MANY MOVEMENTS A CYCLE ACTUALLY CARRIES, as a MEAN. `commonest` answers a different
 	   question and answers it badly here: cycles running 1, 1, 1, 2, 5, 8 have a modal count of one
 	   and carry three a cycle. */
@@ -730,16 +726,15 @@ export function classifyShape(counts, bins, cfg, weights){
 	const arrival = weightedFills(counts, weights);
 	const onDay = tightness(bins || [], lumps);
 
-	const base = {typical: typical, steady: steady, busy: busy, perCycle: perCycle,
-		perMonth: perMonth,
+	/* ONE NUMBER, ONE NAME. `day` and `tightness` were the same call stored under two keys, which is
+	   two chances to read the stale one. The scatter of the days, their circular standard deviation
+	   and the Rayleigh test were computed for every mode and read by nothing - the functions stay
+	   exported for anyone auditing a mode by hand, they just no longer run on every pass. */
+	const base = {typical: typical, perCycle: perCycle, perMonth: perMonth,
 		arrival: arrival, day: onDay === null ? 0 : onDay,
-		concentration: focus.concentration, lumps: focus.lumps, perLump: focus.perLump,
+		concentration: focus.concentration, lumps: focus.lumps,
 		fit: fit === null ? 0 : fit,
-		scatter: dayScatter(bins || [], lumps),
-		cycleDays: (bins || []).length,
-		tightness: tightness(bins || [], lumps),
-		sd: circularSd(bins || [], lumps),
-		test: rayleigh(bins || [], lumps)};
+		cycleDays: (bins || []).length};
 
 	/* ---- IN FOCUS: A LUMP, HOWEVER MANY DAYS IT USES --------------------------------------------
 	   TWO BILLS A FORTNIGHT APART ARE TWO DATES, NOT A FLOW. Utilities pays Conservice and the city
@@ -762,7 +757,7 @@ export function classifyShape(counts, bins, cfg, weights){
 	   running 1, 1, 1, 2, 5, 8 have a modal count of one and carry three a cycle, which is how
 	   Social's 24 movements in 8 cycles were called out of focus and left unread. */
 	if(perMonth >= c.minSpreadEventsPerCycle)
-		return Object.assign({shape: Shape.spread, flow: true,
+		return Object.assign({shape: Shape.spread,
 			confidence: 1 - (focus.concentration === null ? 0 : focus.concentration)}, base);
 
 	return Object.assign({shape: Shape.lump, confidence: focus.concentration,
@@ -851,13 +846,15 @@ export function patternWithExceptions(legs, cycle, anchor, cfg, taper){
 	const start = fitOf(all, cycle, anchor, taper);
 	if(all.length < c.minMovements)return {kept: all, exceptions: [], result: start, trimmed: false};
 
-	/* A FLOW HAS NO DAY TO BE NEAR, so there is nothing here for it to be trimmed towards. The test
-	   is `flow`, not `spread`: since spread became the earned answer for anything past the evidence
-	   guards, a mode that is merely OUT OF FOCUS is a spread too - and those are exactly the ones
-	   the trim exists to rescue. Savings reads two clusters half a cycle apart until two movements
-	   are set aside, and testing the shape name instead of the flow lost every lump in the
-	   portfolio that needed an exception to find its day. */
-	if(start.verdict.flow)
+	/* A FLOW HAS NO DAY TO BE NEAR, so there is nothing here for it to be trimmed towards.
+
+	   THIS IS THE OBSERVER'S SPREAD, NOT THE ANSWER'S. The two are different claims wearing one
+	   word: the observer calls a mode a spread only when it is genuinely busy, while the answer
+	   stage also calls a readable lump a spread once it fails the confidence bar - and those are
+	   exactly the modes this trim exists to rescue. Savings reads two clusters half a cycle apart
+	   until two movements are set aside. A `flow: true` marker used to carry the distinction; the
+	   verdict in hand here is always the observer's, so the shape name says it directly. */
+	if(start.verdict.shape === Shape.spread)
 		return {kept: all, exceptions: [], result: start, trimmed: false};
 
 	const floor = Math.max(c.minMovements, Math.ceil(all.length * (1 - c.maxExceptionShare)));
@@ -942,18 +939,64 @@ export function dominantAccount(legs){
 	return {accountId: ids[0], share: n[ids[0]] / (legs || []).length};
 }
 
-function remeasure(legs, cycle, anchor, opts){
+/* ---- WHAT A READING SAYS ABOUT A MODE ------------------------------------------------------------
+   THE SAME FIFTEEN FIELDS WERE WRITTEN IN THREE PLACES: when a mode is first read, when it absorbs a
+   stray, and when the leftovers are gathered into one row. Two were object literals and the third
+   was eighteen assignments onto an existing mode, which is how they came apart - the assignment
+   version once forgot `arrival`, and an undefined arrival cannot clear the confidence bar, so every
+   merged mode was silently answered as a rate.
+
+   THE RAIL READS THE RAW LEGS, never the reading's own buckets. The lattice a mode is SHAPED on may
+   carry dates a closure theory already moved, and asking those where the banks pushed them is asking
+   the adjustment about itself. */
+function shapeFields(read, legs, cycle, anchor, opts){
 	const o = opts || {};
-	const theories = shapeTheories(legs, cycle, anchor,
-		{country: o.country, realTime: o.realTime, taper: o.taper}).filter(t => t.kind === 'all');
-	const pick = chooseTheory(theories);
+	const v = read.verdict;
+	const d = v.shape === Shape.lump ? lumpDays(read.buckets, v.lumps) : [];
+	return {
+		shape: v.shape,
+		reason: v.reason || null,
+		confidence: readable(v)
+			? ((v.fit === undefined || v.fit === null) ? null : v.fit) : null,
+		arrival: v.arrival === undefined ? null : v.arrival,
+		onDay: v.day === undefined ? null : v.day,
+		wandering: !!v.wandering,
+		days: d.map(x => x.day),
+		wobble: d.map(x => x.wobble),
+		//how many movements chose each day, and which of them the forecast will name
+		dayEvents: d.map(x => x.events),
+		typical: v.typical === undefined ? null : v.typical,
+		predicted: predictedDays(d, v.typical),
+		rail: (d.length && cycle)
+			? closureRail(cycleBuckets(legs, cycle, anchor, o.taper), d[0].day, o.country)
+			: null,
+		cyclesObserved: read.buckets.length,
+		adjusted: read.snap,
+		histogram: read.bins
+	};
+}
+
+/* ---- READ ONE PILE OF MONEY ---------------------------------------------------------------------
+   PICK THE BEST CLOSURE THEORY, CUT THE CYCLES, CLASSIFY. Three places did these same six lines: the
+   first reading of a mode, the re-reading after a merge, and the re-reading of a gathered tail. They
+   drifted - one of them forgot to carry `arrival` out, and an undefined arrival cannot clear the
+   confidence bar, so every collapsed mode was quietly demoted to a rate.
+
+   WITHOUT A CYCLE THERE IS NOTHING TO READ, and that is an answer rather than a failure: the verdict
+   comes back `unknown` with a reason, exactly as it would from a stream with too few movements. */
+function readShape(legs, cycle, anchor, opts){
+	const o = opts || {};
+	const pick = cycle ? chooseTheory(shapeTheories(legs, cycle, anchor,
+		{country: o.country, realTime: o.realTime, taper: o.taper})) : null;
 	const chosen = pick ? pick.chosen : null;
-	const buckets = chosen ? chosen.buckets : cycleBuckets(legs, cycle, anchor, o.taper);
+	const buckets = chosen ? chosen.buckets
+		: (cycle ? cycleBuckets(legs, cycle, anchor, o.taper) : []);
 	const bins = chosen ? chosen.bins : dayHistogram(buckets);
 	const counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
 	const verdict = chosen ? chosen.verdict
 		: classifyShape(counts, bins, null, weightsOf(buckets));
-	return {verdict: verdict, buckets: buckets, bins: bins,
+	return {chosen: chosen, legs: chosen ? chosen.legs : legs,
+		verdict: verdict, buckets: buckets, bins: bins, counts: counts,
 		snap: chosen ? chosen.snap : SNAP.none,
 		fit: (verdict.fit === undefined || verdict.fit === null) ? 0 : verdict.fit};
 }
@@ -963,8 +1006,8 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 	const o = opts || {};
 	if(!cycle)return {modes: modes, gathered: null};
 
-	const patterned = modes.filter(m => !!m.shape);
-	let loose = modes.filter(m => !m.shape);
+	const patterned = modes.filter(readable);
+	let loose = modes.filter(m => !readable(m));
 
 	/* BIGGEST STRAY FIRST, and each is offered to every patterned mode on the same account. The one
 	   that keeps the strongest pattern takes it; ties go to the mode with more money riding on it,
@@ -988,7 +1031,7 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 			if(dom.share < c.minDominantAccountShare)return;
 			const domType = dom.accountId === host.accountId ? host.accountType
 				: dom.accountId === stray.accountId ? stray.accountType : host.accountType;
-			const merged = remeasure(legs, cycle, anchor,
+			const merged = readShape(legs, cycle, anchor,
 				{country: o.country, realTime: domType === AccountKind.realTime});
 			const lumpy = merged.verdict.shape === Shape.lump;
 			/* NO BAR - A COMPARISON. The question is whether adding this made the host better or
@@ -1012,26 +1055,8 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		host.money += stray.money;
 		host.moneyShare += stray.moneyShare;
 		host.absorbed = (host.absorbed || []).concat([stray.label + ' x' + stray.legs]);
-		host.shape = mg.verdict.shape;
-		host.confidence = mg.fit;
-		/* EVERY FIELD THE RE-READING PRODUCED, not only the ones the merge test wanted. Leaving
-		   `arrival` off here left it undefined, and an undefined arrival cannot clear the bar - so a
-		   collapsed mode was demoted to a rate no matter what it actually looked like. */
-		host.arrival = mg.verdict.arrival === undefined ? null : mg.verdict.arrival;
-		host.onDay = mg.verdict.day === undefined ? null : mg.verdict.day;
-		host.wandering = !!mg.verdict.wandering;
-		host.adjusted = mg.snap;
-		host.histogram = mg.bins;
-		host.cyclesObserved = mg.buckets.length;
-		const d = lumpDays(mg.buckets, mg.verdict.lumps);
-		host.days = d.map(x => x.day);
-		host.wobble = d.map(x => x.wobble);
-		host.dayEvents = d.map(x => x.events);
-		host.typical = mg.verdict.typical === undefined ? null : mg.verdict.typical;
-		host.predicted = predictedDays(d, mg.verdict.typical);
-		host.rail = (d.length && cycle)
-			? closureRail(cycleBuckets(host.rawLegs, cycle, anchor, o.taper), d[0].day, o.country)
-			: null;
+		//EVERY FIELD THE RE-READING PRODUCED, not only the ones the merge test happened to want
+		Object.assign(host, shapeFields(mg, host.rawLegs, cycle, anchor, o));
 	});
 
 	/* EVERYTHING STILL LOOSE BECOMES ONE MODE. Per account, because a shape is per account and a
@@ -1049,10 +1074,8 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 		if(group.length < 2){ gathered.push(group[0]); return; }
 		const legs = group.reduce((acc, m) => mergeLegs(acc, m.rawLegs), []);
 		const realTime = group[0].accountType === AccountKind.realTime;
-		const mg = remeasure(legs, cycle, anchor, {country: o.country, realTime: realTime});
-		const d = mg.verdict.shape === Shape.lump
-			? lumpDays(mg.buckets, mg.verdict.lumps) : [];
-		gathered.push({
+		const mg = readShape(legs, cycle, anchor, {country: o.country, realTime: realTime});
+		gathered.push(Object.assign({
 			label: 'everything else (' + group.length + ' payees)',
 			key: '(gathered)',
 			accountId: id,
@@ -1061,26 +1084,9 @@ export function collapseModes(modes, cycle, anchor, opts, cfg){
 			gathered: group.map(m => m.label),
 			legs: legs.length,
 			rawLegs: legs,
-			shape: mg.verdict.shape,
-			reason: mg.verdict.reason || null,
-			arrival: mg.verdict.arrival === undefined ? null : mg.verdict.arrival,
-			onDay: mg.verdict.day === undefined ? null : mg.verdict.day,
-			wandering: !!mg.verdict.wandering,
-			days: d.map(x => x.day),
-			wobble: d.map(x => x.wobble),
-			dayEvents: d.map(x => x.events),
-			typical: mg.verdict.typical === undefined ? null : mg.verdict.typical,
-			predicted: predictedDays(d, mg.verdict.typical),
-			rail: (d.length && cycle)
-				? closureRail(cycleBuckets(legs, cycle, anchor, o.taper), d[0].day, o.country)
-				: null,
-			confidence: mg.verdict.shape ? mg.fit : null,
 			money: group.reduce((n, m) => n + m.money, 0),
-			moneyShare: group.reduce((n, m) => n + m.moneyShare, 0),
-			cyclesObserved: mg.buckets.length,
-			adjusted: mg.snap,
-			histogram: mg.bins
-		});
+			moneyShare: group.reduce((n, m) => n + m.moneyShare, 0)
+		}, shapeFields(mg, legs, cycle, anchor, o)));
 	});
 
 	return {modes: patterned.concat(gathered)};
@@ -1147,28 +1153,16 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 			   there. It cannot be otherwise: the window is one year, a yearly lattice cuts it into
 			   one or two cycles, and minCyclesObserved wants three - so the answer is "only 1 cycle
 			   observed", which is evidence. "The cycle is still yearly" was a refusal to look. */
-			let chosen = null, theories = [];
-			if(cycle){
-				theories = shapeTheories(mine, cycle, anchor,
-					{country: o.country, realTime: realTime, taper: o.taper})
-					.filter(t => t.kind === 'all');
-				const pick = chooseTheory(theories);
-				chosen = pick ? pick.chosen : null;
-			}
-
-			let buckets = chosen ? chosen.buckets
-				: (cycle ? cycleBuckets(mine, cycle, anchor, o.taper) : []);
-			let bins = chosen ? chosen.bins : dayHistogram(buckets);
-			let counts = chosen ? chosen.counts : buckets.map(b => b.legs.length);
-			let verdict = chosen ? chosen.verdict
-				: classifyShape(counts, bins, null, weightsOf(buckets));
+			const read = readShape(mine, cycle, anchor,
+				{country: o.country, realTime: realTime, taper: o.taper});
+			let buckets = read.buckets, bins = read.bins, counts = read.counts;
+			let verdict = read.verdict;
 
 			/* A HABIT WITH A LATE MONTH IS STILL THAT HABIT. The furthest movements are set aside
 			   while that improves the fit, and they become the mode's own exceptions. */
 			let exceptions = [];
 			if(cycle){
-				const trimmed = patternWithExceptions(
-					chosen ? chosen.legs : mine, cycle, anchor, null, o.taper);
+				const trimmed = patternWithExceptions(read.legs, cycle, anchor, null, o.taper);
 				if(trimmed.trimmed){
 					buckets = trimmed.result.buckets;
 					bins = trimmed.result.bins;
@@ -1177,13 +1171,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 					exceptions = trimmed.exceptions;
 				}
 			}
-			const lumpy = verdict.shape === Shape.lump;
-			const dd = lumpy ? lumpDays(buckets, verdict.lumps) : [];
-			const rail = (lumpy && dd.length && cycle)
-				? closureRail(cycleBuckets(mine, cycle, anchor, o.taper), dd[0].day, o.country)
-				: null;
-
-			modes.push({
+			modes.push(Object.assign({
 				label: modeLabel(mine),
 				key: group.key,
 				//kept so a mode can be put back together with another; not part of the answer
@@ -1192,28 +1180,11 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 				accountType: alloc.accountType || null,
 				direction: group.direction,
 				legs: mine.length,
-				shape: verdict.shape,
-				reason: verdict.reason || null,
-				days: dd.map(d => d.day),
-				wobble: dd.map(d => d.wobble),
-				//how many movements chose each day, and which of them the forecast will name
-				dayEvents: dd.map(d => d.events),
-				typical: verdict.typical === undefined ? null : verdict.typical,
-				predicted: predictedDays(dd, verdict.typical),
-				rail: rail,
-				confidence: verdict.shape
-					? (verdict.fit === undefined || verdict.fit === null ? null : verdict.fit)
-					: null,
-				arrival: verdict.arrival === undefined ? null : verdict.arrival,
-				onDay: verdict.day === undefined ? null : verdict.day,
-				wandering: !!verdict.wandering,
 				moneyShare: money ? absSum(mine) / money : 0,
 				money: absSum(mine),
-				cyclesObserved: buckets.length,
-				adjusted: chosen ? chosen.snap : SNAP.none,
-				exceptions: exceptions.length,
-				histogram: bins
-			});
+				exceptions: exceptions.length
+			}, shapeFields({verdict: verdict, buckets: buckets, bins: bins, snap: read.snap},
+				mine, cycle, anchor, o)));
 		});
 	});
 
@@ -1294,7 +1265,7 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 	const rank = m => (m.shape === Shape.lump ? 0 : m.shape === Shape.spread ? 1 : 2);
 	collapsed.sort((a, b) => rank(a) - rank(b) || b.moneyShare - a.moneyShare);
 
-	const predictable = collapsed.filter(m => !!m.shape);
+	const predictable = collapsed.filter(readable);
 	return {
 		modes: collapsed,
 		money: money,
@@ -1304,8 +1275,9 @@ export function streamModes(legs, partition, cycle, anchor, opts){
 		   arrives, and a forecast should carry it as a rate rather than as dates. */
 		baseline: {
 			modes: collapsed.length - predictable.length,
-			legs: collapsed.filter(m => !m.shape).reduce((n, m) => n + m.legs, 0),
-			moneyShare: collapsed.filter(m => !m.shape).reduce((n, m) => n + m.moneyShare, 0)
+			legs: collapsed.filter(m => !readable(m)).reduce((n, m) => n + m.legs, 0),
+			moneyShare: collapsed.filter(m => !readable(m))
+				.reduce((n, m) => n + m.moneyShare, 0)
 		},
 		predictableShare: predictable.reduce((n, m) => n + m.moneyShare, 0)
 	};
@@ -1374,7 +1346,7 @@ export function determineShape(legs, partition, cycle, anchor, opts, cfg){
 			   was read; what it could not carry was a date. It still spends its money, so it is
 			   forecast as a rate. */
 			const shape = named ? Shape.lump
-				: ((m.shape === null || m.shape === undefined) ? Shape.unknown : Shape.spread);
+				: (readable(m) ? Shape.spread : Shape.unknown);
 			const out = {
 				label: m.label,
 				accountId: m.accountId,

@@ -90,7 +90,7 @@ const KINDS = [
    be printed as. */
 const modeData = m => ({
 	who: plain(whoOf(m)),
-	shape: m.shape || null,
+	shape: (m.shape && m.shape !== 'unknown') ? m.shape : null,
 	pat: plain(patternOf(m)),
 	conf: (m.confidence === null || m.confidence === undefined) ? null : m.confidence,
 	share: m.moneyShare,

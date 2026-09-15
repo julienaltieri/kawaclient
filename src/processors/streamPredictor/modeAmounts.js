@@ -131,11 +131,19 @@ export function modeAmount(mode, spine, shape, cfg){
 	   65% and is 1.06 past - the same bar for both would call the second one dead on noise.
 
 	   SO THE TOLERANCE IS THE BAR DIVIDED BY THE DAY CONFIDENCE, which needs no second number:
-	   Gembah must pass 1.11 and does, the reimbursement must pass 1.54 and does not. */
+	   Gembah must pass 1.11 and does, the reimbursement must pass 1.54 and does not.
+
+	   AND WHICH BAR DEPENDS ON WHETHER THERE IS ANYTHING TO FINISH. A plan can run out, so a missed
+	   payment is evidence it has; an envelope that refills cannot, so a missed payment is a missed
+	   payment. Julien's savings transfer skipped July, read 1.47 past a 31-day rhythm on 1 August and
+	   was called dead - for three weeks, until the August transfer landed. It is declared monthly and
+	   had nothing to spend. See `lateMultipleOpenEnded`. */
 	const dayConf = (mode.onDay === null || mode.onDay === undefined)
 		? 1 : Math.max(0.3, mode.onDay);
+	const bar = (cfg && cfg.envelope === ENVELOPE.plan)
+		? ac.lateMultiple : ac.lateMultipleOpenEnded;
 	const late = lump && mode.overdue !== null && mode.overdue !== undefined
-		&& mode.overdue > ac.lateMultiple / dayConf;
+		&& mode.overdue > bar / dayConf;
 
 	return {
 		kind: lump ? 'lump' : unread ? 'unknown' : 'rate',
@@ -150,8 +158,7 @@ export function modeAmount(mode, spine, shape, cfg){
 		//how many cycles since it last moved: a rate nobody has paid in months is a stale rate
 		quiet: quiet,
 		events: events,
-		total: per.reduce((n, x) => n + x, 0),
-		perCycleTotals: per
+		total: per.reduce((n, x) => n + x, 0)
 	};
 }
 
@@ -223,7 +230,10 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 	const byAccount = new Map();
 	working.modes.forEach((w, i) => {
 		const a = answer.modes[i];
-		const amt = modeAmount(w, spine, a.shape);
+		/* THE ENVELOPE TRAVELS WITH THE MODE, because the liveness gate has to know whether this
+		   stream has anything to finish. It is a fact about the STREAM's declaration, read once
+		   above, never re-derived per mode. */
+		const amt = modeAmount(w, spine, a.shape, {envelope: position.kind});
 		const key = w.accountId;
 		if(!byAccount.has(key)){
 			/* THE ACCOUNT'S OWN NAME, NOT ITS HASH. A reader checking a forecast knows the account by
@@ -276,6 +286,8 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 			overdue: amt.overdue,
 			kind: (amt.kind === 'unknown' && carries) ? 'planned' : amt.kind,
 			rail: w.rail || null,
+			//the label §3 attaches to the two legs of a card repayment
+			repayment: a.repayment || null,
 			quiet: amt.quiet,
 			cyclesLanded: amt.cyclesLanded,
 			rawLegs: w.rawLegs
@@ -411,6 +423,8 @@ export function predictionRows(predictor, streamId, stream, opts, cfg){
 	accounts.forEach(acc => acc.modes.forEach(m => { perCycle += m.capped ? m.cappedAmount : m.amount; }));
 
 	return {cycle: cycle, declared: stream.period, accounts: accounts,
+		//the lattice itself, so a caller projecting further than one cycle need not re-read the stream
+		spine: spine,
 		cyclesObserved: spine.length,
 		planned: planned,
 		budget: position,

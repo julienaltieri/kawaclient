@@ -106,9 +106,9 @@ beforeEach(() => {
 //the answer lines, without the name/version header
 const payloadLines = t => t.split(String.fromCharCode(10)).slice(1).filter(l => l.trim())
 
-const mount = async () => {
+const mount = async (algo) => {
 	const ref = React.createRef()
-	await act(async () => {render(<BalanceBench ref={ref} transactions={txns}/>)})
+	await act(async () => {render(<BalanceBench ref={ref} transactions={txns} algo={algo}/>)})
 	return ref
 }
 
@@ -830,4 +830,54 @@ test("the cycle line shows the transactions it was read from, not just a count",
 	//and the mass shares add to a hundred
 	const shares = (txt.match(/(\d+)% of the mass/g) || []).map(x => Number(x.match(/\d+/)[0]))
 	expect(shares.reduce((a, b) => a + b, 0)).toBeGreaterThan(97)
+})
+
+/* ==================================================================================================
+   THE OTHER ALGORITHM, ON THE SAME BENCH.
+
+   The stream predictor reads plain JSON and knows nothing about Core, so the only thing that can
+   break between it and this page is the capture that sits between them - and that is a component
+   method nothing else calls. Same reason the file exists at all.
+   ================================================================================================== */
+test("the stream predictor scores the same window, through the same scorer", async () => {
+	const legacyRef = await mount("legacy")
+	const legacy = legacyRef.current.score()
+	expect(typeof legacy).toBe("number")
+
+	//the page owns the switch, so the other reading is a different mount rather than a state change
+	const ref = await mount("new")
+	const fresh = ref.current.score()
+
+	//the run itself reached the module rather than falling into the catch
+	const a = ref.current.analyse(ref.current.lookback()[1])
+	expect(a.algo).toBe("new")
+	expect(a.alt).toBeTruthy()
+	expect(a.alt.failed).toBeUndefined()
+	expect(typeof fresh).toBe("number")
+	expect(isNaN(fresh)).toBe(false)
+
+	//two different models cannot produce the same curve to the dollar-day
+	expect(fresh).not.toBe(legacy)
+})
+
+test("the capture the predictor is handed is the shape the fixture holds", async () => {
+	const ref = await mount()
+	const p = ref.current.portfolio()
+	expect(typeof p.today).toBe("string")
+	expect(p.masterStream.children.length).toBeGreaterThan(0)
+	expect(p.accounts.map(a => a.hash)).toContain(CARD)
+	expect(p.transactions.length).toBe(txns.length)
+	//plain JSON, no model instances: a Date would survive a structural clone as a string
+	expect(typeof p.transactions[0].date).toBe("string")
+})
+
+test("the forecast it is scored on never saw inside the window", async () => {
+	const ref = await mount("new")
+	const a = ref.current.analyse(ref.current.lookback()[1])
+	const open = a.open.getTime()
+	//every predicted movement is dated at or after the day the window opened
+	a.alt.built.accounts.forEach(acc => acc.ledger.forEach(e => {
+		if(e.source === "posted")expect(e.date.getTime()).toBeLessThanOrEqual(open)
+		else expect(e.date.getTime()).toBeGreaterThanOrEqual(open)
+	}))
 })

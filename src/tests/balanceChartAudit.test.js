@@ -125,10 +125,11 @@ beforeEach(() => {
 	}
 })
 
-const mount = async (when, twoCards) => {
+const mount = async (when, twoCards, algo) => {
 	if(twoCards)addSecondCard()
 	const ref = React.createRef()
-	await act(async () => {render(<BalanceChart ref={ref} defaultWhen={when} transactions={txns}/>)})
+	await act(async () => {render(<BalanceChart ref={ref} defaultWhen={when} transactions={txns}
+		algo={algo}/>)})
 	return ref.current
 }
 
@@ -389,4 +390,48 @@ test("the type is inferred from the bank when the user has said nothing", async 
 	expect(chart.typeOf({hash: "x", type: "depository", subtype: "savings"})).toBe("savings")
 	//a nullable subtype must not produce an undefined type
 	expect(chart.typeOf({hash: "y", type: "depository"})).toBe("checking")
+})
+
+
+/* ==================================================================================================
+   THE PAGE'S SWITCH REACHES THE PICTURE.
+
+   The tile's two forecast lines - the live one from today and the benchmark from the left edge - are
+   the reader's whole view of what a model claims. A switch that moved the accuracy tile and left
+   these drawn by the other algorithm would be a page describing two different things at once.
+   ================================================================================================== */
+describe("the forecaster the page picked", () => {
+	test("draws both forecast lines, and the day table explains the line it drew", async () => {
+		const legacy = await mount("this")
+		const modular = await mount("this", false, "new")
+
+		const a = modular.series()
+		expect(a.liveRun).toBeTruthy()
+		expect(a.future.length).toBeGreaterThan(0)
+
+		//a different model cannot draw the same curve
+		const shape = x => x.future.map(p => Math.round(p.value)).join(",")
+		expect(shape(a)).not.toBe(shape(legacy.series()))
+
+		//and a forecast point is explained by the run that produced it, not by the other explainer
+		const pt = a.future[a.future.length - 1]
+		const audit = modular.dayAudit({date: pt.date, value: pt.value, actual: false})
+		expect(audit.projected).toBe(true)
+		expect(Math.round(audit.predictedTotal))
+			.toBe(Math.round(a.liveRun.rows[audit.date].reduce((n, r) => n + r.amount, 0)))
+	})
+
+	test("the benchmark line is the module too, and starts where the past starts", async () => {
+		const m = await mount("last", false, "new")
+		const a = m.series()
+		expect(a.benchRun).toBeTruthy()
+		expect(a.backtest.length).toBeGreaterThan(1)
+		expect(a.backtest[0].value).toBe(a.past[0].value)
+	})
+
+	test("no run happens at all for a reader on the shipped tile", async () => {
+		const m = await mount("this")
+		expect(m.series().liveRun).toBe(null)
+		expect(m.usingModule()).toBe(false)
+	})
 })

@@ -10,6 +10,8 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
 	groupByStream, dayLabel, TIERS, cycleStartOf, accountLinks, cardSchedule,
 	cardSpend, shareOfDay}
 	from '../processors/BankBalance.js';
+import {capturePortfolio} from '../processors/capturePortfolio.js';
+import {benchForecast} from '../processors/balancePrediction/benchForecast.js';
 
 /* ==================================================================================================
    THE BALANCE FORECAST BENCH - the numbers behind page three, on real data.
@@ -37,7 +39,7 @@ import {reconstruct, forecast, histogramOf, dayKey, monthlyExpectationAt, buildM
    produced it: three rounds were spent comparing numbers that came from different builds, and a
    regression is invisible if the version is a guess. Hand-maintained rather than a git SHA because
    the alternative is a build-config change on a production deploy, and this costs one line. */
-export const BENCH_VERSION = "b73 - a turn is the stream's own period";
+export const BENCH_VERSION = "b74 - two algorithms, one scorer";
 
 const DAY = 86400000;
 const NL = String.fromCharCode(10);
@@ -256,6 +258,46 @@ export default class BalanceBench extends BaseComponent{
 			anchorGap: rows[rows.length - 1].gap}
 	}
 
+	/* ---- THE OTHER ALGORITHM ---------------------------------------------------------------------
+	   TWO FORECASTS, ONE SCORER. The bench measures a map of day -> money moved on the covered
+	   accounts; everything else in it - the window, the actual balance curve, the dollar-day
+	   integral, the denominator - belongs to the bench and is handed to both algorithms unchanged. So
+	   the comparison is between the two forecasts and nothing else, which is the only way a
+	   difference in the number can be attributed to the model rather than to the measurement.
+
+	   THE STREAM PREDICTOR TAKES PLAIN JSON, so the app's model instances are captured into the same
+	   object shape the fixture holds. That is a constraint of the module rather than a preference: it
+	   is built to run under node, which is how it is tested at all.
+
+	   IT IS EXPENSIVE, AND CACHED ON THE WINDOW. One run is the predictor over every stream plus
+	   eight rewound runs to measure the amplitude correction; re-running it per render would make the
+	   page unusable. */
+	//THE PAGE OWNS THE CHOICE, not this component. The chart, this tile and the day table all answer
+	//to one switch, because a reader comparing two algorithms is comparing three views of each.
+	algo(){return this.props.algo || "legacy"}
+	portfolio(){
+		if(!this._portfolio)this._portfolio = capturePortfolio(this.props.transactions,
+			this.state.accounts || [], {today: this.today(), cards: this.credit(),
+				settlementDay: this.settlementDay()})
+		return this._portfolio
+	}
+	altForecast(open, close){
+		if(this.algo() !== "new")return null
+		const key = open.getTime() + "|" + new Date(close).getTime()
+		this._alt = this._alt || {}
+		if(this._alt[key] === undefined){
+			try{
+				this._alt[key] = benchForecast(this.portfolio(), open, close, this.spending(),
+					{seamDay: this.cycleStart(this.today()).getDate()})
+			}catch(e){
+				//a broken run must not take the page down with it; the legacy score stays readable
+				this._alt[key] = {flow:{}, built:{accounts:[], settlements:{}},
+					failed:(e && e.message) + " | " + (e && e.stack)}
+			}
+		}
+		return this._alt[key]
+	}
+
 	/* ---- the same inputs the tile uses ----------------------------------------------------------- */
 	/* ACTIVE STREAMS ONLY. A closed stream carries an endDate and is not going to move money again;
 	   listing it invites auditing a prediction nobody will ever see, and it pads the table with rows
@@ -364,6 +406,7 @@ export default class BalanceBench extends BaseComponent{
 	analyse(from, monthsBack, variant){
 		const back = monthsBack || 0
 		const key = (from ? from.getTime() : "default") + "|" + back + "|" + (variant || "")
+			+ "|" + this.algo()
 		this._cache = this._cache || {}
 		if(this._cache[key])return this._cache[key]
 		const now = this.today()
@@ -587,6 +630,64 @@ export default class BalanceBench extends BaseComponent{
 			forecastTerminals.forEach(t => {v += (perStream[t.id][k] || 0)})
 			total[k] = v
 		})
+
+		/* ---- THE SAME WINDOW, FORECAST THE OTHER WAY --------------------------------------------
+		   ONLY THE FORECAST IS REPLACED. `record`, `dayKeys`, `actualByStream`, `area` and the
+		   surface arithmetic below are the bench's and stay exactly as they are, so the two numbers
+		   differ by the model and by nothing else.
+
+		   THE ROWS FOLLOW THE SAME TWO RULES AS THE ACTUALS THEY ARE SCORED AGAINST: a stream paid
+		   two ways is split by the model's own `partitionKey`, and a stream routed onto a card is
+		   read on that card rather than in checking, where its money does not appear. Scoring the
+		   new module in checking alone would have printed "predicted $0" against twenty-five rows
+		   with real charges - arithmetically true and useless.
+
+		   A SETTLEMENT IS THE CARD'S ROW, taken from the plan that produced it rather than from the
+		   ledger line, because the funding leg carries no card on it. */
+		const alt = this.altForecast(open, close)
+		if(alt && !alt.failed){
+			const at = {}
+			dayKeys.forEach((k, i) => {at[k] = i})
+			const termById = {}
+			forecastTerminals.forEach(t => {termById[t.id] = t})
+			forecastTerminals.forEach(t => {perStream[t.id] = {}})
+			cards.forEach(h => {perStream[cardIdOf(h)] = {}})
+			perStream[CARD_ID] = {}
+			const add = (id, k, v) => {
+				if(!perStream[id])return
+				perStream[id][k] = (perStream[id][k] || 0) + v
+			}
+			;(alt.built.accounts || []).forEach(a => {
+				a.ledger.forEach(e => {
+					if(e.source !== "predicted" || !e.streamId)return
+					const k = dayKey(e.date)
+					if(at[k] === undefined)return
+					const id = perStream[partKey(e.streamId, a.accountId)] !== undefined
+						? partKey(e.streamId, a.accountId) : e.streamId
+					const t = termById[id]
+					if(!t)return
+					const inReading = onCardRouted(t)
+						? (h => h === model.routing[t.id]) : covers
+					if(!inReading(a.accountId))return
+					add(id, k, e.amount)
+				})
+			})
+			const plans = alt.built.settlements || {}
+			Object.keys(plans).forEach(card => {
+				const plan = plans[card]
+				if(!covers(plan.fundedFrom))return
+				;(plan.settlements || []).forEach(x => {
+					if(!x.amount)return
+					const k = dayKey(x.date)
+					if(at[k] === undefined)return
+					add(cardIdOf(card), k, -x.amount)
+					add(CARD_ID, k, -x.amount)
+				})
+			})
+			//the headline is the module's own answer for the covered accounts, not a sum of the rows
+			dayKeys.forEach(k => {total[k] = alt.flow[k] || 0})
+		}
+
 		let area = 0
 		record.forEach(p => {area += Math.abs(p.value)})
 		const surface = surfaceOf(total)
@@ -745,6 +846,7 @@ export default class BalanceBench extends BaseComponent{
 			cardNames:(this.state.accounts||[]).reduce((m, x) => {m[x.hash] = x.name; return m}, {}),
 			excluded:Object.keys(legIds).length, actualLegs:Object.keys(actualLegIds).length,
 			excludeIds:{},
+			algo:this.algo(), alt:alt || null,
 			cardRows:cardRows, cardAttributed:attributed,
 			cardTotal:Object.keys(actualByStream[CARD_ID] || {})
 				.reduce((x, k) => x + actualByStream[CARD_ID][k], 0)}
@@ -1358,9 +1460,15 @@ export default class BalanceBench extends BaseComponent{
 		const i = this.state.look === undefined ? 0 : this.state.look
 		return list[Math.min(i, list.length - 1)]
 	}
+	/* THE ROLLING HORIZONS ARE A LEGACY-ONLY AXIS, and saying so beats pretending otherwise. Each
+	   one re-forecasts from every morning in the window; the new module's run is the predictor over
+	   every stream plus eight rewinds, so thirty of them is minutes rather than seconds. It is
+	   scored over the whole month instead - the same measure at one horizon, which is the measure
+	   both algorithms share. */
+	algoName(){return this.algo() === "new" ? "stream predictor" : "legacy"}
 	score(){
 		const since = this.lookback()[1]
-		const days = this.horizon()
+		const days = this.algo() === "new" ? null : this.horizon()
 		if(days === null){const a = this.analyse(since); return a ? a.accuracy : null}
 		const r = this.rolling(days, since)
 		return r ? r.accuracy : null
@@ -1905,13 +2013,39 @@ export default class BalanceBench extends BaseComponent{
 		catch(e){err = (e && e.message) + " | " + (e && e.stack)}
 		if(err)return <Wrap><Line>{err}</Line></Wrap>
 		const look = this.lookback()
+		/* THE OTHER ALGORITHM'S LAST SCORE FOR THIS SAME WINDOW, so the comparison is a line rather
+		   than a memory. Only the selected one is ever computed - the new module's run is expensive
+		   and running it to fill in a number nobody asked for would cost the page its usability -
+		   so the second figure appears once both have been picked, and is keyed on the window and
+		   the horizon so a stale number can never stand in for this one. */
+		const stamp = look[0] + "|" + (this.algo() === "new" ? "month" : this.horizon())
+		this._seen = this._seen || {}
+		if(score !== null)this._seen[this.algo() + "|" + stamp] = score
+		const other = this.algo() === "new" ? "legacy" : "new"
+		const otherScore = this._seen[other + "|" + stamp]
+		//read off the analysis that produced the headline, never re-run
+		const analysis = this.algo() === "new" ? this.analyse(look[1]) : null
+		const altRun = analysis ? analysis.alt : null
 		return <Wrap>
 			{/* ONE NUMBER AND THE TWO KNOBS THAT MOVE IT. Everything else that used to sit here was a
 			    figure nobody had chosen to look at, and a tile of numbers that are all equally
 			    prominent is a tile nobody reads. */}
 			<Score>
 				<Big>{score === null ? "—" : (score*100).toFixed(1) + "%"}
-					<Small> balance accuracy</Small></Big>
+					<Small> balance accuracy &middot; {this.algoName()}</Small></Big>
+				<Line>{otherScore === undefined ? "pick the other one to compare"
+					: (other === "new" ? "stream predictor " : "legacy ")
+						+ (otherScore*100).toFixed(1) + "% on the same window "
+						+ String.fromCharCode(183) + " this one is "
+						+ (score === null ? "—"
+							: ((score - otherScore) >= 0 ? "+" : "")
+								+ ((score - otherScore)*100).toFixed(1) + " points")}</Line>
+				{altRun && altRun.failed ? <Line>the stream predictor run failed: {altRun.failed}</Line>
+					: null}
+				{altRun && !altRun.failed ? <Line>{altRun.events} predicted movements
+					{" " + String.fromCharCode(183) + " "}{altRun.settlements} settlements
+					{" " + String.fromCharCode(183) + " "}built from {altRun.history} transactions
+					dated before the window opened</Line> : null}
 				{/* the outcome and the raw work, because they are different claims and the headline
 				    alone flatters the model whenever two streams happen to err in opposite
 				    directions */}
@@ -1923,7 +2057,10 @@ export default class BalanceBench extends BaseComponent{
 				})()}</Line>
 				<Bar>
 					{this.horizons().map(h => <Btn key={h[0]} type="button"
-						style={this.horizon() === h[1] ? {fontWeight:600, borderStyle:"solid"} : null}
+						disabled={this.algo() === "new" && h[1] !== null}
+						style={(this.algo() === "new" ? h[1] === null : this.horizon() === h[1])
+							? {fontWeight:600, borderStyle:"solid"}
+							: (this.algo() === "new" ? {opacity:0.35} : null)}
 						onClick={() => this.updateState({roll:h[1]})}>{h[0]}</Btn>)}
 				</Bar>
 				<Bar>

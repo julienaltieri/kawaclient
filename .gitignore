@@ -18,9 +18,9 @@
 /src/tests/fixtures/*.json
 
 # The generated audit pages embed every account name, partition and transaction date in the captured
-# ledger. The allowlist above admits everything under /src/, so each has to be excluded by name.
-/src/processors/streamPredictor/audit-account-mapping.html
-/src/processors/streamPredictor/audit-cycle.html
-/src/processors/streamPredictor/audit-cycle-fit.html
-/src/processors/streamPredictor/audit-modes.html
-/src/processors/streamPredictor/audit-prediction.html
+# ledger. The allowlist above admits everything under /src/, so they have to be excluded.
+#
+# A PATTERN, NOT A LIST OF NAMES. The list was five files and three more were written since; every
+# one of them was a page nobody remembered to add, holding a real ledger, one `git add` from GitHub.
+# A new page now has to be named to be committed rather than named to be kept out.
+/src/processors/*/audit-*.html
