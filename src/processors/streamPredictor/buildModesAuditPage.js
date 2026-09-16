@@ -37,7 +37,6 @@ const YEARLY = {yearly: true, biyearly: true};
 const DASH = '—';
 const DOT = '·';
 
-const pct = v => (v === null || v === undefined) ? DASH : Math.round(v * 100) + '%';
 
 /* WHAT THE MODE PREDICTS, in the vocabulary the shape uses. A lump predicts a day; a spread predicts
    a rate and deliberately names no day, because naming one would be the error the shape exists to

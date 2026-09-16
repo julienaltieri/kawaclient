@@ -12,7 +12,6 @@ import {benchForecast} from './benchForecast';
 import {currentCycle} from './inCycle';
 
 const P = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');
-const DAY = 86400000;
 const CHK = 'ins_25::4759::depository', CARD = 'ins_54::9869::credit';
 
 describe('the in-cycle loop', () => {

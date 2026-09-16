@@ -28,7 +28,6 @@ export function expectedShape(mode){
 	return Shape.lump;
 }
 
-const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
 /* THE DAY IS ALLOWED THE JITTER IT WAS GROWN WITH, and no more. A metronome must come back exact; a
    mode that wanders five days either way cannot be held to better than five. The cycle is circular,

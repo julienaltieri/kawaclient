@@ -1470,6 +1470,32 @@ height — rather than a third aspect ratio in one carousel. The grip sits at th
 
 ---
 
+## A second forecaster, and which half each one owns
+
+Everything above describes the forecaster page three ships: `BankBalance.js`, assembled by
+`buildModel` and run by `forecast`. A second one now exists beside it —
+[`Spec - balance prediction.md`](<../src/processors/balancePrediction/Spec - balance prediction.md>),
+built on the stream predictor, which reads a captured portfolio as plain JSON and hands back one
+ledger per account.
+
+**They are not layered and neither calls the other.** The split is by ownership: this file describes
+what a user sees on page three; that spec describes the module, its stages, and what it has been
+measured at. Nothing here restates its mechanism.
+
+**Where they meet is the sandbox.** A switch at the top of that page chooses which forecaster draws
+the tile's two lines, fills the day table, and feeds the accuracy bench — one switch for all three,
+because a reader comparing two models is comparing three views of each. `BalanceChart` takes an
+`algo` prop for it. Production renders that same component without the prop, so the module never
+runs outside the sandbox: no portfolio is captured and no prediction is made.
+
+**The bench is the referee.** It owns the window, the reconstructed balance, the dollar-day integral
+and the denominator, and hands all of them to whichever forecaster is selected — so a difference in
+the score is a difference between the models and not between two measurements. The comparison, month
+by month across the captured year, lives in the balance prediction spec; it is a measurement of a
+moment and does not belong in this folder (Rule 5).
+
+---
+
 ## Open decisions
 
 These change what gets built and are not mine to settle.

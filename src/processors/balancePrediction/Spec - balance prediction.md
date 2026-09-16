@@ -302,6 +302,39 @@ it. Measured:
 
 ---
 
+## How it scores against the model it would replace
+
+Both forecasters over the same windows, through the same arithmetic: one forecast made on the 7th of
+each month, held for 21 days, scored as dollar-days against the balance that actually happened.
+
+| window | trip share of card spend | card, legacy | card, module | checking, legacy | checking, module |
+|---|---|---|---|---|---|
+| 2025-11-07 | 0% | -840% | -72% | -211% | 60% |
+| 2025-12-07 | 0% | -2065% | 60% | -16% | 12% |
+| 2026-01-07 | 36% | -629% | 14% | 14% | 58% |
+| 2026-02-07 | 13% | -332% | 67% | 50% | 26% |
+| 2026-03-07 | 7% | -27% | 72% | 22% | **-148%** |
+| 2026-04-07 | 0% | -246% | 70% | -50% | -44% |
+| 2026-05-07 | 0% | -397% | 59% | -2% | 35% |
+| 2026-06-07 | 0% | -94% | 50% | 66% | 70% |
+| 2026-07-07 | 11% | -196% | 79% | 42% | 45% |
+| 2026-08-07 | 0% | -95% | 79% | -23% | -1% |
+| **whole year** | | **-530.7%** | **30.5%** | **-6.1%** | **21.2%** |
+
+**The legacy card forecast is negative in every month.** It has no model of a card's own balance —
+it sizes the bill on the account that pays it and leaves the card itself unexplained. Nine times the
+module's surface over the year.
+
+**A single month is not evidence.** July-into-August is the one window where legacy wins checking
+convincingly (37.8% against 30.2%), because a holiday it absorbs without recognising happens to land
+in it. Measuring only that month produced two wrong conclusions before this table existed: that
+legacy's card model had a structural advantage, and that the amplitude correction's premium cap
+should be tuned against it.
+
+**March is the module's own worst window** at -148% on checking, and is not yet diagnosed.
+
+---
+
 ## Exit criteria
 
 For every account in the captured portfolio: the ledger holds every posted transaction and every
@@ -331,6 +364,13 @@ reconciles to a reported closing balance at `asOf`.
   rather than assumed.
 - **The amplitude is corrected per account and only where the bias is one-sided.** A calibration that
   fires on noise is worse than none.
+- **Adding the unclaimed part as a rate was measured and refused.** Instead of scaling the claim, the
+  gap between what an account spends and what the module claims can be added as its own per-day rate -
+  which leaves a correctly-predicted instalment alone, and is the honest shape for scatter. Measured
+  over six mornings it wins the card (68.0% against 67.3%) and loses checking by nine points (30.6%
+  against 39.8%), because a flat rate does not rise during a burst while the premium does. Letting the
+  premium lift the rate overshoots the card instead, where the unclaimed part IS the burst. No variant
+  beat `a` x `b` on both accounts, so the multiplier stayed.
 - **The correction is `a` x `b`: a baseline from quiet completed cycles, a premium from the cycle
   currently open.** A burst is inside the cycle you are standing in, so no window of completed cycles
   can see it.

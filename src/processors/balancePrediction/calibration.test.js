@@ -9,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 import {calibrationFor, calibrate} from './calibration';
 import {accountLedgers} from './accountLedger';
-import {backtests} from './backtest';
 import {StreamPredictor} from '../streamPredictor';
 
 const P = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'portfolio.json');

@@ -20,7 +20,6 @@
 
 import {renderAuditPage, esc, plain} from './auditShell';
 import {predictionRows} from './modeAmounts';
-import {Shape} from './shapeDetermination';
 
 const DASH = '—';
 const DOT = '·';

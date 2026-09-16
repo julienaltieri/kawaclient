@@ -31,8 +31,6 @@
    forecast held for a month - which is what the bench scores, so the bench understates it.
    ================================================================================================== */
 
-const ONE_DAY = 24 * 60 * 60 * 1000;
-
 export const LOOP = {
 	//below this share of the cycle elapsed there is too little landed to read a rate from
 	minElapsed: 0.2,

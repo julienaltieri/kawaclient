@@ -85,7 +85,6 @@ export function rewind(portfolio, at){
 export function benchForecast(portfolio, open, close, covered, opts){
 	const o = opts || {};
 	const cut = new Date(open);
-	const rewound = rewind(portfolio, cut);
 	const keep = {};
 	(covered || []).forEach(h => {keep[h] = true});
 
