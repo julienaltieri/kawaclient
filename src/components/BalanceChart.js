@@ -1073,11 +1073,37 @@ export default class BalanceChart extends BaseComponent{
 			   arrived when the real picture replaced it at the end.
 			   Where the two agree - the days both months contain - a record wins over a projection. */
 			const merged = this.union(before, after)
+			/* AND THE RECORD/PROJECTION BOUNDARY TRAVELS WITH THE FRAME. The union resolves a day
+			   that is a record in one window and a projection in the other IN FAVOUR OF THE RECORD,
+			   which is right for the content and wrong for the line: the moment the travel began,
+			   this month's dotted forecast turned solid in one step while the geometry was still at
+			   the origin. Nothing had moved, so the only thing the eye could read was that the same
+			   drawing was being re-used.
+
+			   So the boundary is a DATE that interpolates like everything else. Travelling back, the
+			   forecast retracts off the right edge; travelling forward, it grows back to today. At
+			   k=1 the interpolated boundary IS the destination's own, so the last frame of the
+			   motion is the frame that replaces it. */
+			const end = merged.length ? merged[merged.length - 1].date.getTime() : 0
+			const s0 = this.splitAt(before, end), s1 = this.splitAt(after, end)
 			this.run(ZOOM_MS, k => {
 				const f = this.lerpFrame(f0, f1, k)
-				this.paintFrame(merged, after.now, f)
+				this.paintFrame(merged, after.now, f, s0*(1 - k) + s1*k)
 			})
 		})
+	}
+
+	/* WHERE THE RECORD ENDS AND THE PROJECTION BEGINS, as a date.
+
+	   A SETTLED WINDOW PROJECTS NOTHING, and its boundary therefore has to sit past the last day of
+	   everything being drawn - not merely past its own right edge. The travel paints the UNION of
+	   both windows, which runs a fortnight further than a settled month does; a boundary at that
+	   month's own edge would leave the days beyond it dotted, and the forecast would end the motion
+	   having moved off screen rather than having retracted. */
+	splitAt(a, endOfContent){
+		if(a.future.length)return a.future[0].date.getTime()
+		const own = a.past.length ? a.past[a.past.length - 1].date.getTime() : 0
+		return Math.max(own, endOfContent || 0) + DAY
 	}
 
 	//every day either window covers, once, in order
@@ -1129,12 +1155,15 @@ export default class BalanceChart extends BaseComponent{
 		})
 	}
 
-	//one flat list plus a frame, split back into record and projection for the drawing routine
-	paintFrame(content, now, frame){
+	/* one flat list plus a frame, split back into record and projection for the drawing routine.
+	   `splitDate` overrides the points' own flags while a travel is in progress - see zoomTo. */
+	paintFrame(content, now, frame, splitDate){
 		if(!this.host.current)return
+		const projected = splitDate === undefined
+			? (p => p.actual === false)
+			: (p => p.date.getTime() >= splitDate)
 		this.host.current.innerHTML = this.draw(
-			content.filter(p => p.actual !== false), content.filter(p => p.actual === false),
-			now, frame)
+			content.filter(p => !projected(p)), content.filter(p => projected(p)), now, frame)
 	}
 
 	/* The classification, as text. Sorted by how much money each stream carries, because a stream that

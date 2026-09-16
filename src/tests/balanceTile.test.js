@@ -628,6 +628,48 @@ test("the animation lands exactly on the destination frame", async () => {
 	expect(c.lerpFrame(f0, f1, 0)).toEqual(f0)
 })
 
+/* =================================================================================================
+   THE BOUNDARY BETWEEN RECORD AND PROJECTION TRAVELS TOO.
+
+   The union resolves a day that is a record in one window and a projection in the other in favour of
+   the record - right for the content, wrong for the line. On the first frame of a travel back, this
+   month's dotted forecast turned solid in one step while the geometry was still at the origin:
+   nothing had moved, so the only thing the eye could read was that the same drawing was being reused.
+   ================================================================================================= */
+test("the forecast retracts as the travel runs, rather than switching on the first frame", async () => {
+	//legacy, because this needs a forecast to exist on a nine-day fixture - see mountLegacy
+	const ref = await mountLegacy()
+	const c = ref.current
+	const all = c.allSeries()
+
+	const merged = c.union(all.this, all.last)
+	const end = merged[merged.length - 1].date.getTime()
+
+	//a settled month projects nothing, so its boundary clears everything being drawn
+	expect(c.splitAt(all.this, end)).toBe(all.this.future[0].date.getTime())
+	expect(c.splitAt(all.last, end)).toBeGreaterThan(end)
+
+	const f = c.frameOf(all.this)
+	const s0 = c.splitAt(all.this, end), s1 = c.splitAt(all.last, end)
+	const dotted = k => {
+		c.paintFrame(merged, all.this.now, f, s0*(1 - k) + s1*k)
+		const svg = (c.host.current || {}).innerHTML || ""
+		const m = svg.match(/<path d="([^"]*)" fill="none"[^>]*stroke-dasharray="3,2.5"/)
+		return m ? (m[1].match(/H/g) || []).length : 0
+	}
+	const start = dotted(0), middle = dotted(0.5), finish = dotted(1)
+	expect(start).toBeGreaterThan(0)
+	expect(middle).toBeLessThan(start)
+	expect(finish).toBe(0)
+
+	//and the last frame of the motion is the frame that replaces it
+	c.paintFrame(merged, all.this.now, f, s1)
+	const travelled = (c.host.current || {}).innerHTML
+	c.paintFrame(merged.map(p => Object.assign({}, p,
+		{actual: p.date.getTime() >= s1 ? false : true})), all.this.now, f)
+	expect((c.host.current || {}).innerHTML).toBe(travelled)
+})
+
 test("a frame mid-travel carries the beads and guides, not just the line", async () => {
 	const ref = await mount()
 	const c = ref.current

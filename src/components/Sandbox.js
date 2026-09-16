@@ -141,7 +141,7 @@ export default class Sandbox extends BaseComponent{
 				{/* sticky: the table below is meant to be READ and copied, which needs the finger
 				    somewhere else. Tapping the same day again clears it. */}
 				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
-					defaultWhen="last" sticky={true} onDay={d => this.updateState({day:d})}/>
+					sticky={true} onDay={d => this.updateState({day:d})}/>
 			</div>
 			<DayAudit day={this.state.day}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>
