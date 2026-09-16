@@ -526,18 +526,19 @@ export default class BalanceChart extends BaseComponent{
 		return this._models[key]
 	}
 
-	/* ---- THE OTHER ALGORITHM ---------------------------------------------------------------------
+	/* ---- THE FORECASTER ----------------------------------------------------------------------------
 	   SAME TWO CALLS AS `model()`, SAME TWO DATES. The chart draws a live forecast from today and a
 	   benchmark from the left edge of the window; both are one as-of date handed to a forecaster, so
-	   swapping the forecaster is the whole change and the picture is otherwise assembled identically.
+	   the picture is assembled identically either way.
+
+	   THE MODULE IS THE DEFAULT, measured over the captured year at 30.5% on the card against the
+	   legacy model's -530.7%, and 21.2% on checking against -6.1%. `algo="legacy"` still selects the
+	   older one, which is how the bench runs an ablation - it is not a user-facing choice.
 
 	   THE MODULE TAKES PLAIN JSON, so the portfolio is captured once per transaction set. Its own
 	   rewind at the as-of date is what keeps the benchmark out of sample - the same guarantee
-	   `buildModel` gives by refusing to read past its as-of.
-
-	   NULL WHEN THE READER HAS NOT PICKED IT, so nothing expensive runs for a reader looking at the
-	   shipped tile. */
-	usingModule(){return this.props.algo === "new"}
+	   `buildModel` gives by refusing to read past its as-of. */
+	usingModule(){return this.props.algo !== "legacy"}
 	portfolio(){
 		if(!this._portfolio)this._portfolio = capturePortfolio(this.props.transactions,
 			this.state.accounts || [], {today: this.ledgerToday(),
@@ -657,8 +658,8 @@ export default class BalanceChart extends BaseComponent{
 		   it landed - for the life of the component. The picture would be correct only for a reader
 		   whose balance history happened to arrive first. */
 		const mem = this.state.remembered
-		//the algorithm is an input like any other, so a change of it invalidates the drawn series
-		const algo = this.props.algo || "legacy"
+		//the forecaster is an input like any other, so a change of it invalidates the drawn series
+		const algo = this.props.algo || "module"
 		const k = this._seriesKey
 		const same = this._series && k && k.src === src && k.txns === txns && k.acc === acc
 			&& k.basis === basis && k.mem === mem && k.algo === algo
@@ -666,15 +667,13 @@ export default class BalanceChart extends BaseComponent{
 			this._series = {}
 			this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, mem: mem, algo: algo}
 		}
-		/* EAGER FOR THE SHIPPED MODEL, ON DEMAND FOR THE MODULE. Both windows cost microseconds under
-		   buildModel and both were therefore built up front, which is what makes the zoom ready
-		   before the tap lands. A module run is seconds - the amplitude correction rewinds the whole
-		   capture once per past cycle - so building a window nobody is looking at would freeze the
-		   page on arrival for a picture that may never be asked for. */
-		if(!this.usingModule())
-			WHENS.forEach(o => {
-				if(!this._series[o[0]])this._series[o[0]] = this.computeSeries(o[0])
-			})
+		/* BOTH WINDOWS, UP FRONT. The zoom animation interpolates between two frames and has to have
+		   both before the tap lands; building the destination inside the gesture is the stall the
+		   prerender exists to remove. Under the module that costs three forecasts rather than two -
+		   this month's live line, and a benchmark from each window's own start. */
+		WHENS.forEach(o => {
+			if(!this._series[o[0]])this._series[o[0]] = this.computeSeries(o[0])
+		})
 		return this._series
 	}
 	series(when){

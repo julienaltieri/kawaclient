@@ -125,6 +125,11 @@ beforeEach(() => {
 	}
 })
 
+/* `algo` SELECTS THE FORECASTER. The shipped one is the module; "legacy" is the older, declaration-
+   driven model. These fixtures are a few months of synthetic movements, and the tests below that
+   read a day's TABLE against the line it drew are about that model's own rows - the expectation a
+   row carries, the weight behind it, why a budgeted stream did not fire. Those are legacy concepts
+   and the tests say so by asking for it. */
 const mount = async (when, twoCards, algo) => {
 	if(twoCards)addSecondCard()
 	const ref = React.createRef()
@@ -158,14 +163,14 @@ const checkAgrees = (chart, line, pick) => {
 }
 
 test("every past day's table adds up to the step the backtest line takes", async () => {
-	const chart = await mount("last")
+	const chart = await mount("last", false, "legacy")
 	const a = chart.series()
 	//point.actual is true on the reconstruction, which is what the cursor hands to dayAudit
 	checkAgrees(chart, a.backtest, p => ({date: p.date, value: p.value, actual: true}))
 })
 
 test("every future day's table adds up to the step the forecast line takes", async () => {
-	const chart = await mount("this")
+	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
 	expect(a.future.length).toBeGreaterThan(5)
 	//the forecast's own first point has no predecessor on this line, so stepsOf starts at the second
@@ -240,7 +245,7 @@ test("the modelled bill reproduces the settlements that actually posted", async 
 test("each card names itself in the breakdown", async () => {
 	//"Card settlement -$950" cannot say whether the amount, the day or the CARD is wrong, and with
 	//two cards on their own weekly cycles all three are live at once
-	const chart = await mount("last", true)
+	const chart = await mount("last", true, "legacy")
 	const a = chart.series()
 	const days = Object.keys(a.bench.extraFlow)
 	let named = []
@@ -303,7 +308,7 @@ test("the model reads nothing dated on or after its as-of date", async () => {
    fault and the other is the stream genuinely being paid four times a month.
    ================================================================================================= */
 test("every predicted row carries the expectation and the weight it came from", async () => {
-	const chart = await mount("last")
+	const chart = await mount("last", false, "legacy")
 	const a = chart.series()
 	//the first day that actually has contributions - most days of a month have none in this fixture
 	let audit = null
@@ -324,7 +329,7 @@ test("every predicted row carries the expectation and the weight it came from", 
 })
 
 test("a stream that was budgeted but did not fire says why", async () => {
-	const chart = await mount("last")
+	const chart = await mount("last", false, "legacy")
 	const a = chart.series()
 	//rent is monthly, so on most days of the month it is expected and silent
 	let found = null
@@ -400,10 +405,10 @@ test("the type is inferred from the bank when the user has said nothing", async 
    the reader's whole view of what a model claims. A switch that moved the accuracy tile and left
    these drawn by the other algorithm would be a page describing two different things at once.
    ================================================================================================== */
-describe("the forecaster the page picked", () => {
+describe("the forecaster", () => {
 	test("draws both forecast lines, and the day table explains the line it drew", async () => {
-		const legacy = await mount("this")
-		const modular = await mount("this", false, "new")
+		const legacy = await mount("this", false, "legacy")
+		const modular = await mount("this")
 
 		const a = modular.series()
 		expect(a.liveRun).toBeTruthy()
@@ -422,15 +427,16 @@ describe("the forecaster the page picked", () => {
 	})
 
 	test("the benchmark line is the module too, and starts where the past starts", async () => {
-		const m = await mount("last", false, "new")
+		const m = await mount("last")
 		const a = m.series()
 		expect(a.benchRun).toBeTruthy()
 		expect(a.backtest.length).toBeGreaterThan(1)
 		expect(a.backtest[0].value).toBe(a.past[0].value)
 	})
 
-	test("no run happens at all for a reader on the shipped tile", async () => {
-		const m = await mount("this")
+	//the ablation: the older model is still reachable, and costs nothing when it is the one asked for
+	test("asking for the legacy model runs none of the module", async () => {
+		const m = await mount("this", false, "legacy")
 		expect(m.series().liveRun).toBe(null)
 		expect(m.usingModule()).toBe(false)
 	})

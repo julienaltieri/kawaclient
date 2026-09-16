@@ -360,23 +360,21 @@ test("a card-routed stream reports what it charges, not zero", async () => {
 	expect(ref.current.report()).toMatch(/charged to a card/)
 })
 
-test("the tile is one number and the two axes that move it", async () => {
+test("the tile is one number and the axis that moves it", async () => {
 	/* Everything else that used to sit there was a figure nobody had chosen to look at, and a tile
-	   where every number is equally prominent is a tile nobody reads. */
-	const ref = await mount()
-	//the horizon changes the number, and "month" is the original single-shot measure
-	const seven = ref.current.score()
-	ref.current.updateState({roll: null})
-	const month = ref.current.score()
-	expect(typeof seven).toBe("number")
-	expect(typeof month).toBe("number")
-	expect(seven).not.toBe(month)
+	   where every number is equally prominent is a tile nobody reads.
 
-	//the lookback changes it too, and composes with the horizon rather than replacing it
-	ref.current.updateState({roll: 7, look: 2})
+	   THE ROLLING HORIZONS ARE GONE. They re-forecast from every morning in the window, which under
+	   the module is thirty runs of the predictor over every stream - minutes rather than seconds.
+	   The lookback is the axis that is left. */
+	const ref = await mount()
+	expect(typeof ref.current.score()).toBe("number")
+
+	//the lookback changes it
+	ref.current.updateState({look: 2})
 	expect(ref.current.lookback()[0]).not.toBe(ref.current.windows(ref.current.today())[0][0])
 	expect(typeof ref.current.score()).toBe("number")
-	ref.current.updateState({roll: 7, look: 0})
+	ref.current.updateState({look: 0})
 })
 
 test("rows are grouped by the account the money leaves", async () => {
@@ -392,8 +390,10 @@ test("rows are grouped by the account the money leaves", async () => {
 })
 
 test("a row can be copied on its own", async () => {
-	//the collapsed row is scannable and says little; the argument needs the rest of it
-	const ref = await mount()
+	/* the collapsed row is scannable and says little; the argument needs the rest of it. The row's
+	   working - the cycle it read, the amount and the method - is the legacy model's own account of
+	   itself, so the ablation is what this asks for. */
+	const ref = await mount("legacy")
 	const r = ref.current.rows().filter(x => x.detail)[0]
 	const text = ref.current.rowDebug(r)
 	expect(text.indexOf(r.name)).toBe(0)
@@ -844,13 +844,13 @@ test("the stream predictor scores the same window, through the same scorer", asy
 	const legacy = legacyRef.current.score()
 	expect(typeof legacy).toBe("number")
 
-	//the page owns the switch, so the other reading is a different mount rather than a state change
-	const ref = await mount("new")
+	//the shipped reading, which needs no prop
+	const ref = await mount()
 	const fresh = ref.current.score()
 
 	//the run itself reached the module rather than falling into the catch
 	const a = ref.current.analyse(ref.current.lookback()[1])
-	expect(a.algo).toBe("new")
+	expect(a.algo).toBe("module")
 	expect(a.alt).toBeTruthy()
 	expect(a.alt.failed).toBeUndefined()
 	expect(typeof fresh).toBe("number")
@@ -872,7 +872,7 @@ test("the capture the predictor is handed is the shape the fixture holds", async
 })
 
 test("the forecast it is scored on never saw inside the window", async () => {
-	const ref = await mount("new")
+	const ref = await mount()
 	const a = ref.current.analyse(ref.current.lookback()[1])
 	const open = a.open.getTime()
 	//every predicted movement is dated at or after the day the window opened

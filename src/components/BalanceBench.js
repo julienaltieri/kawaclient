@@ -272,9 +272,10 @@ export default class BalanceBench extends BaseComponent{
 	   IT IS EXPENSIVE, AND CACHED ON THE WINDOW. One run is the predictor over every stream plus
 	   eight rewound runs to measure the amplitude correction; re-running it per render would make the
 	   page unusable. */
-	//THE PAGE OWNS THE CHOICE, not this component. The chart, this tile and the day table all answer
-	//to one switch, because a reader comparing two algorithms is comparing three views of each.
-	algo(){return this.props.algo || "legacy"}
+	/* THE MODULE IS THE FORECASTER. `algo="legacy"` is still accepted so an ablation can be run
+	   against the older model, and it is not offered on screen - measured over the captured year the
+	   module scores 30.5% on the card against -530.7% and 21.2% on checking against -6.1%. */
+	algo(){return this.props.algo === "legacy" ? "legacy" : "module"}
 	portfolio(){
 		if(!this._portfolio)this._portfolio = capturePortfolio(this.props.transactions,
 			this.state.accounts || [], {today: this.today(), cards: this.credit(),
@@ -282,7 +283,7 @@ export default class BalanceBench extends BaseComponent{
 		return this._portfolio
 	}
 	altForecast(open, close){
-		if(this.algo() !== "new")return null
+		if(this.algo() === "legacy")return null
 		const key = open.getTime() + "|" + new Date(close).getTime()
 		this._alt = this._alt || {}
 		if(this._alt[key] === undefined){
@@ -1460,18 +1461,14 @@ export default class BalanceBench extends BaseComponent{
 		const i = this.state.look === undefined ? 0 : this.state.look
 		return list[Math.min(i, list.length - 1)]
 	}
-	/* THE ROLLING HORIZONS ARE A LEGACY-ONLY AXIS, and saying so beats pretending otherwise. Each
-	   one re-forecasts from every morning in the window; the new module's run is the predictor over
-	   every stream plus eight rewinds, so thirty of them is minutes rather than seconds. It is
-	   scored over the whole month instead - the same measure at one horizon, which is the measure
-	   both algorithms share. */
-	algoName(){return this.algo() === "new" ? "stream predictor" : "legacy"}
+	/* ONE HORIZON, THE WHOLE MONTH. The rolling horizons re-forecast from every morning in the
+	   window, which under the module is thirty runs of the predictor over every stream - minutes
+	   rather than seconds. They were a legacy-only axis and are gone; what is left is the measure
+	   both forecasters share. */
+	algoName(){return this.algo() === "legacy" ? "legacy" : "stream predictor"}
 	score(){
-		const since = this.lookback()[1]
-		const days = this.algo() === "new" ? null : this.horizon()
-		if(days === null){const a = this.analyse(since); return a ? a.accuracy : null}
-		const r = this.rolling(days, since)
-		return r ? r.accuracy : null
+		const a = this.analyse(this.lookback()[1])
+		return a ? a.accuracy : null
 	}
 
 	/* THE SAME MONTH SCORED WITHOUT LETTING ERRORS CANCEL.
@@ -2013,18 +2010,8 @@ export default class BalanceBench extends BaseComponent{
 		catch(e){err = (e && e.message) + " | " + (e && e.stack)}
 		if(err)return <Wrap><Line>{err}</Line></Wrap>
 		const look = this.lookback()
-		/* THE OTHER ALGORITHM'S LAST SCORE FOR THIS SAME WINDOW, so the comparison is a line rather
-		   than a memory. Only the selected one is ever computed - the new module's run is expensive
-		   and running it to fill in a number nobody asked for would cost the page its usability -
-		   so the second figure appears once both have been picked, and is keyed on the window and
-		   the horizon so a stale number can never stand in for this one. */
-		const stamp = look[0] + "|" + (this.algo() === "new" ? "month" : this.horizon())
-		this._seen = this._seen || {}
-		if(score !== null)this._seen[this.algo() + "|" + stamp] = score
-		const other = this.algo() === "new" ? "legacy" : "new"
-		const otherScore = this._seen[other + "|" + stamp]
 		//read off the analysis that produced the headline, never re-run
-		const analysis = this.algo() === "new" ? this.analyse(look[1]) : null
+		const analysis = this.algo() === "legacy" ? null : this.analyse(look[1])
 		const altRun = analysis ? analysis.alt : null
 		return <Wrap>
 			{/* ONE NUMBER AND THE TWO KNOBS THAT MOVE IT. Everything else that used to sit here was a
@@ -2033,13 +2020,6 @@ export default class BalanceBench extends BaseComponent{
 			<Score>
 				<Big>{score === null ? "—" : (score*100).toFixed(1) + "%"}
 					<Small> balance accuracy &middot; {this.algoName()}</Small></Big>
-				<Line>{otherScore === undefined ? "pick the other one to compare"
-					: (other === "new" ? "stream predictor " : "legacy ")
-						+ (otherScore*100).toFixed(1) + "% on the same window "
-						+ String.fromCharCode(183) + " this one is "
-						+ (score === null ? "—"
-							: ((score - otherScore) >= 0 ? "+" : "")
-								+ ((score - otherScore)*100).toFixed(1) + " points")}</Line>
 				{altRun && altRun.failed ? <Line>the stream predictor run failed: {altRun.failed}</Line>
 					: null}
 				{altRun && !altRun.failed ? <Line>{altRun.events} predicted movements
@@ -2055,14 +2035,6 @@ export default class BalanceBench extends BaseComponent{
 					return raw === null ? "" : (raw*100).toFixed(1)
 						+ "% raw — each stream's own error, nothing cancelling"
 				})()}</Line>
-				<Bar>
-					{this.horizons().map(h => <Btn key={h[0]} type="button"
-						disabled={this.algo() === "new" && h[1] !== null}
-						style={(this.algo() === "new" ? h[1] === null : this.horizon() === h[1])
-							? {fontWeight:600, borderStyle:"solid"}
-							: (this.algo() === "new" ? {opacity:0.35} : null)}
-						onClick={() => this.updateState({roll:h[1]})}>{h[0]}</Btn>)}
-				</Bar>
 				<Bar>
 					{this.windows(this.today()).map((w, i) => <Btn key={w[0]} type="button"
 						style={look[0] === w[0] ? {fontWeight:600, borderStyle:"solid"} : null}
