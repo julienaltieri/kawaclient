@@ -319,13 +319,10 @@ export default class BalanceChart extends BaseComponent{
 		const actual = this.ledger().filter(t => dayKey(t.date) === k)
 			.map(t => ({name: t.streamName || "(uncategorised)", amount: t.amount}))
 			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
-		/* explained by the line that DREW it: the backtest owns the past, the forecast owns the
-		   future, and they do not run the same model */
 		const a = this.series()
-		/* THE LINE THAT DREW THIS POINT EXPLAINS IT. The forecast owns the future and the benchmark
-		   owns the past, and under the module they are two runs rather than two models - so the rows
-		   come from whichever run produced the point, never from the other algorithm's explainer. */
-		const run = point.actual === false ? a.liveRun : (a.benchRun || a.liveRun)
+		/* ONLY A PROJECTED POINT HAS A PREDICTION BEHIND IT. A past day is a fact: what moved is in
+		   the ledger, and there is no claim to hold it against because the tile no longer draws one. */
+		const run = point.actual === false ? a.liveRun : null
 		if(run)return (function(){
 			const predicted = (run.rows[k] || []).map(r =>
 				({name: r.name, amount: r.amount, refused: r.refused}))
@@ -334,7 +331,7 @@ export default class BalanceChart extends BaseComponent{
 				silent: [], actualTotal: sum(actual), predictedTotal: sum(predicted),
 				projected: point.actual === false}
 		})()
-		const opts = (point.actual === false ? a.live : (a.bench || a.live))
+		const opts = point.actual === false ? a.live : null
 		const ex = opts ? explainOn(new Date(point.date), opts) : {rows: [], silent: []}
 		const predicted = ex.rows
 		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
@@ -500,12 +497,8 @@ export default class BalanceChart extends BaseComponent{
 		return this._byStream
 	}
 
-	/* THE SHAPES AS THEY WOULD HAVE LOOKED ON A GIVEN DAY - nothing after `cutoff` is allowed in.
-	   This is what makes the backtest worth drawing: a forecast fitted to the period it is predicting
-	   has already seen the answer, and the agreement it then shows is its own reflection. */
-	/* THE ONE MODEL. Every forecast this component draws comes from here and nothing here is
-	   assembled locally - see buildModel. The only thing that separates the live forecast from the
-	   backtest is the as-of date, which is the point: there is no second configuration to drift. */
+	/* THE LEGACY MODEL, kept for the ablation `algo="legacy"` selects and for nothing else. Nothing
+	   is assembled locally - see buildModel. */
 	model(asOf, until){
 		const prefs = (Core.getUserData() || {}).userPreferences || {}
 		const key = this.source() + "|" + this.state.basis + "|"
@@ -718,29 +711,19 @@ export default class BalanceChart extends BaseComponent{
 		const future = liveRun ? liveRun.seriesFrom(bal)
 			: (live ? forecast(Object.assign({now: now, balanceNow: bal, days: win.fwd}, live)) : [])
 
-		/* THE BENCHMARK: the same model, asked from the START of what is on screen, over days that
-		   have since actually happened. Where it parts company with the reconstruction is a
-		   discrepancy worth chasing - a stream mis-timed, an amount out of date, or money moving that
-		   the master does not know about. It is out of sample because buildModel reads nothing dated
-		   on or after its as-of date, not because anything here arranges for that. */
-		let backtest = [], bench = null, benchRun = null
-		if(past.length > 1){
-			const opened = past[0].date, closed = past[past.length - 1].date
-			bench = this.model(opened, closed)
-			benchRun = this.moduleRun(opened, closed)
-			backtest = benchRun ? benchRun.seriesFrom(past[0].value)
-				: forecast(Object.assign({now: opened, balanceNow: past[0].value,
-					days: Math.round((closed - opened)/DAY)}, bench))
-			backtest = [{date: opened, value: past[0].value, bench: true}]
-				.concat(backtest.map(p => ({date: p.date, value: p.value, bench: true})))
-		}
-		/* the model behind each drawn line travels ON the series it drew. An instance field was
+		/* THE RETROSPECTIVE FORECAST IS GONE. A third line ran the same model over days that had
+		   already happened, so a reader could see where it parted company with reality. That is a
+		   BENCH question - it is measured there, over ten months, against both forecasters - and on
+		   the tile it was a claim about the past drawn on top of the past itself.
+
+		   It also halves what the tile costs: the benchmark was a second forecast at a second as-of
+		   date per window, and a window entirely behind us paid for one to draw a line nobody acts
+		   on. */
+		/* the model behind the drawn line travels ON the series it drew. An instance field was
 		   overwritten by whichever window allSeries() computed last, and a hovered day was then
 		   explained with another month's model. */
-		return {past: past, future: future, backtest: backtest, txns: txns, now: now,
-			live: live || bench, bench: bench,
-			//the module runs that drew those two lines, so the day audit explains the line it sees
-			liveRun: liveRun, benchRun: benchRun}
+		return {past: past, future: future, txns: txns, now: now,
+			live: live, liveRun: liveRun}
 	}
 
 	//the days that earn a badge, by the same rule the picture uses - one definition, so a test asserts
@@ -789,9 +772,7 @@ export default class BalanceChart extends BaseComponent{
 	frameOf(a){
 		const all = a.past.concat(a.future)
 		const xs = all.map(p => p.date.getTime())
-		//the benchmark is included in the VERTICAL range but not the horizontal one: a divergence
-		//that runs off the top is not a divergence anyone can see, and it covers no new days
-		const ys = all.map(p => p.value).concat((a.backtest||[]).map(p => p.value))
+		const ys = all.map(p => p.value)
 		let y0 = Math.min(0, Math.min.apply(null, ys)), y1 = Math.max.apply(null, ys)
 		const pad = (y1 - y0)*0.14 || 1
 		const lo = trough(all), hi = peak(all)
@@ -809,7 +790,7 @@ export default class BalanceChart extends BaseComponent{
 	   Passing the frame in instead means the last frame of an animation is, by construction, identical
 	   to the resting frame that replaces it. There is nothing left to pop, and no second painter to
 	   keep in step with this one. */
-	draw(past, future, now, frame, backtest){
+	draw(past, future, now, frame){
 		const W = this.W, H = this.H
 		const all = past.concat(future)
 		if(all.length < 2)return ""
@@ -854,16 +835,6 @@ export default class BalanceChart extends BaseComponent{
 		//the line takes the same ramp at full opacity - the silver lining affirmed. A stroke carries a
 		//gradient exactly as a fill does, and because the ramp is pinned to the value axis the line
 		//reddens as it descends without anything having to decide where the boundary is.
-		/* THE BENCHMARK, under everything else. Same ramp colour, because it is a balance and that
-		   colour means what it always means - but DOTTED rather than dashed, so it cannot be mistaken
-		   for the forecast, and quiet enough that the actual line reads as the truth and this as the
-		   reference it is measured against. Drawn first, so where they touch, the record is on top. */
-		const benchLine = (backtest && backtest.length > 1)
-			? '<path d="' + stepPath(backtest) + '" fill="none" stroke="' + paint
-				+ '" stroke-width="1.4" stroke-dasharray="0.5,3" stroke-linecap="round"'
-				+ ' opacity="0.75"/>'
-			: ""
-
 		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
 			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
 		const bridge = past.length && future.length ? [past[past.length-1]].concat(future) : future
@@ -985,17 +956,17 @@ export default class BalanceChart extends BaseComponent{
 		return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
 			+ defs + area
 			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine + axis
-			+ benchLine + lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
+			+ lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
 	}
 
 	paint(){
 		if(!this.host.current || !this.state.loaded || !this.hasAnchor())return
 		if(this.animating)return
 		const a = this.series()
-		this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null, a.backtest)
+		this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null)
 		if(!this.settling && this.measure()){
 			this.settling = true
-			this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null, a.backtest)
+			this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null)
 			this.settling = false
 		}
 	}
@@ -1102,10 +1073,9 @@ export default class BalanceChart extends BaseComponent{
 			   arrived when the real picture replaced it at the end.
 			   Where the two agree - the days both months contain - a record wins over a projection. */
 			const merged = this.union(before, after)
-			const mergedBench = this.unionBench(before, after)
 			this.run(ZOOM_MS, k => {
 				const f = this.lerpFrame(f0, f1, k)
-				this.paintFrame(merged, after.now, f, mergedBench)
+				this.paintFrame(merged, after.now, f)
 			})
 		})
 	}
@@ -1117,13 +1087,6 @@ export default class BalanceChart extends BaseComponent{
 			if(!byDay[k] || (p.actual && !byDay[k].actual))byDay[k] = p}
 		a.past.forEach(put); a.future.forEach(put)
 		b.past.forEach(put); b.future.forEach(put)
-		return Object.keys(byDay).sort().map(k => byDay[k])
-	}
-	/* the benchmark is merged SEPARATELY, because it shares its days with the record - one point per
-	   day per LAYER, not per day. Merged into the same map, each would delete the other. */
-	unionBench(a, b){
-		const byDay = {}
-		;(a.backtest||[]).concat(b.backtest||[]).forEach(p => {byDay[dayKey(p.date)] = p})
 		return Object.keys(byDay).sort().map(k => byDay[k])
 	}
 	lerpFrame(a, b, k){
@@ -1161,25 +1124,17 @@ export default class BalanceChart extends BaseComponent{
 					blend.push({date: b[i].date, actual: b[i].actual, top: b[i].top,
 						value: a[i].value*(1 - k) + b[i].value*k})
 				}
-				//the benchmark morphs with everything else: it is a balance too, and a reading that
-				//changes changes it
-				const ab = before.backtest||[], bb = after.backtest||[]
-				const bn = Math.min(ab.length, bb.length)
-				const bench = []
-				for(let i = 0; i < bn; i++){
-					bench.push({date: bb[i].date, value: ab[i].value*(1 - k) + bb[i].value*k})
-				}
-				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k), bench)
+				this.paintFrame(blend, after.now, this.lerpFrame(f0, f1, k))
 			})
 		})
 	}
 
 	//one flat list plus a frame, split back into record and projection for the drawing routine
-	paintFrame(content, now, frame, backtest){
+	paintFrame(content, now, frame){
 		if(!this.host.current)return
 		this.host.current.innerHTML = this.draw(
 			content.filter(p => p.actual !== false), content.filter(p => p.actual === false),
-			now, frame, backtest)
+			now, frame)
 	}
 
 	/* The classification, as text. Sorted by how much money each stream carries, because a stream that

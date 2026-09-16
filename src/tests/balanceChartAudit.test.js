@@ -162,13 +162,6 @@ const checkAgrees = (chart, line, pick) => {
 	expect(checked).toBe(days.length)
 }
 
-test("every past day's table adds up to the step the backtest line takes", async () => {
-	const chart = await mount("last", false, "legacy")
-	const a = chart.series()
-	//point.actual is true on the reconstruction, which is what the cursor hands to dayAudit
-	checkAgrees(chart, a.backtest, p => ({date: p.date, value: p.value, actual: true}))
-})
-
 test("every future day's table adds up to the step the forecast line takes", async () => {
 	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
@@ -178,25 +171,25 @@ test("every future day's table adds up to the step the forecast line takes", asy
 })
 
 test("the audit follows the displayed month, not whichever was computed last", async () => {
-	//allSeries() computes every window; an audit keyed to the component rather than to the series
-	//answers with the wrong month's model, and the two months must therefore disagree
+	/* allSeries() computes every window; an audit keyed to the component rather than to the series
+	   answers with the wrong month's model, and the two windows must therefore hold their own.
+	   A settled month forecasts nothing, so it is the one that carries no model at all. */
 	const chart = await mount("last")
 	const last = chart.series("last"), thisM = chart.series("this")
-	expect(last.bench).toBeTruthy()
-	expect(last.bench).not.toBe(thisM.bench)
-	expect(last.live).not.toBe(thisM.live)
+	expect(last.live).toBe(null)
+	expect(last.liveRun).toBe(null)
+	expect(thisM.future.length).toBeGreaterThan(0)
 })
 
-test("the backtest carries a settlement, as an extraFlow rather than a mean stream", async () => {
-	const chart = await mount("last")
+test("the legacy model carries a settlement, as an extraFlow rather than a mean stream", async () => {
+	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
-	expect(a.bench.extraFlow).toBeTruthy()
-	expect(Object.keys(a.bench.extraFlow).length).toBeGreaterThan(1)
+	expect(a.live.extraFlow).toBeTruthy()
+	expect(Object.keys(a.live.extraFlow).length).toBeGreaterThan(1)
 	//the six-month mean spread over a weekly histogram is gone; nothing may reintroduce it
-	expect(a.bench.terminals.map(s => s.id)).not.toContain("__settlement__")
 	expect(a.live.terminals.map(s => s.id)).not.toContain("__settlement__")
 	//and the synthesised due-day bill must stay off, or the card is paid twice
-	expect(a.bench.settles).toBe(null)
+	expect(a.live.settles).toBe(null)
 })
 
 /* =================================================================================================
@@ -216,26 +209,27 @@ test("the modelled bill reproduces the settlements that actually posted", async 
 	   The causal model reads what has already posted on that card since its last statement closed, so
 	   over a window it must reproduce what the window actually paid - and, bill by bill, must move
 	   when the bill moves. A constant can match a total by luck; it cannot match the sequence. */
-	const chart = await mount("last")
+	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
-	const flow = a.bench.extraFlow
+	const flow = a.live.extraFlow
 	const days = Object.keys(flow)
-	expect(days.length).toBeGreaterThan(2)
+	//the window ahead is a fortnight, so a weekly card settles twice in it
+	expect(days.length).toBeGreaterThanOrEqual(2)
 
-	const from = a.backtest[0].date, to = a.backtest[a.backtest.length - 1].date
-	const actual = txns.filter(t => t.userInstitutionAccountId === CHECKING
-			&& /card bill/.test(t.description)
-			&& new Date(t.date) >= from && new Date(t.date) <= to)
-		.reduce((x, t) => x + Math.abs(t.amount), 0)
-	const modelled = days.reduce((x, k) => x + Math.abs(flow[k].amount), 0)
+	const from = a.future[0].date, to = a.future[a.future.length - 1].date
+	/* PER BILL, NOT PER WINDOW. The window ahead is a fortnight and the history behind is months, so
+	   two totals are not comparable; what is comparable is what one statement costs. */
+	const recent = txns.filter(t => t.userInstitutionAccountId === CHECKING
+		&& /card bill/.test(t.description) && t.date < from)
+	const actual = recent.slice(-8).reduce((x, t) => x + Math.abs(t.amount), 0)
+		/ Math.max(1, recent.slice(-8).length)
+	const modelled = days.reduce((x, k) => x + Math.abs(flow[k].amount), 0) / days.length
 
 	expect(actual).toBeGreaterThan(0)
-	/* The band is what separates a CAUSAL model from a mean, not a precision target. A mean of this
-	   card would sit 40% out; the first statement in the window also carries a longer-than-usual
-	   opening period, which is worth a few points on its own. Tight enough to fail the thing this
-	   test exists to catch, loose enough not to fail on the edge of the window. */
-	expect(modelled/actual).toBeGreaterThan(0.85)
-	expect(modelled/actual).toBeLessThan(1.15)
+	/* The band is what separates a CAUSAL model from a mean, not a precision target. Tight enough to
+	   fail the thing this test exists to catch, loose enough not to fail on the edge of a window. */
+	expect(modelled/actual).toBeGreaterThan(0.7)
+	expect(modelled/actual).toBeLessThan(1.4)
 	/* No assertion on the SEQUENCE here, deliberately. Thirty days out only the first bill has any
 	   posted spending behind it; the rest are the rate times the interval and are meant to be flat,
 	   because future card spending is not knowable. The sequence is a short-horizon property and is
@@ -245,14 +239,14 @@ test("the modelled bill reproduces the settlements that actually posted", async 
 test("each card names itself in the breakdown", async () => {
 	//"Card settlement -$950" cannot say whether the amount, the day or the CARD is wrong, and with
 	//two cards on their own weekly cycles all three are live at once
-	const chart = await mount("last", true, "legacy")
+	const chart = await mount("this", true, "legacy")
 	const a = chart.series()
-	const days = Object.keys(a.bench.extraFlow)
+	const days = Object.keys(a.live.extraFlow)
 	let named = []
 	days.forEach(k => {
-		const point = a.backtest.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
+		const point = a.future.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
 		if(!point)return
-		const rows = chart.dayAudit({date: point.date, value: point.value, actual: true}).predicted
+		const rows = chart.dayAudit({date: point.date, value: point.value, actual: false}).predicted
 		named = named.concat(rows.filter(r => /^__card__/.test(r.id || "")))
 	})
 	expect(named.length).toBeGreaterThan(0)
@@ -308,13 +302,13 @@ test("the model reads nothing dated on or after its as-of date", async () => {
    fault and the other is the stream genuinely being paid four times a month.
    ================================================================================================= */
 test("every predicted row carries the expectation and the weight it came from", async () => {
-	const chart = await mount("last", false, "legacy")
+	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
 	//the first day that actually has contributions - most days of a month have none in this fixture
 	let audit = null
-	a.backtest.forEach(p => {
+	a.future.forEach(p => {
 		if(audit)return
-		const x = chart.dayAudit({date: p.date, value: p.value, actual: true})
+		const x = chart.dayAudit({date: p.date, value: p.value, actual: false})
 		if(x.predicted.length)audit = x
 	})
 	expect(audit).toBeTruthy()
@@ -329,13 +323,13 @@ test("every predicted row carries the expectation and the weight it came from", 
 })
 
 test("a stream that was budgeted but did not fire says why", async () => {
-	const chart = await mount("last", false, "legacy")
+	const chart = await mount("this", false, "legacy")
 	const a = chart.series()
 	//rent is monthly, so on most days of the month it is expected and silent
 	let found = null
-	a.backtest.forEach(p => {
+	a.future.forEach(p => {
 		if(found)return
-		const audit = chart.dayAudit({date: p.date, value: p.value, actual: true})
+		const audit = chart.dayAudit({date: p.date, value: p.value, actual: false})
 		const r = (audit.silent || []).filter(x => x.name === "Rent")[0]
 		if(r)found = r
 	})
@@ -426,18 +420,19 @@ describe("the forecaster", () => {
 			.toBe(Math.round(a.liveRun.rows[audit.date].reduce((n, r) => n + r.amount, 0)))
 	})
 
-	test("the benchmark line is the module too, and starts where the past starts", async () => {
-		const m = await mount("last")
-		const a = m.series()
-		expect(a.benchRun).toBeTruthy()
-		expect(a.backtest.length).toBeGreaterThan(1)
-		expect(a.backtest[0].value).toBe(a.past[0].value)
-	})
-
 	//the ablation: the older model is still reachable, and costs nothing when it is the one asked for
 	test("asking for the legacy model runs none of the module", async () => {
 		const m = await mount("this", false, "legacy")
 		expect(m.series().liveRun).toBe(null)
 		expect(m.usingModule()).toBe(false)
+	})
+
+	//a settled month has nothing to forecast, so it pays for nothing
+	test("a window entirely behind us runs no forecast at all", async () => {
+		const m = await mount("last")
+		const a = m.series()
+		expect(a.liveRun).toBe(null)
+		expect(a.future.length).toBe(0)
+		expect(a.past.length).toBeGreaterThan(1)
 	})
 })

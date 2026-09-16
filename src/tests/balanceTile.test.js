@@ -682,18 +682,6 @@ test("a tick label under the cursor's own date gives way to it", async () => {
 
 /* ---- the benchmark overlay ---------------------------------------------------------------------- */
 
-test("the benchmark starts where the window starts, on the actual balance", async () => {
-	const ref = await mountLegacy()
-	const a = ref.current.series()
-	expect(a.backtest.length).toBeGreaterThan(1)
-	//it is anchored on a known figure, not on a guess: the reconstruction's first point
-	expect(a.backtest[0].date.getTime()).toBe(a.past[0].date.getTime())
-	expect(a.backtest[0].value).toBe(a.past[0].value)
-	//and it covers the settled part of the window, no further
-	expect(a.backtest[a.backtest.length-1].date.getTime())
-		.toBe(a.past[a.past.length-1].date.getTime())
-})
-
 /* =================================================================================================
    THE LAW OF THE AS-OF DATE, tested rather than reviewed.
 
@@ -728,39 +716,6 @@ test("the model reads nothing dated on or after its as-of date", async () => {
 	//and the window genuinely contains transactions, or the test proves nothing
 	expect(c.props.transactions.filter(t => new Date(t.date) >= opened
 		&& new Date(t.date) <= closed).length).toBeGreaterThan(3)
-})
-
-test("the drawn benchmark is exactly that model, run by hand", async () => {
-	const ref = await mountLegacy()
-	const c = ref.current
-	const a = c.series()
-	const opened = a.past[0].date, closed = a.past[a.past.length-1].date
-	const mine = forecast(Object.assign({now: opened, balanceNow: a.past[0].value,
-		days: Math.round((closed - opened)/86400000)}, c.model(opened, closed)))
-	expect(a.backtest.length).toBe(mine.length + 1)
-	expect(a.backtest.slice(1).map(p => Math.round(p.value*100)))
-		.toEqual(mine.map(p => Math.round(p.value*100)))
-})
-
-test("the benchmark is drawn dotted, and under the record", async () => {
-	const ref = await mountLegacy()
-	const svg = (ref.current.host.current || {}).innerHTML || ""
-	expect(svg).toContain('stroke-dasharray="0.5,3"')
-	//before the solid record line in document order, so the truth sits on top where they touch
-	expect(svg.indexOf('stroke-dasharray="0.5,3"'))
-		.toBeLessThan(svg.indexOf('stroke-linejoin="round" stroke-linecap="round"'))
-})
-
-test("a divergence is inside the frame rather than clipped away", async () => {
-	const ref = await mount()
-	const c = ref.current
-	const a = c.series()
-	const f = c.frameOf(a)
-	//whatever the benchmark does, it is drawable: the vertical range contains it
-	a.backtest.forEach(p => {
-		expect(p.value).toBeGreaterThanOrEqual(f.y0)
-		expect(p.value).toBeLessThanOrEqual(f.y1)
-	})
 })
 
 /* ---- predictable vs erratic ---------------------------------------------------------------------- */
