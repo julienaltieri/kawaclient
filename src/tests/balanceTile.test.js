@@ -629,12 +629,15 @@ test("the animation lands exactly on the destination frame", async () => {
 })
 
 /* =================================================================================================
-   THE BOUNDARY BETWEEN RECORD AND PROJECTION TRAVELS TOO.
+   THE WINDOW'S RIGHT EDGE TRAVELS, AND TODAY DOES NOT.
 
-   The union resolves a day that is a record in one window and a projection in the other in favour of
-   the record - right for the content, wrong for the line. On the first frame of a travel back, this
-   month's dotted forecast turned solid in one step while the geometry was still at the origin:
-   nothing had moved, so the only thing the eye could read was that the same drawing was being reused.
+   The union covers every day either month holds, which runs a fortnight past where a settled month
+   stops. Painted whole for the length of a travel back, the forecast stayed on screen the entire way
+   and then vanished in one step - the tell that the same drawing is being reused rather than a
+   picture actually moving.
+
+   The line between what happened and what is claimed is TODAY, and today does not move. What moves is
+   the edge: travelling back it passes over the forecast, which retracts into today tip first.
    ================================================================================================= */
 test("the forecast retracts as the travel runs, rather than switching on the first frame", async () => {
 	//legacy, because this needs a forecast to exist on a nine-day fixture - see mountLegacy
@@ -643,16 +646,15 @@ test("the forecast retracts as the travel runs, rather than switching on the fir
 	const all = c.allSeries()
 
 	const merged = c.union(all.this, all.last)
-	const end = merged[merged.length - 1].date.getTime()
 
-	//a settled month projects nothing, so its boundary clears everything being drawn
-	expect(c.splitAt(all.this, end)).toBe(all.this.future[0].date.getTime())
-	expect(c.splitAt(all.last, end)).toBeGreaterThan(end)
+	//the edge that travels is each window's last drawn day, and a settled month stops earlier
+	const e0 = c.edgeOf(all.this), e1 = c.edgeOf(all.last)
+	expect(e0).toBe(all.this.future[all.this.future.length - 1].date.getTime())
+	expect(e1).toBeLessThan(e0)
 
 	const f = c.frameOf(all.this)
-	const s0 = c.splitAt(all.this, end), s1 = c.splitAt(all.last, end)
 	const dotted = k => {
-		c.paintFrame(merged, all.this.now, f, s0*(1 - k) + s1*k)
+		c.paintFrame(merged, all.this.now, f, e0*(1 - k) + e1*k)
 		const svg = (c.host.current || {}).innerHTML || ""
 		const m = svg.match(/<path d="([^"]*)" fill="none"[^>]*stroke-dasharray="3,2.5"/)
 		return m ? (m[1].match(/H/g) || []).length : 0
@@ -663,10 +665,9 @@ test("the forecast retracts as the travel runs, rather than switching on the fir
 	expect(finish).toBe(0)
 
 	//and the last frame of the motion is the frame that replaces it
-	c.paintFrame(merged, all.this.now, f, s1)
+	c.paintFrame(merged, all.this.now, f, e1)
 	const travelled = (c.host.current || {}).innerHTML
-	c.paintFrame(merged.map(p => Object.assign({}, p,
-		{actual: p.date.getTime() >= s1 ? false : true})), all.this.now, f)
+	c.paintFrame(merged.filter(p => p.date.getTime() <= e1), all.this.now, f)
 	expect((c.host.current || {}).innerHTML).toBe(travelled)
 })
 
