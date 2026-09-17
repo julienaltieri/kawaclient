@@ -2177,8 +2177,13 @@ export function buildModel(input){
 	   it; nothing populates it any more, because a repayment leaves the ledger as a transaction
 	   rather than as a stream. */
 	const excludeIds = {};
+	/* THE MASK, NOT THE ACCOUNT'S OWN NAME. The name a bank hands back is whatever product string it
+	   chose - unbounded, and not a fact anything downstream promises to fit on one line - while the
+	   mask is always a few digits, the same short identifier `SettingPage.js` already labels an
+	   account by (`**{mask}`) elsewhere in this app. Two cards still read apart from each other; a
+	   name that happened to run to forty characters no longer runs the row off the edge of the tile. */
 	const cardName = {};
-	(input.accounts || []).forEach(a => {cardName[a.hash] = a.name});
+	(input.accounts || []).forEach(a => {if(a.mask)cardName[a.hash] = "**" + a.mask});
 
 
 	/* WHAT A STREAM IS EXPECTED TO MOVE IN A MONTH, which is three rules and not one.

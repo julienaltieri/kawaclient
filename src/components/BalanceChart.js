@@ -333,6 +333,15 @@ const shimmerSweep = keyframes`
 	from{ background-position:160% 0; }
 	to{ background-position:-60% 0; }
 `
+//the shimmer's OWN entrance - it mounts at the same instant as the rest of the tile, popping in with
+//nothing to soften it otherwise, since $ready is still false on that very first render and a CSS
+//transition never fires on a property's initial value, only on a later CHANGE to it. Runs once (no
+//`infinite`) and, with no fill-mode, hands opacity straight back to the `$ready`-driven value below
+//the instant it ends - so this never fights the ready/shimmer crossfade, only precedes it.
+const shimmerFadeIn = keyframes`
+	from{ opacity:0; }
+	to{ opacity:1; }
+`
 /* THE WAVE IS THE TILE'S OWN HUE, A FIXED DISTANCE LIGHTER OR DARKER - never a foreign color, and
    never all the way to pure white or black, which would read as a different palette rather than a
    variant of this one. Alpha is read off and dropped: `UIElementBackground` is meant to sit as a
@@ -401,12 +410,13 @@ const Shimmer = styled.div`
 		transparent 100%);
 	background-size:60% 100%; background-repeat:no-repeat;
 	//eases in gently, then accelerates through the rest of the sweep - a snap at the end reads as
-	//more alive than a sweep that arrives at the same speed it left
-	animation:${shimmerSweep} 0.9s ease-in infinite;
+	//more alive than a sweep that arrives at the same speed it left - alongside its own one-shot
+	//entrance, so the tile's very first frame is a fade rather than a hard cut to "loading"
+	animation:${shimmerSweep} 0.9s ease-in infinite, ${shimmerFadeIn} 220ms ease-out;
 	opacity:${props => (props.$ready ? 0 : 1)};
 	transition:${REVEAL_TRANSITION};
 	pointer-events:none;
-	@media (prefers-reduced-motion: reduce){ animation:none; }
+	@media (prefers-reduced-motion: reduce){ animation:${shimmerFadeIn} 220ms ease-out; }
 `
 
 const LT = String.fromCharCode(60);
@@ -578,7 +588,23 @@ export default class BalanceChart extends BaseComponent{
 		})()
 		const opts = point.actual === false ? a.live : null
 		const ex = opts ? explainOn(new Date(point.date), opts) : {rows: [], silent: []}
-		const predicted = ex.rows.map(r => Object.assign({}, r, {name: nameOf(r.name)}))
+		/* WHILE THE MODULE'S OWN FORECAST IS STILL LOADING, this branch is a STAND-IN, not a
+		   deliberate choice - `run` above is only falsy here because `a.liveRun` has not resolved yet
+		   (see moduleRun()), or because `algo="legacy"` was asked for outright. The legacy model's own
+		   per-card repayment naming ("Card repayment " + middot + " **1234", from buildModel() in
+		   BankBalance.js) is real and earns its keep there - the bench's own ablation wants to tell
+		   two live cards apart - but it is not this app's convention: the module never disambiguates
+		   by card, ever. Shown only for as long as the real forecast takes to land, it would read as
+		   a card number appearing and then vanishing for no reason a reader could see - reported
+		   exactly that way. So it is stripped here, and ONLY when the module is the one actually in
+		   charge (`usingModule()`) - a caller who explicitly asked for the legacy model still sees its
+		   own labeling intact, unstripped; only the transient stand-in gets normalised to match what
+		   is about to replace it. */
+		const stripStandInDisambiguation = name => this.usingModule()
+			? String(name == null ? "" : name).replace(/^(Card repayment)\s*·.*$/, "$1")
+			: name
+		const predicted = ex.rows.map(r =>
+			Object.assign({}, r, {name: nameOf(stripStandInDisambiguation(r.name))}))
 		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
 		return {date: k, balance: point.value, actual: actual, predicted: predicted,
 			silent: ex.silent,

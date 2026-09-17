@@ -49,7 +49,8 @@ let txns, accounts
 
 //a second card, settling on its OWN weekday - the case a pooled weekly histogram cannot represent
 const addSecondCard = () => {
-	accounts.push({hash: CARD2, name: "Amex", type: "credit", subtype: "credit card", current: 400})
+	accounts.push({hash: CARD2, name: "Amex", mask: "2222", type: "credit", subtype: "credit card",
+		current: 400})
 	for(let w = 0; w < 26; w++){
 		const settleDay = d(187 - w*7)
 		for(let i = 0; i < 2; i++){
@@ -85,7 +86,7 @@ beforeEach(() => {
 	})
 	accounts = [
 		{hash: CHECKING, name: "Checking", type: "depository", subtype: "checking", current: 8000},
-		{hash: CARD, name: "Visa", type: "credit", subtype: "credit card", current: 900}
+		{hash: CARD, name: "Visa", mask: "1111", type: "credit", subtype: "credit card", current: 900}
 	]
 	Core.getAccountsWithBalances = () => Promise.resolve(accounts)
 
@@ -236,9 +237,17 @@ test("the modelled bill reproduces the settlements that actually posted", async 
 	   tested where it lives - see "the bill tracks each statement as it closes". */
 })
 
-test("each card names itself in the breakdown", async () => {
-	//"Card settlement -$950" cannot say whether the amount, the day or the CARD is wrong, and with
-	//two cards on their own weekly cycles all three are live at once
+/* THE MASK, NEVER THE BANK'S OWN ACCOUNT NAME. "Card settlement -$950" cannot say whether the
+   amount, the day or the CARD is wrong, and with two cards on their own weekly cycles all three are
+   live at once - so each row still names ITS card, by the same short `**mask` label
+   SettingPage.js already uses elsewhere in the app. Not the account's own name: that string is
+   whatever the bank handed back, unbounded, and the actual (posted) side of this same breakdown
+   never shows it either - see dayAudit()'s `actual` rows, named from the STREAM, never the
+   account. A row that read "Card repayment · Robinhood Cash Management, a division of..." was both
+   a layout problem (nothing promises that string fits on one line) and an inconsistency (nothing
+   else in the breakdown is named this way). */
+test("each card names itself in the breakdown - by mask, never by the bank's own account name",
+async () => {
 	const chart = await mount("this", true, "legacy")
 	const a = chart.series()
 	const days = Object.keys(a.live.extraFlow)
@@ -250,10 +259,64 @@ test("each card names itself in the breakdown", async () => {
 		named = named.concat(rows.filter(r => /^__card__/.test(r.id || "")))
 	})
 	expect(named.length).toBeGreaterThan(0)
-	expect(named.some(r => /Visa/.test(r.name))).toBe(true)
-	expect(named.some(r => /Amex/.test(r.name))).toBe(true)
+	expect(named.some(r => /\*\*1111/.test(r.name))).toBe(true)
+	expect(named.some(r => /\*\*2222/.test(r.name))).toBe(true)
 	//each row is one card's repayment, so the ids differ too
 	expect(new Set(named.map(r => r.id)).size).toBeGreaterThan(1)
+	//never the raw account name, whatever the bank happened to call it
+	expect(named.some(r => /Visa/.test(r.name) || /Amex/.test(r.name))).toBe(false)
+})
+
+/* REPORTED: "on first load, if I cursor over the card repayments, I get 'Card repayment *9869'.
+   when I travel to last month and hover, I correctly get 'Card repayment', and when I travel back,
+   I also get 'Card repayment' correctly." The legacy model's per-card disambiguation above is real
+   and stays intact for an EXPLICIT `algo="legacy"` read - but the shipped app defaults to the
+   module, and `dayAudit()` only ever falls through to the legacy line as a STAND-IN while the
+   module's own async forecast (moduleRun()) is still in flight. The module never disambiguates by
+   card, so a reader who happens to hover during that (normally brief) window saw a card number that
+   then vanished on its own the moment the real forecast landed - which is exactly what was seen. */
+test("while the module's own forecast is still loading, the stand-in never shows a per-card number",
+async () => {
+	const chart = await mount("this", true)          //default algo: the module, not an explicit legacy read
+	/* FORCED, RATHER THAN CAUGHT MID-FLIGHT: the fallback path under Jest (no real Worker, see
+	   schedulePool.js) resolves in a handful of pure microtask hops and may already have settled by
+	   the time `mount()`'s own `act()` returns - timing-dependent either way. Overriding moduleRun()
+	   to stay pending forever, then dropping the series memo so the override is actually read,
+	   reproduces the reported window deterministically instead of racing it. */
+	chart.moduleRun = () => null
+	chart._series = null
+	const a = chart.series()
+	expect(a.liveRun).toBeFalsy()
+	const days = Object.keys(a.live.extraFlow)
+	let seen = []
+	days.forEach(k => {
+		const point = a.future.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
+		if(!point)return
+		const rows = chart.dayAudit({date: point.date, value: point.value, actual: false}).predicted
+		seen = seen.concat(rows.filter(r => /^__card__/.test(r.id || "")))
+	})
+	expect(seen.length).toBeGreaterThan(0)
+	expect(seen.every(r => r.name === "Card repayment")).toBe(true)
+})
+
+//and once the real forecast lands (unforced, this time), the day table hands over to it - which
+//never disambiguates by card at all, so no row in it can ever carry a mask suffix
+test("once the module's own forecast lands, no row in the day table carries a card number",
+async () => {
+	const chart = await mount("this", true)
+	await act(async () => {await chart.pendingForecasts()})
+	const a = chart.series()
+	expect(a.liveRun).toBeTruthy()
+	const days = Object.keys(a.liveRun.rows)
+	expect(days.length).toBeGreaterThan(0)
+	let seen = []
+	days.forEach(k => {
+		const point = a.future.filter(p => p.date.toISOString().slice(0, 10) === k)[0]
+		if(!point)return
+		seen = seen.concat(chart.dayAudit({date: point.date, value: point.value, actual: false}).predicted)
+	})
+	expect(seen.length).toBeGreaterThan(0)
+	expect(seen.every(r => !/\*\*/.test(r.name))).toBe(true)
 })
 
 /* =================================================================================================

@@ -2971,3 +2971,107 @@ jsdom) - correctness here was checked by evaluating the actual hex math in isola
 and the existing `balanceTile`/`balanceChartAudit`/`balanceBenchMount` suites (297 tests) continue to
 pass unchanged, confirming nothing about the tile's behavior - only its resting/sweep colors - moved.
 Build compiles clean with the production marker throughout every round of this.
+
+**2026-09-17 — the shimmer's own entrance fades in, rather than popping in with the rest of the tile**
+
+Reported as "appears abruptly." The cause: `Shimmer`'s opacity was `$ready ? 0 : 1` with a CSS
+`transition` - and `$ready` is already `false` on the tile's very first render, so there is no CHANGE
+of the property for the transition to animate; a transition only fires on a later change from what a
+render already committed, never on the value a mount starts at. The shimmer's first appearance was
+therefore a hard cut to fully opaque, same tick the tile mounted.
+
+Fixed with a second, one-shot `@keyframes` (`shimmerFadeIn`, 220ms ease-out, opacity 0→1) layered
+onto the same `animation` property as the existing infinite sweep (`animation: sweep, fadeIn` - CSS
+allows a comma-separated list). It runs once, with no `fill-mode`, so the instant it ends control
+reverts to the ordinary `opacity:$ready?0:1` declaration underneath - meaning it only ever precedes
+the ready/shimmer crossfade already in place, never fights it. `prefers-reduced-motion` keeps this one
+(a brief opacity change, not the sweep's sliding motion) rather than dropping it along with the sweep.
+
+Verified: build compiles clean with the production marker; `balanceTile`/`balanceChartAudit`/
+`balanceBenchMount` (297 tests) pass unchanged, since nothing about the tile's state or timing moved -
+only how the shimmer's own first frame is painted.
+
+**2026-09-17 — a card repayment names its card by mask, never by the bank's own account name**
+
+Reported: a predicted card-repayment row in the tile's day breakdown named the account
+("Robinhood ****xxx") - unbounded (whatever product string the bank handed back, not something
+anything downstream promises fits on one line) and inconsistent with the actual side of the same
+breakdown, which names a transaction by its STREAM (`dayAudit()`'s `actual` rows, `t.streamName`),
+never by the account it posted on.
+
+**Root cause: the LEGACY forecaster's own multi-card disambiguation, not the module's.** With more
+than one linked card, `buildModel()` (BankBalance.js) labels each card's repayment "Card repayment
+· " + the raw account name (`cardName[a.hash] = a.name`, unchanged since introduced), so a reader
+could tell which of several live cards a row was about - a real, tested need (`"each card names
+itself in the breakdown"`, `balanceChartAudit.test.js`), just built on the wrong field. `nameOf()`
+in BalanceChart.js (which DOES normalise a bare `"repayment"` to a clean `"Card repayment"`) never
+catches this string, because its regex only matches an EXACT `"repayment"` or a `"credit card
+payment"` substring, neither of which `"Card repayment · <name>"` is - so the raw name always
+reached the screen unfiltered whenever more than one card was linked. The module's own path
+(`accountLedger.js`'s computed settlements) never had this problem - it never disambiguates by card
+at all, always `label: 'repayment'` - which is likely why this was only ever seen from the legacy
+model: it activates any time the module's own async forecast has not landed yet (see the two
+entries above; before this session's async work, that was a much narrower window than it is now)
+or when `algo="legacy"` is asked for explicitly.
+
+**Fix: the mask, not the name.** `cardName[a.hash] = a.mask ? "**" + a.mask : undefined` - the same
+short `**mask` convention `SettingPage.js` already labels an account by elsewhere in this app,
+always a few characters regardless of what the bank called the account. The `"card"` fallback for an
+account with no mask on file was already there and needed no change.
+
+Test fixture (`balanceChartAudit.test.js`) gained `mask` on its two card accounts (`"1111"`,
+`"2222"`); the existing test - renamed `"each card names itself in the breakdown - by mask, never by
+the bank's own account name"` - now asserts the mask patterns (`/\*\*1111/`, `/\*\*2222/`) and adds
+an explicit assertion that neither raw account name (`Visa`/`Amex`) ever appears. Confirmed to fail
+against the reverted field (`a.name` instead of `a.mask`) before being restored. `BalanceBench.js`
+(the audit page) has its own, separate `cardName` map and was left alone - an internal diagnostic
+table showing an account's real name is a different question from what a reader's own tile shows
+them, and this investigation was about the tile.
+
+Verified: build compiles clean with the production marker; full suite passes at 565/565 (the one
+pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).
+
+**2026-09-17 — the mask itself was the wrong fix: a card number should never reach the app's own day
+table at all**
+
+Reported: "on first load, if I cursor over the card repayments, I get 'Card repayment *9869'. when I
+travel to last month and hover, I correctly get 'Card repayment', and when I travel back, I also get
+'Card repayment' correctly on the original graph." The mask fix two entries up (bounding the length,
+`**mask` instead of the raw account name) was the wrong layer to fix this at - it addressed *how
+long* the leaked identifier could be, not that a per-card identifier should never have been in the
+app's own reading to begin with.
+
+**What "first load" actually is.** `dayAudit()`'s day table reads the MODULE's own forecast
+(`a.liveRun`) when it has one, and only falls through to the LEGACY model's `explainOn()` as a
+STAND-IN when it does not - which, since the async-forecast entries above, is now genuinely true for
+a real (if normally brief) window on every mount: `a.liveRun` starts `null` and only resolves once
+`moduleRun()`'s worker-pool call lands. "Travel to last month" shows no prediction at all (that
+window is entirely past). "Travel back" lands after the module's own forecast has had time to
+resolve, so the day table is now reading `a.liveRun`, not the stand-in - explaining exactly why the
+number appeared once and never again, unprompted by anything the reader did.
+
+The legacy model's own per-card disambiguation (`"Card repayment · **mask"`, `BankBalance.js`) is
+real and earns its keep for an EXPLICIT `algo="legacy"` read - the bench's own ablation, and what
+`"each card names itself in the breakdown"` (two entries up) protects - because there the reader
+genuinely wants to know which of several live cards a modelled repayment is about. But the module
+(the shipped default) never disambiguates by card at all, so the transient stand-in showing a mask
+the module was about to remove read, to a reader who cannot see WHY, as a bug rather than as two
+algorithms agreeing to disagree about a detail neither is wrong about.
+
+**Fix, in `dayAudit()` (`BalanceChart.js`), not in `BankBalance.js` again**: when the legacy branch
+is reached only because the module has not answered yet (`this.usingModule()` is true - meaning the
+module IS the one actually in charge, just not finished), the "· **mask" suffix is stripped before
+`nameOf()` runs, so the stand-in reads exactly like what is about to replace it. An explicit
+`algo="legacy"` caller (`usingModule()` false) is untouched - its own labeling stays intact, which is
+what the existing ablation test still checks.
+
+Two new tests in `balanceChartAudit.test.js`: `"while the module's own forecast is still loading, the
+stand-in never shows a per-card number"` forces the scenario deterministically (overrides
+`moduleRun()` to stay pending and drops the series memo, rather than racing the real async chain,
+since the fallback's own microtask chain under Jest often settles inside `mount()`'s `act()` before a
+test gets a chance to observe the "still loading" moment) and confirmed to fail against the reverted
+strip before being restored; `"once the module's own forecast lands, no row in the day table carries
+a card number"` pins the already-true baseline the module's own path never regresses from.
+
+Verified: build compiles clean with the production marker; full suite passes at 567/567 (the one
+pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).
