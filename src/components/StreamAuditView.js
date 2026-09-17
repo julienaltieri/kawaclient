@@ -97,23 +97,11 @@ class MasterStreamAuditView extends StreamAuditView{
 	//trees, since neither this component nor getAnalysisForStreams is memoised.
 	render(){return (<div>
 		<ChartCarousel pages={[
-			<EndOfPeriodProjectionGraph key="projection"
-				incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))>0 && !s.isSavings))}
-				expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
-				savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
-			/>,
-			//Page two: where the money came from and where it went. It takes the same analysis this
-			//component already built rather than a date range of its own - the calendar has one author
-			//(DECISION-PRINCIPLES.md #24) - and does its own aggregation from there.
-			<MoneyFlowChart key="moneyflow"
-				stream={this.props.stream}
-				transactions={this.props.auditedTransactions}
-				analysis={this.getStreamAnalysis()}
-			/>,
-			//Page three: the bank balance, reconstructed backwards from today and forecast forward
-			//from the same master stream. It takes NO analysis - its window is 7/15/30 days centred
-			//on today, which is not an observation period, and it anchors on the live account balance
-			//rather than on anything the analysis computed.
+			//Page one: the bank balance, reconstructed backwards from today and forecast forward from
+			//the same master stream. It takes NO analysis - its window is 7/15/30 days centred on
+			//today, which is not an observation period, and it anchors on the live account balance
+			//rather than on anything the analysis computed. First in the carousel because it is the
+			//one reading that answers "where do I stand right now" - the others are about the year.
 			//
 			// `allTransactions`, NOT `auditedTransactions` - the walk sums every dollar that moved on
 			// the covered accounts, and it does not read a stream off any of them to do it. Handed
@@ -123,6 +111,19 @@ class MasterStreamAuditView extends StreamAuditView{
 			<BalanceChart key="balance"
 				stream={this.props.stream}
 				transactions={this.props.allTransactions}
+			/>,
+			<EndOfPeriodProjectionGraph key="projection"
+				incomeAnalysis = {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))>0 && !s.isSavings))}
+				expenseAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.getExpectedAmountAtDate(valueForDisplay(this.getStreamAnalysis()))<0 && !s.isSavings))}
+				savingsAnalysis= {this.getAnalysisForStreams(this.props.stream.children.filter(s => s.isSavings))}
+			/>,
+			//Page three: where the money came from and where it went. It takes the same analysis this
+			//component already built rather than a date range of its own - the calendar has one author
+			//(DECISION-PRINCIPLES.md #24) - and does its own aggregation from there.
+			<MoneyFlowChart key="moneyflow"
+				stream={this.props.stream}
+				transactions={this.props.auditedTransactions}
+				analysis={this.getStreamAnalysis()}
 			/>
 		]}/>
 	</div>)

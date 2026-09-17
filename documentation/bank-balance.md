@@ -2714,3 +2714,93 @@ label text - so this was a wording change with no logic behind it to keep in ste
 
 Unhyphenated ("After cards balance this month") misreads as a pause after "After" rather than a
 compound modifier on "balance". Hyphenated it reads as intended: "After-cards balance this month".
+
+**2026-09-17 — balance tile is the carousel's first page; every size scales with the account's own
+rem; hovering is the mouse's version of a touch-drag**
+
+- **The balance tile opens the carousel.** `StreamAuditView.js`'s `<ChartCarousel>` reordered so
+  `<BalanceChart>` is first, `EndOfPeriodProjectionGraph` second, `MoneyFlowChart` third - array order
+  alone decides the opening page (`ChartCarousel`'s own state starts at `{index:0}`), and
+  `stretchPages` sizes the deck off the tallest child regardless of order, so nothing else needed to
+  change for the reorder itself to be safe.
+
+- **Desktop rendering: not a width cap.** The carousel and its host already size correctly at any
+  width - every other tile (`EndOfPeriodProjectionGraph`, `MoneyFlowChart`) already carries its own
+  `Core.isMobile()`-branched or rem-relative constants for fonts, strokes and dot sizes; `BalanceChart`
+  alone had every visual constant as a bare pixel number. That is what "review desktop rendering"
+  actually meant: not a container to add, but a self-sizing this tile alone was missing. Corrected on
+  explicit instruction after first proposing (and having rejected) a width cap.
+
+- **Every font size, badge radius/gap, line thickness and the padding sized to fit them now derive
+  from the account's own root rem, not a bare pixel.** `scaleAt(rootPx)` is a new pure module function
+  - `remPx()` (mirroring `MoneyFlowChart.js`'s own `rootPx()`) reads `getComputedStyle(document
+  .documentElement).fontSize` fresh on every call, `scaleAt` turns that into `r = rootPx/16` and scales
+  every constant by it. `draw()` and `drawLive()` each compute `const P = scaleAt(remPx())` once per
+  paint and read `P.pad.l`, `P.fontSmall`, `P.strokeActual`, etc. throughout, replacing the old static
+  `PAD`/`STROKE`/`DOT_R`/`BADGE_R`/`BADGE_GAP`/`LABEL_GAP`/`STROKE_OVERHANG` constants (removed).
+  `wireOnce()`'s `dateAt` also reads `P.pad.l/r` fresh per pointer event, so the plot-edge inset a
+  drag maps against stays correct as the root changes. At the app's resting 16px root every field
+  reduces to exactly the old numbers, so nothing about the tile's own current appearance moved - a new
+  test (`"every drawn size scales with the root rem, not a bare pixel"`) pins `scaleAt(16)` against the
+  old literal constants directly, and a second (`"a wider root rem grows the live layer's own fonts and
+  strokes in the mounted SVG"`) mounts the tile, sets `document.documentElement.style.fontSize` to
+  32px, repaints, and checks every `font-size` in the output doubled. Both were confirmed to fail
+  against a `scaleAt` with `r` pinned to 1 before being restored.
+
+- **Hovering with a mouse now moves the cursor the way an active touch-drag does, without a button
+  ever going down.** `wireOnce()`'s `pointermove` used to gate on `this.drag.down` unconditionally -
+  right for touch/pen, where a finger resting on glass with nothing pressed means nothing, but wrong
+  for a mouse, whose position already is the signal the way it is for any other hover. `pointermove`
+  now branches on `e.pointerType`: `"mouse"` updates the cursor on every move (still respecting
+  `drag.cleared`, the sticky-tap-clear flag); anything else keeps requiring `drag.down`, unchanged.
+  `pointerleave`'s `end()` handler picks up the matching other half: a mouse's hover has no "lift the
+  finger, keep looking" moment the way a touch's `sticky` mode does, so leaving the chart with the
+  mouse (`e.pointerType === "mouse"` and `drag.down` still false, meaning no click is in progress)
+  always clears the cursor regardless of `sticky` - a click-drag on a mouse still takes the ordinary
+  `pointerup` branch and still respects `sticky`, unchanged. Two new tests cover both halves: a mouse
+  `pointermove` with no prior `pointerdown` moves the cursor and a following `pointerleave` clears it
+  even under `sticky`; a `touch`-typed `pointermove` with no drag active does nothing. Confirmed to
+  fail against the pre-fix `pointermove`/`end` before being restored.
+
+All four changes verified together: `CI=true npx --no-install react-scripts build` compiles clean and
+carries the production config marker; the full suite (`CI=true npx --no-install react-scripts test
+--watchAll=false`) passes at 557/557.
+
+**2026-09-17 — the "this month" forecast reuses its own predictor instead of building it twice**
+
+Reported as "it takes a good second to render." Measured on the 1,214-transaction bench fixture,
+outside the app: `benchForecast()`'s own `cachedBuild()` (`benchForecast.js`) builds a ledger TWICE
+per window - once "plain", to measure the calibration, then again with it applied - and neither build
+passed its `StreamPredictor` to the other:
+
+```
+accountLedgers(rewound, measureTo, {asOf: cut})                             ->  543ms  (plain build)
+calibrate() + withLoop()                                                    ->    4ms
+accountLedgers(rewound, close, {asOf: cut, calibration})                    ->  464ms  (calibrated build)
+                                                                                 -------
+                                                                                 ~1010ms, one BalanceChart mount
+```
+
+Isolated further: `accountLedgers()` defaults to `new StreamPredictor(portfolio)` when no `predictor`
+is passed, and `predictor.scheduleOf()` is called once per terminal stream (60 on the fixture) inside
+it - that loop alone costs ~570ms cold, ~9.5ms/stream. `shapeOf`/`cycleOf`/`legsOf` etc. memoize ON
+THE PREDICTOR INSTANCE, so handing the SAME predictor into a second call turns that loop into a cache
+hit: the identical 60-stream pass measured 45ms reused against 574ms fresh - both builds ask the same
+60 streams the same question from the same `asOf` (`cut`), only `until` and the calibration differ,
+so nothing the fresh predictor "measures" the second time was ever a different answer.
+
+**The fix is what `accountLedgers()` returns, plus one line in `cachedBuild()`.** `accountLedgers()`
+now returns its own `predictor` on the built object (`accountLedger.js`) - nothing downstream reads
+it, it exists only for a caller to hand back in. `cachedBuild()`'s second call now passes
+`predictor: plain.predictor` instead of building a new one. One window's forecast now costs close to
+one cold ledger build instead of two.
+
+Verified with a real-fixture timing test (`benchForecast.test.js`, new file): one `benchForecast()`
+call is asserted to cost under 1.6x a single cold `accountLedgers()` build - a margin loose enough to
+hold on a slow CI box, tight enough that reverting to two independent builds (measured ~2x) fails it.
+Confirmed failing against the reverted code before being restored. The rest of the balance-prediction
+suite (`accountLedger`, `calibration`, `inCycle`, `settlement`) and the balance-tile suite
+(`balanceTile`, `balanceChartAudit`, `balanceBenchMount`) pass unchanged - the fix only changes which
+`StreamPredictor` instance a call reuses, never what it answers. Full build and full suite both green
+(`App.test.js` fails to even load, pre-existing and unrelated - a `dateformat` ESM import error in
+`core.js`, untouched by this change).

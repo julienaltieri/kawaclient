@@ -4,7 +4,7 @@ import DS from '../DesignSystem.js';
 import Deck from './Deck';
 
 //The stream view's visualisation carousel: several ways of looking at the same year, one at a time, swiped
-//between. The macro graph is page one, the money flow is page two, and the bank balance is page three -
+//between. The bank balance is page one, the macro graph is page two, and the money flow is page three -
 //which is the whole reason this container exists rather than the graph sitting directly in the row.
 //
 //It reuses Deck rather than carrying its own gesture. Deck knows nothing about what a page holds - `pages`

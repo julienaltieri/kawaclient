@@ -15,7 +15,8 @@ import React from 'react'
 import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
-import BalanceChart, {nameOf, iconFor, money, PAD, onDate} from '../components/BalanceChart'
+import BalanceChart, {nameOf, iconFor, money, scaleAt, onDate} from '../components/BalanceChart'
+const PAD = scaleAt(16).pad
 import ApiCaller from '../ApiCaller'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
@@ -253,7 +254,7 @@ test("holding a badge draws it in front of the cursor's own line, not behind it"
 	const groups = svg.match(/<g mask="url\(#bal-fade\)">/g) || []
 	expect(groups.length).toBe(2)
 	//the held badge's own circle appears strictly AFTER the cursor's vertical line in paint order
-	const cursorAt = svg.indexOf('stroke-width="1" opacity="0.7"')
+	const cursorAt = svg.indexOf('stroke-width="1.00" opacity="0.7"')
 	const lastCircle = svg.lastIndexOf("<circle")
 	expect(cursorAt).toBeGreaterThan(-1)
 	expect(lastCircle).toBeGreaterThan(cursorAt)
@@ -392,7 +393,7 @@ test("the balance of the current day is shown by default, with a dotted line to 
 	//AT REST, nothing touched: today's own value is already there, bold, in the gutter
 	expect(svg()).toMatch(/font-weight="600"[^>]*>\$/)
 	//a dotted line runs from the curve out to it, ending on a small dot where it meets the curve
-	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.2"/)
+	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.20"/)
 	await act(async () => {ref.current.setState({at: rentDay})})
 	//a badge on the same day the cursor is on grows, so the whole picture is still mid-motion right
 	//after this setState - which is exactly the frame that must already show a number, not a blank
@@ -400,7 +401,7 @@ test("the balance of the current day is shown by default, with a dotted line to 
 	expect(held).toBeTruthy()
 	//the value under the finger, bold, beside the two quiet ones it sits between
 	expect(svg()).toMatch(/font-weight="600"/)
-	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.2"/)
+	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.20"/)
 })
 
 /* THE CURSOR ARRIVES AND LEAVES, rather than blinking on and off.
@@ -1088,7 +1089,56 @@ test("the forecast marks its own points, so a travel still draws it as the light
 	const merged = c.union(a, c.series("last"))
 	c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
 	const svg = (c.host.current || {}).innerHTML || ""
-	expect(svg).toMatch(/stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.4"/)
+	expect(svg).toMatch(/stroke-width="2.00" stroke-linejoin="round" stroke-linecap="round" opacity="0.4"/)
+})
+
+test("every drawn size scales with the root rem, not a bare pixel", () => {
+	//scaleAt is a pure module function of the root font-size alone - no mount needed. At the app's
+	//resting 16px root every field must equal exactly what the old bare-pixel constants were, and at
+	//a reader's enlarged root (e.g. 20px, r=1.25) every field must scale by that same ratio r.
+	const at16 = scaleAt(16)
+	expect(at16.pad).toEqual({l: 10, r: 48, t: 18, b: 15})
+	expect(at16.fontSmall).toBe(8)
+	expect(at16.fontNormal).toBe(9)
+	expect(at16.strokeActual).toBe(3)
+	expect(at16.strokeProjected).toBe(2)
+	expect(at16.dotR).toBeCloseTo((4 + 3)*0.75, 5)
+	expect(at16.badgeGap).toBe(2)
+	expect(at16.labelGap).toBe(11)
+
+	const at20 = scaleAt(20)
+	const r = 20/16
+	expect(at20.r).toBeCloseTo(r, 5)
+	expect(at20.pad.l).toBeCloseTo(10*r, 5)
+	expect(at20.pad.r).toBeCloseTo(48*r, 5)
+	expect(at20.fontSmall).toBeCloseTo(8*r, 5)
+	expect(at20.fontNormal).toBeCloseTo(9*r, 5)
+	expect(at20.strokeActual).toBeCloseTo(3*r, 5)
+	expect(at20.dotR).toBeCloseTo(at16.dotR*r, 5)
+})
+
+test("a wider root rem grows the live layer's own fonts and strokes in the mounted SVG", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series("this")
+	const merged = c.union(a, c.series("last"))
+	//resting paint at the default 16px root
+	c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
+	const svgAt16 = (c.host.current || {}).innerHTML || ""
+	expect(svgAt16).toMatch(/font-size="9\.00"/)
+
+	//the same paint, but the reader's root is now 32px (r=2) - every font-size in the live layer
+	//must have doubled, because drawLive() reads remPx() fresh on each call rather than caching it
+	const prevSize = document.documentElement.style.fontSize
+	document.documentElement.style.fontSize = "32px"
+	try{
+		c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
+		const svgAt32 = (c.host.current || {}).innerHTML || ""
+		expect(svgAt32).toMatch(/font-size="18\.00"/)
+		expect(svgAt32).not.toMatch(/font-size="9\.00"/)
+	} finally {
+		document.documentElement.style.fontSize = prevSize
+	}
 })
 
 test("a frame mid-travel carries the beads and guides, not just the line", async () => {
@@ -2186,6 +2236,62 @@ test("dragging into the gutter still means the rightmost day, not somewhere past
 	})
 	const last = all[all.length - 1]
 	expect(c.state.at.toISOString().slice(0, 10)).toBe(last.date.toISOString().slice(0, 10))
+})
+
+/* DESKTOP ONLY DIFFERS BY THE INTERACTION MODE: a mouse's own position already is the signal, the
+   way it is for any other hover - so moving it over the chart must update the cursor WITHOUT a
+   button ever going down first, unlike touch/pen which still need an active drag. And because a
+   mouse's hover has no "lift the finger, keep looking" moment, leaving the chart always clears the
+   cursor, even when the tile is mounted sticky (sticky only holds a touch's cursor after it lifts,
+   or a mouse's after a click). */
+test("a mouse hovering the chart moves the cursor with no pointerdown at all", async () => {
+	const ref = await mountWith({sticky: true})
+	const c = ref.current
+	const host = c.host.current
+	host.getBoundingClientRect = () => ({left: 0, width: c.W, height: c.H})
+	const a = c.series("this")
+	const all = a.past.concat(a.future)
+	const f = c.frameOf(a)
+	const X = t => PAD.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(c.W - PAD.l - PAD.r)
+	const mid = all[Math.floor(all.length/2)]
+
+	expect(c.state.at).toBeFalsy()                    //nothing selected at rest
+	await act(async () => {
+		const ev = new Event("pointermove", {bubbles: true})
+		ev.clientX = X(mid.date.getTime())
+		ev.pointerType = "mouse"
+		host.dispatchEvent(ev)
+	})
+	expect(c.state.at.toISOString().slice(0, 10)).toBe(mid.date.toISOString().slice(0, 10))
+
+	//the mouse leaves the chart - the cursor clears even though sticky is set, because there was
+	//never a finger to lift and a click never happened
+	await act(async () => {
+		const ev = new Event("pointerleave", {bubbles: true})
+		ev.pointerType = "mouse"
+		host.dispatchEvent(ev)
+	})
+	expect(c.state.at).toBeFalsy()
+})
+
+test("a touch does nothing on pointermove until it is actually down", async () => {
+	const ref = await mountWith({sticky: true})
+	const c = ref.current
+	const host = c.host.current
+	host.getBoundingClientRect = () => ({left: 0, width: c.W, height: c.H})
+	const a = c.series("this")
+	const all = a.past.concat(a.future)
+	const f = c.frameOf(a)
+	const X = t => PAD.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(c.W - PAD.l - PAD.r)
+	const mid = all[Math.floor(all.length/2)]
+
+	await act(async () => {
+		const ev = new Event("pointermove", {bubbles: true})
+		ev.clientX = X(mid.date.getTime())
+		ev.pointerType = "touch"
+		host.dispatchEvent(ev)
+	})
+	expect(c.state.at).toBeFalsy()                     //no drag active - touch alone doesn't count
 })
 
 test("the audit payload names both sides of the day and its difference", async () => {

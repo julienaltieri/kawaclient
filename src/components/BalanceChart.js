@@ -34,32 +34,54 @@ const DAY = 86400000;
    were spending their frame on. Keys that are shown to a reader stay strings; keys that only ever
    index a bucket are these. */
 const dayIdx = d => Math.floor(d.getTime()/DAY)
+
+//the root's own current pixel size - what `rem` means right now, read fresh rather than assumed.
+//Matches MoneyFlowChart.js's own rootPx() exactly, for the same reason it exists there.
+const remPx = () => (typeof document !== "undefined"
+	&& parseFloat(getComputedStyle(document.documentElement).fontSize)) || 16
 const RATIO = 2.25;                    //the tile is wider than it is tall, as page one is
-/* THE RIGHT PADDING IS A GUTTER, NOT A MARGIN. The high and low guides carry their own values, and
+/* EVERY SIZE IN THE DRAWING, IN THE ACCOUNT'S OWN REM - NEVER A BARE PIXEL. Fonts, badge radii,
+   line thickness and the padding sized to fit them are all multiples of the CURRENT root size, read
+   fresh on every call rather than cached, so a reader who changes their own browser text size gets a
+   chart that follows it - the same thing `rem` already means everywhere else in this app. It is a
+   MODULE FUNCTION, not a class method, so a test can ask for the numbers a resting 16px root produces
+   without mounting anything.
+
+   THE RIGHT PADDING IS A GUTTER, NOT A MARGIN. The high and low guides carry their own values, and
    those used to be printed INSIDE the plot at its right edge, sitting on top of whatever the line was
    doing there - a label over the picture it is annotating. Given a column of their own they read as
    what they are: the scale, beside the drawing rather than on it. Wide enough for "high $36,347" at
-   font-size 8. */
-export const PAD = {l: 10, r: 48, t: 18, b: 15};
+   the small font.
+
+   A DOT IS A RADIUS. Page one sets scatterDotSize 4 on a phone against strokeWidth 3, and Victory
+   reads that size as a radius - so its dots are 8 across on a 3-wide line, a diameter of about 2.7x
+   the stroke. Read as a diameter, which is what the number looks like, the dots come out 4 across on
+   the same line: 1.3x, a bump in the line rather than a mark on it, and invisible against a dashed
+   one. Taken as the radius it is, the beads read against the projection too.
+
+   THREE QUARTERS OF THE RESTING SIZE THAT RATIO GIVES A BADGE. A badge used to have to be big enough
+   to be READ at rest; now that holding one grows it (see GROW_HELD), the resting size only has to be
+   FOUND, and the growth carries the rest. Half was too far - at 3.5px-equivalent the icon inside had
+   no silhouette left - so it sits at the midpoint between what it was and what half made it.
+
+   At the app's own default root (16px) every number below is exactly the bare pixel constant it
+   replaced - nothing about the resting picture changes until a reader's own text size does. */
+export function scaleAt(rootPx){
+	const r = (rootPx || 16)/16
+	return {
+		r: r,
+		pad: {l: 10*r, r: 48*r, t: 18*r, b: 15*r},
+		fontSmall: 8*r, fontNormal: 9*r,
+		strokeActual: 3*r, strokeProjected: 2*r, strokeThin: 0.7*r,
+		strokeCursor: 1*r, strokeBadgeBase: 1*r, strokeOverhang: 2*r,
+		dotR: (4*r + 3*r)*0.75, intersectR: 2.2*r,
+		badgeGap: 2*r, labelGap: 11*r
+	}
+}
 //`planned` is the fill under the RECORD; `projected` is the DASHED LINE's own opacity, unrelated to
 //either fill. `projectedFill` is the fill under the FORECAST, semitransparent relative to the
 //record's - a fraction of `planned` rather than a second number to keep in step with it by hand.
 const PLANE = {planned: 0.15, projectedFill: 0.15*0.55, projected: 0.4};
-const STROKE = {actual: 3, projected: 2, dash: "3,2.5"};
-
-/* A DOT IS A RADIUS. Page one sets scatterDotSize 4 on a phone against strokeWidth 3, and Victory
-   reads that size as a radius - so its dots are 8 across on a 3-wide line, a diameter of about 2.7x
-   the stroke. Read as a diameter, which is what the number looks like, the dots come out 4 across on
-   the same line: 1.3x, a bump in the line rather than a mark on it, and invisible against a dashed
-   one. Taken as the radius it is, the beads read against the projection too. */
-const DOT_R = 4;   //the held badge grows instead of a separate focal dot - see GROW_HELD
-/* THREE QUARTERS OF THE RESTING SIZE THAT RATIO GIVES A BADGE. A badge used to have to be big enough
-   to be READ at rest; now that holding one grows it, the resting size only has to be FOUND, and the
-   growth carries the rest. Half was too far - at 3.5 the icon inside had no silhouette left - so the
-   size sits at the midpoint between what it was and what half made it. */
-const BADGE_R = (DOT_R + 3)*0.75
-//clear air between two badges stacked on one riser, so they read as two marks and not as a capsule
-const BADGE_GAP = 2
 
 /* THE RUNWAY IS ANCHORED TO MONEY, NOT TO THE FRAME. Anchored to the frame instead, a comfortable
    month and a desperate one both ran green at the top and red at the bottom, which is a colour that
@@ -145,8 +167,6 @@ const CURSOR_EASE = 0.45
 
 //the resting opacity of a guide's own value, before anything asks it to make room - see drawLive()
 const GUIDE_OPACITY = 0.85
-//how close the cursor's own reading has to come to a guide's value before that guide gives way to it
-const LABEL_GAP = 11
 
 /* THE FOUR NODES A PAINT WRITES INTO - see paintInto(). */
 const MASK_DEFS = "bal-mask-defs"   //the fade mask: set by the size and the window, not by the frame
@@ -157,8 +177,6 @@ const LIVE_G = "bal-live"           //everything that answers the cursor
 //the edge fade that says the record runs on past the frame - see draw()
 const FADE_ID = "bal-fade"
 const FADE_W = 26
-//half the widest stroke drawn inside the masked layer, rounded up - see draw()'s mask
-const STROKE_OVERHANG = 2
 
 const GROW_HELD = 1.35
 const GROW_EASE = 0.3
@@ -984,8 +1002,9 @@ export default class BalanceChart extends BaseComponent{
 		const all = past.concat(future)
 		if(all.length < 2)return ""
 		const f = frame || this.frameOf({past: past, future: future})
-		const X = t => PAD.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(W - PAD.l - PAD.r)
-		const Y = v => H - PAD.b - (v - f.y0)/(f.y1 - f.y0 || 1)*(H - PAD.t - PAD.b)
+		const P = scaleAt(remPx())
+		const X = t => P.pad.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(W - P.pad.l - P.pad.r)
+		const Y = v => H - P.pad.b - (v - f.y0)/(f.y1 - f.y0 || 1)*(H - P.pad.t - P.pad.b)
 		const S = DS.getStyle()
 		const ink = S.bodyText, dim = S.bodyTextSecondary
 		const x0 = f.x0, x1 = f.x1
@@ -1021,13 +1040,14 @@ export default class BalanceChart extends BaseComponent{
 		if(this._loFade === undefined)this._loFade = GUIDE_OPACITY
 		//JUST THE NUMBER. "high"/"low" named what the reader can already see - the higher figure is
 		//higher up the gutter, on the guide it belongs to - and spent half the label on saying it.
-		const guideLabel = (v, fade) => '<text x="' + (W - PAD.r + 4) + '" y="'
-			+ (Y(v) + 2.9).toFixed(1) + '" text-anchor="start" font-family="Inter" font-size="8"'
-			+ ' fill="' + dim + '" opacity="' + fade.toFixed(3) + '">' + money(v) + '</text>'
+		const guideLabel = (v, fade) => '<text x="' + (W - P.pad.r + 4*P.r) + '" y="'
+			+ (Y(v) + 2.9*P.r).toFixed(1) + '" text-anchor="start" font-family="Inter" font-size="'
+			+ P.fontSmall.toFixed(2) + '" fill="' + dim + '" opacity="' + fade.toFixed(3) + '">'
+			+ money(v) + '</text>'
 		//the gutter's own heading, once, unconditional - it never depends on the cursor
-		const railLabel = '<text x="' + (W - PAD.r + 4) + '" y="' + (PAD.t - 3).toFixed(1)
-			+ '" text-anchor="start" font-family="Inter" font-size="8" fill="' + dim
-			+ '" opacity="0.85">Balance</text>'
+		const railLabel = '<text x="' + (W - P.pad.r + 4*P.r) + '" y="' + (P.pad.t - 3*P.r).toFixed(1)
+			+ '" text-anchor="start" font-family="Inter" font-size="' + P.fontSmall.toFixed(2)
+			+ '" fill="' + dim + '" opacity="0.85">Balance</text>'
 		/* THE MARKS. A bead is filled with modalBackground - DesignSystem's own opaque token for
 		   something sitting ON TOP of content, which a badge is - and ringed in the ink. Filling it
 		   with the page's own colour instead (as this used to) reads as a hole back through the tile
@@ -1060,13 +1080,13 @@ export default class BalanceChart extends BaseComponent{
 			const x = X(e.date.getTime()), y0 = Y(from), y1 = Y(e.value)
 			const g = this.grow[dayKey(e.date)] || 1
 			const lift = (g - 1)/(GROW_HELD - 1)
-			const r = BADGE_R*g, s = (r*1.55)/24
+			const r = P.dotR*g, s = (r*1.55)/24
 			const op = (e.date <= now ? 1 : 0.8) + (e.date <= now ? 0 : 0.2*lift)
 			//how many of the day's movements the riser can carry, at the size the badges are RIGHT NOW
 			//- so growing the held day never pushes its own badges out through each other
-			const len = Math.abs(y1 - y0), pitch = 2*r + BADGE_GAP
+			const len = Math.abs(y1 - y0), pitch = 2*r + P.badgeGap
 			let n = Math.max(1, Math.min((e.parts || []).length || 1,
-				Math.floor((len + BADGE_GAP)/pitch)))
+				Math.floor((len + P.badgeGap)/pitch)))
 			const parts = (e.parts || [{amount: e.step, stream: e.stream}]).slice(0, n)
 			//centred on the riser, walking in the direction the balance moved
 			const mid = (y0 + y1)/2, dir = y1 >= y0 ? 1 : -1
@@ -1075,7 +1095,7 @@ export default class BalanceChart extends BaseComponent{
 				const y = first + dir*i*pitch
 				return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2)
 					+ '" fill="' + badgeBg + '" stroke="' + ink + '" stroke-width="'
-					+ (1 + 0.6*lift).toFixed(2) + '" opacity="' + op + '"/>'
+					+ (P.strokeBadgeBase*(1 + 0.6*lift)).toFixed(2) + '" opacity="' + op + '"/>'
 					+ '<path d="' + (ICONS[iconFor(part.stream)] || ICONS.dot) + '" fill="' + ink
 					+ '" opacity="' + op + '" transform="translate('
 					+ (x - 12*s).toFixed(2) + ' ' + (y - 12*s).toFixed(2) + ') scale('
@@ -1187,7 +1207,7 @@ export default class BalanceChart extends BaseComponent{
 				   "more" in words, and takes the secondary ink: nothing on it is a value, so nothing
 				   on it should carry a value's weight or a value's colour. */
 				if(names.length){
-					const roomR = W - PAD.r - cx - 6, roomL = cx - PAD.l - 6
+					const roomR = W - P.pad.r - cx - 6*P.r, roomL = cx - P.pad.l - 6*P.r
 					const right = roomR >= roomL, room = right ? roomR : roomL
 					const per = Math.max(8, Math.floor(room/2.35))
 					const shownNames = names.slice(0, CAPTION_LINES)
@@ -1202,15 +1222,15 @@ export default class BalanceChart extends BaseComponent{
 					})
 					if(dropped)lines.push({text: "+" + dropped + " more", valueLen: 0,
 						colour: null, quiet: true})
-					const tx = (right ? cx + 5 : cx - 5).toFixed(1)
-					badgeLabel = '<text x="' + tx + '" y="' + (PAD.t + 7).toFixed(1) + '" text-anchor="'
-						+ (right ? "start" : "end") + '" font-family="Inter" font-size="9" fill="' + ink
-						+ '">'
+					const tx = (right ? cx + 5*P.r : cx - 5*P.r).toFixed(1)
+					badgeLabel = '<text x="' + tx + '" y="' + (P.pad.t + 7*P.r).toFixed(1) + '" text-anchor="'
+						+ (right ? "start" : "end") + '" font-family="Inter" font-size="' + P.fontNormal.toFixed(2)
+						+ '" fill="' + ink + '">'
 						+ lines.map((l, i) => {
 							//the name in ink at normal weight, the value bold and in its own colour if any
 							const cut = l.text.length - l.valueLen
 							const head = esc(l.text.slice(0, cut)), tail = esc(l.text.slice(cut))
-							return '<tspan x="' + tx + '" dy="' + (i ? 10 : 0) + '"'
+							return '<tspan x="' + tx + '" dy="' + (i ? (10*P.r).toFixed(2) : 0) + '"'
 								+ (l.quiet ? ' fill="' + dim + '"' : "") + '>' + head
 								+ '<tspan font-weight="600"' + (l.colour ? ' fill="' + l.colour + '"' : "")
 								+ '>' + tail + '</tspan></tspan>'
@@ -1229,11 +1249,11 @@ export default class BalanceChart extends BaseComponent{
 			   somewhere else it is dropped just as honestly, because that day is not today either way. */
 			const dayLabel = dayIdx(day.date) === dayIdx(now)
 				? ("Today (" + onDate(day.date) + ")") : onDate(day.date)
-			const half = dayLabel.length * 2.6
-			const lx = Math.max(PAD.l + half, Math.min(W - PAD.r - half, cx))
-			dateLabel = '<text x="' + lx.toFixed(1) + '" y="' + (H - 4).toFixed(1)
-				+ '" text-anchor="middle" font-family="Inter" font-size="9" fill="' + ink
-				+ '">' + dayLabel + '</text>'
+			const half = dayLabel.length * 2.6*P.r
+			const lx = Math.max(P.pad.l + half, Math.min(W - P.pad.r - half, cx))
+			dateLabel = '<text x="' + lx.toFixed(1) + '" y="' + (H - 4*P.r).toFixed(1)
+				+ '" text-anchor="middle" font-family="Inter" font-size="' + P.fontNormal.toFixed(2)
+				+ '" fill="' + ink + '">' + dayLabel + '</text>'
 
 			/* THE THIRD VALUE IN THE GUTTER: the balance on the day being answered for, beside the
 			   high and the low it sits between. The other two are fixed facts about the window and
@@ -1262,8 +1282,8 @@ export default class BalanceChart extends BaseComponent{
 			//a guide label this close to the reading gives way to it, and comes back the moment the
 			//two are no longer fighting for the same line of the gutter - whether the reading is held
 			//or only the resting default, the collision is the same collision
-			hiTarget = Math.abs(vy - Y(f.hi)) < LABEL_GAP ? 0 : GUIDE_OPACITY
-			loTarget = Math.abs(vy - Y(f.lo)) < LABEL_GAP ? 0 : GUIDE_OPACITY
+			hiTarget = Math.abs(vy - Y(f.hi)) < P.labelGap ? 0 : GUIDE_OPACITY
+			loTarget = Math.abs(vy - Y(f.lo)) < P.labelGap ? 0 : GUIDE_OPACITY
 
 			/* A DYNAMIC DOTTED LINE TO THE READING, AND A MARK WHERE IT MEETS THE CURVE. The number
 			   alone once seemed enough; put back because a reader following the line down from the
@@ -1271,20 +1291,21 @@ export default class BalanceChart extends BaseComponent{
 			   same eased height as the number beside it, so the two settle onto the curve together
 			   rather than one snapping ahead of the other. */
 			intersect = '<line x1="' + cx.toFixed(1) + '" y1="' + vy.toFixed(1) + '" x2="'
-				+ (W - PAD.r) + '" y2="' + vy.toFixed(1) + '" stroke="' + ink
-				+ '" stroke-width="0.7" stroke-dasharray="2,3" opacity="0.55"/>'
-				+ '<circle cx="' + cx.toFixed(1) + '" cy="' + vy.toFixed(1) + '" r="2.2" fill="' + ink
-				+ '"/>'
-			valueText = '<text x="' + (W - PAD.r + 4) + '" y="' + (vy + 2.9).toFixed(1)
-				+ '" text-anchor="start" font-family="Inter" font-size="8" font-weight="600"'
-				+ ' fill="' + ink + '">' + money(this._curVal) + '</text>'
+				+ (W - P.pad.r) + '" y2="' + vy.toFixed(1) + '" stroke="' + ink
+				+ '" stroke-width="' + P.strokeThin.toFixed(2)
+				+ '" stroke-dasharray="2,3" opacity="0.55"/>'
+				+ '<circle cx="' + cx.toFixed(1) + '" cy="' + vy.toFixed(1) + '" r="'
+				+ P.intersectR.toFixed(2) + '" fill="' + ink + '"/>'
+			valueText = '<text x="' + (W - P.pad.r + 4*P.r) + '" y="' + (vy + 2.9*P.r).toFixed(1)
+				+ '" text-anchor="start" font-family="Inter" font-size="' + P.fontSmall.toFixed(2)
+				+ '" font-weight="600" fill="' + ink + '">' + money(this._curVal) + '</text>'
 
 			//the vertical line marking WHERE on the curve, only while actually interactive - the
 			//now-line already marks today's own x at rest, so a second line there would be redundant
 			if(interactive){
-				cursorLine = '<line x1="' + cx.toFixed(1) + '" y1="' + PAD.t + '" x2="'
-					+ cx.toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
-					+ '" stroke-width="1" opacity="0.7"/>'
+				cursorLine = '<line x1="' + cx.toFixed(1) + '" y1="' + P.pad.t + '" x2="'
+					+ cx.toFixed(1) + '" y2="' + (H - P.pad.b) + '" stroke="' + ink
+					+ '" stroke-width="' + P.strokeCursor.toFixed(2) + '" opacity="0.7"/>'
 			}
 		}
 		//eased toward whatever this pass decided - the collision test above if the cursor is down,
@@ -1317,11 +1338,12 @@ export default class BalanceChart extends BaseComponent{
 		const axis = ticks.map(tk => {
 			const tx = X(tk.t)
 			if(dateX !== null && Math.abs(tx - dateX) < 34)return ""
-			return '<line x1="' + tx.toFixed(1) + '" y1="' + (H - PAD.b) + '" x2="' + tx.toFixed(1)
-				+ '" y2="' + (H - PAD.b + 3) + '" stroke="' + dim + '" stroke-width="0.7"'
-				+ ' opacity="0.6"/>'
-				+ '<text x="' + tx.toFixed(1) + '" y="' + (H - 4).toFixed(1) + '" text-anchor="middle"'
-				+ ' font-family="Inter" font-size="9" fill="' + dim + '">' + tk.label + '</text>'
+			return '<line x1="' + tx.toFixed(1) + '" y1="' + (H - P.pad.b) + '" x2="' + tx.toFixed(1)
+				+ '" y2="' + (H - P.pad.b + 3*P.r) + '" stroke="' + dim + '" stroke-width="'
+				+ P.strokeThin.toFixed(2) + '" opacity="0.6"/>'
+				+ '<text x="' + tx.toFixed(1) + '" y="' + (H - 4*P.r).toFixed(1) + '" text-anchor="middle"'
+				+ ' font-family="Inter" font-size="' + P.fontNormal.toFixed(2)
+				+ '" fill="' + dim + '">' + tk.label + '</text>'
 		}).join("")
 		//the active badge paints LAST of all - after the cursor's own line and caption - so holding
 		//one puts it in front of the cursor rather than leaving the cursor drawn over it
@@ -1347,8 +1369,9 @@ export default class BalanceChart extends BaseComponent{
 		if(all.length < 2)return ""
 		const f = frame || this.frameOf({past: past, future: future})
 		const x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1
-		const X = t => PAD.l + (t - x0)/(x1 - x0 || 1)*(W - PAD.l - PAD.r)
-		const Y = v => H - PAD.b - (v - y0)/(y1 - y0 || 1)*(H - PAD.t - PAD.b)
+		const P = scaleAt(remPx())
+		const X = t => P.pad.l + (t - x0)/(x1 - x0 || 1)*(W - P.pad.l - P.pad.r)
+		const Y = v => H - P.pad.b - (v - y0)/(y1 - y0 || 1)*(H - P.pad.t - P.pad.b)
 		const S = DS.getStyle()
 		const dim = S.bodyTextSecondary   //the ink itself is only used by the live layer now
 		const zeroY = Y(0)
@@ -1379,7 +1402,7 @@ export default class BalanceChart extends BaseComponent{
 		   the right too, because it has a future beyond it that the reader can travel to.
 
 		   THE RECT REACHES PAST THE PLOT EDGE BY THE STROKE'S OWN OVERHANG. A stroke is centred on its
-		   path, so a line ending exactly at the plot edge still paints STROKE_OVERHANG px beyond it.
+		   path, so a line ending exactly at the plot edge still paints P.strokeOverhang rem-scaled px beyond it.
 		   A fade rect that stopped exactly at the edge left that sliver outside the mask entirely -
 		   not faded, not covered, just the base rect's plain white (fully visible) - which is a small
 		   bright fragment of line sitting just past the point the fade had already gone fully
@@ -1417,19 +1440,19 @@ export default class BalanceChart extends BaseComponent{
 			   data (`clipTo`), which is a different job. During a travel the content is the UNION of
 			   both windows while the frame interpolates between them, so union days earlier than the
 			   frame's own x0 map to negative x, get clipped by the svg viewport at x=0 rather than by
-			   the plot at PAD.l, and surface as a bright stub of line pinned to the left edge.
+			   the plot at P.pad.l, and surface as a bright stub of line pinned to the left edge.
 
 			   Basing the white on the PLOT RECT instead means outside it is black, which is hidden.
 			   The fade bands then sit inside that, and one element does both jobs - a drawing cannot
 			   be visible where it has no business being drawn. Both edges carry the stroke overhang,
 			   for the same reason the fade bands do: a stroke is centred on its path. */
 			+ '</linearGradient><mask id="' + FADE_ID + '">'
-			+ '<rect x="' + (PAD.l - STROKE_OVERHANG) + '" y="0" width="'
-			+ (W - PAD.r - PAD.l + 2*STROKE_OVERHANG) + '" height="' + H + '" fill="#fff"/>'
-			+ '<rect x="' + (PAD.l - STROKE_OVERHANG) + '" y="0" width="' + (FADE_W + STROKE_OVERHANG)
-			+ '" height="' + H + '" fill="url(#' + FADE_ID + '-g)"/>'
-			+ '<rect x="' + (W - PAD.r - FADE_W) + '" y="0" width="'
-			+ (FADE_W + STROKE_OVERHANG) + '" height="' + H + '" fill="url(#' + FADE_ID + '-h)"/>' 
+			+ '<rect x="' + (P.pad.l - P.strokeOverhang) + '" y="0" width="'
+			+ (W - P.pad.r - P.pad.l + 2*P.strokeOverhang) + '" height="' + H + '" fill="#fff"/>'
+			+ '<rect x="' + (P.pad.l - P.strokeOverhang) + '" y="0" width="'
+			+ (FADE_W + P.strokeOverhang) + '" height="' + H + '" fill="url(#' + FADE_ID + '-g)"/>'
+			+ '<rect x="' + (W - P.pad.r - FADE_W) + '" y="0" width="'
+			+ (FADE_W + P.strokeOverhang) + '" height="' + H + '" fill="url(#' + FADE_ID + '-h)"/>' 
 			+ '</mask></defs>'
 		const paint = 'url(#' + gid + ')'
 
@@ -1451,32 +1474,35 @@ export default class BalanceChart extends BaseComponent{
 		const areaFuture = bridge.length < 2 ? ""
 			: areaUnder(bridge) + ' fill="' + paint + '" opacity="' + PLANE.projectedFill + '"/>'
 
-		const zero = '<line x1="' + PAD.l + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - PAD.r)
-			+ '" y2="' + zeroY.toFixed(1) + '" stroke="' + dim + '" stroke-width="0.7" opacity="0.6"/>'
+		const zero = '<line x1="' + P.pad.l + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - P.pad.r)
+			+ '" y2="' + zeroY.toFixed(1) + '" stroke="' + dim + '" stroke-width="'
+			+ P.strokeThin.toFixed(2) + '" opacity="0.6"/>'
 
 		//the line takes the same ramp at full opacity - the silver lining affirmed. A stroke carries a
 		//gradient exactly as a fill does, and because the ramp is pinned to the value axis the line
 		//reddens as it descends without anything having to decide where the boundary is.
 		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
-			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
+			+ '" stroke-width="' + P.strokeActual.toFixed(2)
+			+ '" stroke-linejoin="round" stroke-linecap="round"/>'
 		//SOLID, NOT DASHED - a dashed stroke was the one thing still telling record from claim apart,
 		//which put the whole job back on the reader to notice it. The fill split (areaActual against
 		//areaFuture, above) and this stroke's own lower opacity already say "this part is a claim,
 		//not yet a fact" - a second, different-looking device for the same one fact was redundant,
-		//and thinner besides (STROKE.projected against STROKE.actual), so it still reads as the
+		//and thinner besides (P.strokeProjected against P.strokeActual), so it still reads as the
 		//lighter of the two lines without needing a dash to do it.
 		const lineFuture = bridge.length < 2 ? ""
 			: '<path d="' + stepPath(bridge) + '" fill="none" stroke="' + paint
-				+ '" stroke-width="' + STROKE.projected + '" stroke-linejoin="round" stroke-linecap="round"'
+				+ '" stroke-width="' + P.strokeProjected.toFixed(2)
+				+ '" stroke-linejoin="round" stroke-linecap="round"'
 				+ ' opacity="' + PLANE.projected + '"/>'
 
 
 		//a settled month does not contain today, and a line marking it at the frame edge would be a
 		//mark that means nothing
 		const nowLine = (now.getTime() >= x0 && now.getTime() <= x1)
-			? '<line x1="' + X(now.getTime()).toFixed(1) + '" y1="' + PAD.t + '" x2="'
-				+ X(now.getTime()).toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + dim
-				+ '" stroke-width="0.7" opacity="0.55"/>'
+			? '<line x1="' + X(now.getTime()).toFixed(1) + '" y1="' + P.pad.t + '" x2="'
+				+ X(now.getTime()).toFixed(1) + '" y2="' + (H - P.pad.b) + '" stroke="' + dim
+				+ '" stroke-width="' + P.strokeThin.toFixed(2) + '" opacity="0.55"/>'
 			: ""
 
 		const live = this.drawLive(past, future, now, f)
@@ -1581,16 +1607,17 @@ export default class BalanceChart extends BaseComponent{
 			//a NaN date throws the moment anything asks for its ISO form. Nothing to point at is a
 			//legitimate answer; a crash is not.
 			if(!isFinite(e.clientX) || !r.width)return null
-			/* THE PLOT DOES NOT FILL THE HOST. PAD.l and PAD.r inset it from the svg's own edges - the
+			/* THE PLOT DOES NOT FILL THE HOST. P.pad.l and P.pad.r inset it from the svg's own edges - the
 			   right inset is the gutter the high/low/cursor values live in, X() maps a date into
-			   [PAD.l, W-PAD.r], never into [0, W]. Reading the pointer as a fraction of the whole host
+			   [P.pad.l, W-P.pad.r], never into [0, W]. Reading the pointer as a fraction of the whole host
 			   box instead treated the gutter as more of the timeline: the rightmost DAY was drawn at
-			   85% of the width (PAD.r=48 of W=334) but only counted as "reached" at 100% of the
+			   85% of the width (P.pad.r=48 of W=334 at 16px root) but only counted as "reached" at 100% of the
 			   finger's travel, so pulling the last day onto the cursor meant dragging into the gutter
 			   itself - past where the line actually ends. The fraction is taken over the same inset
 			   the drawing uses, so a screen pixel and the date drawn under it agree. */
 			const px = (e.clientX - r.left)/r.width*this.W
-			const f = Math.max(0, Math.min(1, (px - PAD.l)/(this.W - PAD.l - PAD.r)))
+			const P = scaleAt(remPx())
+			const f = Math.max(0, Math.min(1, (px - P.pad.l)/(this.W - P.pad.l - P.pad.r)))
 			const t = this.drag.x0 + f*(this.drag.x1 - this.drag.x0)
 			if(!isFinite(t))return null
 			return new Date(Math.round(t/DAY)*DAY)
@@ -1612,7 +1639,18 @@ export default class BalanceChart extends BaseComponent{
 			}
 			this.drag.cleared = false
 			to(e)})
-		host.addEventListener("pointermove", e => {if(this.drag.down && !this.drag.cleared)to(e)})
+		/* DESKTOP ONLY DIFFERS BY THE INTERACTION MODE: a touch has to be down to mean anything - a
+		   finger resting on glass with nothing pressed is not a signal - but a mouse's own position
+		   already is the signal, the way it is for any other hover. So a mouse pointermove updates
+		   the cursor continuously, the way an ACTIVE touch-drag does, without needing a button held;
+		   touch and pen still require drag.down, exactly as before. */
+		host.addEventListener("pointermove", e => {
+			if(e.pointerType === "mouse"){
+				if(!this.drag.cleared)to(e)
+			} else if(this.drag.down && !this.drag.cleared){
+				to(e)
+			}
+		})
 		/* THE CURSOR CAN OUTLIVE THE FINGER, and on a touch screen it has to. Reading the day's
 		   breakdown means lifting the finger and reaching for a button, and a cursor that clears on
 		   pointerup destroys the thing being read before it can be read - the table appeared and
@@ -1620,11 +1658,18 @@ export default class BalanceChart extends BaseComponent{
 
 		   Opt-in, because the shipped tile wants the opposite: its resting subtitle carries the low
 		   point, which is the headline the whole view exists for, and a cursor that stuck would hide
-		   it behind whatever was last touched. The bench sets it; the app does not. */
-		const end = () => {
-			if(!this.drag.down)return
+		   it behind whatever was last touched. The bench sets it; the app does not.
+
+		   A MOUSE'S HOVER HAS NO "LIFT THE FINGER, KEEP LOOKING" MOMENT - the pointer leaving the
+		   chart IS walking away from it, there is no button that was ever down to distinguish a
+		   release from a lift. So a mouse always clears on pointerleave, sticky or not; sticky still
+		   holds a touch's cursor after the finger lifts, and still holds a mouse's cursor after a
+		   click (pointerup fires with drag.down true, so it takes the branch below unchanged). */
+		const end = e => {
+			const hoverEnd = e && e.pointerType === "mouse" && !this.drag.down
+			if(!this.drag.down && !hoverEnd)return
 			this.drag.down = false
-			if(!this.props.sticky)this.updateState({at:null})
+			if(!this.props.sticky || hoverEnd)this.updateState({at:null})
 		}
 		host.addEventListener("pointerup", end)
 		host.addEventListener("pointercancel", end)

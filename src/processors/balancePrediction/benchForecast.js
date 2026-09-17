@@ -57,10 +57,16 @@ function cachedBuild(portfolio, cut, close, o){
 		//and b, the premium the open cycle is running at. `loop: false` measures a alone.
 		if(o.loop !== false && Object.keys(calibration).length)
 			calibration = withLoop(plain, calibration, {seamDay: o.seamDay || 21});
+		/* THE SAME PREDICTOR, NOT A SECOND ONE. `plain`'s own build already ran every stream's
+		   schedule from `cut` - the calibrated build asks the same streams the same question from
+		   the same asOf, only trimmed to a different `until` and with the correction applied
+		   afterward, so there is nothing left for a fresh StreamPredictor to earn back. Passing it
+		   on turns scheduleOf's per-stream cache from a miss into a hit for every one of them. */
 		mine[key] = {
 			calibration: calibration,
 			built: Object.keys(calibration).length
-				? accountLedgers(rewound, close, {asOf: cut, calibration: calibration})
+				? accountLedgers(rewound, close,
+					{asOf: cut, calibration: calibration, predictor: plain.predictor})
 				: plain,
 			history: (rewound.transactions || []).length
 		};
