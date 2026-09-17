@@ -6,12 +6,12 @@ import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {AccountTypes} from '../Bank';
-import ApiCaller from '../ApiCaller.js';
 import {capturePortfolio} from '../processors/capturePortfolio.js';
 import {benchForecast} from '../processors/balancePrediction/benchForecast.js';
-import {observedSeries, forecast, trough, peak, eventsIn, dayKey, buildModel,
+import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
+import {calendarDay} from '../processors/streamPredictor/businessCalendar.js';
 
 /* ==================================================================================================
    PAGE THREE: THE BANK BALANCE, backwards from today and forwards from the master stream.
@@ -28,9 +28,23 @@ import {observedSeries, forecast, trough, peak, eventsIn, dayKey, buildModel,
    ================================================================================================== */
 
 const DAY = 86400000;
+
+/* WHICH DAY SOMETHING FALLS ON, AS A NUMBER. Identical to `dayKey` in what it separates - both cut
+   at UTC midnight - but a division instead of building an ISO string, which is what the hot paths
+   were spending their frame on. Keys that are shown to a reader stay strings; keys that only ever
+   index a bucket are these. */
+const dayIdx = d => Math.floor(d.getTime()/DAY)
 const RATIO = 2.25;                    //the tile is wider than it is tall, as page one is
-const PAD = {l: 10, r: 10, t: 18, b: 15};
-const PLANE = {planned: 0.15, projected: 0.5, actual: 1};
+/* THE RIGHT PADDING IS A GUTTER, NOT A MARGIN. The high and low guides carry their own values, and
+   those used to be printed INSIDE the plot at its right edge, sitting on top of whatever the line was
+   doing there - a label over the picture it is annotating. Given a column of their own they read as
+   what they are: the scale, beside the drawing rather than on it. Wide enough for "high $36,347" at
+   font-size 8. */
+export const PAD = {l: 10, r: 48, t: 18, b: 15};
+//`planned` is the fill under the RECORD; `projected` is the DASHED LINE's own opacity, unrelated to
+//either fill. `projectedFill` is the fill under the FORECAST, semitransparent relative to the
+//record's - a fraction of `planned` rather than a second number to keep in step with it by hand.
+const PLANE = {planned: 0.15, projectedFill: 0.15*0.55, projected: 0.4};
 const STROKE = {actual: 3, projected: 2, dash: "3,2.5"};
 
 /* A DOT IS A RADIUS. Page one sets scatterDotSize 4 on a phone against strokeWidth 3, and Victory
@@ -38,8 +52,14 @@ const STROKE = {actual: 3, projected: 2, dash: "3,2.5"};
    the stroke. Read as a diameter, which is what the number looks like, the dots come out 4 across on
    the same line: 1.3x, a bump in the line rather than a mark on it, and invisible against a dashed
    one. Taken as the radius it is, the beads read against the projection too. */
-const DOT_R = 4;
-const DOT_FOCAL = DOT_R * 1.25;        //the trough and the cursor, which must win against the beads
+const DOT_R = 4;   //the held badge grows instead of a separate focal dot - see GROW_HELD
+/* THREE QUARTERS OF THE RESTING SIZE THAT RATIO GIVES A BADGE. A badge used to have to be big enough
+   to be READ at rest; now that holding one grows it, the resting size only has to be FOUND, and the
+   growth carries the rest. Half was too far - at 3.5 the icon inside had no silhouette left - so the
+   size sits at the midpoint between what it was and what half made it. */
+const BADGE_R = (DOT_R + 3)*0.75
+//clear air between two badges stacked on one riser, so they read as two marks and not as a capsule
+const BADGE_GAP = 2
 
 /* THE RUNWAY IS ANCHORED TO MONEY, NOT TO THE FRAME. Anchored to the frame instead, a comfortable
    month and a desperate one both ran green at the top and red at the bottom, which is a colour that
@@ -107,6 +127,42 @@ const BADGE_FLOOR = 1000;
 const MORPH_MS = 380;                  //page one's dataMs: a change of amounts
 const ZOOM_MS = 620;                   //page one's moveMs: a change of frame
 
+/* HOLDING A BADGE GROWS IT, INSTEAD OF DRAWING A SEPARATE MARKER ON TOP OF IT. A focal dot on the
+   curve used to mark the cursor's day, and it sat under the finger and covered the very step it was
+   pointing at - the badge is already where the movement is, so it becomes the highlight rather than
+   being covered by one. GROW_HELD is the scale at rest under the finger; GROW_EASE is how much of
+   the remaining distance each frame closes, so taking hold is a movement and letting go is the same
+   movement backwards, never a switch. */
+//how many movements the cursor's caption names before it stops and counts the rest
+const CAPTION_LINES = 2
+
+/* THE CURSOR ARRIVES AND LEAVES, rather than blinking on and off. Everything it draws - the line, the
+   caption, the day under the axis, its own value in the gutter - shares one opacity, eased by the
+   same loop that grows a badge and moves that value. A SEPARATE, FASTER RATE than GROW_EASE: a
+   cursor that took as long to appear as a badge takes to grow felt like a lag between the tap and
+   the answer, and the answer is the thing being waited for. */
+const CURSOR_EASE = 0.45
+
+//the resting opacity of a guide's own value, before anything asks it to make room - see drawLive()
+const GUIDE_OPACITY = 0.85
+//how close the cursor's own reading has to come to a guide's value before that guide gives way to it
+const LABEL_GAP = 11
+
+/* THE FOUR NODES A PAINT WRITES INTO - see paintInto(). */
+const MASK_DEFS = "bal-mask-defs"   //the fade mask: set by the size and the window, not by the frame
+const RAMP_DEFS = "bal-ramp-defs"   //the value ramp: pinned to the value axis, so it moves with it
+const BODY_G = "bal-body"           //the drawing, masked
+const LIVE_G = "bal-live"           //everything that answers the cursor
+
+//the edge fade that says the record runs on past the frame - see draw()
+const FADE_ID = "bal-fade"
+const FADE_W = 26
+//half the widest stroke drawn inside the masked layer, rounded up - see draw()'s mask
+const STROKE_OVERHANG = 2
+
+const GROW_HELD = 1.35
+const GROW_EASE = 0.3
+
 /* ---- the icons ------------------------------------------------------------------------------------
    DRAWN, NOT A FONT. Material Symbols renders through ligatures - the text node says "home" and the
    font substitutes a glyph. That works where the webfont arrives and fails silently where it does
@@ -136,6 +192,8 @@ const ICONS = {
 const ICON_FOR = [
 	[/tax|gembah/i, "bank"],
 	[/credit card/i, "card"],
+	//specific on purpose: a CAR repayment is not a card one, and it keeps its own icon below
+	[/card repayment/i, "card"],
 	[/wage|salary|payroll|paycheck/i, "note"],
 	[/side gig|freelance|contract/i, "case"],
 	[/unit sales|royalt|interest income|dividend/i, "up"],
@@ -152,7 +210,16 @@ const ICON_FOR = [
 	[/equipment|repair|replacement|maintenance|exceptional/i, "tool"],
 	[/sport|fitness|gym|book|hobby|jardinage|garden|fun/i, "gift"]
 ];
-const iconFor = name => {
+/* ONE NAME FOR ONE FACT. A card repayment that already posted is named by whatever stream the reader
+   allocated it to - "Credit Card Payments" - and the projected one was named by the module's internal
+   label, "repayment", which matched no icon rule and drew the bland fallback dot. They are the same
+   event either side of today, so they are given the same name here, at the point where the tile names
+   things. The module keeps its own label; this is what a reader is shown. */
+const CARD_REPAYMENT = "Card repayment"
+const REPAYMENT = /^repayment$|credit card payment/i
+export const nameOf = who => REPAYMENT.test(who || "") ? CARD_REPAYMENT : who
+
+export const iconFor = name => {
 	for(let i = 0; i < ICON_FOR.length; i++){if(ICON_FOR[i][0].test(name || ""))return ICON_FOR[i][1]}
 	//the fallback is deliberately BLAND: a wrong glyph is read as a fact, a neutral one as
 	//"something happened here"
@@ -190,22 +257,6 @@ const TitleButton = styled.button`
 	&:hover{border-bottom-color:${props => DS.getStyle().bodyText};}
 	&:focus-visible{outline:2px solid ${props => DS.getStyle().savings}; outline-offset:2px;}
 `
-/* ONE FACT, and small. It carried three at body size - the balance, the date and the stream - which
-   made it a second heading competing with the title rather than a caption under it, and a sentence
-   long enough to be read instead of glanced at. At rest it says the only thing the tile exists to
-   report: the low point. Under the cursor it says what moved the line, which is the only thing worth
-   knowing about a day you are pointing at.
-
-   The height stays RESERVED so going from one to the other moves nothing below it. */
-const Subtitle = styled.div`
-	width:100%; align-self:stretch; text-align:left;
-	font-family:Inter; font-size:${DS.fontSize.little}rem;
-	line-height:1.1rem; height:1.1rem; overflow:hidden;
-	margin:0.05rem 0 0.4rem; white-space:nowrap; text-overflow:ellipsis;
-	color:${props => DS.getStyle().bodyTextSecondary};
-	& b{font-weight:600; color:${props => DS.getStyle().bodyText};}
-	& b.bad{color:${props => DS.getStyle().alert};}
-`
 /* STAGING ONLY. A question about accuracy is a question about fifty streams at once, and no picture
    answers it - the numbers have to be readable somewhere. This is gated on AppConfig.staging, which is
    false in the built app, so it never reaches a reader who did not go looking for it. */
@@ -218,9 +269,14 @@ const ToolButton = styled.button`
 	&:hover{color:${props => DS.getStyle().bodyText};}
 `
 const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
+/* touch-action:none IS THE DRAG, not an optimisation of it. Without it a touch that moves is a
+   candidate gesture the browser is free to read as ITS OWN pan/scroll before wireOnce's pointermove
+   ever sees it - the sequence gets cut short with a pointercancel partway through, which reads as
+   "the cursor moved once and then stopped following the finger": a tap works because it never moves
+   far enough to trigger the browser's own gesture, and a drag never survives long enough to scrub. */
 const ChartHost = styled.div`
-	overflow:hidden; -webkit-tap-highlight-color:transparent;
-	& svg{ display:block; -webkit-user-select:none; user-select:none; }
+	overflow:hidden; -webkit-tap-highlight-color:transparent; touch-action:none;
+	& svg{ display:block; -webkit-user-select:none; user-select:none; touch-action:none; }
 `
 const Empty = styled.div`
 	position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -239,11 +295,29 @@ const monthBefore = d => {
 	return new Date(Date.UTC(y, m - 1, Math.min(d.getUTCDate(), lastDay)))
 };
 
-const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+export const money = v => (v < 0 ? "-" : "") + "$" + Math.abs(Math.round(v)).toLocaleString();
+/* FOR A MOVEMENT, NEVER FOR A BALANCE. $4,000 sitting in an account is just what is there; +$4,000
+   landing in it is money that arrived, and the two are different facts even though money() renders
+   them the same. Used only on the cursor's caption, where every figure is a day's movement - never
+   on a balance (the guides, the subtitle, the anchor), which keeps its plain reading. */
+const signed = v => (v > 0 ? "+" : "") + money(v);
 //a stream name is user-typed and goes into innerHTML
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
 	c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
-const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"});
+export const onDate = d => new Date(d).toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"});
+
+/* A MOVEMENT READS IN THE DS'S OWN SEMANTIC COLOUR where it is one of the two things that colour
+   means elsewhere in the app: money going to savings (blue, the same token the runway itself turns
+   above the ceiling, and the same rule the "save" badge icon already uses to spot a savings,
+   investment or transfer stream by name), or plain income (green, the runway's own positive band).
+   An ordinary expense stays the ink colour - most days are ordinary expenses, and colouring all of
+   them would colour nothing. */
+const isSavingsName = name => iconFor(name) === "save"
+const colourFor = (S, name, amount) => {
+	if(isSavingsName(name))return S.savings
+	if(amount > 0)return S.positive
+	return null
+}
 
 export default class BalanceChart extends BaseComponent{
 	constructor(props){
@@ -254,6 +328,17 @@ export default class BalanceChart extends BaseComponent{
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
+		//one scale per day, eased toward its target every frame - see startGrow()
+		this.grow = {}
+		this._growing = false
+		this._auditKey = null
+		//the cursor's own balance and the two guide labels it can collide with - all eased the same
+		//way as a badge's grow, and by the same loop - see drawLive() and startGrow()
+		this._curVal = null
+		this._cursorFade = 0
+		this._lastDay = null       //held through the fade-out, so there is something to fade
+		this._hiFade = GUIDE_OPACITY
+		this._loFade = GUIDE_OPACITY
 	}
 
 	componentDidMount(){
@@ -262,21 +347,11 @@ export default class BalanceChart extends BaseComponent{
 		Core.getAccountsWithBalances().then(accounts =>
 			this.updateState({accounts:accounts||[], loaded:true}, () => this.paint()))
 			.catch(() => this.updateState({accounts:[], loaded:true}))
-		/* THE REMEMBERED BALANCES, which are what the past is actually anchored to.
-
-		   They are written by the same refresh that writes the transactions, from the same accounts
-		   response, so a snapshot and the ledger are consistent BY CONSTRUCTION. The live balance is
-		   not: it is fetched now, and the ledger is whatever the last tick stored. That difference is
-		   the whole bug - a cheque the bank had taken and our store had not received put every day of
-		   the past below where it belonged.
-
-		   Fire and forget. The picture draws without them, in exactly the shape it always did, so a
-		   user with no stored history or a failing call loses nothing. */
-		const back = new Date(Date.now() - 400*DAY)
-		ApiCaller.getBalanceHistory(back.toISOString(), new Date().toISOString())
-			.then(r => this.updateState({remembered: (r && (r.balances || r)) || []},
-				() => this.paint()))
-			.catch(() => this.updateState({remembered: []}))
+		/* THE STORED PER-DAY BALANCES ARE NOT FETCHED HERE ANY MORE. The tile drew each observed day
+		   at its own snapshot and walked only the gaps; it now walks the whole window back from the
+		   one live anchor - see computeSeries() for why. Nothing on the tile reads the stored series,
+		   so asking for four hundred days of it on every mount was a request whose answer was thrown
+		   away. The bench still fetches it, and is still where the gap between the two is measured. */
 		this.wireOnce()
 		if(typeof ResizeObserver !== "undefined"){
 			/* DEFERRED A FRAME, because measuring and then painting inside the callback resizes the
@@ -301,22 +376,61 @@ export default class BalanceChart extends BaseComponent{
 		if(this.roFrame)cancelAnimationFrame(this.roFrame)
 		this.roFrame = 0
 		if(this.ro)this.ro.disconnect()
+		if(this._growFrame)cancelAnimationFrame(this._growFrame)
+		this._growing = false
 	}
 	componentDidUpdate(){
 		this.paint()
-		/* THE AUDIT HOOK. The parent gets what actually posted that day and what the forecast expected
-		   of it, computed from the same inputs the forecast ran on - not re-derived. Fired only when
-		   the day changes, so dragging the cursor does not re-render the table on every frame. */
-		if(!this.props.onDay)return
-		const k = this.held ? dayKey(this.held.day.date) : null
-		if(k === this._toldDay)return
-		this._toldDay = k
-		this.props.onDay(k ? this.dayAudit(this.held.day) : null)
+		//the held day grows toward GROW_HELD; every other tracked day eases back to 1 and is dropped
+		if(this.state.at){
+			const k = dayKey(this.state.at)
+			if(this.grow[k] === undefined)this.grow[k] = 1
+		}
+		this.startGrow()
+	}
+
+	/* THE EASING LOOP. One scale per day is nudged a share of the remaining distance to its target
+	   each frame; the loop keeps running while anything is still moving and stops itself the moment
+	   everything is at rest, so an idle tile is not repainting sixty times a second. A day back at
+	   rest (scale 1, not the one currently held) is dropped from the map rather than kept at 1
+	   forever. */
+	/* THE SAME LOOP EASES THREE THINGS: a badge's own grow, the cursor's balance climbing or falling
+	   to its new day, and the two guide labels fading out of its way. All three are triggered by the
+	   same event - the cursor landing on a new day - and none of them may finish before the others
+	   without looking like three separate mechanisms, so one RAF loop drives all three and stops only
+	   once none of them has anywhere left to go.
+
+	   `_liveMoving` IS SET INSIDE drawLive(), which paint() calls once every time this step reaches
+	   it - see paint(). It is not read until after paint() returns, so it always reflects the work
+	   drawLive() just did this frame, not the frame before. */
+	startGrow(){
+		if(this._growing)return
+		this._growing = true
+		const heldKey = () => this.state.at ? dayKey(this.state.at) : null
+		const step = () => {
+			let moving = false
+			const k0 = heldKey()
+			Object.keys(this.grow).forEach(k => {
+				const g = this.grow[k], target = k === k0 ? GROW_HELD : 1
+				if(Math.abs(target - g) < 0.004){
+					this.grow[k] = target
+					if(target === 1 && k !== k0)delete this.grow[k]
+					return
+				}
+				this.grow[k] = g + (target - g)*GROW_EASE
+				moving = true
+			})
+			this._liveMoving = false
+			this.paint()
+			if(moving || this._liveMoving)this._growFrame = requestAnimationFrame(step)
+			else this._growing = false
+		}
+		this._growFrame = requestAnimationFrame(step)
 	}
 
 	dayAudit(point){
 		const k = dayKey(point.date)
-		const actual = this.ledger().filter(t => dayKey(t.date) === k)
+		const actual = (this.ledgerByDay()[dayIdx(point.date)] || [])
 			.map(t => ({name: t.streamName || "(uncategorised)", amount: t.amount}))
 			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
 		const a = this.series()
@@ -325,7 +439,7 @@ export default class BalanceChart extends BaseComponent{
 		const run = point.actual === false ? a.liveRun : null
 		if(run)return (function(){
 			const predicted = (run.rows[k] || []).map(r =>
-				({name: r.name, amount: r.amount, refused: r.refused}))
+				({name: nameOf(r.name), amount: r.amount, refused: r.refused}))
 			const sum = xs => xs.reduce((x, y) => x + y.amount, 0)
 			return {date: k, balance: point.value, actual: actual, predicted: predicted,
 				silent: [], actualTotal: sum(actual), predictedTotal: sum(predicted),
@@ -333,7 +447,7 @@ export default class BalanceChart extends BaseComponent{
 		})()
 		const opts = point.actual === false ? a.live : null
 		const ex = opts ? explainOn(new Date(point.date), opts) : {rows: [], silent: []}
-		const predicted = ex.rows
+		const predicted = ex.rows.map(r => Object.assign({}, r, {name: nameOf(r.name)}))
 		const sum = xs => xs.reduce((a, b) => a + b.amount, 0)
 		return {date: k, balance: point.value, actual: actual, predicted: predicted,
 			silent: ex.silent,
@@ -389,9 +503,15 @@ export default class BalanceChart extends BaseComponent{
 	}
 	//one control, one question, two answers. The second appears only where there is a card to
 	//actualise - a reader with no credit account is not offered a reading that cannot differ.
+	//named for the title sentence itself - "{word} balance {when}" - not as a generic label, so the
+	//word leads with the account it reads rather than with the word "spending"
 	sources(){
-		const out = [[SPENDING, "spending"]]
-		if(this.creditHashes().length)out.push([NETTED, "spending net of cards"])
+		const out = [[SPENDING, "Checking"]]
+		//"After-cards" not "Checking+ cards" - the reading SUBTRACTS what the cards owe, and the old
+		//wording's "+" read as addition to anyone who had not seen anchor() do the opposite. Hyphenated
+		//because it modifies "balance" in the title sentence ("After-cards balance this month") -
+		//unhyphenated it misreads as "After, cards balance this month".
+		if(this.creditHashes().length)out.push([NETTED, "After-cards"])
 		return out
 	}
 	source(){
@@ -405,39 +525,6 @@ export default class BalanceChart extends BaseComponent{
 		return this.source() === NETTED ? spend.concat(this.creditHashes()) : spend
 	}
 
-	/* WHAT THE BANK SAID THIS READING WAS WORTH, PER DAY.
-
-	   Only days where EVERY covered account reported: a sum missing one account is not the same
-	   quantity as a sum containing it, and silently comparing the two would invent a step on the day
-	   an account started or stopped being observed. A partial day is therefore no observation at all,
-	   and the walk fills it - which is what the walk is for.
-
-	   Signed the way the reading is: the netted view subtracts a card's balance, because Plaid signs
-	   money owed POSITIVE. */
-	observedByDay(){
-		const snaps = this.state.remembered
-		if(!snaps || !snaps.length)return {}
-		const spend = this.spendingHashes(), cards = this.creditHashes()
-		const netted = this.source() === NETTED
-		const want = netted ? spend.concat(cards) : spend
-		if(!want.length)return {}
-		const seen = {}
-		snaps.forEach(x => {
-			if(want.indexOf(x.accountHash) < 0 || isNaN(x.current))return
-			const k = dayKey(new Date(x.date))
-			if(!seen[k])seen[k] = {}
-			seen[k][x.accountHash] = x.current
-		})
-		const out = {}
-		Object.keys(seen).forEach(k => {
-			const got = Object.keys(seen[k])
-			if(got.length !== want.length)return         //partial day: not this quantity
-			let v = 0
-			got.forEach(h => {v += (cards.indexOf(h) > -1 ? -seen[k][h] : seen[k][h])})
-			out[k] = v
-		})
-		return out
-	}
 
 	//the anchor. Plaid signs a card's current balance POSITIVE for money owed, which is why the
 	//netted reading subtracts rather than adds.
@@ -466,21 +553,40 @@ export default class BalanceChart extends BaseComponent{
 	   Each one carries the name of its LARGEST allocation, which is what lets the cursor say what
 	   moved the line. A transaction split across streams has one dominant one and that is the honest
 	   answer to "what was this"; an uncategorised transaction has none, and says so. */
+	/* MEMOISED, AND INDEXED BY DAY IN THE SAME PASS. This walks every transaction the reader has and
+	   allocates a row per transaction; it was called twice on every frame of the cursor's grow
+	   animation, which is sixty rebuilds a second of a list that only changes when the reader
+	   switches account or new transactions arrive. Both are in the key, so neither can go stale.
+
+	   THE INDEX IS THE POINT. `dayKey` is `toISOString().slice(0,10)` - 1.2ms per sweep of a real
+	   ledger, and three different callers each swept it. A day bucket is `floor(ms/DAY)`, which is
+	   the same UTC calendar day by construction and costs a division. */
 	ledger(){
 		const keep = this.covered()
+		const key = keep.join("|")
+		if(this._ledger && this._ledgerTxns === this.props.transactions && this._ledgerKey === key)
+			return this._ledger
 		const names = this.streamNames()
-		return (this.props.transactions||[])
+		const rows = (this.props.transactions||[])
 			.filter(t => keep.indexOf(t.userInstitutionAccountId) > -1)
 			.map(t => {
 				let who = null, big = 0
 				;(t.streamAllocation || []).forEach(al => {
 					if(Math.abs(al.amount) >= Math.abs(big)){big = al.amount
-						who = names[al.streamId] || al.streamName || null}
+						who = nameOf(names[al.streamId] || al.streamName || null)}
 				})
 				return {date:t.date, amount:t.amount,
 					accountHash:t.userInstitutionAccountId, streamName:who}
 			})
+		const byDay = {}
+		rows.forEach(r => {const b = dayIdx(r.date); (byDay[b] = byDay[b] || []).push(r)})
+		this._ledger = rows; this._ledgerByDay = byDay
+		this._ledgerTxns = this.props.transactions; this._ledgerKey = key
+		return rows
 	}
+
+	//the same rows, bucketed by day - see ledger()
+	ledgerByDay(){this.ledger(); return this._ledgerByDay}
 
 	//each terminal's own categorised transactions, grouped once so a histogram can be rebuilt over
 	//any slice of them without walking the ledger again
@@ -601,10 +707,28 @@ export default class BalanceChart extends BaseComponent{
 	   offsets an instant so that LOCAL getters read back the raw UTC day - it converts a UTC day into
 	   something local accessors can print. Read with toISOString(), which is what a day key does, the
 	   offset is applied a second time and an afternoon transaction moves to tomorrow. So the app's
-	   notion of "which day" IS the raw timestamp's UTC day, and both sides use it directly. */
+	   notion of "which day" IS the raw timestamp's UTC day, and both sides use it directly.
+
+	   "TODAY" ITSELF IS READ IN THE ACCOUNT'S OWN TIMEZONE, NEVER THE MACHINE'S. The transaction dates
+	   above are already fixed UTC-midnight facts and this does not touch them - it decides which of
+	   those fixed days the CURRENT INSTANT falls into, which is a question with a different answer in
+	   every timezone at once. Read as the true UTC calendar day (what this did before), the answer is
+	   a full day ahead of anyone west of Greenwich for several hours every evening - from 5pm local
+	   onward at UTC-7, UTC has already crossed into tomorrow while the reader's own day has not. The
+	   tile then anchored "the last CLOSED day" to that not-yet-closed day, which is the bug this
+	   fixes: reported live, the anchor was pinned to the reader's own still-open evening.
+
+	   THE OFFSET COMES FROM THE ACCOUNT, never the browser - see businessCalendar.js's own header for
+	   why: a reading must not change because it was computed on a machine in a different timezone.
+	   Unset, it defaults to 0 (pure UTC), which is the same fallback calendarDay's other caller uses
+	   and preserves every existing reading until an account states its own offset. */
+	userTimezoneOffset(){
+		const ud = Core.getUserData()
+		const v = ud && ud.timeZoneOffset
+		return typeof v === 'number' ? v : 0
+	}
 	ledgerToday(){
-		const n = new Date()
-		return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()))
+		return calendarDay(new Date(), this.userTimezoneOffset())
 	}
 
 	/* LAST MONTH IS THIS WINDOW, MOVED BACK EXACTLY ONE MONTH.
@@ -646,19 +770,22 @@ export default class BalanceChart extends BaseComponent{
 	allSeries(){
 		const src = this.source(), txns = this.props.transactions, acc = this.state.accounts
 		const basis = this.state.basis
-		/* THE REMEMBERED SERIES IS AN INPUT, so it belongs in the key. It arrives on its own call,
-		   after the accounts, and a key that ignores it hands back the walk that was computed before
-		   it landed - for the life of the component. The picture would be correct only for a reader
-		   whose balance history happened to arrive first. */
-		const mem = this.state.remembered
 		//the forecaster is an input like any other, so a change of it invalidates the drawn series
 		const algo = this.props.algo || "module"
+		/* AND SO IS THE DAY. Nothing else in this key is time-sensitive, so a tile left mounted across
+		   a calendar-day change - in the account's OWN timezone, see ledgerToday() - kept the series
+		   it built on the day before forever: transactions, accounts, basis and algo can all sit
+		   unchanged for a tile that is simply left open, and nothing else here ever told it to
+		   recompute. A short-lived route (a fresh mount) never showed this, because its series was
+		   always built fresh; a tile left open on the home screen did, and stayed one day behind until
+		   something else happened to bust the cache. */
+		const day = dayKey(this.ledgerToday())
 		const k = this._seriesKey
 		const same = this._series && k && k.src === src && k.txns === txns && k.acc === acc
-			&& k.basis === basis && k.mem === mem && k.algo === algo
+			&& k.basis === basis && k.algo === algo && k.day === day
 		if(!same){
 			this._series = {}
-			this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, mem: mem, algo: algo}
+			this._seriesKey = {src: src, txns: txns, acc: acc, basis: basis, algo: algo, day: day}
 		}
 		/* BOTH WINDOWS, UP FRONT. The zoom animation interpolates between two frames and has to have
 		   both before the tap lands; building the destination inside the gesture is the stall the
@@ -681,34 +808,86 @@ export default class BalanceChart extends BaseComponent{
 		const win = this.window(now, when)
 		const txns = this.ledger()
 		const bal = this.anchor()
-		/* the reconstruction always runs back from TODAY, whatever is on screen - it is anchored to
-		   the one balance that is actually known, so a past window is a slice of that walk rather
-		   than a separate calculation from a guessed opening figure. */
-		/* OBSERVED WHERE THE BANK SAID SO, WALKED ONLY TO FILL THE GAPS.
+		/* ONE ANCHOR, AND THE POSTING DATES. The walk runs back from TODAY's live balance, whatever
+		   window is on screen, so a past window is a slice of that one walk rather than a separate
+		   calculation from a guessed opening figure.
 
-		   reconstruct() is as good as the transaction record and no better, and it fails invisibly:
-		   one transaction the ledger has not received displaces EVERY earlier point by that amount
-		   while the curve stays perfectly self-consistent. observedSeries() anchors each day at or
-		   before the newest observation to the observations themselves, walking each gap back from
-		   the observation to ITS RIGHT so an ingestion gap can only bend the days inside that gap.
+		   THE STORED PER-DAY SNAPSHOTS ARE NOT USED, and that is the point. They were: each day the
+		   bank had reported was pinned to its own reading, and the walk only filled the gaps between
+		   them. The reasoning was that a reading is a fact and a derivation is not - but a reading is
+		   a fact about THE INSTANT IT WAS TAKEN, and it is written once and never revised. The bank
+		   restates a past day as late postings land on it; our copy of that day does not. So a day
+		   whose snapshot was taken before a cheque cleared stayed frozen at the pre-cheque figure
+		   forever, and the step the cheque made appeared a day late - a riser on a day nothing
+		   happened, with the real transaction's own day drawn flat beside it.
 
-		   With no observations it returns reconstruct() point for point, so nothing regresses for a
-		   reader whose history predates the stored series. */
-		const seen = this.observedByDay()
-		const built = observedSeries(txns, now, bal, win.from, seen)
-		/* KEPT, NOT READ HERE. The gap between what the bank has seen and what the ledger has is
-		   surfaced by the bench (driftVsRemembered), which is where it can be argued about against the
-		   per-account numbers. The tile shows it as what it is: a step in the line at the newest
-		   observation. */
-		this._unreconciled = built.unreconciled
-		this._observedCount = built.observations
-		let past = built.points
+		   Walked from one anchor, that cannot happen. TODAY is exactly the live balance, because it
+		   IS the live balance; every earlier day is that figure minus what posted since, by posting
+		   date. The curve agrees with the transaction dates by construction, and the freshest part of
+		   it - the part actually read - is right by definition.
+
+		   WHAT IS GIVEN UP, PLAINLY: a transaction the bank has taken and our store has not received
+		   displaces every point before it by that amount. That is a real failure and it is the reason
+		   the snapshots were introduced. It is the better failure of the two: it is uniform rather
+		   than local, so it reads as a level rather than as an event that never happened; it heals
+		   itself the moment the transaction arrives; and it never contradicts a date the reader can
+		   check against their bank. The size of that gap is still measured, per account, by
+		   driftVsRemembered() in the bench - which is where it can be argued about with numbers.
+
+		   THE ANCHOR IS THE LAST CLOSED DAY, NOT TODAY. Today is still being written: an authorisation
+		   settles, a pending charge posts or is dropped, and the live figure moves under a reader who
+		   has not spent anything. Yesterday is finished - whatever the bank says about it now is what
+		   it will say about it tomorrow - so that is the day the picture is pinned to, and today is
+		   derived FORWARD from it by adding back what has posted today.
+
+		   With `current` as the only balance we hold, that walk is arithmetically what it always was:
+		   yesterday is the live figure minus today's postings either way. What changes is which day is
+		   the FACT and which is the derivation, and that is the seam every future decision about
+		   today's volatility hangs on - whether today is drawn as settled at all, whether a pending
+		   figure is admitted, whether the record line should stop at the close. Written down here so
+		   that decision has somewhere to live other than an implicit assumption. */
+		const closed = new Date(now.getTime() - DAY)
+		const postedToday = txns.reduce((sum, t) =>
+			sum + (dayIdx(t.date) === dayIdx(now) ? t.amount : 0), 0)
+		const anchorValue = bal - postedToday
+		let past = reconstruct(txns, closed, anchorValue, win.from)
+		//today, derived forward from the close: the anchor plus what has posted since it
+		past = past.concat([{date: new Date(now), value: anchorValue + postedToday, actual: true}])
 		if(win.to)past = past.filter(p => p.date <= win.to)
 
 		const liveUntil = win.fwd ? new Date(now.getTime() + win.fwd*DAY) : null
 		const live = win.fwd ? this.model(now, liveUntil) : null
 		const liveRun = win.fwd ? this.moduleRun(now, liveUntil) : null
-		const future = liveRun ? liveRun.seriesFrom(bal)
+		/* A PROJECTED POINT SAYS SO ON ITSELF. The legacy forecast marks its own points; the module
+		   hands back a plain series, and everything downstream that has to tell a record from a
+		   claim - the travel's painter, the union, the day table - reads that flag rather than the
+		   array a point arrived in. Unmarked, the forecast drew solid the moment it went through
+		   paintFrame, which is every frame of a travel.
+
+		   `top` is the stream that moved the balance that day, for the badge beside the bead. */
+		/* ONE POINT PER DAY, NOT ONE PER MOVEMENT. `seriesFrom` hands back the days the balance
+		   CHANGES, which is all a step path needs to be drawn - and it is why the cursor could not be
+		   read on every day of the forecast: on a quiet day there was no point to read, so the cursor
+		   snapped to the nearest movement and reported someone else's date. A day the balance did not
+		   move is still a day with a balance, so the walk fills them in at the value they hold. */
+		const future = liveRun
+			? (function(){
+				const out = []
+				const start = now.getTime() + DAY, end = liveUntil.getTime()
+				let v = bal
+				//flow dated before the window opens still moved the balance that the window starts at
+				Object.keys(liveRun.flow).sort().forEach(k => {
+					if(new Date(k + "T00:00:00.000Z").getTime() < start)v += liveRun.flow[k]
+				})
+				for(let t = start; t <= end; t += DAY){
+					const d = new Date(t), k = dayKey(d)
+					v += (liveRun.flow[k] || 0)
+					const rows = liveRun.rows[k] || []
+					out.push({date: d, value: v, actual: false,
+						top: rows.length ? nameOf(rows[0].name) : null})
+				}
+				return out
+			})()
 			: (live ? forecast(Object.assign({now: now, balanceNow: bal, days: win.fwd}, live)) : [])
 
 		/* THE RETROSPECTIVE FORECAST IS GONE. A third line ran the same model over days that had
@@ -739,15 +918,18 @@ export default class BalanceChart extends BaseComponent{
 	   forecast, the expectations the forecast already attributed. Reading it off the drawn series
 	   rather than off a filtered event list is the point: the event list is thresholded and capped, so
 	   most days were not in it and the cursor had nothing to say about them. */
+	/* `txns` is still accepted so a caller can ask about a ledger that is not the tile's own - the
+	   tests do - but the tile passes nothing and gets the day index, which turns a full sweep per
+	   frame into one bucket lookup. */
 	movementAt(series, i, txns){
 		if(i <= 0)return null
 		const p = series[i], step = p.value - series[i-1].value
 		if(Math.abs(step) < 0.005)return {step:0, stream:null, value:p.value}
 		if(!p.actual)return {step:step, stream:p.top || null, value:p.value}
-		const k = dayKey(p.date)
+		const b = dayIdx(p.date)
+		const on = txns ? txns.filter(t => dayIdx(t.date) === b) : (this.ledgerByDay()[b] || [])
 		let who = null, big = 0
-		txns.forEach(t => {if(dayKey(t.date) !== k)return
-			if(Math.abs(t.amount) > Math.abs(big)){big = t.amount; who = t.streamName}})
+		on.forEach(t => {if(Math.abs(t.amount) > Math.abs(big)){big = t.amount; who = t.streamName}})
 		return {step:step, stream:who, value:p.value}
 	}
 
@@ -758,14 +940,28 @@ export default class BalanceChart extends BaseComponent{
 		//a stop is placed by the AMOUNT it means, converted to a fraction of the anchored span, so the
 		//two crossings stay centred on their anchors whatever the blend
 		const at = v => ((top - v)/(top - bot || 1)*100).toFixed(2)
-		return '<defs><linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse"'
+		//the <defs> that carries this is written by draw(), so there is ONE element per paint to
+		//rewrite rather than a <defs> nested inside a <defs> - see paintInto()
+		return '<linearGradient id="' + gid + '" gradientUnits="userSpaceOnUse"'
 			+ ' x1="0" y1="' + Y(top).toFixed(1) + '" x2="0" y2="' + Y(bot).toFixed(1) + '">'
 			//spreadMethod pad is the default and is what makes it flat blue above and flat red below:
 			//the ramp only exists between the two anchors
 			+ '<stop offset="0%" stop-color="' + hue("savings") + '"/>'
 			+ '<stop offset="' + at(HIGH_AT - b) + '%" stop-color="' + hue("positive") + '"/>'
 			+ '<stop offset="' + at(LOW_AT + b) + '%" stop-color="' + hue("positive") + '"/>'
-			+ '<stop offset="100%" stop-color="' + hue("alert") + '"/></linearGradient></defs>'
+			+ '<stop offset="100%" stop-color="' + hue("alert") + '"/></linearGradient>'
+	}
+
+	/* THE BADGE LIST DOES NOT DEPEND ON THE CURSOR, so it is not rebuilt while the cursor moves. It
+	   was: `eventsIn` sweeps the whole ledger to index it and then walks the series, 1.4ms on a real
+	   one, and it ran on every frame of the grow animation to produce a list identical to the last.
+	   Keyed on the two series arrays, which `series()` already memoises, so a new window or new
+	   transactions invalidate it and nothing else can. */
+	badges(past, future, all){
+		if(this._badgePast === past && this._badgeFuture === future)return this.events
+		this._badgePast = past; this._badgeFuture = future
+		this.events = eventsIn(all, this.ledger(), BADGE_FLOOR)
+		return this.events
 	}
 
 	/* THE FRAME a series is drawn in, so it can be interpolated rather than recomputed. */
@@ -780,69 +976,19 @@ export default class BalanceChart extends BaseComponent{
 			y0: y0 - pad*0.4, y1: y1 + pad, lo: lo ? lo.value : 0, hi: hi ? hi.value : 0}
 	}
 
-	/* ONE DRAWING ROUTINE, and an animation is that routine with a moving frame.
-
-	   The animations used to have a painter of their own that drew a subset - the area and the two
-	   lines, and none of the beads, guides or labels. Everything it left out therefore APPEARED at the
-	   moment the motion stopped, which is what "the graph appears abruptly after the travel" is: the
-	   travel was real, and then the picture arrived.
-
-	   Passing the frame in instead means the last frame of an animation is, by construction, identical
-	   to the resting frame that replaces it. There is nothing left to pop, and no second painter to
-	   keep in step with this one. */
-	draw(past, future, now, frame){
+	/* EVERYTHING THAT ANSWERS THE CURSOR, and nothing that does not - see paint(). The geometry is
+	   re-derived from the frame rather than passed in, because it is four divisions and that keeps
+	   this callable on its own, which is the whole point of splitting it out. */
+	drawLive(past, future, now, frame){
 		const W = this.W, H = this.H
 		const all = past.concat(future)
 		if(all.length < 2)return ""
 		const f = frame || this.frameOf({past: past, future: future})
-		const x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1
-		const lo = {value: f.lo}, hi = {value: f.hi}
-		const X = t => PAD.l + (t - x0)/(x1 - x0 || 1)*(W - PAD.l - PAD.r)
-		const Y = v => H - PAD.b - (v - y0)/(y1 - y0 || 1)*(H - PAD.t - PAD.b)
+		const X = t => PAD.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(W - PAD.l - PAD.r)
+		const Y = v => H - PAD.b - (v - f.y0)/(f.y1 - f.y0 || 1)*(H - PAD.t - PAD.b)
 		const S = DS.getStyle()
 		const ink = S.bodyText, dim = S.bodyTextSecondary
-		const zeroY = Y(0)
-		this.drag.x0 = x0; this.drag.x1 = x1
-
-		/* A STAIRCASE, because the money is transactions. A straight segment between two days says the
-		   balance slid gradually from one to the other, which never happened - it sat still and then
-		   moved. Hold the value to the next date, then step. */
-		const stepPath = a => {let d = ""
-			a.forEach((p,i) => {const x = X(p.date.getTime()).toFixed(1), y = Y(p.value).toFixed(1)
-				d += i ? (" H" + x + " V" + y) : ("M" + x + " " + y)})
-			return d}
-
-		const gid = "bal-ramp"
-		const defs = this.rampDefs(Y, gid)
-		const paint = 'url(#' + gid + ')'
-
-		const area = '<path d="' + stepPath(all)
-			+ ' L' + X(all[all.length-1].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1)
-			+ ' L' + X(all[0].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1)
-			+ ' Z" fill="' + paint + '" opacity="' + PLANE.planned + '"/>'
-
-		//the high and low of the window, at lower emphasis than the line itself
-		const guide = (v, label) => '<line x1="' + PAD.l + '" y1="' + Y(v).toFixed(1) + '" x2="'
-			+ (W - PAD.r) + '" y2="' + Y(v).toFixed(1) + '" stroke="' + dim
-			+ '" stroke-width="0.7" stroke-dasharray="2,3" opacity="0.55"/>'
-			+ '<text x="' + (W - PAD.r) + '" y="' + (Y(v) - 2.5).toFixed(1) + '" text-anchor="end"'
-			+ ' font-family="Inter" font-size="8" fill="' + dim + '" opacity="0.85">'
-			+ label + ' ' + money(v) + '</text>'
-
-		const zero = '<line x1="' + PAD.l + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - PAD.r)
-			+ '" y2="' + zeroY.toFixed(1) + '" stroke="' + dim + '" stroke-width="0.7" opacity="0.6"/>'
-
-		//the line takes the same ramp at full opacity - the silver lining affirmed. A stroke carries a
-		//gradient exactly as a fill does, and because the ramp is pinned to the value axis the line
-		//reddens as it descends without anything having to decide where the boundary is.
-		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
-			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
-		const bridge = past.length && future.length ? [past[past.length-1]].concat(future) : future
-		const lineFuture = bridge.length < 2 ? ""
-			: '<path d="' + stepPath(bridge) + '" fill="none" stroke="' + paint
-				+ '" stroke-width="' + STROKE.projected + '" stroke-dasharray="' + STROKE.dash
-				+ '" opacity="' + PLANE.projected + '"/>'
-
+		const x0 = f.x0, x1 = f.x1
 		/* PERMANENT DATE MARKS on the 1st and the 15th. A step chart with no axis is a shape with no
 		   scale: the reader can see that something happened and not when, and the cursor's own date
 		   only helps once they are already pointing at something. The 1st and the 15th are the days
@@ -863,16 +1009,467 @@ export default class BalanceChart extends BaseComponent{
 			})
 		}
 		//a tick label under the cursor's own date would print on top of it
-		const cursorX = this.state.at ? X(new Date(this.state.at).getTime()) : null
+		/* THE HIGH AND LOW VALUES. Their own dashed guide lines are gone - the two horizontal dashes
+		   used to say "here is where this reading sits" for a fact the reader can already see from
+		   the shape of the curve; the number alone says it. Opacity here is EASED, not toggled: when
+		   another reading is about to sit on top of one of these, it fades out of the way rather
+		   than snapping, and fades back the moment they are no longer fighting for the same line of
+		   the gutter. The target is decided further down, once that other reading's position for
+		   this frame is known; what is drawn here reads whatever the last step of the easing loop
+		   left in `_hiFade`/`_loFade`. */
+		if(this._hiFade === undefined)this._hiFade = GUIDE_OPACITY
+		if(this._loFade === undefined)this._loFade = GUIDE_OPACITY
+		//JUST THE NUMBER. "high"/"low" named what the reader can already see - the higher figure is
+		//higher up the gutter, on the guide it belongs to - and spent half the label on saying it.
+		const guideLabel = (v, fade) => '<text x="' + (W - PAD.r + 4) + '" y="'
+			+ (Y(v) + 2.9).toFixed(1) + '" text-anchor="start" font-family="Inter" font-size="8"'
+			+ ' fill="' + dim + '" opacity="' + fade.toFixed(3) + '">' + money(v) + '</text>'
+		//the gutter's own heading, once, unconditional - it never depends on the cursor
+		const railLabel = '<text x="' + (W - PAD.r + 4) + '" y="' + (PAD.t - 3).toFixed(1)
+			+ '" text-anchor="start" font-family="Inter" font-size="8" fill="' + dim
+			+ '" opacity="0.85">Balance</text>'
+		/* THE MARKS. A bead is filled with modalBackground - DesignSystem's own opaque token for
+		   something sitting ON TOP of content, which a badge is - and ringed in the ink. Filling it
+		   with the page's own colour instead (as this used to) reads as a hole back through the tile
+		   to the app behind it rather than a control resting on the chart.
+
+		   ON THE RISER, NOT ON THE LANDING. A step chart's vertical segment IS the movement, and the
+		   badge is about the movement - at the top of it the icon only ever marked where the balance
+		   ended up, which the curve already says on its own. Halfway up the riser it sits inside the
+		   jump it names, and a big step stops crowding the flat run beside it.
+
+		   HOLDING ONE GROWS IT, rather than drawing a separate focal dot on top - see GROW_HELD. The
+		   held badge is drawn LAST, so it sits above its neighbours instead of under them.
+
+		   ONE MARK PER MOVEMENT, AS MANY AS THE RISER WILL HOLD. A day with two large payments used to
+		   show the larger one and say nothing about the other, so the reader saw a step twice the size
+		   of the thing named on it. The riser is the room available: stack the day's movements along
+		   it while they fit end to end, and when they do not, drop the smallest until they do. The
+		   count is therefore set by the SIZE OF THE STEP, which is the right constraint - a big jump
+		   has the height to explain itself in pieces, and a small one is one mark and a caption. */
+		const evs = this.badges(past, future, all)
+		/* NO HALO BEHIND THE TEXT. Every label used to be stroked in a background colour under
+		   paint-order:stroke, so it could be read wherever it landed. On a translucent tile that
+		   stroke is not invisible - it is a fattened, slightly-wrong-coloured slab around each glyph,
+		   which is the "weird backdrop". The labels sit in the gutter or in the top padding, clear of
+		   the drawing, so they did not need it. */
+		const badgeBg = S.modalBackground
+		const heldKey = this.state.at ? dayKey(this.state.at) : null
+		const bead = e => {
+			const from = e.value - e.step
+			const x = X(e.date.getTime()), y0 = Y(from), y1 = Y(e.value)
+			const g = this.grow[dayKey(e.date)] || 1
+			const lift = (g - 1)/(GROW_HELD - 1)
+			const r = BADGE_R*g, s = (r*1.55)/24
+			const op = (e.date <= now ? 1 : 0.8) + (e.date <= now ? 0 : 0.2*lift)
+			//how many of the day's movements the riser can carry, at the size the badges are RIGHT NOW
+			//- so growing the held day never pushes its own badges out through each other
+			const len = Math.abs(y1 - y0), pitch = 2*r + BADGE_GAP
+			let n = Math.max(1, Math.min((e.parts || []).length || 1,
+				Math.floor((len + BADGE_GAP)/pitch)))
+			const parts = (e.parts || [{amount: e.step, stream: e.stream}]).slice(0, n)
+			//centred on the riser, walking in the direction the balance moved
+			const mid = (y0 + y1)/2, dir = y1 >= y0 ? 1 : -1
+			const first = mid - dir*((n - 1)*pitch)/2
+			return parts.map((part, i) => {
+				const y = first + dir*i*pitch
+				return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2)
+					+ '" fill="' + badgeBg + '" stroke="' + ink + '" stroke-width="'
+					+ (1 + 0.6*lift).toFixed(2) + '" opacity="' + op + '"/>'
+					+ '<path d="' + (ICONS[iconFor(part.stream)] || ICONS.dot) + '" fill="' + ink
+					+ '" opacity="' + op + '" transform="translate('
+					+ (x - 12*s).toFixed(2) + ' ' + (y - 12*s).toFixed(2) + ') scale('
+					+ s.toFixed(3) + ')"/>'
+			}).join("")
+		}
+		//the badge the cursor is actively ON is drawn separately, and LATER - see its own use below.
+		//A held badge used to sit above its own siblings but still under the cursor's own vertical
+		//line and caption, since ALL badges painted before either of those in the svg's own order;
+		//pulling it out is what puts it in front of the cursor instead of behind it.
+		const beads = evs.filter(e => dayKey(e.date) !== heldKey).map(bead).join("")
+		const beadsHeld = evs.filter(e => dayKey(e.date) === heldKey).map(bead).join("")
+
+		let cursorLine = "", badgeLabel = "", intersect = "", valueText = "", dateLabel = ""
+		let hiTarget = GUIDE_OPACITY, loTarget = GUIDE_OPACITY
+		this.held = null
+		/* THE CURSOR OUTLIVES THE FINGER BY THE LENGTH OF ITS OWN FADE. `state.at` going null is the
+		   release, not the disappearance: the day it was on is kept in `_lastDay` and keeps being
+		   drawn, at a falling opacity, until there is nothing left to draw. Without that there is
+		   nothing to fade - the thing being faded is gone from the first frame of the fade. */
+		if(this.state.at === null && this._cursorFade < 0.02){
+			this._cursorFade = 0; this._lastDay = null; this._curVal = null
+		}
+		/* WHICH DAY THE GUTTER ANSWERS FOR. Interactive - held, or fading out via `_lastDay` - wins
+		   when there is one; AT REST, with nothing ever touched, it defaults to TODAY's own point
+		   rather than showing nothing. The value, the dashed line to it and the date under the axis
+		   are therefore near-always on screen once today is in the window at all - only the vertical
+		   cursor line and the movement caption are truly interactive-only, and only those two fade
+		   with the finger; see `passive` / `shown` below. */
+		//WHICH x TO KEEP AN AXIS LABEL CLEAR OF - a date label sits there whether the day is held,
+		//fading, or the resting default, so the same suppression that used to key only off the finger
+		//has to key off whichever one is actually on screen.
+		let day = null, idx = -1, interactive = false, dateX = null
+		if(this.state.at || this._lastDay){
+			interactive = true
+			/* THE NEAREST DAY WINS, not an exact key match. A cursor that vanishes whenever the
+			   pointer lands between two drawn days reads as broken - the reader is over a day either
+			   way, and the picture has to say which one. The x scale is built from the point times,
+			   so the nearest point IS the day under the finger; where the series has a gap or the
+			   pointer runs past its ends, the nearest point is still the honest answer. */
+			let best = Infinity
+			const on = this.state.at || this._lastDay.date
+			const want = on.getTime(), b = dayIdx(on)
+			all.forEach((p,i) => {
+				if(dayIdx(p.date) === b){idx = i; best = -1; return}     //the day itself, if it is drawn
+				if(best < 0)return
+				const gap = Math.abs(p.date.getTime() - want)
+				if(gap < best){best = gap; idx = i}})
+			day = idx > -1 ? all[idx] : (this.state.at ? null : this._lastDay)
+		} else if(!this.animating){
+			/* AT REST: today's own point, if today is actually inside the window being drawn - but
+			   NOT while a travel is running. `all` during a travel is the UNION of two windows and
+			   `X()` is built from a FRAME that is itself being interpolated frame to frame; today's
+			   own x under that moving frame is not a fixed point the way it is at rest, so the dotted
+			   line and its dot visibly slid and snapped as the frame moved under them - reported as
+			   the reading "catching" the animation. Nothing resting-default draws answers a question
+			   worth asking mid-motion anyway: the reader is watching the CURVE travel, not pointing at
+			   a day. It reappears, settled, the moment `this.animating` clears and a resting paint
+			   runs again. */
+			const b = dayIdx(now)
+			all.forEach((p,i) => {if(dayIdx(p.date) === b)idx = i})
+			if(idx > -1)day = all[idx]
+		}
+		if(day){
+			const cx = X(day.date.getTime())
+			dateX = cx
+			//read off the DRAWN series, not the thresholded event list - that list has a floor, so
+			//most days are not in it and the cursor would have nothing to say about them
+			if(interactive && this.state.at){
+				this.held = {day:day, move:this.movementAt(all, idx, null)}
+				this._lastDay = day
+			}
+			if(interactive){
+				/* EVERYTHING THAT MOVED THAT DAY, not only whichever badge happened to clear the
+				   floor. dayAudit() is already the one place that answers "what moved, and what was
+				   expected" for a day - the same call the parent's audit table runs - reused here
+				   rather than re-derived, and memoised because draw() runs on every frame of the
+				   grow animation and dayAudit filters the whole ledger. */
+				const k = dayKey(day.date)
+				if(this._auditKey !== k){this._auditKey = k; this._audit = this.dayAudit(day)}
+				const audit = this._audit
+				const rows = (audit.projected ? audit.predicted : audit.actual)
+					.filter(r => Math.abs(r.amount) > 0.005)
+
+				//grouped by name and summed - two legs of one stream on one day are one line, whose
+				//value is the day's true total for it, not whichever leg happened to sort first
+				const byName = {}, order = []
+				rows.forEach(r => {
+					const nm = r.name || "(uncategorised)"
+					if(!(nm in byName)){byName[nm] = 0; order.push(nm)}
+					byName[nm] += r.amount
+				})
+				const names = order.slice().sort((x, y) => Math.abs(byName[y]) - Math.abs(byName[x]))
+
+								/* THE CAPTION WRAPS - ONE MOVEMENT PER LINE, ALWAYS, never packed onto one line just
+				   because two names happened to fit: two movements read as one caption then, and the
+				   reader had to notice a middle dot to learn there were two things to know. SVG text
+				   does not wrap on its own, so the lines are laid out as tspans - three at most,
+				   because a caption taller than that covers the picture it is explaining, and
+				   whatever is left over is counted rather than silently dropped. The VALUE is never
+				   the part that gets cut; the name gives up its own room first, because a badge
+				   nobody can attach a name to still names its size - and it is bold, and reads in the
+				   DS's own colour for savings or income, so the number that answers "how much" is
+				   the one thing on the line that cannot be missed.
+
+				   TWO MOVEMENTS, THEN A COUNT. The overflow used to ride on the end of the last named
+				   line as a bare "+2", where it read as part of that movement's own figure. It is a
+				   different kind of fact - how much is NOT shown - so it gets its own line, says
+				   "more" in words, and takes the secondary ink: nothing on it is a value, so nothing
+				   on it should carry a value's weight or a value's colour. */
+				if(names.length){
+					const roomR = W - PAD.r - cx - 6, roomL = cx - PAD.l - 6
+					const right = roomR >= roomL, room = right ? roomR : roomL
+					const per = Math.max(8, Math.floor(room/2.35))
+					const shownNames = names.slice(0, CAPTION_LINES)
+					const dropped = names.length - shownNames.length
+					const lines = shownNames.map(nm => {
+						const value = signed(byName[nm])
+						const budget = Math.max(3, per - value.length - 1)
+						const label = nm.length > budget
+							? nm.slice(0, Math.max(3, budget - 1)) + "…" : nm
+						return {text: label + " " + value, valueLen: value.length,
+							colour: colourFor(S, nm, byName[nm])}
+					})
+					if(dropped)lines.push({text: "+" + dropped + " more", valueLen: 0,
+						colour: null, quiet: true})
+					const tx = (right ? cx + 5 : cx - 5).toFixed(1)
+					badgeLabel = '<text x="' + tx + '" y="' + (PAD.t + 7).toFixed(1) + '" text-anchor="'
+						+ (right ? "start" : "end") + '" font-family="Inter" font-size="9" fill="' + ink
+						+ '">'
+						+ lines.map((l, i) => {
+							//the name in ink at normal weight, the value bold and in its own colour if any
+							const cut = l.text.length - l.valueLen
+							const head = esc(l.text.slice(0, cut)), tail = esc(l.text.slice(cut))
+							return '<tspan x="' + tx + '" dy="' + (i ? 10 : 0) + '"'
+								+ (l.quiet ? ' fill="' + dim + '"' : "") + '>' + head
+								+ '<tspan font-weight="600"' + (l.colour ? ' fill="' + l.colour + '"' : "")
+								+ '>' + tail + '</tspan></tspan>'
+						}).join("") + '</text>'
+				}
+			}
+
+			/* WHICH DAY, under the axis - shown whether the day is held, fading out, or the resting
+			   default. It sits in the bottom padding, below the plot, so it never overlaps the
+			   picture, and is clamped inside the frame so the first and last days do not print half
+			   off the edge.
+
+			   "TODAY" WHENEVER THE DAY BEING ANSWERED FOR IS TODAY - held, fading, or resting alike,
+			   not only at rest. It is a fact about which DAY this is, not about why it is being
+			   shown, so dragging onto today reads exactly the way resting on it already does; dragged
+			   somewhere else it is dropped just as honestly, because that day is not today either way. */
+			const dayLabel = dayIdx(day.date) === dayIdx(now)
+				? ("Today (" + onDate(day.date) + ")") : onDate(day.date)
+			const half = dayLabel.length * 2.6
+			const lx = Math.max(PAD.l + half, Math.min(W - PAD.r - half, cx))
+			dateLabel = '<text x="' + lx.toFixed(1) + '" y="' + (H - 4).toFixed(1)
+				+ '" text-anchor="middle" font-family="Inter" font-size="9" fill="' + ink
+				+ '">' + dayLabel + '</text>'
+
+			/* THE THIRD VALUE IN THE GUTTER: the balance on the day being answered for, beside the
+			   high and the low it sits between. The other two are fixed facts about the window and
+			   are drawn quiet; this one TRAVELS - the reader watches it climb and fall through the
+			   two guides as they drag, which is the runway question asked and answered in one
+			   gesture - and it is on screen by default, at today's own value, whenever today is in
+			   the window at all, not only while the finger is down.
+
+			   THE NUMBER NEVER JUMPS. `_curVal` is the eased position, one step of the same loop
+			   that grows a badge - see startGrow(). A day's worth of change on a real account can
+			   move it by a wide margin, and printing that at the day's own height every frame read
+			   as a value that snapped from one place to another each time the finger crossed a
+			   day; eased, it climbs and falls the way the guides themselves are fixed points to
+			   climb and fall THROUGH. The first time a value appears there is nothing to ease
+			   FROM, so it starts exactly on its target rather than sliding in from nowhere. */
+			const target = day.value
+			if(this._curVal === null || this._curVal === undefined){
+				this._curVal = target
+			} else if(Math.abs(target - this._curVal) > 0.5){
+				this._curVal += (target - this._curVal)*GROW_EASE
+				this._liveMoving = true
+			} else {
+				this._curVal = target
+			}
+			const vy = Y(this._curVal)
+			//a guide label this close to the reading gives way to it, and comes back the moment the
+			//two are no longer fighting for the same line of the gutter - whether the reading is held
+			//or only the resting default, the collision is the same collision
+			hiTarget = Math.abs(vy - Y(f.hi)) < LABEL_GAP ? 0 : GUIDE_OPACITY
+			loTarget = Math.abs(vy - Y(f.lo)) < LABEL_GAP ? 0 : GUIDE_OPACITY
+
+			/* A DYNAMIC DOTTED LINE TO THE READING, AND A MARK WHERE IT MEETS THE CURVE. The number
+			   alone once seemed enough; put back because a reader following the line down from the
+			   gutter needs somewhere to land, and the small dot is that landing spot - it sits at the
+			   same eased height as the number beside it, so the two settle onto the curve together
+			   rather than one snapping ahead of the other. */
+			intersect = '<line x1="' + cx.toFixed(1) + '" y1="' + vy.toFixed(1) + '" x2="'
+				+ (W - PAD.r) + '" y2="' + vy.toFixed(1) + '" stroke="' + ink
+				+ '" stroke-width="0.7" stroke-dasharray="2,3" opacity="0.55"/>'
+				+ '<circle cx="' + cx.toFixed(1) + '" cy="' + vy.toFixed(1) + '" r="2.2" fill="' + ink
+				+ '"/>'
+			valueText = '<text x="' + (W - PAD.r + 4) + '" y="' + (vy + 2.9).toFixed(1)
+				+ '" text-anchor="start" font-family="Inter" font-size="8" font-weight="600"'
+				+ ' fill="' + ink + '">' + money(this._curVal) + '</text>'
+
+			//the vertical line marking WHERE on the curve, only while actually interactive - the
+			//now-line already marks today's own x at rest, so a second line there would be redundant
+			if(interactive){
+				cursorLine = '<line x1="' + cx.toFixed(1) + '" y1="' + PAD.t + '" x2="'
+					+ cx.toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
+					+ '" stroke-width="1" opacity="0.7"/>'
+			}
+		}
+		//eased toward whatever this pass decided - the collision test above if the cursor is down,
+		//the plain default otherwise - and mutated only here, once per frame, by this same loop
+		const ease1 = (cur, tgt) => {
+			if(Math.abs(tgt - cur) < 0.01)return tgt
+			this._liveMoving = true
+			return cur + (tgt - cur)*GROW_EASE
+		}
+		this._hiFade = ease1(this._hiFade, hiTarget)
+		this._loFade = ease1(this._loFade, loTarget)
+		//and the cursor's own arrival and departure, at its own rate - see CURSOR_EASE
+		const want = this.state.at ? 1 : 0
+		if(Math.abs(want - this._cursorFade) < 0.01){this._cursorFade = want}
+		else{this._cursorFade += (want - this._cursorFade)*CURSOR_EASE; this._liveMoving = true}
+		//the passive readout - value, its dashed line and dot, the date - is on or off with the DAY
+		//it answers for, never with the finger; only the vertical line and the caption are truly
+		//interactive and fade with `_cursorFade`
+		const passive = intersect + valueText + dateLabel
+		const shown = (cursorLine || badgeLabel)
+			? '<g opacity="' + this._cursorFade.toFixed(3) + '">' + cursorLine + badgeLabel + '</g>' : ""
+		/* THE BEADS ARE PART OF THE RECORD, so they take the record's mask - which clips them to the
+		   plot and fades them at its edges, exactly as the line they sit on. Unmasked they stayed
+		   fully opaque over a line fading out from under them, and a travel could strand one off the
+		   left edge, since the union carries days the frame does not reach.
+		   NOT the rest of this layer: the gutter values are the scale and live outside the plot, and
+		   the axis labels sit below it, so a mask drawn to the plot would erase them both. */
+		//built here, not up with `ticks`, so it can give way to whichever date label is actually
+		//showing - held, fading, or the resting default alike, not only an active touch
 		const axis = ticks.map(tk => {
 			const tx = X(tk.t)
-			if(cursorX !== null && Math.abs(tx - cursorX) < 34)return ""
+			if(dateX !== null && Math.abs(tx - dateX) < 34)return ""
 			return '<line x1="' + tx.toFixed(1) + '" y1="' + (H - PAD.b) + '" x2="' + tx.toFixed(1)
 				+ '" y2="' + (H - PAD.b + 3) + '" stroke="' + dim + '" stroke-width="0.7"'
 				+ ' opacity="0.6"/>'
 				+ '<text x="' + tx.toFixed(1) + '" y="' + (H - 4).toFixed(1) + '" text-anchor="middle"'
 				+ ' font-family="Inter" font-size="9" fill="' + dim + '">' + tk.label + '</text>'
 		}).join("")
+		//the active badge paints LAST of all - after the cursor's own line and caption - so holding
+		//one puts it in front of the cursor rather than leaving the cursor drawn over it
+		return railLabel + axis + '<g mask="url(#' + FADE_ID + ')">' + beads + '</g>'
+			+ guideLabel(f.hi, this._hiFade)
+			+ guideLabel(f.lo, this._loFade) + passive + shown
+			+ (beadsHeld ? '<g mask="url(#' + FADE_ID + ')">' + beadsHeld + '</g>' : "")
+	}
+
+	/* ONE DRAWING ROUTINE, and an animation is that routine with a moving frame.
+
+	   The animations used to have a painter of their own that drew a subset - the area and the two
+	   lines, and none of the beads, guides or labels. Everything it left out therefore APPEARED at the
+	   moment the motion stopped, which is what "the graph appears abruptly after the travel" is: the
+	   travel was real, and then the picture arrived.
+
+	   Passing the frame in instead means the last frame of an animation is, by construction, identical
+	   to the resting frame that replaces it. There is nothing left to pop, and no second painter to
+	   keep in step with this one. */
+	draw(past, future, now, frame){
+		const W = this.W, H = this.H
+		const all = past.concat(future)
+		if(all.length < 2)return ""
+		const f = frame || this.frameOf({past: past, future: future})
+		const x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1
+		const X = t => PAD.l + (t - x0)/(x1 - x0 || 1)*(W - PAD.l - PAD.r)
+		const Y = v => H - PAD.b - (v - y0)/(y1 - y0 || 1)*(H - PAD.t - PAD.b)
+		const S = DS.getStyle()
+		const dim = S.bodyTextSecondary   //the ink itself is only used by the live layer now
+		const zeroY = Y(0)
+		this.drag.x0 = x0; this.drag.x1 = x1
+
+		/* A STAIRCASE, because the money is transactions. A straight segment between two days says the
+		   balance slid gradually from one to the other, which never happened - it sat still and then
+		   moved. Hold the value to the next date, then step. */
+		const stepPath = a => {let d = ""
+			a.forEach((p,i) => {const x = X(p.date.getTime()).toFixed(1), y = Y(p.value).toFixed(1)
+				d += i ? (" H" + x + " V" + y) : ("M" + x + " " + y)})
+			return d}
+
+		const gid = "bal-ramp"
+		/* MORE THAN THIS IS LOADED. The window is a slice of a longer record, and a line that simply
+		   stops at the frame edge says the money stopped there. Fading the DRAWING out at the edge
+		   says the opposite - it carries on, this is where the view ends - which is the one thing the
+		   picture could not say on its own.
+
+		   A MASK, NOT A WASH OVER THE TOP. Painting a background-coloured gradient over the edge only
+		   works if the tile's own background is opaque, and it is not: it is a translucent pane over
+		   the page, so the wash would fade the line into the app behind it rather than into the tile.
+		   Masking the content fades what is drawn, whatever is behind it.
+
+		   THE GUTTER IS OUTSIDE IT. The high, low and cursor values are the scale, not the record, and
+		   a scale that faded would be unreadable exactly where it matters. The mask is white from the
+		   right edge of the plot onwards, so nothing in the gutter is touched. A past window fades on
+		   the right too, because it has a future beyond it that the reader can travel to.
+
+		   THE RECT REACHES PAST THE PLOT EDGE BY THE STROKE'S OWN OVERHANG. A stroke is centred on its
+		   path, so a line ending exactly at the plot edge still paints STROKE_OVERHANG px beyond it.
+		   A fade rect that stopped exactly at the edge left that sliver outside the mask entirely -
+		   not faded, not covered, just the base rect's plain white (fully visible) - which is a small
+		   bright fragment of line sitting just past the point the fade had already gone fully
+		   transparent. Extending the rect's OUTER edge (the one nearer full transparency) by that same
+		   margin brings the overhang inside the gradient instead of past it; the inner edge, where the
+		   gradient reaches full opacity, is untouched.
+
+		   THE MASK ELEMENT OUTLIVES THE FRAME. It depends on the size and on which window is
+		   shown, not on the interpolated frame, so it goes in a <defs> of its own that a paint
+		   never rewrites - see paintInto(). Replacing it every frame is what made the fade
+		   disappear during a travel: a <g mask="url(#...)"> resolves its reference when it is
+		   inserted, and throwing the mask and the group away together sixty times a second asks
+		   the renderer to re-resolve it sixty times a second. It stops trying, and the picture
+		   goes flatly opaque for the length of the motion. */
+		/* BOTH EDGES ALWAYS FADE. The right one was conditional - on the window, then on whether a
+		   travel was running - and every version of that condition was wrong in its own way, because
+		   the question it was trying to answer is not about the window at all. A record runs off the
+		   left of any window because the past is longer than the frame. It runs off the RIGHT because
+		   THE FUTURE IS YET TO BE WRITTEN: the forecast does not stop at the horizon this tile draws,
+		   it is simply not claimed past it. Fading says exactly that, and it says it in every window,
+		   at rest and mid-travel alike.
+
+		   It also makes the mask constant for a given size: it is written once and then never again,
+		   which is one fewer thing that can flicker. */
+		//the ramp IS pinned to the value axis, so it moves with the frame and is rewritten per paint
+		const ramp = this.rampDefs(Y, gid)
+		const maskDefs = '<defs id="' + MASK_DEFS + '">'
+			+ '<linearGradient id="' + FADE_ID + '-g" x1="0" x2="1">'
+			+ '<stop offset="0%" stop-color="#000"/><stop offset="100%" stop-color="#fff"/>'
+			+ '</linearGradient><linearGradient id="' + FADE_ID + '-h" x1="1" x2="0">'
+			+ '<stop offset="0%" stop-color="#000"/><stop offset="100%" stop-color="#fff"/>'
+			/* THE MASK IS ALSO THE CLIP, and it has to be: its white base used to span the whole
+			   viewBox, so anything drawn OUTSIDE the plot was not merely unfaded, it was fully opaque.
+			   Nothing clipped the left at all - only the right was ever held back, and by filtering
+			   data (`clipTo`), which is a different job. During a travel the content is the UNION of
+			   both windows while the frame interpolates between them, so union days earlier than the
+			   frame's own x0 map to negative x, get clipped by the svg viewport at x=0 rather than by
+			   the plot at PAD.l, and surface as a bright stub of line pinned to the left edge.
+
+			   Basing the white on the PLOT RECT instead means outside it is black, which is hidden.
+			   The fade bands then sit inside that, and one element does both jobs - a drawing cannot
+			   be visible where it has no business being drawn. Both edges carry the stroke overhang,
+			   for the same reason the fade bands do: a stroke is centred on its path. */
+			+ '</linearGradient><mask id="' + FADE_ID + '">'
+			+ '<rect x="' + (PAD.l - STROKE_OVERHANG) + '" y="0" width="'
+			+ (W - PAD.r - PAD.l + 2*STROKE_OVERHANG) + '" height="' + H + '" fill="#fff"/>'
+			+ '<rect x="' + (PAD.l - STROKE_OVERHANG) + '" y="0" width="' + (FADE_W + STROKE_OVERHANG)
+			+ '" height="' + H + '" fill="url(#' + FADE_ID + '-g)"/>'
+			+ '<rect x="' + (W - PAD.r - FADE_W) + '" y="0" width="'
+			+ (FADE_W + STROKE_OVERHANG) + '" height="' + H + '" fill="url(#' + FADE_ID + '-h)"/>' 
+			+ '</mask></defs>'
+		const paint = 'url(#' + gid + ')'
+
+		//closed to zero on both ends, so two adjoining areas share one seam pixel rather than either
+		//gapping or doubling up there
+		const areaUnder = a => '<path d="' + stepPath(a)
+			+ ' L' + X(a[a.length-1].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1)
+			+ ' L' + X(a[0].date.getTime()).toFixed(1) + ' ' + zeroY.toFixed(1) + ' Z"'
+		const bridge = past.length && future.length ? [past[past.length-1]].concat(future) : future
+		/* THE FORECAST IS FILLED TOO, NOW - AND READS AS ONE SHEET LIGHTER. It used to be ONE fill
+		   under the whole curve, record and claim treated alike; a reader could not tell where the
+		   known ends and the guess begins without finding the dashed line first. Two fills, split at
+		   the same seam the line already splits at, say it without making the reader look for the
+		   line at all - the record's own fill stays where it was, and the claim's is a fraction of it,
+		   which is what PLANE.projectedFill is defined as rather than a second number to keep in step
+		   with it by hand. */
+		const areaActual = past.length < 2 ? ""
+			: areaUnder(past) + ' fill="' + paint + '" opacity="' + PLANE.planned + '"/>'
+		const areaFuture = bridge.length < 2 ? ""
+			: areaUnder(bridge) + ' fill="' + paint + '" opacity="' + PLANE.projectedFill + '"/>'
+
+		const zero = '<line x1="' + PAD.l + '" y1="' + zeroY.toFixed(1) + '" x2="' + (W - PAD.r)
+			+ '" y2="' + zeroY.toFixed(1) + '" stroke="' + dim + '" stroke-width="0.7" opacity="0.6"/>'
+
+		//the line takes the same ramp at full opacity - the silver lining affirmed. A stroke carries a
+		//gradient exactly as a fill does, and because the ramp is pinned to the value axis the line
+		//reddens as it descends without anything having to decide where the boundary is.
+		const lineActual = '<path d="' + stepPath(past) + '" fill="none" stroke="' + paint
+			+ '" stroke-width="' + STROKE.actual + '" stroke-linejoin="round" stroke-linecap="round"/>'
+		//SOLID, NOT DASHED - a dashed stroke was the one thing still telling record from claim apart,
+		//which put the whole job back on the reader to notice it. The fill split (areaActual against
+		//areaFuture, above) and this stroke's own lower opacity already say "this part is a claim,
+		//not yet a fact" - a second, different-looking device for the same one fact was redundant,
+		//and thinner besides (STROKE.projected against STROKE.actual), so it still reads as the
+		//lighter of the two lines without needing a dash to do it.
+		const lineFuture = bridge.length < 2 ? ""
+			: '<path d="' + stepPath(bridge) + '" fill="none" stroke="' + paint
+				+ '" stroke-width="' + STROKE.projected + '" stroke-linejoin="round" stroke-linecap="round"'
+				+ ' opacity="' + PLANE.projected + '"/>'
+
 
 		//a settled month does not contain today, and a line marking it at the frame edge would be a
 		//mark that means nothing
@@ -882,91 +1479,88 @@ export default class BalanceChart extends BaseComponent{
 				+ '" stroke-width="0.7" opacity="0.55"/>'
 			: ""
 
-		//the marks. A bead is filled with the line's own colour and ringed in the tile, which keeps it
-		//legible without introducing a colour that means nothing.
-		const evs = eventsIn(all, this.ledger(), BADGE_FLOOR)
-		this.events = evs
-		const tile = S.pageBackground
-		const beads = evs.map(e => {
-			const x = X(e.date.getTime()), y = Y(e.value), r = DOT_R + 3
-			const s = (r*1.55)/24
-			return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r
-				+ '" fill="' + tile + '" stroke="' + ink + '" stroke-width="1" opacity="'
-				+ (e.date <= now ? 1 : 0.8) + '"/>'
-				+ '<path d="' + (ICONS[iconFor(e.stream)] || ICONS.dot) + '" fill="' + ink
-				+ '" opacity="' + (e.date <= now ? 1 : 0.8) + '" transform="translate('
-				+ (x - 12*s).toFixed(2) + ' ' + (y - 12*s).toFixed(2) + ') scale(' + s.toFixed(3) + ')"/>'
-		}).join("")
+		const live = this.drawLive(past, future, now, f)
 
-		let cursor = "", badgeLabel = ""
-		this.held = null
-		if(this.state.at){
-			const k = dayKey(this.state.at)
-			let idx = -1
-			all.forEach((p,i) => {if(dayKey(p.date) === k)idx = i})
-			const day = idx > -1 ? all[idx] : null
-			if(day){
-				//read off the DRAWN series, not the thresholded event list - that list has a floor, so
-				//most days are not in it and the cursor would have nothing to say about them
-				this.held = {day:day, move:this.movementAt(all, idx, this.ledger())}
-				/* THE NAME BELONGS TO THE BADGE, NOT TO THE PAGE. A stream name shown whenever the
-				   cursor moves is a caption that changes on every day and mostly says nothing. Shown
-				   beside the mark it explains, it answers the question the mark provokes - "what is
-				   that one" - so it appears only when the cursor is on a badge, and it appears THERE.
-				   Painted with paint-order:stroke so the tile colour haloes the letters and they stay
-				   legible over the line and the area beneath them. */
-				const onBadge = evs.filter(e => dayKey(e.date) === k)[0]
-				if(onBadge && onBadge.stream){
-					/* TOP-ALIGNED WITH THE CURSOR LINE, not floated beside the bead. Beside the bead
-					   it moved vertically with whatever it named, so reading two badges in a row meant
-					   hunting for the caption each time; and low on the frame it collided with the
-					   curve it was explaining. Pinned to the top of the cursor line it is always in
-					   the same place relative to the gesture - the line is the thing the finger
-					   controls - and it is above everything it could overlap. */
-					const cx = X(onBadge.date.getTime())
-					const right = (W - PAD.r - cx) > 74
-					badgeLabel = '<text x="' + (right ? cx + 5 : cx - 5).toFixed(1)
-						+ '" y="' + (PAD.t + 7).toFixed(1) + '" text-anchor="'
-						+ (right ? "start" : "end") + '" font-family="Inter" font-size="9" fill="'
-						+ ink + '" paint-order="stroke" stroke="' + tile
-						+ '" stroke-width="2.5" stroke-linejoin="round">'
-						+ esc(onBadge.stream) + '</text>'
-				}
-				/* WHICH DAY, under the axis. The cursor line says "here" and the caption says how
-				   much, and neither says WHEN - which on a step chart with no x labels leaves the
-				   reader counting squares from the today line. It sits in the bottom padding, below
-				   the plot, so it never overlaps the picture, and it is clamped inside the frame so
-				   the first and last days do not print half off the edge. */
-				const cx = X(day.date.getTime())
-				const dayLabel = onDate(day.date)
-				const half = dayLabel.length * 2.6
-				const lx = Math.max(PAD.l + half, Math.min(W - PAD.r - half, cx))
-				cursor = '<line x1="' + cx.toFixed(1) + '" y1="' + PAD.t + '" x2="'
-					+ cx.toFixed(1) + '" y2="' + (H - PAD.b) + '" stroke="' + ink
-					+ '" stroke-width="1" opacity="0.7"/>'
-					+ '<circle cx="' + cx.toFixed(1) + '" cy="'
-					+ Y(day.value).toFixed(1) + '" r="' + DOT_FOCAL + '" fill="' + paint
-					+ '" stroke="' + tile + '" stroke-width="1.5"/>'
-					+ '<text x="' + lx.toFixed(1) + '" y="' + (H - 4).toFixed(1)
-					+ '" text-anchor="middle" font-family="Inter" font-size="9" fill="' + ink
-					+ '">' + dayLabel + '</text>'
-			}
-		}
-
+		this._frame = f
+		/* THE THREE WRITABLE PARTS, kept so paintInto() can rewrite them in place instead of
+		   replacing the svg around them. `_maskSig` is what makes that safe: the mask defs are NOT
+		   one of them, so a paint may only reuse the nodes already on screen while the mask it
+		   would have written is the mask already there. */
+		this._parts = {ramp: ramp, live: live,
+			body: areaActual + areaFuture + zero + nowLine + lineActual + lineFuture}
+		this._maskSig = this.maskSig()
 		return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">'
-			+ defs + area
-			+ guide(hi.value, "high") + guide(lo.value, "low") + zero + nowLine + axis
-			+ lineActual + lineFuture + beads + cursor + badgeLabel + '</svg>'
+			+ '<defs id="' + RAMP_DEFS + '">' + ramp + '</defs>' + maskDefs
+			+ '<g id="' + BODY_G + '" mask="url(#' + FADE_ID + ')">' + this._parts.body + '</g>'
+			+ '<g id="' + LIVE_G + '">' + live + '</g></svg>'
 	}
 
+	/* ONE WAY INTO THE HOST, for a resting paint and for an animation frame alike.
+
+	   It reuses the svg already on screen whenever the mask it would write is the mask already
+	   there, rewriting only the ramp, the drawing and the live layer. The mask element and the
+	   group that references it are never touched, so that reference is resolved once - when the
+	   picture is first built - and stays resolved through a whole travel. */
+	paintInto(past, future, now, frame){
+		const host = this.host.current
+		if(!host)return
+		const html = this.draw(past, future, now, frame)   //also fills _parts and _maskSig
+		if(!html){host.innerHTML = ""; this._nodes = null; return}
+		const n = this._nodes
+		if(n && n.host === host && n.sig === this._maskSig && n.body.isConnected){
+			n.ramp.innerHTML = this._parts.ramp
+			n.body.innerHTML = this._parts.body
+			n.live.innerHTML = this._parts.live
+			return
+		}
+		host.innerHTML = html
+		this._nodes = {host: host, sig: this._maskSig,
+			ramp: host.querySelector("#" + RAMP_DEFS),
+			body: host.querySelector("#" + BODY_G),
+			live: host.querySelector("#" + LIVE_G)}
+	}
+
+	/* TWO LAYERS, BECAUSE ONLY ONE OF THEM MOVES.
+
+	   Under the cursor the picture is unchanged: same area, same lines, same guides, same axis. Only
+	   the badges, the cursor line and its caption answer the finger - so those live in their own <g>,
+	   and a repaint that changes nothing underneath rewrites that group instead of replacing the
+	   whole svg. A full replace re-parses every path in the drawing and throws away the browser's
+	   layout of it, sixty times a second, to move one vertical line.
+
+	   THE STATIC LAYER IS KEYED ON WHAT IT DRAWS: the two series arrays (which series() memoises, so
+	   identity is a real answer) and the measured size. Anything else that changes the picture -
+	   a window, a source, new transactions - changes one of those by construction. */
+	/* WHAT THE MASK WOULD BE IF IT WERE WRITTEN NOW. One expression, read by draw() when it builds the
+	   mask and by staticStale() when it decides whether the one on screen is still the right one. */
+	maskSig(){return this.W + "x" + this.H}
+	staticStale(a){
+		const k = this._static
+		if(!k || k[0] !== a.past || k[1] !== a.future || k[2] !== this.W || k[3] !== this.H)return true
+		/* THE MASK IS PART OF THE STATIC LAYER, so a change to IT is a stale static layer even when
+		   the series and the size are untouched. It only varies by size now that both edges always
+		   fade, so this is rarely the answer - but it is the correct seam, and it was not free to
+		   learn: a mask that varied by WINDOW survived the paint that ended a travel without it. */
+		return !this._nodes || this._nodes.sig !== this.maskSig()
+	}
+	paintAll(a){
+		this.paintInto(a.past, a.future, a.now, null)
+		this._static = [a.past, a.future, this.W, this.H]
+	}
 	paint(){
 		if(!this.host.current || !this.state.loaded || !this.hasAnchor())return
 		if(this.animating)return
 		const a = this.series()
-		this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null)
+		//the live layer alone, while the drawing under it is the one already on screen
+		const n = this._nodes
+		if(!this.staticStale(a) && n && n.live && n.live.isConnected){
+			n.live.innerHTML = this.drawLive(a.past, a.future, a.now, this._frame)
+			return
+		}
+		this.paintAll(a)
 		if(!this.settling && this.measure()){
 			this.settling = true
-			this.host.current.innerHTML = this.draw(a.past, a.future, a.now, null)
+			this.paintAll(a)
 			this.settling = false
 		}
 	}
@@ -987,7 +1581,16 @@ export default class BalanceChart extends BaseComponent{
 			//a NaN date throws the moment anything asks for its ISO form. Nothing to point at is a
 			//legitimate answer; a crash is not.
 			if(!isFinite(e.clientX) || !r.width)return null
-			const f = Math.max(0, Math.min(1, (e.clientX - r.left)/r.width))
+			/* THE PLOT DOES NOT FILL THE HOST. PAD.l and PAD.r inset it from the svg's own edges - the
+			   right inset is the gutter the high/low/cursor values live in, X() maps a date into
+			   [PAD.l, W-PAD.r], never into [0, W]. Reading the pointer as a fraction of the whole host
+			   box instead treated the gutter as more of the timeline: the rightmost DAY was drawn at
+			   85% of the width (PAD.r=48 of W=334) but only counted as "reached" at 100% of the
+			   finger's travel, so pulling the last day onto the cursor meant dragging into the gutter
+			   itself - past where the line actually ends. The fraction is taken over the same inset
+			   the drawing uses, so a screen pixel and the date drawn under it agree. */
+			const px = (e.clientX - r.left)/r.width*this.W
+			const f = Math.max(0, Math.min(1, (px - PAD.l)/(this.W - PAD.l - PAD.r)))
 			const t = this.drag.x0 + f*(this.drag.x1 - this.drag.x0)
 			if(!isFinite(t))return null
 			return new Date(Math.round(t/DAY)*DAY)
@@ -1073,26 +1676,23 @@ export default class BalanceChart extends BaseComponent{
 			   arrived when the real picture replaced it at the end.
 			   Where the two agree - the days both months contain - a record wins over a projection. */
 			const merged = this.union(before, after)
-			/* AND THE CONTENT ENDS WHERE THE TRAVELLING WINDOW ENDS. The union covers every day
-			   either month holds, which runs a fortnight past where a settled month stops - so the
-			   whole forecast stayed on screen for the length of a travel back and then vanished in
-			   one step, which is the tell that the same drawing is being re-used.
-
-			   TODAY DOES NOT MOVE, and neither does the line between what happened and what is
-			   claimed. What moves is the right-hand EDGE: travelling back it passes over the
-			   forecast, which retracts into today tip first; travelling forward it uncovers it
-			   again. At k=1 the edge is the destination's own, so the last frame of the motion is
-			   the frame that replaces it. */
-			const e0 = this.edgeOf(before), e1 = this.edgeOf(after)
+			/* AND THE CONTENT APPEARS TO END WHERE THE TRAVELLING WINDOW ENDS, though nothing is ever
+			   removed from `merged` to make that true. TODAY does not move, and neither does the line
+			   between what happened and what is claimed. What moves is the right-hand EDGE - `f.x1`,
+			   smoothly interpolated below - and the mask that is always anchored to it (see draw())
+			   does the rest: travelling back, the forecast retracts into today tip first as the edge
+			   sweeps back across it; travelling forward it is uncovered again. At k=1 the edge is the
+			   destination's own, so the last frame of the motion is the frame that replaces it. */
 			this.run(ZOOM_MS, k => {
-				const f = this.lerpFrame(f0, f1, k)
-				this.paintFrame(merged, after.now, f, e0*(1 - k) + e1*k)
+				this.paintFrame(merged, after.now, this.lerpFrame(f0, f1, k))
 			})
 		})
 	}
 
-	/* THE LAST DAY A WINDOW DRAWS. What travels between two months is this edge; TODAY does not move,
-	   and neither does the boundary between what happened and what is claimed. */
+	/* THE LAST DAY A WINDOW DRAWS ON ITS OWN. Not read by zoomTo() any more - `frameOf(a).x1` is the
+	   same number by construction, since both are the max date over the same array - but kept as a
+	   named thing a caller can ask for without re-deriving it, and it is how the tests build the same
+	   (f0, f1, k) a real travel runs on. */
 	edgeOf(a){
 		const last = a.future.length ? a.future[a.future.length - 1]
 			: a.past[a.past.length - 1];
@@ -1148,14 +1748,30 @@ export default class BalanceChart extends BaseComponent{
 		})
 	}
 
-	/* one flat list plus a frame, split back into record and projection for the drawing routine.
-	   `clipTo` is the travelling right edge while a zoom is in progress - see zoomTo. */
-	paintFrame(content, now, frame, clipTo){
+	/* ONE FLAT LIST, ALWAYS WHOLE, split back into record and projection for the drawing routine.
+
+	   THE CONTENT IS NEVER TRIMMED FOR A TRAVEL. Two things were tried and both were wrong. Filtering
+	   points past a travelling edge left a gap: the series is one point per DAY, so the last point
+	   surviving a `date <= clipTo` filter is rounded down to a whole day, almost always short of
+	   `clipTo` itself - and X() maps the FRAME's edge to the plot's true right pixel whatever that
+	   frame's edge is, so the curve fell short of it for the length of every travel. Then snapping the
+	   frame's own edge to match whatever survived the filter closed the gap but made the picture RESIZE
+	   in visible steps, once per day boundary crossed, because the survivor is discrete and the frame
+	   had been smoothly interpolated until then.
+
+	   NEITHER WAS NECESSARY. `lerpFrame`'s own x1 and the travelling edge time are the SAME formula
+	   over the SAME two numbers - `e0*(1-k) + e1*k` - so the frame's edge already equals the true,
+	   continuous travelling time at every k, with nothing to compute here. And a day chart is a STEP
+	   chart: `stepPath` draws each point's horizontal run out to the NEXT point's own x before it
+	   turns - so as long as the point just past the edge is still IN the array, that run already
+	   overshoots past the frame's edge on its own, carrying the last real value right up to it. The
+	   unconditional mask (see draw()) then crops that overshoot at the exact pixel the frame's edge
+	   maps to - continuously, because neither the frame nor the content took a discrete step to get
+	   there. Removing the point removes the very thing that was making the edge meet the mask. */
+	paintFrame(content, now, frame){
 		if(!this.host.current)return
-		const rows = clipTo === undefined ? content
-			: content.filter(p => p.date.getTime() <= clipTo)
-		this.host.current.innerHTML = this.draw(
-			rows.filter(p => p.actual !== false), rows.filter(p => p.actual === false), now, frame)
+		this.paintInto(content.filter(p => p.actual !== false),
+			content.filter(p => p.actual === false), now, frame)
 	}
 
 	/* The classification, as text. Sorted by how much money each stream carries, because a stream that
@@ -1201,22 +1817,11 @@ export default class BalanceChart extends BaseComponent{
 		}catch(e){done(false)}
 	}
 
-	subtitle(){
-		if(!this.state.loaded)return "reading balances\u2026"
-		if(!this.hasAnchor())return ""
-		/* under the cursor: THE BALANCE THAT DAY, and nothing else. It reported what MOVED instead,
-		   which puts two different kinds of fact through one line - a position and a change - and the
-		   name of a stream belongs beside the mark that provokes the question, which is where the
-		   badge label now puts it. One line, one fact, and the fact the reader is pointing at. */
-		if(this.held)return '<b>' + money(this.held.day.value) + '</b>'
-		//at rest: the low point, which is the whole question. In a settled month there is no forecast,
-		//so the low is the one that actually happened.
-		const a = this.series()
-		const lo = trough(a.future.length ? a.future : a.past)
-		if(!lo)return ""
-		if(lo.value < 0)return '<b class="bad">short ' + money(lo.value) + '</b> on ' + onDate(lo.date)
-		return 'low <b>' + money(lo.value) + '</b> on ' + onDate(lo.date)
-	}
+	/* THE TOP AREA IS THE TITLE, AND NOTHING ELSE. A second line used to sit under it carrying the
+	   window's low point. That was the headline while the chart could not be interrogated - now the
+	   cursor names every movement of any day with its amount, at the mark, and the low point is a
+	   guide line on the picture with its own value printed on it. Saying it again in prose above the
+	   chart spent a line of the tile restating what the drawing already shows. */
 
 	render(){
 		//the shapes are memoised on the instance and must be dropped when the transactions change
@@ -1229,20 +1834,16 @@ export default class BalanceChart extends BaseComponent{
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
 			<Head>
 				<Title $big={!Core.isMobile()}>
-					{"Balance "}
 					<TitleButton type="button" onClick={() => this.morphTo()}
-					>{wordOf(this.sources(), this.source())}</TitleButton>{", "}
+					>{wordOf(this.sources(), this.source())}</TitleButton>{" balance "}
 					<TitleButton type="button" onClick={() => this.zoomTo()}
-					>{wordOf(WHENS, this.state.when)}</TitleButton>{", "}
-					<TitleButton type="button" onClick={() => this.morphBasis()}
-					>{wordOf(BASES, this.state.basis)}</TitleButton>
+					>{wordOf(WHENS, this.state.when)}</TitleButton>
 				</Title>
 				{AppConfig.staging ? <ToolButton type="button" data-no-drag
 					onClick={() => this.copyReport()}
 					title="Copy the predictable/erratic classification of every stream">
 					{this.state.copied || "Classify"}</ToolButton> : null}
 			</Head>
-			<Subtitle dangerouslySetInnerHTML={{__html:this.subtitle()}}/>
 			{/* the chart answers its own pointer gestures, so a drag starting on it belongs to it and
 			    not to the carousel - see documentation/visualisation-carousel.md */}
 			<ChartArea>

@@ -654,7 +654,13 @@ export function peak(series){let hi = null;
 
 /* the biggest daily movements, so the marks on the line can be named. The past names itself from the
    ledger; the future carries the attribution the forecast produced, because there are no transactions
-   there to look up. */
+   there to look up.
+
+   A DAY IS NOT ONE MOVEMENT. `stream` is still the biggest thing that happened, because that is what
+   a single mark has to be named after - but two four-figure payments on one date are two facts, and
+   collapsing them to the larger one loses the smaller one entirely rather than crowding it. So the
+   day's OWN qualifying movements come back as `parts`, biggest first, and the renderer decides how
+   many of them it has room to draw. */
 export function eventsIn(series, txns, floor){
 	const byDay = {};
 	txns.forEach(t => {const k = dayKey(t.date); (byDay[k] = byDay[k] || []).push(t)});
@@ -665,7 +671,17 @@ export function eventsIn(series, txns, floor){
 		(byDay[dayKey(p.date)] || []).forEach(t => {
 			if(Math.abs(t.amount) > Math.abs(big)){big = t.amount; who = t.streamName}});
 		if(!who && p.top){who = p.top; big = p.topAmount}
-		if(Math.abs(step) > floor){out.push({date: p.date, value: p.value, step: step, stream: who})}
+		if(Math.abs(step) <= floor)continue;
+		/* THE PARTS ARE MEASURED AGAINST THE SAME FLOOR AS THE STEP. A day clears the floor on its
+		   NET movement; the individual legs that made it up each have to clear it in their own right
+		   to earn a mark, or a $1,200 step made of twelve $100s would sprout twelve badges. The
+		   fallback is the day's single attribution, which is all a projected day ever has. */
+		const parts = (byDay[dayKey(p.date)] || [])
+			.filter(t => Math.abs(t.amount) > floor)
+			.map(t => ({amount: t.amount, stream: t.streamName}))
+			.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+		out.push({date: p.date, value: p.value, step: step, stream: who,
+			parts: parts.length ? parts : [{amount: big || step, stream: who}]});
 	}
 	return out;
 }

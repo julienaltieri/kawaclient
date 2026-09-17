@@ -412,12 +412,22 @@ describe("the forecaster", () => {
 		const shape = x => x.future.map(p => Math.round(p.value)).join(",")
 		expect(shape(a)).not.toBe(shape(legacy.series()))
 
-		//and a forecast point is explained by the run that produced it, not by the other explainer
-		const pt = a.future[a.future.length - 1]
-		const audit = modular.dayAudit({date: pt.date, value: pt.value, actual: false})
-		expect(audit.projected).toBe(true)
-		expect(Math.round(audit.predictedTotal))
-			.toBe(Math.round(a.liveRun.rows[audit.date].reduce((n, r) => n + r.amount, 0)))
+		/* AND A FORECAST POINT IS EXPLAINED BY THE RUN THAT PRODUCED IT, not by the other explainer.
+		   Asserted over EVERY drawn future day, not the last one: the series carries one point per day
+		   now, quiet days included, so whether the last day happens to have predicted rows on it
+		   depends on where today falls against the fixture - which made this fail on some dates and
+		   pass on others. A day with nothing predicted is a real answer and has to hold too. */
+		let withRows = 0
+		a.future.forEach(pt => {
+			const audit = modular.dayAudit({date: pt.date, value: pt.value, actual: false})
+			expect(audit.projected).toBe(true)
+			const rows = a.liveRun.rows[audit.date] || []
+			if(rows.length)withRows++
+			expect(Math.round(audit.predictedTotal))
+				.toBe(Math.round(rows.reduce((n, r) => n + r.amount, 0)))
+		})
+		//and the run did claim something somewhere in there, or the assertion above is vacuous
+		expect(withRows).toBeGreaterThan(0)
 	})
 
 	//the ablation: the older model is still reachable, and costs nothing when it is the one asked for

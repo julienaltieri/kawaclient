@@ -1177,7 +1177,7 @@ the trough is the lowest point of the FUTURE, which is what goal 1 actually asks
 — the rules for scale, the trough dot for the decision — and where they coincide the dot sits on the
 rule, which is the truth about that window rather than a collision.
 
-### §10e-a A badge is an AMOUNT, and the name belongs to the badge
+### §10e-a A badge is an AMOUNT, marks the RISER, and grows instead of being covered
 
 **Which days get a badge: movements over $1,000.** The floor was a fraction of the window's range,
 which sounds adaptive and is not: a quiet month promotes its own noise to a badge, and a busy one
@@ -1186,28 +1186,53 @@ noticing", and that is an absolute claim about an amount, so it is an absolute n
 the marks do not move when the window changes — the same day carries the same badge in a month and in
 a quarter, which is what lets the two windows be read as the same picture at two scales.
 
-**The stream name appears beside the badge, and only while the cursor is on it.** It had been in the
-subtitle, which is the wrong place twice over: the name changes on every day the cursor passes, and on
-most days it names nothing, so the line flickers with a caption that is usually empty. A badge asks a
-question — *what is that one* — and the answer belongs next to the thing that asked it. So the label
-is drawn at the badge, it flips to the other side rather than run off the frame, and it is haloed in
-the tile colour (`paint-order: stroke`) so it stays legible over the line and the area beneath.
+**It sits halfway up the riser, not on the landing point.** A step chart's vertical segment *is* the
+movement; putting the icon at the top of it marked only where the balance ended up, which the curve
+already says on its own. Centred on the riser the badge sits inside the jump it names, and a large
+step stops crowding the flat run beside it.
+
+**It is filled with `modalBackground`, DesignSystem's own opaque token for a control sitting on top
+of content, not `pageBackground`.** The two read differently: a badge filled with the app's own page
+colour is a hole punched back through the tile to whatever is behind it; filled with the token meant
+for exactly this — a thing that sits on top and must not let what is under it show through — it reads
+as a mark resting on the chart.
+
+**Holding one grows it, rather than drawing a separate marker on top of it.** A focal dot used to mark
+whichever day the cursor was on, and it sat directly under the finger, covering the very step it was
+there to explain. The badge is already where the movement is, so under the cursor it grows instead —
+`GROW_HELD` at rest, eased a share of the remaining distance every frame so taking hold is a movement
+and letting go is that movement backwards, never a switch — and it is drawn last, on top of its
+neighbours rather than under them. A day with no badge shows only the cursor line: there is nothing to
+grow, and nothing was covering it either.
 
 Nothing else in the picture carries a name. That is deliberate: a chart where every mark is labelled
 has no marks, only labels.
 
-### §10e-b The cursor reads the STEP, not a filtered event list
+### §10e-b The caption is EVERY movement that day, not the single largest one
 
-The readout was looking the cursor's day up in the event list that places the beads — which is
-thresholded to significant movements and capped at fourteen marks. Most days are not in it, so on most
-days the cursor could say nothing about what moved, which is the one thing worth knowing about a day
-you are pointing at.
+The readout used to look the cursor's day up in the event list that places the beads — thresholded to
+significant movements — so on most days, which clear no badge, the cursor could say nothing about what
+moved: the one thing worth knowing about a day someone is pointing at.
 
-It now reads the **drawn series** directly. The curve is a step function, so the step at a day *is*
-that day's movement, and the contributors are exactly that day's transactions — or, in the forecast,
-the expectations the forecast already attributed. A transaction split across streams reports its
-largest allocation, which is the honest answer to "what was this"; an uncategorised one has no stream
-and says so rather than borrowing a neighbour's name.
+**It now reads `dayAudit()`**, the same call that answers the parent's own audit table: for a past day,
+every ledger entry that landed; for a projected one, the forecast's own named rows. Nothing here is
+re-derived — a second reading of "what moved" would drift from the one the table shows. The result is
+memoised per day, because `draw()` repaints on every frame of the grow animation and `dayAudit()`
+filters the whole ledger.
+
+**Every stream that moved gets its own line, grouped and summed — never packed onto one line because
+two names happened to fit.** Two movements sharing a line read as one caption, and the reader had to
+notice a middle dot to learn there were two things to know. SVG text does not wrap on its own, so the
+lines are laid out as `tspan`s, three at most: a caption taller than that would cover the picture it
+is explaining, and whatever is left over is counted (`+N`) rather than silently dropped.
+
+**The value is bold, signed, and reads in the DS's own semantic colour where the movement is one of the
+two things that colour already means elsewhere — savings (blue, the runway's own token above the
+ceiling, and the same rule the "save" badge icon already uses to spot a savings, investment or
+transfer stream by name) or income (green, the runway's positive band).** An ordinary expense keeps
+the ink colour: most days are ordinary expenses, and colouring all of them would colour nothing. The
+value is also never the part that gets cut when a line is too long for the room there is — the name
+gives up its own space first, because a badge nobody can attach a name to still names its size.
 
 ### §10f One gesture, and it is page one's
 
@@ -1258,9 +1283,9 @@ line, a ratio of 1.3. That is a bump in the line rather than a mark on it, and a
 disappears entirely, because a dash segment is already about that size.
 
 Taken as the radius it is: beads at radius 4, ratio **2.67** against the solid line and **4.0** against
-the dashed projection, so they read on both halves. The trough and the cursor take 1.25× that, since
-they have to win against the beads as well as the line, and every dot is ringed in the tile colour so
-it stays a mark ON the line rather than a thickening OF it.
+the dashed projection, so they read on both halves. Held under the cursor a badge grows to `GROW_HELD`
+of that — see §10e-a — rather than a second, separate dot needing its own ratio; every mark is ringed
+in the ink colour so it stays a mark ON the line rather than a thickening OF it.
 
 The general form, worth remembering next time a number is borrowed from another chart: **a size is not
 a size until you know what it measures.** Radius or diameter, world units or css pixels — the same
@@ -1851,3 +1876,841 @@ happens is the same class of error as missing one that does.
   correction can still be made.
 - Every phase lands with the ablation used throughout: disable the mechanism, and a test must go red.
   A phase whose removal changes nothing did not need building.
+
+---
+
+## Change log
+
+> **This section is a holding pen, not a home.** §10e-a, §10e-b and §10h above are already rewritten
+> to describe the tile as it now behaves — this log exists for everything a future reconsolidation
+> pass should fold into a proper section rather than leave as a dated list. Each entry names the file
+> that actually carries the change; nothing here is the source of truth for the mechanism.
+
+**2026-09-16 — badges shrink, the drag gesture is restored, and an observed/ledger lag surfaces**
+
+- **Badge resting size halved** (`BADGE_R`, `BalanceChart.js`). Now that holding a badge grows it
+  (§10e-a), the resting size no longer has to be found AND read at once — growth carries the "read"
+  half. `BADGE_R = (DOT_R + 3)/2`, replacing the flat `DOT_R + 3`; `GROW_HELD` is unchanged, so a held
+  badge is still a clear pop against its smaller neighbours.
+- **Dragging is restored.** `ChartHost` never set `touch-action`, so a touch that moved was a
+  candidate gesture the browser was free to read as its own pan before `wireOnce`'s `pointermove`
+  ever saw it — the sequence ended in a `pointercancel` partway through, which reads as "the cursor
+  moved once and then stopped following the finger": a tap survives because it never moves far enough
+  to trigger the browser's own gesture, a drag never survives long enough to scrub. `touch-action:
+  none` on the host and its svg is the fix — not a `preventDefault`, which is the wrong tool against a
+  gesture the browser may claim before a handler runs at all.
+- **A badge with no name ("dot" icon) on a day the ledger shows nothing — it is a TIME-OF-DAY bug,
+  not a missing balance update.** My first reading of this blamed the bank for reporting a balance
+  the ledger had not caught up with. That reading is wrong, and the data says so. A posted
+  transaction cannot exist without a balance movement behind it; what is actually misaligned is which
+  DAY a balance snapshot is filed under.
+
+  The field is not in question: `anchor()` and `observedByDay()` both read `current`
+  (`BalanceChart.js:521`, `:505`), which is correct and stays.
+
+  Every snapshot in the captured portfolio is stamped at **15:05 UTC** — 08:05 local. That is a
+  morning reading, so it carries the state of the PREVIOUS day's close, not of the day it is stamped
+  with. `observedByDay()` keys it with `dayKey(x.date)`, i.e. its own UTC day, and `observedSeries()`
+  then reads it as that day's CLOSING balance. Every observed point is therefore one day late:
+
+      txn   2026-09-08            Check Paid #1050              -1700.00
+      snap  2026-09-08T15:05:07Z  current =  2392.13   <- morning of the 8th: not yet cleared
+      snap  2026-09-09T15:05:07Z  current =   692.13   <- morning of the 9th: cleared overnight
+                                            ---------
+                                             -1700.00   step filed under 09-09
+
+      observedByDay()  ->  {"2026-09-08": 2392.13, "2026-09-09": 692.13}
+      the -1700 step lands on 09-09; the transaction that explains it is dated 09-08
+      eventsIn() finds nothing on 09-09, so the badge has no name and falls back to ICONS.dot
+
+  The same off-by-one applies to the ANCHOR, and there it matters more: `account.current` was captured
+  at `2026-09-09T15:25Z` and is pinned to `ledgerToday()`, so the whole reconstructed past is shifted
+  a day against the ledger, not just one badge.
+
+  **Not fixed — the fix is a decision about what a snapshot means.** The rule that matches the data is
+  that a balance read at instant T is the closing balance of the last day that had fully elapsed
+  before T *in the user's own timezone*: for an 08:05 local reading, that is T minus one day. Keying
+  snapshots that way (and anchoring `current` the same way) fixes the badge and the shift together.
+  The alternative — reaching a day either side when naming a badge — treats the symptom and leaves the
+  curve shifted.
+
+**2026-09-16 — the badge midpoint, several marks on one riser, and two lines removed**
+
+- **Badge resting size to the midpoint** (`BADGE_R`, `BalanceChart.js`). Half was too far: at 3.5 the
+  icon inside had no silhouette left. `BADGE_R = (DOT_R + 3)*0.75` — 5.25, between the original 7 and
+  the halved 3.5.
+- **A day is not one movement** (`eventsIn`, `BankBalance.js`; `bead()`, `BalanceChart.js`). `eventsIn`
+  now returns `parts` beside `stream`: the day's own movements that each clear `BADGE_FLOOR` in their
+  own right, biggest first. A leg has to clear the floor itself, or a $1,200 step made of twelve
+  $100s would sprout twelve badges. The renderer stacks them along the riser at `2r + BADGE_GAP`
+  pitch, centred, walking in the direction the balance moved, and keeps `floor((len + GAP)/pitch)` of
+  them — so the count is set by the size of the step, which is the right constraint: a big jump has
+  the height to explain itself in pieces, a small one is one mark and a caption. The trim drops the
+  smallest first. Projected days have one attribution and so always draw one mark.
+- **The balance readout under the title is gone** (`subtitle()`). It printed the balance under the
+  cursor, which was the whole answer while the cursor's caption could not carry a value; the caption
+  now names every movement of the day with its amount, at the mark. The line keeps the low point in
+  every state. `balanceTile.test.js` asserts the subtitle is unchanged by the cursor.
+- **The `all streams` / `regular only` control is off the title sentence.** Stale. `state.basis`
+  stays at `"all"` and `terminalsFor()` is untouched, so the machinery the tests exercise is intact —
+  only the button is removed.
+
+**2026-09-16 — the reading is filed by the day it closes, and the cursor stops rebuilding the picture**
+
+- **`closeDayOf()` replaces `dayKey()` in `observedByDay()`** (`BalanceChart.js`). The nameless badge
+  was NOT the ledger lagging the bank, and the earlier entry above is corrected. A snapshot is an
+  *instant*; a series point is a *day's close*. The daily refresh runs in the morning — every reading
+  in the capture is stamped 08:05 local — so what it reports is the state the PREVIOUS day closed at.
+  Filed under its own day it put the step one day after the transaction that caused it, and the badge
+  on that step had nothing to name. A reading is now filed under the last day that had fully elapsed
+  when it was taken, **in the reader's own timezone**, because a day closes at the reader's midnight
+  and not at UTC's. A value stamped exactly at midnight UTC is exempt: that is what a bare date parses
+  to — it is how every transaction here is dated — and it means the day it names.
+- **The cursor is real time, and it is a layer, not a redraw** (`paint()`, `drawLive()`,
+  `BalanceChart.js`). Three things were rebuilt on every frame of the grow animation to produce
+  answers identical to the last frame's. Measured on the real 1,214-transaction ledger:
+
+      eventsIn() over the whole ledger, per frame        1.406 ms
+      movementAt() sweeping the ledger with dayKey()      1.179 ms
+      ledger() rebuilt twice per draw()                   0.316 ms  (2 x 0.158)
+                                                        ---------
+      per frame, before                                   3.054 ms
+      per frame, after                                    0.001 ms
+
+  Four changes, in the order they matter. `ledger()` is memoised on `(transactions, covered)` and
+  indexes itself by day in the same pass. The day bucket is `floor(ms/DAY)` (`dayIdx`), not
+  `toISOString().slice(0,10)` — the same UTC cut, a division instead of a string; a key shown to a
+  reader stays `dayKey`, a key that only indexes a bucket is `dayIdx`. `badges()` memoises the event
+  list on the two series arrays, because the badges do not depend on the cursor at all. And the svg is
+  split: everything the cursor can change — axis ticks, badges, cursor line, caption — lives in a
+  `<g id="bal-live">` that is rewritten on its own, while the area, lines, guides and zero line stay
+  as the browser already laid them out. The static layer is keyed on the two series arrays and the
+  measured size; anything else that changes the picture changes one of those by construction. The axis
+  is in the live layer *because* its ticks give way to the cursor's own date label — a rule that is
+  only correct if it is re-evaluated when the cursor moves.
+- **The cursor no longer vanishes between days.** It matched the day key exactly and drew nothing when
+  there was no match. It now takes the day it is on, and the nearest drawn day when that day is not in
+  the series — the reader is over a day either way, and the picture has to say which one.
+- **The line under the title is gone** (`subtitle()` and `Subtitle` both deleted). It restated the
+  window's low point in prose; the guide line draws that low with its own value printed on it, and the
+  cursor names any day's movements with their amounts at the mark. The top area is the title.
+- **The caption names two movements, then counts** (`CAPTION_LINES`). The overflow used to ride on the
+  end of the last named line as a bare "+2", where it read as part of that movement's own figure. It
+  is a different kind of fact, so it gets its own line, says "more" in words, and takes the secondary
+  ink — nothing on it is a value, so nothing on it carries a value's weight or colour.
+
+**Still open:** the cursor day is React state, so a `pointermove` that crosses a day still costs a
+render. With the layer split the render is a title and a host div, and the repaint is one `<g>`, so
+this is no longer the bottleneck — but it is the last structural piece if the drag ever needs to be
+cheaper than it now is.
+
+**2026-09-16 — a repayment is one fact either side of today, and the scale gets a gutter**
+
+- **`nameOf()`: the tile names a card repayment, and names it once** (`BalanceChart.js`). The projected
+  repayment carried the module's internal label — the literal `"repayment"` written by
+  `accountLedger.js` on both legs of a settlement — which matched no icon rule and drew the bland
+  fallback dot. So a four-figure movement the reader recognised on the past side of the line became an
+  anonymous mark the instant it crossed into the forecast. Both sides are now normalised at the point
+  the tile names things: `/^repayment$|credit card payment/i` → `"Card repayment"`, applied to the
+  ledger's own rows, the projection's `top`, and both branches of `dayAudit`. The module keeps its own
+  label; this is only what a reader is shown. `ICON_FOR` gains `/card repayment/i → card`, kept
+  deliberately specific — a CAR repayment is not a card one and must keep its own icon, which
+  `balanceTile.test.js` now asserts alongside the rest.
+- **The high and low values move into a right gutter** (`PAD.r`, 10 → 48). They were printed inside
+  the plot at its right edge, floated above the guide line and over whatever the balance was doing
+  there — a label sitting on the picture it annotates. Given a column of their own they read as what
+  they are: the scale, beside the drawing rather than on it. They now sit on the guide's own baseline
+  (`Y(v) + 2.9`, `text-anchor="start"`), and the cursor caption's right-hand room shrinks with the
+  plot by construction, so it cannot run into the gutter.
+
+**2026-09-16 — the forecast gets a point per day, the gutter gets a third value, the edges fade**
+
+- **One point per day on the prediction line** (`computeSeries`, `BalanceChart.js`). `seriesFrom` hands
+  back the days the balance *changes* — all a step path needs to be drawn, and the reason the cursor
+  could not be read on every forecast day: on a quiet day there was no point under the finger, so the
+  cursor snapped to the nearest movement and reported someone else's date. The tile now walks day by
+  day from today to the window's end, applying `liveRun.flow` as it goes and holding the balance
+  across quiet days. Flow dated before the window opens is applied first, so the opening value is the
+  one `seriesFrom` would have produced. `balanceTile.test.js` asserts no day is missing, none is
+  repeated, and `dayAudit` answers for every one of them.
+- **The cursor's balance is the third value in the gutter.** The high and the low are fixed facts about
+  the window and are drawn quiet; this one answers the finger, so it takes full ink and a weight, and
+  it *travels* — the reader watches it climb and fall between the two guides as they drag, which is
+  the runway question asked and answered in one gesture. A faint dashed lead runs from the cursor to
+  it, because a figure at the far right of the tile is otherwise a number floating at a height.
+- **The edges fade** (`FADE_ID`, `FADE_W = 26`). A line that stops at the frame says the money stopped
+  there. The drawing is wrapped in a `<g mask="url(#bal-fade)">` whose mask is white everywhere except
+  a 26px gradient at the left edge of the plot — and at the right edge too when the window is `last`,
+  because a past window has a future beyond it the reader can travel to. **A mask, not a wash:**
+  painting a background-coloured gradient over the edge only works if the tile's background is opaque,
+  and it is not — it is a translucent pane over the page, so a wash would fade the line into the app
+  behind it rather than into the tile. **The gutter is outside the mask** by construction: the fade
+  rects stop at `W - PAD.r`, and the high, low and cursor values are drawn past it. They are the
+  scale, not the record, and a scale that faded would be unreadable exactly where it matters.
+- **`DayAudit` is deleted**, with the `onDay` prop and the Sandbox state that fed it. The tile answers
+  a day in place now — the cursor names every movement with its amount, and the balance it reaches —
+  so the table was a second, older reading of the same question kept alive beside the one being
+  worked on. `dayAudit()` itself stays: it is what the caption is built from, and the audit suite
+  still holds it to the arithmetic of the line above it.
+
+**2026-09-16 — the cursor's balance travels without a lead line, and the fade mask survives a travel**
+
+- **No lead line.** The dashed horizontal line that used to run from the cursor to its own balance
+  figure is gone (`drawLive()`, `BalanceChart.js`). It repeated what the figure's own height already
+  says; the number is enough.
+- **The number never jumps.** `_curVal` is an eased position on the same RAF loop that grows a badge —
+  see `startGrow()`, which now also eases the cursor's value and the two guide labels every frame it
+  runs, since all three answer the same event (the cursor landing on a new day) and stopping one
+  before the others would read as three separate mechanisms rather than one motion. The mutation
+  happens once, inside `drawLive()`, and `startGrow()`'s loop reads it back through `_liveMoving` — a
+  flag `drawLive()` sets when it performed an incomplete step, checked once per RAF frame so the loop
+  keeps running exactly as long as something is still moving. First appearance snaps (nothing to ease
+  *from*); a day change afterwards eases at the same rate a badge grows.
+- **A guide label gives way to the cursor's own reading, not the other way round.** When the eased
+  cursor value's own gutter line would sit within `LABEL_GAP` (11px) of the high or low guide's own
+  value, that guide's opacity eases toward 0 instead of snapping; it eases back the moment the two are
+  no longer contesting the same line. The guide's own dashed line across the chart is unaffected —
+  only its printed value, which is what actually collides. Moving these two labels out of the static
+  masked layer and into the live one (`guideLabel()`) is what makes animating their opacity possible
+  without repainting the whole picture every frame.
+- **The fade mask no longer disappears mid-travel.** Both fade gradient ids and the mask's own id now
+  carry a counter that increments on every `draw()` call (`this._paintSeq`). A full animation frame
+  replaces the entire `<svg>` via `innerHTML` — mask and its `url(#id)` reference together — and some
+  browsers cache the resolution of that reference across such a replacement; when they do, the picture
+  reads as though the mask were never applied, going fully opaque, for exactly the span it is `<svg>`
+  elements are being swapped fastest — mid-travel. A fresh id every paint is never a stale reference
+  to begin with. `balanceTile.test.js` matches the id by shape (`bal-fade-\d+`) rather than the old
+  literal name, and the travel-equivalence test strips the counter before comparing two paints.
+- **The fade rect now covers the stroke's own overhang** (`STROKE_OVERHANG = 2`). A stroke is centred
+  on its path, so a line ending exactly at the plot's edge still paints a couple of pixels past it —
+  and the fade rect used to stop exactly at that edge, leaving that sliver outside the mask entirely:
+  not faded, not covered, just the base rect's plain white showing through, a small bright fragment of
+  line sitting just past the point the gradient had already gone fully transparent. The rect's OUTER
+  edge (the one nearer full transparency) now extends by that same margin; the inner edge, where the
+  gradient reaches full opacity, is untouched.
+
+**2026-09-16 — the drag maps 1:1 with the drawing, gutter included**
+
+- **The pointer's fraction was taken over the whole host box; the plot only fills part of it**
+  (`dateAt()`, `wireOnce()`, `BalanceChart.js`). `X()` maps a date into `[PAD.l, W-PAD.r]`, never into
+  `[0, W]` — the right inset is the gutter the high/low/cursor values print in, 48px of a 334px tile.
+  The pointer handler read `(clientX - left)/width` as if the plot ran edge to edge, so the rightmost
+  day — drawn at 85% across — only registered as "reached" at 100% of the drag: pulling the last day
+  under the finger meant dragging past where the line actually ends, into the value labels themselves.
+  Fixed by taking the pointer's fraction over the same inset the drawing uses:
+  `f = (px - PAD.l)/(W - PAD.l - PAD.r)`, `px` the pointer's position in the svg's own local units
+  (`(clientX - left)/width * this.W`, since `measure()` keeps `this.W` equal to the host's real
+  measured width). A day drawn at a given screen pixel is now the day the cursor lands on at that same
+  pixel, everywhere in the plot, not only near its centre.
+- **`PAD` is exported** so the test can compute the same `X()` the drawing uses rather than asserting
+  against a duplicated formula. Two tests in `balanceTile.test.js` stub `getBoundingClientRect` to the
+  tile's own measured size (what a real one reports once painted) and dispatch a pointer event at the
+  exact pixel `X()` draws a chosen day at, first, middle and last; the regression is confirmed against
+  the pre-fix code (fails on the first day only, edge case) before being left in place.
+
+**2026-09-16 — the snapshot keying is REVERTED, and the entry above it is wrong**
+
+**Reverted:** `observedByDay()` files a reading under `dayKey(x.date)` again, as it always did.
+`closeDayOf()` is deleted. Two entries above this one describe that shift — first as a fix, then as
+a correction of an earlier diagnosis — and **both are wrong**; this entry supersedes them.
+
+What the shift actually did, reported from the live app within the hour: a paycheque dated the 14th
+drew its riser on the 13th, and the 14th was flat. It moved the entire observed curve back one day.
+
+The captured portfolio settles it, and it settles it against me. I had read one transaction and one
+pair of readings. The day in question carries **two** transactions, and the readings split them:
+
+    txn   2026-09-08            Activehours Expensify            +7.50
+    txn   2026-09-08            Check Paid #1050              -1700.00
+    snap  2026-09-08T15:05:07Z  current =  2392.13   <- holds the +7.50, the same day it is stamped
+    snap  2026-09-09T15:05:07Z  current =   692.13   <- holds the cheque, which cleared overnight
+
+A reading stamped D holds day D's money. The `+7.50` proves it and I never looked at it — I took the
+cheque alone, generalised from it, and wrote the generalisation into the spec as though it were
+established.
+
+**What the cheque actually is.** Not a keying fault at all: a paper cheque's `date` is the date
+written on it, and the bank moved the money the following night. The two dates genuinely differ, so
+no rule about which day a snapshot belongs to can reconcile them — and a rule that shifts everything
+to line that one case up moves every correctly-dated transaction in the ledger out of line to do it.
+
+**The nameless badge is therefore open again, and it is worth less than it looked.** It marks a real
+thing — a step in the observed balance with no transaction dated to that day — and the honest fix is
+to name it for what it is ("cleared overnight", or the neighbouring day's transaction) rather than to
+move the curve. `driftVsRemembered()` in `BalanceBench.js` already measures this class of gap.
+
+**The process failure is the part worth keeping.** A single example is not evidence for a rule about
+timing; it was consistent with at least two rules, and I checked neither against the rest of the data
+before changing a keying that everything downstream depends on. The measurement that would have
+caught it costs one query: for every snapshot pair in the capture, does the delta match the
+transactions dated to the stamped day, or to the day before? Four pairs were available and I looked
+at one.
+
+**2026-09-16 — one anchor, walked back over posting dates; the stored per-day snapshots are dropped**
+
+**The decision, in the reader's words:** *at any given time the displayed balance needs to be correct,
+and it should match the transaction posting dates. Anchor on the balance of the last closed day and
+rebuild walking backwards from the posted transactions — and this issue would never happen.*
+
+**Why the snapshots had to go.** A snapshot is a fact about **the instant it was taken**, and it is
+written once and never revised. The bank restates a past day as late postings land on it — the reader
+confirmed this in their banking app: *even backdated, the balance was updated to make sense from
+there* — and our copy of that day does not get restated, because we never fetch a past day again.
+So a day whose snapshot predates a cheque clearing stays frozen at the pre-cheque figure forever, and
+the step the cheque makes lands on whichever later day first had a snapshot taken after it. That is a
+riser on a day nothing happened, with the real transaction's own day drawn flat beside it. Both
+keyings of that snapshot — its own day, or the day before — produce it; only the snapshot's own
+staleness is to blame, so no keying rule was ever going to fix it.
+
+**The model now.** `computeSeries()` calls `reconstruct(txns, now, anchor, from)` and nothing else.
+Today's point IS the live balance; every earlier day is that figure minus what posted since, by
+posting date. The curve agrees with the transaction dates by construction, and the freshest part of
+it — the part actually read — is right by definition. No mid-curve value can contradict a date the
+reader can check against their bank.
+
+**What is given up, stated plainly.** A transaction the bank has taken and our store has not received
+displaces every point before it by that amount. That is real, and it is the failure the snapshots were
+introduced to fix. It is the better of the two failures: uniform rather than local, so it reads as a
+level rather than as an event that never happened; it heals itself the moment the transaction arrives;
+and it never puts a movement on a day that had none. The size of that gap is still measured per
+account by `driftVsRemembered()` in the bench, which is where it can be argued about with numbers.
+
+**Removed from the tile:** `observedByDay()`, the `getBalanceHistory` fetch on mount (400 days
+requested per mount, answer now unread), `state.remembered` and its entry in the series cache key,
+and `_unreconciled`/`_observedCount`. The bench fetches its own history and is untouched.
+
+**Left in place, and now called by nothing in the app:** `observedSeries()` and `BALANCE_SOURCES` in
+`BankBalance.js`, with their unit tests. They are correct and well covered; deleting them is a
+separate decision that belongs with whatever the bench concludes about `driftVsRemembered()`. Flagged
+here rather than left to be discovered.
+
+**Tests** (`balanceTile.test.js`): today equals the anchor exactly; each earlier day equals the day
+after it minus that later day's postings; a snapshot wildly disagreeing with the walk changes the
+drawn line not at all; and the tile issues no balance-history call.
+
+**2026-09-16 — the anchor is the last closed day; the mask stops being thrown away; two labels simplify**
+
+- **The anchor moves from today to the last closed day** (`computeSeries`). Today is still being
+  written — an authorisation settles, a pending charge posts or is dropped — and the live figure moves
+  under a reader who has not spent anything. Yesterday is finished: what the bank says about it now is
+  what it will say tomorrow. So the picture is pinned there, and today is derived **forward** by adding
+  back what has posted today:
+
+      anchorValue = current - (postings dated today)
+      past        = reconstruct(txns, yesterday, anchorValue, from)
+      today       = anchorValue + (postings dated today)      // = current, by construction
+
+  **Said plainly: with `current` as the only balance we hold, this is arithmetically the same curve.**
+  Yesterday was already `current` minus today's postings either way. What changes is which day is the
+  FACT and which is the derivation — and that is the seam every future decision about today's
+  volatility hangs on: whether today is drawn as settled at all, whether a pending figure is ever
+  admitted, whether the record line should stop at the close. It is written down so that decision has
+  somewhere to live other than an implicit assumption.
+
+- **The fade mask survives a travel** (`paintInto()`, and `MASK_DEFS`/`RAMP_DEFS`/`BODY_G`/`LIVE_G`).
+  Every animation frame replaced the whole `<svg>` through `innerHTML`, throwing away the `<mask>` and
+  the `<g mask="url(#…)">` that points at it *together*, sixty times a second. A reference is resolved
+  when the group is inserted; asked to re-resolve it that often the renderer stops, and the picture
+  goes flatly opaque for the length of the motion. **The per-paint unique id added two entries above
+  made it strictly worse** — then every frame genuinely is a new resource — and it is reverted; the id
+  is `bal-fade` again. The svg is now built once and a paint rewrites only three nodes: the ramp defs
+  (pinned to the value axis, so it does move with the frame), the masked drawing, and the live layer.
+  The mask defs and the group that references it are never touched, so the reference is resolved once
+  and stays resolved. `rampDefs()` now emits the bare `<linearGradient>` — `draw()` supplies the
+  `<defs>` that carries the id — so there is one element per paint to rewrite rather than a `<defs>`
+  nested inside a `<defs>`. Resting paints, cursor paints and animation frames all go through the one
+  path. A test asserts DOM *identity* of the mask node and the body group across a whole travel, and
+  it fails against the old full-replace path.
+
+- **No halo behind text.** Every label was stroked in a background colour under `paint-order:stroke`
+  so it could be read wherever it landed. On a translucent tile that stroke is not invisible — it is a
+  fattened, slightly-wrong-coloured slab around each glyph, which is the "weird backdrop". The labels
+  sit in the gutter or the top padding, clear of the drawing, so they never needed it.
+
+- **The high and low are just their numbers.** "high"/"low" named what the reader can already see —
+  the higher figure is higher up the gutter, on the guide it belongs to — and spent half of each label
+  saying it.
+
+**2026-09-16 — the mask is the clip; nothing is drawn outside the plot**
+
+Reported from the phone, with a screenshot: a bright stub of line pinned to the left edge. It was read
+as the fade failing, and it is not — it is content that should never have been visible at all, and the
+entry above's diagnosis of "the mask disappearing mid-travel" was very likely always this.
+
+**The fault.** The mask's white base spanned the whole viewBox, so anything drawn OUTSIDE the plot was
+not merely unfaded — it was fully opaque. And nothing clipped the left edge at all: only the right was
+ever held back, by filtering data (`clipTo`), which is a different job with a different purpose (the
+forecast retracting tip-first during a travel). A travel draws the **union** of both windows while the
+frame interpolates between them, so union days earlier than the frame's own `x0` map to negative x,
+are clipped by the svg viewport at x=0 rather than by the plot at `PAD.l`, and surface in the strip
+between the two. Measured in the test: mid-travel the drawing runs from `x = -132.6` to `x = 428.6`
+while the plot is `10 … 286`.
+
+**The fix.** The mask's white is the PLOT RECT, not the viewBox, so outside it is black — hidden. The
+fade bands sit inside that, and one element does both jobs: a drawing cannot be visible where it has
+no business being drawn. Both edges carry `STROKE_OVERHANG`, for the same reason the fade bands do —
+a stroke is centred on its path.
+
+**The beads take the same mask.** They are part of the record, so they now clip to the plot and fade
+at its edges exactly as the line they sit on; unmasked they stayed fully opaque over a line fading out
+from under them, and a travel could strand one off the left edge. Only the beads: the gutter values
+are the scale and live outside the plot, and the axis labels sit below it, so a plot-shaped mask over
+the whole live layer would erase both.
+
+**Tested** by asserting the mask's base rect starts at the plot rather than at 0 and stops at the
+gutter, and that mid-travel — where negative coordinates demonstrably are drawn — nothing carrying one
+sits outside a masked group. Confirmed to fail against the whole-viewBox base before being restored.
+
+**2026-09-16 — both edges fade for the whole of a travel, whichever way it runs**
+
+**The fault.** `fadeR` was `state.when === "last"`, and `state.when` is set BEFORE the motion runs —
+so for every frame of a travel it is the DESTINATION, not what is on screen. A trip from last month to
+this one therefore had the right-hand fade switched off on the very first frame. For the whole motion
+the line was cut dead at the plot edge with a hard vertical stop, and content slid in against that
+stop instead of emerging through a fade. Reported as two things — the mask vanishing for a moment, and
+then the hidden half of the graph being drawn in as it slid — which are one fault seen twice.
+
+**The rule now:** `fadeR = state.when === "last" || this.travelling`. A travel cuts content at both
+edges the whole way across, so it fades at both; the resting answer is restored by the paint that ends
+the motion. `travelling` is set only by `zoomTo()` (a window travel pans; a source morph does not, so
+it keeps the resting fades) and cleared by `run()` alongside `animating`. A side benefit: `fadeR` is
+now CONSTANT for the length of any travel, so `_maskSig` never changes mid-motion and `paintInto()`
+reuses its nodes from the first frame to the last — no full replace, so nothing can flicker.
+
+**And `staticStale()` had to learn about the mask.** It compared the two series arrays and the size,
+which is everything the *drawing* depends on but not everything the STATIC LAYER does. Without the
+mask in it, the paint that ends a travel took the live-only path and left the travelling mask — both
+edges faded — on a window at rest that should fade one. `maskSig()` is now one expression, read by
+`draw()` when it writes the mask and by `staticStale()` when it decides whether the mask on screen is
+still the right one. The test caught this; I had not thought of it.
+
+**Known and accepted:** at the instant a last→this travel ends, the right fade turns off in one step.
+That is semantically right — you have arrived at the newest window and there is nothing further to
+travel to — but it is a step, not a fade. Left as is; raise it if it reads badly.
+
+**2026-09-16 — the right edge always fades; the cursor arrives and leaves**
+
+- **Both edges fade, unconditionally.** The right one was keyed off the window, then off whether a
+  travel was running, and every version was wrong in its own way — because the question it was trying
+  to answer is not about the window at all. The record runs off the LEFT because the past is longer
+  than the frame. It runs off the RIGHT because **the future is yet to be written**: the forecast does
+  not stop at the horizon this tile draws, it is simply not claimed past it. Fading says exactly that,
+  and it says it in every window, at rest and mid-travel alike. `travelling` is deleted — it existed
+  only to paper over the conditional. The mask is now constant for a given size: written once and
+  never again, which is one fewer thing that can flicker. `maskSig()` stays as the seam (it is how
+  `staticStale()` knows the static layer includes the mask), now just `W × H`.
+
+- **The cursor fades in and out** (`CURSOR_EASE = 0.45`, `_cursorFade`, `_lastDay`). Everything it
+  draws — the line, the caption, the day under the axis, its own value in the gutter — shares one
+  eased opacity on the same loop that grows a badge and moves that value. **A faster rate than
+  `GROW_EASE`**: a cursor that took as long to appear as a badge takes to grow reads as lag between
+  the tap and the answer, and the answer is the thing being waited for.
+
+  **The fade-OUT is the half that needs machinery.** `state.at` going null is the *release*, not the
+  disappearance — so the day it was on is kept in `_lastDay` and keeps being drawn at a falling
+  opacity until there is nothing left. Without that there is nothing to fade: the thing being faded is
+  already gone by the first frame of the fade. `held` is still tied to `state.at` alone, so nothing
+  downstream thinks a released cursor is still held. When the fade reaches zero, `_lastDay` and
+  `_curVal` are dropped, so the next arrival snaps to its own value rather than sliding in from the
+  last one. The guide-label collision test now applies only while the cursor is *held*, so on release
+  the guides come back over the same frames the cursor leaves in, rather than waiting for it to go.
+
+- **A date-dependent test, found on the way and fixed** (`balanceChartAudit.test.js`). It took the
+  LAST forecast day and assumed the run had predicted rows on it. Since the forecast gained a point
+  per day — quiet days included — whether that holds depends on where today falls against the fixture,
+  so it passed or failed by the calendar. It now asserts the invariant over *every* drawn future day,
+  treating "nothing predicted here" as a real answer, plus one check that the run claimed something
+  somewhere so the assertion cannot go vacuous.
+
+**2026-09-16 — the right edge stops falling short of the plot during a travel**
+
+**The fault.** `clipTo` sweeps continuously through time; the series carries one point per calendar
+day. The last point that survives the `<= clipTo` filter is therefore always rounded down to a whole
+day - often noticeably earlier than `clipTo` itself, by up to a full day's worth of pixels. `X()` maps
+`frame.x1` (which equals `clipTo` exactly, by construction - `lerpFrame`'s `x1` and the `clipTo` passed
+alongside it are both `e0*(1-k) + e1*k`) to the plot's true right edge regardless of whether any point
+actually reaches that time. So the drawn curve fell short of the edge for the length of every travel.
+It was invisible until the right edge started fading unconditionally: the fade assumes the record
+reaches the edge it fades from, so the shortfall read as an early clip rather than a graceful one -
+reported from the phone as "the right side gets clipped a little bit."
+
+**The fix** (`paintFrame`). The frame's right edge is set to the actual last surviving point's own
+date whenever that is earlier than the requested `frame.x1` - exactly what `frameOf()` already does at
+rest, so a travelling frame and a resting one now agree on what "the edge" means: wherever the drawing
+actually stops, never a point past it. `x0`/`y0`/`y1`/`lo`/`hi` are untouched; only `x1` is corrected,
+and only when clipping is in effect.
+
+**A pre-existing test had to change**, and it is worth recording why rather than just fixing it
+quietly: `"the forecast retracts..."` held `frame` artificially fixed while only sweeping `clipTo`, to
+isolate the content-retraction logic from frame geometry - a pairing `zoomTo()` itself never produces
+(it always lerps both together). Its final assertion compared a `paintFrame` call using `clipTo` against
+a hand-pre-filtered call with no `clipTo` at all, expecting byte-identical output; that equivalence
+held only because clipping used to do nothing but drop points. It now also tightens the frame, so a
+call that skips `clipTo` skips the tightening too, and the two are no longer the same question. Changed
+to assert what the test actually means - that painting the same `(frame, clipTo)` pair twice is stable
+- and a new test reproduces a REAL travel via `lerpFrame`/`zoomTo`'s own formula and asserts the drawn
+line's rightmost x lands on `W - PAD.r` at every step, confirmed to fail against the pre-fix code.
+
+**2026-09-16 — content is never trimmed for a travel; the mask does the whole job**
+
+**Reported:** the previous fix closed the gap, but introduced a visible resize - the chart "resizes
+itself back and forth" for the length of a travel. Both symptoms trace to the same root, and the
+reader's question cut straight to it: *why do we need to remove the point? Can't we just assume it's
+always there and masked off screen?*
+
+**Why removing the point was never necessary.** `lerpFrame`'s own `x1` and the travelling clock
+`clipTo` were computed from the identical formula over the identical numbers -
+`e0*(1-k) + e1*k` - so `frame.x1` already equalled `clipTo`, exactly, at every k. Nothing needed
+deriving. And the series is a STEP chart: `stepPath` draws each point's horizontal run out to the
+NEXT point's own x before it turns, so the point just past the visible edge still draws its segment
+past that edge on its own - the overshoot the mask needs already exists in the geometry, for free, as
+long as that point is never removed from the array.
+
+**What was wrong with both earlier attempts, now clear in hindsight.** Filtering content by
+`date <= clipTo` removed exactly that overshoot point - the series is daily, `clipTo` is continuous,
+so the filter always rounds down, and the line fell up to a day's pixels short of the true edge (the
+gap). Then tightening `frame.x1` to match whatever survived the filter closed the gap by construction,
+but that survivor is discrete - it changes only when a whole day drops out of the filtered set - while
+the frame had been smoothly interpolated until then, so the picture's own domain jumped in visible
+steps once per day boundary crossed (the resize).
+
+**The fix removes code rather than adding it.** `paintFrame(content, now, frame)` drops the `clipTo`
+parameter entirely and never filters `content` - the full `union()` of both windows is passed straight
+through, unconditionally, every frame. `zoomTo()` drops its `edgeOf()` calls and the `clipTo` argument
+it used to compute; `this.lerpFrame(f0, f1, k)` is the only per-frame work left. What retracts is
+purely which part of the (always-whole) content falls inside the smoothly-lerped `[x0, x1]` domain;
+the mask - already anchored to wherever `x1` maps in pixels, since the earlier fix in this same file -
+hides the rest. Nothing about the frame or the content ever takes a discrete step.
+
+**`edgeOf()` is kept**, though nothing in the component calls it any more: it is a small, correctly
+named utility (`frameOf(a).x1` is the identical number by construction) that the tests use to build
+the same `(f0, f1, k)` a real travel runs on, without duplicating that derivation inline.
+
+**Tests.** The equivalence test that used to compare a `clipTo`-filtered call against a hand-pre-
+filtered one is gone with the parameter it exercised. `"the forecast retracts..."` now measures
+retraction the way the mask actually decides it - by counting, at each `k`, how many future points'
+own dates fall within the current frame's `x1` - rather than counting SVG path commands, which no
+longer shrink at all (the full path is always in the markup; only what is masked changes). A new test,
+`"nothing is ever trimmed... the overshoot reaches the edge"`, asserts that at every step of a real
+travel at least one drawn coordinate reaches to or past the plot's true right edge, and that the
+frame's own `x0` moves in one direction only, never snapping back and forth - confirmed to fail against
+the reinstated filter-based `paintFrame` before being restored.
+
+**2026-09-16 — the balance readout: a live instrument on the sandbox**
+
+`BalanceReadout.js`, on the sandbox above the bench. "The bank balances went rogue" has been answered
+three times now by dumping a fixture and reasoning about it in a terminal, and every one of those
+answers was about a day that had already passed — the capture is stale the moment it is written. This
+is the same arithmetic against LIVE data, on the page, so the question can be asked when it is noticed.
+
+**It is not a second model, and that is the whole discipline of it.** Every figure comes from the
+function the tile itself uses — `Core.accountTypeOf` for what counts as spending, `reconstruct` for
+the walk, the same UTC day boundary — so a disagreement between the panel and the tile is a bug in one
+of them, not two readings of the same fact. The moment it re-derives something it stops being able to
+answer the question it was built for.
+
+**What it shows**, in the order the question is actually asked:
+
+1. every account, its effective type, `current` and `available`
+2. **balance today** — the anchor, spending accounts only
+3. **postings today**, named and dated, with their sum
+4. **balance at the last closed day** — (2) less (3)
+5. netted, today (spending less cards)
+6. what moved on the closed day itself, to reach that figure
+7. **stored snapshot vs the walk**, per day, for three weeks — with the gap
+
+**(7) is the rogue detector.** A snapshot is a reading taken at an instant and never revised; the walk
+is derived from postings. A non-zero gap means they disagree about that same day, which has been the
+whole argument every time. The tile stopped reading the stored series (see the entry on anchoring),
+so this is now the only place that comparison is visible.
+
+**It also flags the dates that disagree with each other.** `getDisplayDate()` prefers `frontendDate`
+(a user backdating a categorised transaction); the walk uses `date`. Where the two differ, a reader
+sees a posting on one day and the line step on another — which is exactly what a rogue balance looks
+like from the outside — so the panel names it in red rather than averaging over it. `authDate` is
+flagged the same way where it differs.
+
+**Tested** (`balanceReadout.test.js`, 6 tests): today is the anchor and excludes savings and cards;
+the closed day is today less today's postings, over two postings of opposite sign so a lost sign
+cannot survive; the panel's ledger is the tile's ledger; a backdated transaction is flagged; and a day
+only some accounts reported is not treated as an observation — otherwise the instrument built to find
+invented gaps would invent one on the day an account started reporting.
+
+**2026-09-16 — Plaid's own response, cached against a forced fresh read, live in the sandbox**
+
+Requested to test a specific suspicion: is a rogue balance Plaid's own answer, or something the
+mapping step between Plaid and this app did to it. New surface, server and client both:
+
+- **`Connector.getRawAccounts(itemData)`** (`src/bankConnectors/BankConnector.js`) — a base method any
+  aggregator can override to hand back its own response untranslated; the default says `unsupported`
+  rather than being asked to invent a shape it doesn't have.
+- **`PlaidConnector.getRawAccounts`** calls **both** balance-bearing Plaid endpoints and returns them
+  side by side as `{cached, fresh}`. `/accounts/get` is the endpoint every balance in this app —
+  including everything else in this same panel — is built from; Plaid serves it from its own cache,
+  and their docs are explicit that it can run minutes to hours stale. `/accounts/balance/get` is a
+  different, slower, rate-limited endpoint that forces Plaid to call the institution again before
+  answering. **If the two disagree, the cached one is what has been on screen the whole time.** Wired
+  through `BankAPI.getRawAccounts` → `model.getRawAccountsForUser` (per connection, one connector
+  question, no different authorization than the existing `getAccountsForUser`) → the route
+  `bankGetRawAccountsForUser` (`routes/index.js`, registered in `server.js`) → `ApiCaller` →
+  `BalanceReadout`.
+- **On the sandbox**, per connection: a table matching each account by Plaid's own `account_id` (not
+  our hash — this is upstream of the step that computes it), `cached current` beside `fresh current`
+  with the gap flagged, then both full raw JSON payloads for anything the table doesn't surface.
+
+**A deploy is required for this to reach the sandbox as actually run** — `AppConfig.serverURL` points
+at the deployed API by default, and the new route only exists once `sls deploy` ships it. Not run yet;
+the code is written and the module-load check passes, but ship is an explicit gate.
+
+**Tested** (`balanceReadout.test.js`, +2): the cached/fresh table renders both figures and flags their
+gap; a connector with no raw response (Powens) says so rather than crashing on a shape it doesn't have.
+
+**2026-09-16 — "which accounts count" and "current vs available, per account" — findings from live data**
+
+Live numbers reported from the sandbox (six consecutive days, one account, summed across the reading's
+own accounts):
+
+    day         bank said    walk says    gap
+    2026-09-16  $7,959.22    $5,959.22    $2,000.00
+    2026-09-15  $8,459.22    $5,959.22    $2,500.00
+    2026-09-14  $8,459.22    $6,459.22    $2,000.00
+    2026-09-13  $4.62       -$1,995.19    $1,999.81
+    2026-09-12  $4.62       -$1,995.38    $2,000.00
+    2026-09-11  $692.13     -$1,995.38    $2,687.51
+
+**This is two faults, not one, and the summed total was hiding the seam between them.** A roughly
+constant ~$2,000 sits on every single day, six days running, never closing — that shape is not a
+transaction the walk hasn't seen yet (which resolves the moment it posts); it is a constant OFFSET,
+consistent with either an account that should not be in the spending sum being counted, or a specific
+account's stored reading being stuck while the live one moves. Layered on top of that flat $2,000,
+09-11 and 09-15 each carry an EXTRA few hundred dollars that the other days don't — that shape IS the
+familiar one-transaction-posted-a-day-late pattern from earlier in this document, superimposed.
+
+**Ruled out by reading the code rather than guessing:** the server never swaps `current` for
+`available` — `BalanceSnapshot.MakeSnapshotFromAccount` stores `account.balance.current` verbatim, the
+identical field `Core.getAccountsWithBalances()` reads live, both ultimately `ac.balances.current`
+from the same Plaid response shape. No field-mapping bug exists in this codebase to explain the gap.
+`observedByDay()` and `anchor()` also share the exact same `this.spending()` account list at render
+time, by construction, so a "different accounts on each side" theory doesn't fit either — which is
+what makes a STUCK PER-ACCOUNT SNAPSHOT (rather than a selection mismatch) the leading remaining theory.
+
+**What was missing to actually find it: the sum couldn't be taken apart.** `observedByDay()` only ever
+produced one number per day, across every spending account. Added:
+
+- **the accounts table gained a `counted in anchor as` column** and an explicit `anchor = sum of every
+  row marked "+ spending" (N accounts): $X` line — so an account nobody was thinking about, if that is
+  the cause, is named next to its own balance rather than inferred from a bare type string.
+- **`rawSnapshots()` and its table, "stored snapshots — current vs available, per account"** — every
+  stored reading, one row each, unsummed, with `current − available` computed and flagged where
+  non-zero (a pending hold, or the two fields disagreeing for any other reason). This is where the
+  $2,000 lives if it lives on one account: the SAME account's row repeating an unchanging figure across
+  many days, beside a DIFFERENT account whose numbers move normally, would say so directly.
+
+**Not yet resolved** — this needs the live tables read against each other (which specific account's
+row is flat at ~$2,000 across the six days, and whether its `current − available` is non-zero) to go
+from "two faults, this shape" to a name and a fix.
+
+**Tested** (`balanceReadout.test.js`, +1): the per-account snapshot table renders current beside
+available with the held-back amount computed and flagged.
+
+**2026-09-16 — "today" is read in the account's stored timezone, never the machine's**
+
+**The decision:** *the last closing day anchor should be done on in the user account timezone.*
+
+**What was wrong, precisely.** `ledgerToday()` read `new Date().getUTCFullYear/Month/Date()` — the
+true UTC calendar day, which is deterministic and machine-independent, but is not the same day the
+reader is living in. For anyone west of Greenwich, UTC crosses midnight several hours before the
+reader's own evening does — at UTC−7 (Pacific), from about 5pm local onward, UTC has already rolled
+into tomorrow. Reported live at 19:36 Pacific: the tile's own "today" already read the 17th while the
+reader's evening was still the 16th. That is not a today-only edge case — it is true every single
+evening, for as many hours as the offset, for every reader west of UTC. And it directly undid the
+"anchor on the last CLOSED day, not today" decision made earlier the same session: "closed" was being
+computed in the wrong calendar, so the anchor landed on the reader's own still-open day, not yesterday.
+
+**The fix reuses an existing, already-correct pattern rather than inventing a new one.**
+`businessCalendar.js` solved exactly this for the stream predictor's own calendar-day reads, and its
+own header states the principle plainly: *"a prediction must not change because it was computed on a
+laptop in a different timezone"* — the offset has to come from the account, never the machine.
+`calendarDay(date, offsetHours)` shifts an instant by the account's own offset before reading its UTC
+calendar fields, giving back the day the reader would see on their own statement wherever this code
+happens to run. `ledgerToday()` (`BalanceChart.js`) and `utcMidnight()` (`BalanceReadout.js`, the
+panel this exact bug was found through) both now call it, reading `Core.getUserData().timeZoneOffset`
+— defaulting to 0 (pure UTC) when the account has not stated one, the same default `calendarDay`'s
+other caller already uses, so every existing reading is unchanged until an account sets its own.
+
+**Not touched:** the UTC-midnight convention for transaction DATES themselves. A bank date is a date,
+not an instant, and is already stored correctly as UTC midnight regardless of timezone (see
+`ledgerToday()`'s own long-standing comment on why day keys must stay in UTC). This fix is specifically
+about which of those fixed days the CURRENT INSTANT falls into - a question with a different answer in
+every timezone at once, and the one place the machine's clock had been standing in for the account's.
+
+**Tested**, in both files, by installing a fake `Date` whose "now" is fixed at exactly the boundary
+reported live (2026-09-17T02:36Z, Pacific evening of the 16th) and asserting `ledgerToday()` /
+`utcMidnight()` return the 16th at offset −7 and the 17th at the default (unset) offset — confirmed to
+fail against the pre-fix UTC-only computation in both files before being restored.
+
+**2026-09-16 — the production tile now sees uncategorized transactions; the sandbox always did**
+
+**Reported from two screenshots of the same account, at the same moment: visibly different shapes.**
+The sandbox's own instrument was right; `StreamAuditView.js`'s copy was not.
+
+**The cause.** `MasterAuditView.render()` filters `auditedTransactions` to `.filter(t => t.categorized)`
+before ever handing anything to `MasterStreamAuditView` - a real requirement for the projection graph,
+the money-flow page, and every per-stream analysis, all of which read a stream *off* a transaction and
+have nothing to read where `streamAllocation` is empty. `MasterStreamAuditView` then passed that SAME
+already-filtered array straight through to `<BalanceChart transactions={...}/>`. `BalanceChart` itself
+never filters by `categorized` - `ledger()` only checks the account hash, and `reconstruct()` just sums
+`t.amount` by day for whatever it is handed - so the walk was faithful to a ledger that was quietly
+missing every uncategorized transaction on the covered accounts. Any day the walk crossed one, the
+production tile's reconstructed past parted from the truth by that amount, and stayed parted from
+there on. The sandbox never had this fault: its own comment already states the reasoning that applies
+here word for word - *"ALL of them, categorised or not... the balance bench needs the others, because
+money that no stream claims is exactly what its residual row exists to measure."* The balance WALK
+needs exactly the same thing, for exactly the same reason - it is not a stream question at all.
+
+**The fix carries a second, unfiltered prop rather than widening `auditedTransactions` itself.**
+Silently handing the analysis machinery uncategorized rows was the more dangerous failure mode -
+`groupByStream()` and friends already guard on `t.categorized` explicitly, which would have masked a
+mistake here rather than surfacing one. `MasterAuditView` now passes `allTransactions={this.props.
+auditedTransactions}` (its OWN unfiltered input) alongside the existing filtered `auditedTransactions`
+prop; `MasterStreamAuditView`'s `<BalanceChart>` reads `this.props.allTransactions` instead. Every
+other consumer of `auditedTransactions` - the projection graph, `MoneyFlowChart`, the per-stream
+analyses - is byte-for-byte unchanged.
+
+**Not tested with a new mount test.** `StreamAuditView.js` has no existing test file and no fixture
+support for its dependency graph (`ReportingCore`'s config, `Core.getMasterStream()`, the projection
+and money-flow pages) in this suite; standing one up from nothing for a two-line prop-wiring change
+would be a heavier, more fragile addition than the fix it is meant to guard. The arithmetic this
+actually depends on - that `BalanceChart.ledger()`/`reconstruct()` include every transaction they are
+handed regardless of `categorized` - is already exhaustively covered in `balanceTile.test.js`; the only
+new risk surface here is which array reaches the component, and that is visible directly in the diff.
+Flagged rather than silently skipped.
+
+**2026-09-16 — six UI tweaks: filled forecast, no dotted guides, a live intersect line, a rail label,
+a resting default, full month gridlines**
+
+- **The forecast is filled too, at half the record's own opacity.** One fill used to run under the
+  whole curve, record and claim treated alike, so a reader could not tell where the known ends and the
+  guess begins without finding the dashed line first. `areaActual`/`areaFuture` are two fills now,
+  split at the same seam the line already splits at, closed to zero on both ends so they share one
+  seam pixel rather than gapping or doubling there. `PLANE.projectedFill = PLANE.planned*0.55` is
+  defined as a fraction of the record's own fill rather than a second number to keep in step by hand.
+- **The high/low guide lines are gone.** The two horizontal dashes said "here is where this sits" for
+  a fact the curve's own shape already says; only their VALUES remain, in the gutter, as before.
+- **A dynamic dotted line to whatever reading is showing, ending on a small dot where it meets the
+  curve.** Reintroduces the "lead line" removed earlier this session, deliberately: a reader following
+  the line down from the gutter needs somewhere to land. Drawn at the SAME eased height (`vy`) as the
+  number beside it, so the dot and the number settle onto the curve together.
+- **"Balance" labels the top of the right rail**, unconditional, in the live layer beside the gutter
+  values it names.
+- **The current day's balance is shown by default, at rest.** `drawLive()`'s day resolution gained a
+  third branch: interactive (held, or fading via `_lastDay`) still wins when there is one; at true
+  rest it now defaults to TODAY's own point, if today is in the window at all. Everything that answers
+  a day - the dotted line, the intersect dot, the gutter value, the date under the axis - is on screen
+  whenever a day resolves, held or default alike; ONLY the vertical cursor line and the movement
+  caption are truly interactive, and only those two still fade with `_cursorFade` (the now-line already
+  marks today's own x at rest, so a second vertical line there would be redundant). Releasing the
+  cursor no longer leaves `_curVal`/the reading at nothing - it settles back to today's own value.
+- **Full vertical lines for the 1st and the 15th**, semi-transparent (0.22), replacing the 3px tick
+  nub that used to mark them only at the very bottom - kept fainter than the now-line's own 0.55 so
+  today stays the one line that reads as an event rather than a ruling.
+- **The date under the axis is now shown at rest too** - a direct consequence of the resting default:
+  once a day resolves (held or default), its date label draws regardless of which reason resolved it.
+
+**Tests updated** (`balanceTile.test.js`) to match the new resting behaviour rather than testing
+against it: the "no lead line" test is now "a dotted line to a dot on the curve, on by default"; the
+fade-out test asserts `_curVal` settles back to today's own reading rather than to `null`; the easing
+test asserts against the resting value it now eases FROM rather than assuming nothing was showing
+before the first touch. All three updated assertions read the DOM markup as jsdom actually serializes
+it (`></line>`, not the self-closing `/>` the source string writes) rather than the literal source.
+
+**2026-09-16 — two follow-ups from the UI tweaks: the axis label suppression, and the dash that stayed**
+
+**1. Axis suppression only ever keyed off `this.state.at`.** The 1st/15th tick label suppression
+("a tick under the cursor's own date gives way to it") was written before the resting default existed,
+so it only cleared space for an ACTIVELY held cursor's date. Once the resting default started showing
+today's own date label unconditionally, a 1st/15th tick close to today collided with it at rest - which
+is what the screenshot showed as "Se[15][p16]" garbled text. `axis` now builds AFTER the day resolves
+(held, fading, or resting-default alike) and suppresses against `dateX` - whichever date label is
+actually on screen - rather than against `this.state.at` specifically. `"the 1st and the 15th are
+always marked"` updated to exclude a 1st/15th within the SAME pixel clearance of today, computed the
+same way the component computes it (pixels-per-day off the real frame) rather than a re-guessed day
+count; confirmed the "gives way" test still catches the suppression being disabled.
+
+**2. The forecast line was still dashed.** The fill split (`areaActual`/`areaFuture`, previous entry)
+was the right idea but not the whole of what was asked: "the prediction line should be filled, but
+semitransparent" meant the STROKE too, and `lineFuture` was left with `stroke-dasharray` untouched.
+It is solid now - `STROKE.dash` is unused and left as a stale record of what it replaced. What still
+marks it as the claim rather than the record: the fill split above, the stroke's own lower opacity
+(`PLANE.projected`, unchanged at 0.5 against the record's implicit 1), and a thinner stroke width
+(`STROKE.projected` = 2 against `STROKE.actual` = 3) - three quiet devices instead of one loud one.
+Two tests keyed on the dash pattern directly (`"a settled month draws no ... dashed projection"`,
+`"... a travel still draws it dotted"`) - both retitled and rewritten against what actually
+distinguishes the line now: a stroke count of exactly one `stroke="url(#bal-ramp)"` for a settled
+month (no future to draw a second one from), and the future line's own thinner, fainter signature for
+the travel case.
+
+**2026-09-16 — weekend bands tried and reverted; the resting reading freezes for a travel; "Today (date)"**
+
+- **Weekend bands: built, then reverted the same turn.** Replacing the 1st/15th vertical lines with
+  low-opacity Saturday/Sunday bands was implemented and tested (`weekendBands` in `draw()`'s masked
+  body), then the request changed to dropping the idea entirely. The 1st/15th's full-height lines stay
+  removed either way - only the short tick + date label under the axis marks them now, as before this
+  UI-tweaks round started.
+- **The resting reading now freezes during any animation, rather than sliding under it.** Reported as
+  the dotted balance line "catching" the animation when travelling back to last month. The cause: the
+  resting default resolves today's own point out of `all`, which during a travel is the UNION of both
+  windows, positioned through `X()`, which is built from a FRAME being interpolated frame to frame -
+  today's own x under that moving frame is not the fixed point it is at rest, so the dotted line and
+  its dot visibly slid and snapped as the frame moved. The resting-default branch is now skipped
+  outright while `this.animating` is true (set by both `zoomTo()` and `morphWith()`) - nothing it draws
+  answers a question worth asking mid-motion anyway, since the reader is watching the curve travel, not
+  pointing at a day. It reappears, settled, the instant the travel's own final `paint()` runs.
+- **The resting default reads "Today (date)"; dragging still reads the date alone**, even where the
+  finger lands on today's own day - "Today" is a claim about WHY that day is being shown (nothing was
+  touched) rather than about which day it is, so it is wrong the moment a finger is actually on it,
+  however coincidentally it agrees. `dayLabel` is built from the existing `interactive` flag already
+  used to gate the caption and the vertical cursor line, so this needed no new state.
+
+Both fixes verified against the pre-fix code (disabled, watched the new test fail, restored) before
+being left in place.
+
+**2026-09-16 — less contrast-stealing forecast line; the held badge paints in front of the cursor**
+
+- **`PLANE.projected` 0.5 → 0.4.** More contrast between the forecast's stroke and the record's
+  (implicitly full-opacity) one, on top of the thinner width and the lighter fill already
+  distinguishing them.
+- **The badge the cursor is actively on now paints after the cursor's own line and caption, not
+  before.** Every badge used to live in one masked group, painted early in the svg's own document
+  order - so the cursor's vertical line and caption, drawn later, ran straight over whichever badge
+  had just grown under the finger. It is pulled out of that group (`beadsHeld`, split from `beads` by
+  the same `heldKey` the grow-order already used) and painted in a second masked group at the very end
+  of the live layer - after `passive` and `shown` both - so holding a badge now puts it in front of
+  the cursor rather than leaving the cursor drawn over it. Scoped to `this.state.at` (active drag)
+  specifically, matching "when the cursor ACTIVATES a badge" - the resting default and the release fade
+  do not reorder anything.
+
+**2026-09-16 — "Today (date)" whenever the day shown is today, not only at rest**
+
+Reversed the previous entry's own decision, on request. `dayLabel` no longer keys off `interactive` -
+it keys off whether the day actually being answered for IS today (`dayIdx(day.date) === dayIdx(now)`),
+regardless of how that day came to be shown. Dragging onto today now reads the identical "Today (date)"
+resting already showed; dragged anywhere else it is dropped, honestly, because that day is not today
+either way. Confirmed by first reproducing the reported gap directly (a throwaway probe mounting the
+real component and touching today via the same path a finger would) before writing the fix, then
+verified the updated test fails against the reverted code before being restored.
+
+**2026-09-16 — the title reads "{account} balance {when}"**
+
+Was "Balance {source}, {when}" ("Balance spending, this month"). `sources()` now names the words for
+the sentence itself, not as a generic label: `"Checking"` / `"Checking+ cards"`, leading with the
+account being read rather than with the word "spending". The template moved with it:
+`{sourceButton} balance {whenButton}` - "Checking balance this month" / "Checking+ cards balance this
+month". Nothing downstream keyed on the old strings for anything but display - `source()`'s own
+comparisons run on `SPENDING`/`NETTED` (the constant keys, first element of each pair), never on the
+label text - so this was a wording change with no logic behind it to keep in step.
+
+**2026-09-16 — "After-cards", hyphenated**
+
+Unhyphenated ("After cards balance this month") misreads as a pause after "After" rather than a
+compound modifier on "balance". Hyphenated it reads as intended: "After-cards balance this month".

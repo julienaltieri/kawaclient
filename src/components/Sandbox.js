@@ -14,7 +14,7 @@ import PageLoader from './PageLoader';
 import HeaderRowDrawer from './HeaderRowDrawer';
 import BalanceBench from './BalanceBench';
 import BalanceChart from './BalanceChart';
-import DayAudit from './DayAudit';
+import BalanceReadout from './BalanceReadout';
 
 //General sandbox page, hosting experiments. A first-class route behind login, so it follows the same
 //loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's ready.
@@ -100,7 +100,7 @@ function pickStreams(){
 export default class Sandbox extends BaseComponent{
 	constructor(props){
 		super(props);
-		this.state = {fetching:true,transactions:[],day:null};
+		this.state = {fetching:true,transactions:[]};
 	}
 	//Same loading lifecycle every page follows (see StreamView.js's MasterStreamView): fetching starts
 	//true, loadData() waits on Core.loadData() before touching Core for anything, then flips fetching
@@ -131,19 +131,22 @@ export default class Sandbox extends BaseComponent{
 		//account is moved by everything that touched it - including whatever no stream claims, which
 		//is the number it exists to surface
 		return <div style={{maxWidth:"60rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
-			{/* THE GRAPH AND ITS NUMBERS ON ONE PAGE. Auditing meant flipping between two routes and
-			    reloading, which loses the cursor and the scroll position every time - and the whole
-			    job is comparing a point on the curve against the rows that made it. It opens on LAST
-			    month and the spending account, because that is the window being audited: a settled
-			    month, on the account the forecast is scored against. */}
+			{/* THE TILE ITSELF, on the page beside the bench that scores it. The day table that used
+			    to sit under it is gone: the tile answers a day in place now - the cursor names every
+			    movement with its amount, and the balance it reaches - so the table was a second, older
+			    reading of the same question kept alive alongside the one being worked on. */}
 			<div style={titleStyle}>The tile</div>
 			<div style={{maxWidth:"24.4rem"}}>
-				{/* sticky: the table below is meant to be READ and copied, which needs the finger
-				    somewhere else. Tapping the same day again clears it. */}
+				{/* sticky: a reading that survives the finger lifting, so a day can be looked at
+				    rather than only glimpsed under the drag. Tapping it again clears it. */}
 				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
-					sticky={true} onDay={d => this.updateState({day:d})}/>
+					sticky={true}/>
 			</div>
-			<DayAudit day={this.state.day}/>
+			{/* WHAT THE TILE THINKS THE BALANCE IS, on live data, beside the tile that drew it. The
+			    "bank balances went rogue" question used to be answered from a dumped fixture in a
+			    terminal, which is always about a day that has already passed. */}
+			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance readout</div>
+			<BalanceReadout transactions={this.state.transactions}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>
 			<BalanceBench transactions={this.state.transactions}/>
 			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Header rows</div>

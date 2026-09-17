@@ -21,6 +21,7 @@ const API = {
 	bankInitiateUpdate: 						AppConfig.serverURL + "/api" + "/bankInitiateUpdate",
 	bankGetItemStatuses: 						AppConfig.serverURL + "/api" + "/bankGetItemStatuses",
 	bankGetAccountsForUser: 					AppConfig.serverURL + "/api" + "/bankGetAccountsForUser",
+	bankGetRawAccountsForUser: 				AppConfig.serverURL + "/api" + "/bankGetRawAccountsForUser",
 	getBalanceHistory: 							AppConfig.serverURL + "/api" + "/getBalanceHistory",
 	bankRemoveItem: 							AppConfig.serverURL + "/api" + "/bankRemoveItem",
 	forceRefreshItemTransactions: 				AppConfig.serverURL + "/api" + "/forceRefreshItemTransactions",
@@ -336,6 +337,15 @@ class ApiCaller{
 
 	bankGetAccountsForUser(){
 		const request = new Request(API.bankGetAccountsForUser,{
+			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
+			body:JSON.stringify({})
+		})
+		return this.sendRequest(request)
+	}
+
+	//the aggregator's own response, untranslated - one entry per connection, {cached, fresh} for Plaid
+	bankGetRawAccountsForUser(){
+		const request = new Request(API.bankGetRawAccountsForUser,{
 			method:"post",headers: {"Content-Type":"application/json",accesstoken:this.token},
 			body:JSON.stringify({})
 		})

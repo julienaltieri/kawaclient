@@ -15,7 +15,7 @@ import React from 'react'
 import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
 import {CompoundStream, GenericTransaction} from '../model'
-import BalanceChart from '../components/BalanceChart'
+import BalanceChart, {nameOf, iconFor, money, PAD, onDate} from '../components/BalanceChart'
 import ApiCaller from '../ApiCaller'
 import {histogramOf, reconstruct, forecast, accountRoutingOf, classifyStream, CLASSES,
 	groupByStream, pointPrediction, dayLabel, TIERS, observedSettlement, settlementInReading,
@@ -117,7 +117,7 @@ const mountLegacy = async () => {
 
 test("mounts, and the title names the reading and the window", async () => {
 	await mount()
-	expect(screen.getByText("spending")).toBeInTheDocument()
+	expect(screen.getByText("Checking")).toBeInTheDocument()
 	expect(screen.getByText("this month")).toBeInTheDocument()
 })
 
@@ -161,11 +161,16 @@ test("the shifted window is entirely settled, so nothing in it is projected", as
 	expect(a.past.every(p => p.actual)).toBe(true)
 })
 
-test("a settled month draws no today line and no dashed projection", async () => {
+test("a settled month draws no today line and no second, forecast line", async () => {
+	/* THE FORECAST LINE IS SOLID NOW, NOT DASHED - see its own comment in draw() - so "is there a
+	   forecast drawn" is asked by counting how many strokes take the ramp, not by looking for a
+	   dash pattern that no longer exists. A settled month has no future at all, so there must be
+	   exactly one. */
 	const ref = await mount()
 	await act(async () => {ref.current.setState({when: "last"})})
 	const svg = (ref.current.host.current || {}).innerHTML || ""
-	expect(svg).not.toContain("stroke-dasharray=\"" + "3,2.5")
+	const strokes = svg.match(/stroke="url\(#bal-ramp\)"/g) || []
+	expect(strokes.length).toBe(1)
 })
 
 /* ---- (a) which money am I looking at ------------------------------------------------------------ */
@@ -179,7 +184,7 @@ test("the default is the SPENDING account, and savings is not folded into it", a
 
 test("there are two readings, and the second actualises the cards", async () => {
 	const ref = await mount()
-	expect(ref.current.sources().map(o => o[1])).toEqual(["spending", "spending net of cards"])
+	expect(ref.current.sources().map(o => o[1])).toEqual(["Checking", "After-cards"])
 	await act(async () => {ref.current.setState({source: "__netted__"})})
 	expect(ref.current.anchor()).toBe(3200 - 800)
 })
@@ -208,13 +213,18 @@ test("a bank that reports no balance gives an empty state rather than a plausibl
 
 /* ---- (b) the cursor names what moved ------------------------------------------------------------ */
 
-test("the cursor reports the balance that day, and nothing else", async () => {
+/* THE TOP AREA IS THE TITLE AND NOTHING ELSE. A second line used to sit under it restating the
+   window's low point in prose. The chart already draws that low as a guide with its own value printed
+   on it, and the cursor names any day's movements with their amounts at the mark - so the line was
+   spending a row of a small tile saying what the picture below it said better. */
+test("nothing but the title sits above the chart", async () => {
 	const ref = await mount()
-	await act(async () => {ref.current.setState({at: rentDay})})
-	const out = ref.current.subtitle()
-	//the balance after the rent went out: 3200 today, +400 and -0 since, +1700 undone
-	expect(out).toMatch(/^<b>\$[\d,]+<\/b>$/)
-	expect(out).not.toContain("Rent")
+	expect(ref.current.subtitle).toBeUndefined()
+	//the low point is named on the guide line INSIDE the drawing, and nowhere outside it
+	const svg = document.querySelector("svg")
+	const tile = svg.closest("[style]").parentElement
+	svg.remove()
+	expect(tile.textContent).not.toMatch(/low \$|short \$/)
 })
 
 test("the stream name appears beside a badge only while the cursor is on it", async () => {
@@ -228,6 +238,25 @@ test("the stream name appears beside a badge only while the cursor is on it", as
 	//on a day with no badge: gone again
 	await act(async () => {ref.current.setState({at: quietDay(ref)})})
 	expect(svg()).not.toContain("Rent")
+})
+
+/* THE ACTIVE BADGE PAINTS OVER THE CURSOR, NOT UNDER IT. Every badge used to sit in one group,
+   painted before the cursor's own vertical line and caption in the svg's own document order - so the
+   line ran straight over whichever badge the finger had just grown, and the badge read as behind the
+   thing pointing at it. The held day's own badge is now the LAST thing in the whole live layer. */
+test("holding a badge draws it in front of the cursor's own line, not behind it", async () => {
+	const ref = await mount()
+	const c = ref.current
+	await act(async () => {c.setState({at: rentDay})})
+	const svg = (c.host.current || {}).innerHTML || ""
+	//two <g mask="..."> groups now - the rest of the badges, then (after everything live) the held one
+	const groups = svg.match(/<g mask="url\(#bal-fade\)">/g) || []
+	expect(groups.length).toBe(2)
+	//the held badge's own circle appears strictly AFTER the cursor's vertical line in paint order
+	const cursorAt = svg.indexOf('stroke-width="1" opacity="0.7"')
+	const lastCircle = svg.lastIndexOf("<circle")
+	expect(cursorAt).toBeGreaterThan(-1)
+	expect(lastCircle).toBeGreaterThan(cursorAt)
 })
 
 test("a badge is drawn for a movement over the floor and not for one under it", async () => {
@@ -272,11 +301,234 @@ test("a day where nothing happened reports no movement rather than a wrong strea
 
 /* ---- (c) the subtitle says one thing ------------------------------------------------------------ */
 
-test("at rest the subtitle reports the low point and nothing else", async () => {
+test("the low point is named on the chart, where it is drawn", async () => {
 	const ref = await mount()
-	const sub = ref.current.subtitle()
-	expect(sub).toContain("low")
-	expect(sub).not.toContain("–")     //no date range as well
+	//the guide line carries its own value - which is why the prose line above the chart could go
+	const svg = (ref.current.host.current || {}).innerHTML || ""
+	//two bare numbers in the gutter: the higher one is higher up, which is what named them
+	expect((svg.match(/>\$[\d,]+</g) || []).length).toBeGreaterThanOrEqual(2)
+})
+
+/* A CARD REPAYMENT IS ONE FACT, EITHER SIDE OF TODAY.
+
+   The projected one carried the module's internal label, "repayment", which matched no icon rule and
+   drew the bland fallback dot - so a four-figure movement the reader recognised perfectly well on the
+   past side of the line became an anonymous mark the moment it crossed into the forecast. Both sides
+   are now named by the tile, identically, and the name earns the card icon.
+
+   A CAR repayment is not a card one. That is the trap in matching on the word alone, so it is asserted
+   here rather than left to whoever next edits the pattern list. */
+test("a repayment is named and iconed the same before and after today", async () => {
+	const ref = await mount()
+	const c = ref.current
+	expect(c.constructor === BalanceChart).toBe(true)
+	//the module's own label, and the reader's own stream, both land on the one name
+	expect(nameOf("repayment")).toBe("Card repayment")
+	expect(nameOf("Credit Card Payments")).toBe("Card repayment")
+	expect(iconFor("Card repayment")).toBe("card")
+	//and a car loan keeps its own
+	expect(nameOf("Car Repayment")).toBe("Car Repayment")
+	expect(iconFor("Car Repayment")).toBe("car")
+})
+
+/* EVERY DAY OF THE FORECAST IS A DAY THE CURSOR CAN READ.
+
+   The module hands back the days the balance CHANGES, which is all a step path needs to be drawn - so
+   the forecast was a sparse series, and on a quiet day there was simply no point under the finger.
+   The cursor then snapped to the nearest movement and reported someone else's date, which reads as
+   the cursor skipping days. A day the balance did not move is still a day with a balance. */
+test("the forecast has a point for every day, not only the days money moves", async () => {
+	const ref = await mount()
+	const a = ref.current.series("this")
+	expect(a.future.length).toBeGreaterThan(5)
+	const days = a.future.map(p => dayKey(p.date))
+	expect(new Set(days).size).toBe(days.length)          //no day twice
+	for(let i = 1; i < a.future.length; i++){
+		const gap = a.future[i].date.getTime() - a.future[i-1].date.getTime()
+		expect(gap).toBe(86400000)                         //and none missing
+	}
+	//so the cursor lands on the day it is actually over, on every one of them
+	a.future.forEach(p => {
+		const audit = ref.current.dayAudit(p)
+		expect(audit.date).toBe(dayKey(p.date))
+		expect(audit.balance).toBe(p.value)
+	})
+})
+
+/* THE EDGE SAYS THE RECORD RUNS ON. A line that simply stops at the frame says the money stopped
+   there. The drawing is masked so it fades out at the plot edge - and the GUTTER is outside the mask,
+   because the high, low and cursor values are the scale, not the record, and a scale that faded would
+   be unreadable exactly where it matters. A past window fades on the right too: it has a future
+   beyond it the reader can travel to. */
+test("the drawing fades at the edges and the scale does not", async () => {
+	const ref = await mount()
+	const svg = () => (ref.current.host.current || {}).innerHTML || ""
+	expect(svg()).toContain('mask="url(#bal-fade)"')
+	/* BOTH EDGES, IN EVERY WINDOW. The right one was conditional at first - on the window, then on
+	   whether a travel was running - and every version of that was wrong, because the question is not
+	   about the window. The record runs off the left because the past is longer than the frame; it
+	   runs off the right because THE FUTURE IS YET TO BE WRITTEN. */
+	expect((svg().match(/<rect[^>]*fill="url\(#bal-fade-[gh]\)"/g) || []).length).toBe(2)
+	await act(async () => {ref.current.setState({when: "last"})})
+	expect((svg().match(/<rect[^>]*fill="url\(#bal-fade-[gh]\)"/g) || []).length).toBe(2)
+	//the guide values live past the right edge of the plot, where the mask is white
+	expect(svg()).toMatch(/<text x="(2[89][0-9]|3[0-9][0-9])[^>]*>\$[\d,]+</)
+})
+
+test("the fade rect reaches past the plot edge, covering the line's own stroke overhang", async () => {
+	//a stroke is centred on its path, so a line ending exactly at the plot edge still paints past it
+	//- the fade rect has to start before that edge or a sliver of line sits outside the mask entirely,
+	//fully visible right where the fade had already gone transparent (see draw()'s own comment)
+	const ref = await mount()
+	const svg = () => (ref.current.host.current || {}).innerHTML || ""
+	const m = svg().match(/<rect x="(-?[\d.]+)" y="0" width="([\d.]+)" height="[\d.]+"\s*fill="url\(#bal-fade-g\)"/)
+	expect(m).toBeTruthy()
+	expect(Number(m[1])).toBeLessThan(10)          //PAD.l
+})
+
+test("the balance of the current day is shown by default, with a dotted line to its own dot on the curve", async () => {
+	const ref = await mount()
+	const svg = () => (ref.current.host.current || {}).innerHTML || ""
+	//AT REST, nothing touched: today's own value is already there, bold, in the gutter
+	expect(svg()).toMatch(/font-weight="600"[^>]*>\$/)
+	//a dotted line runs from the curve out to it, ending on a small dot where it meets the curve
+	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.2"/)
+	await act(async () => {ref.current.setState({at: rentDay})})
+	//a badge on the same day the cursor is on grows, so the whole picture is still mid-motion right
+	//after this setState - which is exactly the frame that must already show a number, not a blank
+	const held = ref.current.held
+	expect(held).toBeTruthy()
+	//the value under the finger, bold, beside the two quiet ones it sits between
+	expect(svg()).toMatch(/font-weight="600"/)
+	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.2"/)
+})
+
+/* THE CURSOR ARRIVES AND LEAVES, rather than blinking on and off.
+
+   Everything it draws - the line, the caption, the day under the axis, its own value in the gutter -
+   shares one eased opacity. The fade-OUT is the half that needs the machinery: `state.at` going null
+   is the release, not the disappearance, so the day it was on is kept and keeps being drawn at a
+   falling opacity. Without that there is nothing left to fade by the time the fade starts. */
+test("the cursor fades in when it arrives and out when it is released", async () => {
+	const ref = await mountWith({})
+	const c = ref.current
+	const svg = () => (c.host.current || {}).innerHTML || ""
+	const fade = () => {
+		const m = svg().match(/<g opacity="([\d.]+)">(?![\s\S]*?<g opacity)/)
+		return m ? Number(m[1]) : null
+	}
+	expect(c._cursorFade).toBe(0)
+	expect(svg()).not.toContain(onDate(rentDay))
+
+	//arriving: one componentDidUpdate has run, so it is partway in, not already there
+	await act(async () => {c.setState({at: rentDay})})
+	expect(c._cursorFade).toBeGreaterThan(0)
+	expect(c._cursorFade).toBeLessThan(1)
+	expect(fade()).toBe(Number(c._cursorFade.toFixed(3)))
+	//let it settle
+	for(let i = 0; i < 30; i++)c.paint()
+	expect(c._cursorFade).toBe(1)
+
+	//released: still drawn, and still on the same day, but on its way out
+	await act(async () => {c.setState({at: null})})
+	expect(c._cursorFade).toBeLessThan(1)
+	expect(c._cursorFade).toBeGreaterThan(0)
+	expect(svg()).toContain(onDate(rentDay))     //the thing being faded is still there to fade
+	expect(c.held).toBe(null)                    //but nothing is held any more
+
+	/* AND ONCE IT IS OUT, THE READING DOES NOT GO WITH IT. The vertical line and the caption were
+	   the only truly interactive pieces; the value, its dotted line and the date are the resting
+	   default now, and they fall back to TODAY's own reading rather than to nothing. */
+	for(let i = 0; i < 40; i++)c.paint()
+	expect(c._cursorFade).toBe(0)
+	expect(c._lastDay).toBe(null)
+	expect(c._curVal).not.toBe(null)
+	expect(svg()).not.toContain(onDate(rentDay))
+	expect(svg()).toContain(onDate(c.ledgerToday()))
+})
+
+test("the cursor's balance eases toward a new day rather than jumping to it", async () => {
+	/* THE RESTING DEFAULT MEANS THERE IS ALWAYS A VALUE ALREADY SHOWING - today's own, from the
+	   moment the tile mounts - so touching any OTHER day always eases from wherever the reading
+	   already was; there is no longer a bare "nothing to ease from" case reachable through the
+	   cursor alone. Snapping still happens - see _curVal's own comment - it is just always a snap
+	   FROM today, not from nothing. */
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series("this")
+	const all = a.past.concat(a.future)
+	let lo = all[0], hi = all[0]
+	all.forEach(p => {if(p.value < lo.value)lo = p; if(p.value > hi.value)hi = p})
+	if(Math.abs(hi.value - lo.value) < 5)return       //fixture too flat to say anything here
+	const resting = c._curVal
+	expect(resting).not.toBe(null)                    //today's own reading, already there at rest
+	await act(async () => {c.setState({at: hi.date})})
+	//one componentDidUpdate has run - one easing step from the RESTING value, not a snap to hi's own
+	if(Math.abs(hi.value - resting) > 0.5){
+		expect(c._curVal).not.toBeCloseTo(hi.value, 1)
+		const progress = Math.abs(c._curVal - resting)
+		expect(progress).toBeGreaterThan(0)
+		expect(progress).toBeLessThan(Math.abs(hi.value - resting))
+	}
+	//and it keeps closing the distance, frame by frame, however many steps that takes
+	for(let i = 0; i < 300 && Math.abs(c._curVal - hi.value) > 0.01; i++)c.paint()
+	expect(c._curVal).toBeCloseTo(hi.value, 1)
+})
+
+/* ---- "today" is read in the account's own timezone, never the machine's ------------------------ */
+
+/* REPORTED LIVE: at 19:36 Pacific, the tile's own "today" already read tomorrow's date - UTC had
+   crossed midnight while the reader's own evening had not. Read as the true UTC calendar day, that
+   is not a today-only edge case: it is true every evening, for however many hours match the offset,
+   for every reader west of Greenwich. And it directly undid the "anchor on the last CLOSED day"
+   decision elsewhere in this file - closed was computed in the wrong calendar, so the anchor landed
+   on the reader's own still-open day. */
+test("today is read in the account's stored timezone, not the machine's clock", async () => {
+	const ref = await mount()
+	const c = ref.current
+	//19:36 UTC-7 (Pacific) on the 16th is 02:36 UTC on the 17th - the exact split reported live
+	const RealDate = Date
+	const realNow = new RealDate(RealDate.UTC(2026, 8, 17, 2, 36))
+	global.Date = class extends RealDate{
+		constructor(...args){super(...(args.length ? args : [realNow.getTime()]))}
+		static now(){return realNow.getTime()}
+	}
+	try{
+		Core.globalState.userData.timeZoneOffset = -7
+		expect(dayKey(c.ledgerToday())).toBe("2026-09-16")     //the reader's own evening, not UTC's
+		Core.globalState.userData.timeZoneOffset = undefined
+		expect(dayKey(c.ledgerToday())).toBe("2026-09-17")     //unset: the same UTC day as before
+	}finally{
+		global.Date = RealDate
+	}
+})
+
+/* THE SERIES CACHE HAD NO TIME IN ITS KEY. A tile that just sits open never has a reason to rebuild
+   its picture - nothing about transactions, accounts, basis or the forecaster changes on its own -
+   so the day it was BUILT on is the day it kept showing, even as the clock (and the account's own
+   calendar day) moved on. This is why a fresh route (the sandbox, navigated to just now) could be
+   right while a tile left open since yesterday evening was not: the sandbox always computed fresh,
+   the open one never had a reason to. */
+test("a mounted tile rebuilds its series once the account's own day changes, nothing else touched", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const before = c.series("this")
+	expect(c.allSeries()).toBe(c.allSeries())          //same day, same everything: the cache holds
+
+	const RealDate = Date
+	const tomorrow = new RealDate(RealDate.now() + 24*3600*1000)
+	global.Date = class extends RealDate{
+		constructor(...args){super(...(args.length ? args : [tomorrow.getTime()]))}
+		static now(){return tomorrow.getTime()}
+	}
+	try{
+		//nothing about transactions, accounts, basis or algo changed - only the day did
+		const after = c.series("this")
+		expect(after).not.toBe(before)                  //a new series, not the stale one
+		expect(dayKey(after.now)).toBe(dayKey(tomorrow))
+	}finally{
+		global.Date = RealDate
+	}
 })
 
 /* ---- routing ------------------------------------------------------------------------------------ */
@@ -639,36 +891,204 @@ test("the animation lands exactly on the destination frame", async () => {
    The line between what happened and what is claimed is TODAY, and today does not move. What moves is
    the edge: travelling back it passes over the forecast, which retracts into today tip first.
    ================================================================================================= */
+/* THE FORECAST RETRACTS AS THE TRAVEL RUNS, WITHOUT A SINGLE POINT EVER LEAVING THE ARRAY.
+
+   `merged` is never filtered - see paintFrame's own comment on why. What retracts is which part of
+   it falls inside the frame's own domain, `[x0, x1]`, as that domain is smoothly lerped between the
+   two windows' own edges; the mask (always anchored to wherever `x1` maps in pixels) hides the rest.
+   So "how much is visible" is measured here the same way the mask decides it - by comparing each
+   future point's date against the CURRENT frame's own `x1` - not by counting path commands, which no
+   longer shrink at all: the full path is always in the markup, whatever is currently masked. */
 test("the forecast retracts as the travel runs, rather than switching on the first frame", async () => {
 	//legacy, because this needs a forecast to exist on a nine-day fixture - see mountLegacy
 	const ref = await mountLegacy()
 	const c = ref.current
 	const all = c.allSeries()
-
 	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
 
-	//the edge that travels is each window's last drawn day, and a settled month stops earlier
-	const e0 = c.edgeOf(all.this), e1 = c.edgeOf(all.last)
-	expect(e0).toBe(all.this.future[all.this.future.length - 1].date.getTime())
-	expect(e1).toBeLessThan(e0)
-
-	const f = c.frameOf(all.this)
-	const dotted = k => {
-		c.paintFrame(merged, all.this.now, f, e0*(1 - k) + e1*k)
-		const svg = (c.host.current || {}).innerHTML || ""
-		const m = svg.match(/<path d="([^"]*)" fill="none"[^>]*stroke-dasharray="3,2.5"/)
-		return m ? (m[1].match(/H/g) || []).length : 0
+	const visible = k => {
+		const frame = c.lerpFrame(f0, f1, k)
+		c.paintFrame(merged, all.this.now, frame)
+		return all.this.future.filter(p => p.date.getTime() <= frame.x1).length
 	}
-	const start = dotted(0), middle = dotted(0.5), finish = dotted(1)
-	expect(start).toBeGreaterThan(0)
+	const start = visible(0), middle = visible(0.5), finish = visible(1)
+	expect(start).toBe(all.this.future.length)      //k=0: this month's own frame hides nothing of it
 	expect(middle).toBeLessThan(start)
-	expect(finish).toBe(0)
+	expect(finish).toBe(0)                           //k=1: last month's own edge has no future at all
 
-	//and the last frame of the motion is the frame that replaces it
-	c.paintFrame(merged, all.this.now, f, e1)
+	/* AND THE LAST FRAME OF THE MOTION IS STABLE - painting the same (frame, content) twice
+	   reproduces it exactly, byte for byte. That is the whole claim a resting paint after the motion
+	   depends on: nothing about ending a travel is special-cased. */
+	c.paintFrame(merged, all.this.now, f1)
 	const travelled = (c.host.current || {}).innerHTML
-	c.paintFrame(merged.filter(p => p.date.getTime() <= e1), all.this.now, f)
+	c.paintFrame(merged, all.this.now, f1)
 	expect((c.host.current || {}).innerHTML).toBe(travelled)
+})
+
+/* THE CONTENT IS NEVER TRIMMED - THE MASK REACHES THE EDGE INSTEAD, EVERY FRAME.
+
+   Filtering by a travelling clock and then, separately, shrinking the frame to match what survived
+   the filter both broke in their own way - a gap in one case, a visibly resizing picture in the
+   other (reported from the phone: the chart "resizes itself back and forth" during a travel). Neither
+   was needed: a day chart is a STEP chart, so the point just past the edge still draws its horizontal
+   run OUT TO the edge and beyond before turning - the overshoot the mask needs is already there in
+   the geometry as long as that point is never removed from the array. This asserts exactly that: at
+   every step of a real travel, at least one drawn coordinate reaches to, or past, the plot's true
+   right edge - the overshoot exists - while the frame itself (`x0`) never jumps between frames the
+   way a re-filtered, re-fitted domain would. */
+test("nothing is ever trimmed from the content during a travel - the overshoot reaches the edge", async () => {
+	const ref = await mountLegacy()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
+	let lastX0 = null
+	for(let i = 1; i < 10; i++){
+		const k = i/10
+		const frame = c.lerpFrame(f0, f1, k)
+		c.paintFrame(merged, all.this.now, frame)
+		const svg = (c.host.current || {}).innerHTML || ""
+		const body = (svg.match(/<g id="bal-body"[^>]*>[\s\S]*?<\/g>/) || [""])[0]
+		const xs = (body.match(/[MH](-?[\d.]+)/g) || []).map(t => Number(t.slice(1)))
+		expect(xs.length).toBeGreaterThan(0)
+		//the geometry reaches to, or past, the true edge - the overshoot the mask crops
+		expect(xs.some(x => x >= c.W - PAD.r - 1)).toBe(true)
+		//and x0 moves smoothly with k, in one direction, never snapping back and forth
+		if(lastX0 !== null)expect(frame.x0).toBeLessThan(lastX0)   //this -> last moves backward in time
+		lastX0 = frame.x0
+	}
+})
+
+/* THE FADE MASK MUST SURVIVE THE TRAVEL.
+
+   It did not: every animation frame replaced the whole svg via innerHTML, throwing away the <mask>
+   and the <g mask="url(#...)"> that points at it TOGETHER, sixty times a second. A reference is
+   resolved when the group is inserted; asked to re-resolve it that often the renderer stops, and the
+   picture goes flatly opaque for the length of the motion - which is exactly what was reported.
+   Giving the mask a fresh id per paint, which is what was tried first, makes it worse: then every
+   frame really is a new resource.
+
+   The fix is to stop replacing it. A paint rewrites the ramp, the drawing and the live layer; the
+   mask defs and the group that references it are never touched. This asserts the DOM identity that
+   guarantees that - the same mask node, and the same body group, before and after a whole travel. */
+/* NOTHING IS DRAWN OUTSIDE THE PLOT, AND THE MASK IS WHAT GUARANTEES IT.
+
+   Reported from the phone: a bright stub of line pinned to the left edge, mid-travel. It was not the
+   fade failing - it was content that should never have been visible at all. The mask's white base
+   spanned the WHOLE viewBox, so anything outside the plot was not merely unfaded, it was fully
+   opaque; and nothing clipped the left at all, because only the right was ever held back, by
+   filtering data (`clipTo`), which is a different job. A travel draws the UNION of both windows while
+   the frame interpolates between them, so union days earlier than the frame's own x0 map to negative
+   x, are clipped by the svg viewport at x=0 rather than by the plot at PAD.l, and surface in the
+   strip between them.
+
+   The mask's white is now the plot rect, so outside it is black, which is hidden. */
+test("content outside the plot is masked away, not merely unfaded", async () => {
+	const ref = await mountLegacy()
+	const c = ref.current
+	const svg = () => (c.host.current || {}).innerHTML || ""
+	//the white base of the mask starts at the plot, not at the viewBox
+	const base = svg().match(/<mask id="bal-fade"><rect x="(-?[\d.]+)"[^>]*width="([\d.]+)"[^>]*fill="#fff"/)
+	expect(base).toBeTruthy()
+	const x0 = Number(base[1]), w = Number(base[2])
+	expect(x0).toBeGreaterThanOrEqual(PAD.l - 4)          //not 0
+	expect(x0 + w).toBeLessThanOrEqual(c.W - PAD.r + 4)    //and it stops at the gutter
+	expect(x0 + w).toBeGreaterThan(PAD.l + 20)             //while still covering the plot
+
+	/* AND MID-TRAVEL, THE LEAK ITSELF: the union reaches a fortnight past either window, so at a
+	   frame part way between the two there really are points at negative x. They must be inside the
+	   masked group, where the mask hides them - never loose in the live layer. */
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
+	c.paintFrame(merged, all.this.now, c.lerpFrame(f0, f1, 0.5))
+	const body = (c.host.current || {}).querySelector("#bal-body")
+	expect(body.innerHTML).toMatch(/-\d+\.\d/)                  //negative coordinates were in fact drawn
+	//every element carrying one sits under a mask - the body group, or the beads' own
+	const live = (c.host.current || {}).querySelector("#bal-live")
+	const loose = Array.from(live.children)
+		.filter(el => el.getAttribute("mask") === null)
+		.map(el => el.outerHTML).join("")
+	expect(loose).not.toMatch(/<circle[^>]*cx="-/)
+})
+
+/* THE FADE IS THE SAME FADE THROUGHOUT A TRAVEL, AND AFTER IT.
+
+   The right edge was keyed off `state.when` first, which is set BEFORE the motion runs and is
+   therefore the DESTINATION for every frame of it: a trip from last month to this one had the right
+   fade switched off on the very first frame, so the line was cut dead at the plot edge with a hard
+   vertical stop and content slid in against that stop instead of emerging through a fade. Keying it
+   off "a travel is running" fixed that and was still wrong at rest. It is unconditional now, which
+   makes this a test that the mask NEVER changes - and so can never blink, whatever is happening. */
+const fadeRects = svg => (svg.match(/<rect[^>]*fill="url\(#bal-fade-[gh]\)"/g) || []).length
+
+test("both edges stay faded at rest, across a travel, and after it", async () => {
+	const ref = await mountLegacy()
+	const c = ref.current
+	const svg = () => (c.host.current || {}).innerHTML || ""
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.last), f1 = c.frameOf(all.this)
+
+	expect(c.state.when).toBe("this")
+	expect(fadeRects(svg())).toBe(2)
+
+	//the trip that broke it: last -> this, where `when` is already the destination while it runs
+	await act(async () => {c.setState({when: "this"})})
+	for(let i = 0; i <= 4; i++){
+		c.paintFrame(merged, all.this.now, c.lerpFrame(f0, f1, i/4))
+		expect(fadeRects(svg())).toBe(2)
+	}
+	c.paint()
+	expect(fadeRects(svg())).toBe(2)
+	//and the other way, at rest
+	await act(async () => {c.setState({when: "last"})})
+	expect(fadeRects(svg())).toBe(2)
+})
+
+test("a travel never replaces the mask, so the fade cannot drop out mid-motion", async () => {
+	const ref = await mountLegacy()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
+	const e0 = c.edgeOf(all.this), e1 = c.edgeOf(all.last)
+	const maskNode = () => (c.host.current || {}).querySelector('#bal-mask-defs')
+	const bodyNode = () => (c.host.current || {}).querySelector('#bal-body')
+
+	const mask0 = maskNode(), body0 = bodyNode()
+	expect(mask0).toBeTruthy()
+	expect(body0.getAttribute("mask")).toBe("url(#bal-fade)")
+
+	//every frame of the motion, as zoomTo drives it
+	for(let i = 0; i <= 10; i++){
+		const k = i/10
+		c.paintFrame(merged, all.this.now, c.lerpFrame(f0, f1, k), e0*(1 - k) + e1*k)
+		expect(maskNode()).toBe(mask0)        //the SAME node, not an equal one
+		expect(bodyNode()).toBe(body0)
+	}
+	//and the drawing under it did move, so the frames were real
+	expect(bodyNode().innerHTML).not.toBe("")
+	expect(maskNode().querySelector("mask").id).toBe("bal-fade")
+})
+
+/* A PROJECTED POINT SAYS SO ON ITSELF, whichever forecaster made it. Everything that has to tell a
+   record from a claim reads the flag, not the array the point arrived in - and the module's series
+   arrived unmarked, so the forecast drew SOLID through every frame of a travel. */
+test("the forecast marks its own points, so a travel still draws it as the lighter line", async () => {
+	/* NOT DASHED ANY MORE - a thinner stroke at half the record's opacity is what marks it as the
+	   claim instead, alongside the fill split (areaActual/areaFuture). Still has to survive a
+	   travel: the array a point arrived in is not what draws it lighter, its own "actual" flag is. */
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series("this")
+	if(!a.future.length)return                     //nothing forecast on this fixture, nothing to check
+	a.future.forEach(p => expect(p.actual).toBe(false))
+	const merged = c.union(a, c.series("last"))
+	c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
+	const svg = (c.host.current || {}).innerHTML || ""
+	expect(svg).toMatch(/stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.4"/)
 })
 
 test("a frame mid-travel carries the beads and guides, not just the line", async () => {
@@ -682,31 +1102,91 @@ test("a frame mid-travel carries the beads and guides, not just the line", async
 	//the old animation painter drew the area and the lines only, so everything else APPEARED when the
 	//motion stopped - which is what "the graph appears abruptly after the travel" was
 	expect(svg).toContain('stroke-dasharray="2,3"')   //the high/low guides
-	expect(svg).toContain("high $")
-	expect(svg).toContain("low $")
+	//their values, in the gutter - a bare number, since which one is which is its own height
+	expect((svg.match(/>\$[\d,]+</g) || []).length).toBeGreaterThanOrEqual(2)
 })
 
 /* ---- the permanent date axis -------------------------------------------------------------------- */
 
 test("the 1st and the 15th are always marked, each carrying its month", async () => {
+	/* EXCEPT ONE WHOSE JOB A CLOSER LABEL IS ALREADY DOING. A day label sits under the axis whether
+	   the cursor is held, fading, or - now - resting on today by default (see the resting-default
+	   entry in bank-balance.md), and a 1st/15th tick within the same clearance the cursor itself
+	   gives way for is suppressed exactly the way an actively-held one always was. So a 1st/15th
+	   within that same pixel margin of TODAY is excluded from what this expects to find, computed
+	   the same way the component computes its own clearance rather than a re-guessed day count. */
 	const ref = await mount()
-	const svg = () => (ref.current.host.current || {}).innerHTML || ""
-	const a = ref.current.series()
+	const c = ref.current
+	const svg = () => (c.host.current || {}).innerHTML || ""
+	const a = c.series()
 	const all = a.past.concat(a.future)
 	const from = all[0].date, to = all[all.length-1].date
+	const f = c.frameOf(a)
+	const pxPerMs = (c.W - PAD.l - PAD.r)/(f.x1 - f.x0 || 1)
+	const clearanceMs = 34/pxPerMs
+	const today = c.ledgerToday().getTime()
 
-	//every 1st and 15th inside the window is labelled, and none outside it is
+	//every 1st and 15th inside the window is labelled, unless today's own label already covers it
 	const expected = []
 	for(let m = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
 			m <= to; m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth()+1, 1))){
 		[1, 15].forEach(d => {
 			const t = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), d))
-			if(t >= from && t <= to)expected.push(
+			if(t >= from && t <= to && Math.abs(t.getTime() - today) >= clearanceMs)expected.push(
 				t.toLocaleString("en-US", {month:"short", day:"numeric", timeZone:"UTC"}))
 		})
 	}
 	expect(expected.length).toBeGreaterThan(0)
 	expected.forEach(label => expect(svg()).toContain(">" + label + "<"))
+	//no full-height line at either - only the bottom tick and its label carry them now
+	expect(svg()).not.toMatch(/y1="18"[^>]*y2="133"[^>]*opacity="0.22"/)
+})
+
+
+/* "TODAY" WHENEVER THE DAY BEING ANSWERED FOR IS TODAY - held, fading, or resting alike. It is a
+   fact about which day this is, not about why it is being shown, so dragging onto today reads
+   exactly the way resting on it already does; dragged elsewhere it is dropped, because that day is
+   not today either way, whether or not the finger is down. */
+test("\"Today (date)\" whenever the day shown is today - at rest and while dragging alike", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const svg = () => (c.host.current || {}).innerHTML || ""
+	const todayLabel = onDate(c.ledgerToday())
+	expect(svg()).toContain(">Today (" + todayLabel + ")<")
+
+	//dragging onto TODAY'S OWN day: the same "Today (...)" text resting already showed
+	await act(async () => {c.setState({at: c.ledgerToday()})})
+	expect(svg()).toContain(">Today (" + todayLabel + ")<")
+
+	//dragging elsewhere: plain date, as always - that day genuinely is not today
+	await act(async () => {c.setState({at: rentDay})})
+	expect(svg()).toContain(">" + onDate(rentDay) + "<")
+	expect(svg()).not.toContain("Today (")
+})
+
+/* THE RESTING READING DOES NOT ANIMATE. `all` during a travel is the union of two windows under a
+   frame that is itself being interpolated - today's own x under that moving frame is not a fixed
+   point the way it is at rest, so the dotted line and its dot visibly slid and snapped as the frame
+   moved, reported as the reading "catching" the travel. Reproduced with the same lerp zoomTo() itself
+   runs, not a real animated travel (jsdom has no rAF timing worth trusting for this). */
+test("the resting default is not drawn while a travel is running", async () => {
+	const ref = await mountLegacy()
+	const c = ref.current
+	const all = c.allSeries()
+	const merged = c.union(all.this, all.last)
+	const f0 = c.frameOf(all.this), f1 = c.frameOf(all.last)
+	const todayLabel = onDate(c.ledgerToday())
+
+	c.animating = true
+	for(let i = 1; i < 5; i++){
+		c.paintFrame(merged, all.this.now, c.lerpFrame(f0, f1, i/5))
+		const svg = (c.host.current || {}).innerHTML || ""
+		expect(svg).not.toContain("Today (")
+	}
+	//and it comes back, settled, once the travel ends
+	c.animating = false
+	c.paint()
+	expect((c.host.current || {}).innerHTML).toContain(">Today (" + todayLabel + ")<")
 })
 
 test("a tick label under the cursor's own date gives way to it", async () => {
@@ -1654,6 +2134,58 @@ test("sticky keeps the day after release, so the table can be read and copied", 
 	const host = ref.current.host.current
 	await act(async () => {host.dispatchEvent(new Event("pointerup", {bubbles: true}))})
 	expect(ref.current.state.at).toBeTruthy()
+})
+
+/* ---- the pointer's fraction of the host and the plot's fraction of the host must agree ---------- */
+
+/* THE PLOT DOES NOT FILL THE HOST. PAD.l and PAD.r inset it from the svg's own edges - the right
+   inset is the gutter the high/low/cursor values are printed in - so a date is drawn somewhere in
+   [PAD.l, W-PAD.r], never in [0, W]. Reading the pointer as a fraction of the WHOLE host box read the
+   gutter as more of the timeline than the drawing gave it: the last day sits at 85% of the width
+   (PAD.r=48 of W=334) but only counted as reached at 100% of the drag - so pulling the rightmost day
+   under the finger meant dragging past where the line actually ends, into the labels themselves.
+
+   jsdom has no layout, so `getBoundingClientRect` is stubbed to the tile's own measured width -
+   exactly what a real one would report once painted - and the pointer's clientX is chosen from the
+   SAME X() the drawing itself uses, so a passing test is a claim about the real mapping, not a
+   circular restatement of whatever the code already does. */
+test("a point on the timeline lands under the finger at the pixel it is actually drawn at", async () => {
+	const ref = await mountWith({sticky: true})
+	const c = ref.current
+	const host = c.host.current
+	host.getBoundingClientRect = () => ({left: 0, width: c.W, height: c.H})
+	const a = c.series("this")
+	const all = a.past.concat(a.future)
+	const f = c.frameOf(a)
+	const X = t => PAD.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(c.W - PAD.l - PAD.r)
+
+	const check = async point => {
+		const px = X(point.date.getTime())
+		await act(async () => {
+			const ev = new Event("pointerdown", {bubbles: true}); ev.clientX = px
+			host.dispatchEvent(ev)
+		})
+		expect(c.state.at.toISOString().slice(0, 10)).toBe(point.date.toISOString().slice(0, 10))
+	}
+	await check(all[0])                              //the plot's own left edge
+	await check(all[all.length - 1])                  //the plot's own right edge - NOT the host's
+	await check(all[Math.floor(all.length/2)])         //and a day in between the two
+})
+
+test("dragging into the gutter still means the rightmost day, not somewhere past it", async () => {
+	const ref = await mountWith({sticky: true})
+	const c = ref.current
+	const host = c.host.current
+	host.getBoundingClientRect = () => ({left: 0, width: c.W, height: c.H})
+	const a = c.series("this")
+	const all = a.past.concat(a.future)
+	await act(async () => {
+		//the true right edge of the host - inside the gutter, past the plot's own last pixel
+		const ev = new Event("pointerdown", {bubbles: true}); ev.clientX = c.W
+		host.dispatchEvent(ev)
+	})
+	const last = all[all.length - 1]
+	expect(c.state.at.toISOString().slice(0, 10)).toBe(last.date.toISOString().slice(0, 10))
 })
 
 test("the audit payload names both sides of the day and its difference", async () => {
@@ -3394,12 +3926,22 @@ test("an observation older than the whole window changes nothing about the windo
 })
 
 /* =================================================================================================
-   THE TILE DRAWS OBSERVATIONS WHERE THEY EXIST.
+   THE TILE WALKS FROM ONE ANCHOR, AND IGNORES THE STORED PER-DAY BALANCES.
 
-   This is the wiring, which is where a correct function gets called with the wrong argument and
-   nothing fails at build time. What must hold end to end: a stored balance the bank actually reported
-   beats the walk, a day where only some accounts reported is NOT an observation, and a reader with no
-   stored history sees exactly what they saw before.
+   It used to pin each day the bank had reported to that day's own snapshot and walk only the gaps.
+   The reasoning was that a reading is a fact and a derivation is not. But a reading is a fact about
+   THE INSTANT IT WAS TAKEN, written once and never revised: the bank restates a past day as late
+   postings land on it, and our copy of that day does not. A day whose snapshot was taken before a
+   cheque cleared therefore stayed frozen at the pre-cheque figure forever, and the step the cheque
+   made showed up a day late - a riser on a day nothing happened, with the transaction's own day
+   drawn flat beside it. A paycheque did exactly this, live, and that is what killed the mechanism.
+
+   What must hold now: TODAY is the live balance exactly, every earlier day is that figure minus what
+   posted since BY POSTING DATE, and no stored snapshot can move any of it.
+
+   `observedSeries()` itself still lives in BankBalance.js with its own unit tests above - it is a
+   correct function that nothing in the app now calls. Removing it is a separate decision from this
+   one, and belongs with whatever the bench concludes about driftVsRemembered().
    ================================================================================================= */
 const withHistory = async (rows) => {
 	ApiCaller.getBalanceHistory = () => Promise.resolve(rows)
@@ -3408,53 +3950,42 @@ const withHistory = async (rows) => {
 	return ref
 }
 
-test("a remembered balance beats the walk, and the tile says which it drew", async () => {
-	const ref = await withHistory([])
-	const plain = ref.current.series("this").past
-	const day = plain[Math.max(0, plain.length - 4)]
-	const k = dayKey(day.date)
-	//the bank says this day was $9,000 - a long way from whatever the walk made of it
-	const ref2 = await withHistory([{accountHash: CHECKING, date: day.date.toISOString(),
-		current: 9000}])
-	const drawn = ref2.current.series("this").past.filter(p => dayKey(p.date) === k)[0]
-	expect(drawn.value).toBeCloseTo(9000, 4)
-	expect(drawn.source).toBe(BALANCE_SOURCES.observed)
-	//and the day it did NOT report is filled by the walk, not invented
-	const other = ref2.current.series("this").past.filter(p => dayKey(p.date) !== k)
-	expect(other.every(p => p.source !== BALANCE_SOURCES.observed)).toBe(true)
-})
-
-test("with no stored history the tile is unchanged, point for point", async () => {
-	/* THE FALLBACK IS THE SAFETY OF THE WHOLE CHANGE. History older than the stored series, and any
-	   provider that carries no balances, must draw exactly as before. */
+test("today is the live anchor exactly, and the past is walked back from it", async () => {
 	const ref = await withHistory([])
 	const past = ref.current.series("this").past
 	expect(past.length).toBeGreaterThan(5)
-	expect(past.every(p => p.source === BALANCE_SOURCES.live)).toBe(true)
-	const anchor = ref.current.anchor()
-	expect(past[past.length - 1].value).toBeCloseTo(anchor, 6)
+	expect(past[past.length - 1].value).toBeCloseTo(ref.current.anchor(), 6)
+	//and every earlier day is the day after it, minus what posted on that later day
+	const byDay = {}
+	ref.current.ledger().forEach(t => {const k = dayKey(t.date)
+		byDay[k] = (byDay[k] || 0) + t.amount})
+	for(let i = past.length - 1; i > 0; i--){
+		const posted = byDay[dayKey(past[i].date)] || 0
+		expect(past[i - 1].value).toBeCloseTo(past[i].value - posted, 4)
+	}
 })
 
-test("a day where only SOME covered accounts reported is not an observation", async () => {
-	/* A sum missing one account is a different quantity from a sum containing it. Comparing the two
-	   invents a step on the day an account started being observed - so a partial day is no
-	   observation at all and the walk fills it, which is what the walk is for. */
-	const ref = await withHistory([])
-	const past = ref.current.series("this").past
-	const day = past[Math.max(0, past.length - 3)]
-	//SAVINGS is not in the spending reading at all, so this reports nothing about it
-	const ref2 = await withHistory([{accountHash: SAVINGS, date: day.date.toISOString(),
-		current: 50000}])
-	const drawn = ref2.current.series("this").past.filter(p => dayKey(p.date) === dayKey(day.date))[0]
-	expect(drawn.source).not.toBe(BALANCE_SOURCES.observed)
-	expect(drawn.value).toBeCloseTo(day.value, 6)
+test("a stored snapshot cannot move the drawn line, however far off it is", async () => {
+	/* THE REGRESSION THIS EXISTS FOR. A snapshot that disagrees with the walk used to win outright,
+	   which is how a stale one put a riser on a day nothing happened. It is now not consulted at all,
+	   so a wildly wrong one changes nothing. */
+	const plain = await withHistory([])
+	const before = plain.current.series("this").past.map(p => p.value)
+	const day = plain.current.series("this").past[2]
+	const ref2 = await withHistory([{accountHash: CHECKING, date: day.date.toISOString(),
+		current: 9000}, {accountHash: SAVINGS, date: day.date.toISOString(), current: 9000},
+		{accountHash: CARD, date: day.date.toISOString(), current: 9000}])
+	const after = ref2.current.series("this").past.map(p => p.value)
+	expect(after).toEqual(before)
 })
 
-test("a failing history call leaves the tile drawing, not blank", async () => {
-	//fire and forget: the picture must not depend on a call that can fail
-	ApiCaller.getBalanceHistory = () => Promise.reject(new Error("nope"))
+test("the tile asks for no balance history at all", async () => {
+	//nothing reads it, so asking for four hundred days of it on every mount was a wasted round trip
+	let asked = 0
+	ApiCaller.getBalanceHistory = () => {asked++; return Promise.resolve([])}
 	const ref = React.createRef()
 	await act(async () => {render(<BalanceChart ref={ref} stream={master} transactions={txns}/>)})
+	expect(asked).toBe(0)
 	expect(ref.current.series("this").past.length).toBeGreaterThan(5)
 })
 

@@ -65,7 +65,16 @@ const valueForDisplay = (analysis) => analysis.getCurrentPeriodReport().reportin
 class MasterAuditView extends StreamAuditView{
 	render(){
 		return (<AuditViewContainer>
-			{this.props.auditedTransactions.filter(t => t.categorized).length>0?<MasterStreamAuditView stream={Core.getMasterStream()} key={0} auditedTransactions={this.props.auditedTransactions.filter(t => t.categorized)}/>:""}
+			{/* `allTransactions` carries what this component itself received, before the categorized
+			    filter below narrows it for everything that reads a stream off a transaction - the
+			    projection graph, the money-flow page, the per-stream analyses. The balance page reads
+			    no stream at all; it walks the account backward from every dollar that moved, and an
+			    uncategorized one moved it exactly as much as a categorized one did. Filtered out here,
+			    that money silently left the balance tile's own past - see BalanceChart's own use of
+			    it below, and the sandbox's matching comment on why it takes the same unfiltered set. */}
+			{this.props.auditedTransactions.filter(t => t.categorized).length>0?<MasterStreamAuditView stream={Core.getMasterStream()} key={0}
+				auditedTransactions={this.props.auditedTransactions.filter(t => t.categorized)}
+				allTransactions={this.props.auditedTransactions}/>:""}
 			{Core.getMasterStream().children.map((s,i) => {
 				return <MacroCompoundStreamAuditView stream={s} key={i+1} auditedTransactions={this.getTransactionsForStream(s)}
 	 				onCategorizationUpdate={this.props.onCategorizationUpdate}
@@ -105,9 +114,15 @@ class MasterStreamAuditView extends StreamAuditView{
 			//from the same master stream. It takes NO analysis - its window is 7/15/30 days centred
 			//on today, which is not an observation period, and it anchors on the live account balance
 			//rather than on anything the analysis computed.
+			//
+			// `allTransactions`, NOT `auditedTransactions` - the walk sums every dollar that moved on
+			// the covered accounts, and it does not read a stream off any of them to do it. Handed
+			// only the categorized set, an uncategorized transaction was invisible to the reconstructed
+			// past, which put the whole curve wherever that money's absence happened to leave it - the
+			// sandbox never had this fault, because its own tile is built from the unfiltered set.
 			<BalanceChart key="balance"
 				stream={this.props.stream}
-				transactions={this.props.auditedTransactions}
+				transactions={this.props.allTransactions}
 			/>
 		]}/>
 	</div>)
