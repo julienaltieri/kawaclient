@@ -33,15 +33,41 @@ export const MAX_OFFSET = 14;
 
 /* ---- THE ONE FORMULA ----------------------------------------------------------------------------
    EVERY CHARGE IN THE WINDOW A REPAYMENT COVERS. `charges` is ascending; `from` is exclusive so a
-   charge is cleared exactly once, by the first repayment that closes after it. */
+   charge is cleared exactly once, by the first repayment that closes after it.
+
+   THE BOUNDARY RULE IS A NAMED FUNCTION because two callers must not disagree about it: `owed()`
+   sums the window and `membersIn()` lists what it summed. An instrument that lists one set while the
+   forecast adds up another is worse than no instrument - it would make a correct forecast look wrong
+   and, worse, a wrong one look explained. */
+export const inWindow = (t, from, to) => t > from && t <= to;
+
 export function owed(charges, from, to){
 	let sum = 0;
 	for(let i = 0; i < charges.length; i++){
-		const t = charges[i].t;
-		if(t > from && t <= to)sum += charges[i].a;
+		if(inWindow(charges[i].t, from, to))sum += charges[i].a;
 	}
 	return sum;
 }
+
+//the same window, as its members rather than as their sum - see inWindow above
+export const membersIn = (charges, from, to) => (charges || [])
+	.filter(c => inWindow(c.t, from, to));
+
+/* ---- WHAT A CARD'S OWN LEDGER CONTRIBUTES, read once and read the same way by everything ---------
+   `cardSettlements()` below reads these, and so does any instrument asking it to show its working.
+   Each row keeps `e`, the ledger entry it came from, so a caller can name a charge - its date, its
+   description, whether it is posted or still only predicted - without a second pass that might
+   select a different set than the arithmetic did. `owed()` reads only `t` and `a` and ignores it. */
+export const chargesOf = acc => (acc.ledger || [])
+	.filter(e => !e.repayment && e.source !== 'settlement')
+	.map(e => ({t: e.date.getTime(), a: e.amount, e: e}))
+	.sort((x, y) => x.t - y.t);
+
+//the repayments that actually happened, which is what the offset is fitted against
+export const historyOf = acc => (acc.ledger || [])
+	.filter(e => e.source === 'posted' && e.repayment)
+	.map(e => ({t: e.date.getTime(), a: e.amount, e: e}))
+	.sort((x, y) => x.t - y.t);
 
 /* ---- WHICH OFFSET REPRODUCES THE PAST BEST ------------------------------------------------------ */
 export function fitOffset(charges, repayments, maxOffset){
@@ -98,16 +124,8 @@ export function cardSettlements(portfolio, ledgers, opts){
 		   A SETTLEMENT THIS STAGE WROTE IS NOT A CHARGE. Run twice over the same ledger - which a
 		   caller may reasonably do - its own output would be read back as spending and repaid again,
 		   each pass feeding the next. */
-		const charges = acc.ledger
-			.filter(e => !e.repayment && e.source !== 'settlement')
-			.map(e => ({t: e.date.getTime(), a: e.amount}))
-			.sort((x, y) => x.t - y.t);
-
-		//the repayments that actually happened, which is what the offset is fitted against
-		const history = acc.ledger
-			.filter(e => e.source === 'posted' && e.repayment)
-			.map(e => ({t: e.date.getTime(), a: e.amount}))
-			.sort((x, y) => x.t - y.t);
+		const charges = chargesOf(acc);
+		const history = historyOf(acc);
 
 		const fit = fitOffset(charges, history, o.maxOffset);
 		const last = history.length ? history[history.length - 1].t - fit.offset * ONE_DAY : asOf;

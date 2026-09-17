@@ -836,9 +836,18 @@ export default class BalanceChart extends BaseComponent{
 					if(!this._unmounted)this.updateState({})
 					return run
 				})
-				//a failed run draws no forecast rather than taking the page down - same fallback the
-				//synchronous call's try/catch gave it
-				.catch(() => {this._runs[key] = null; return null})
+				/* A FAILED RUN DRAWS NO FORECAST RATHER THAN TAKING THE PAGE DOWN - same fallback the
+				   synchronous call's try/catch gave it. BUT IT SAYS SO NOW. Swallowing this without
+				   a trace means the tile quietly draws the LEGACY line instead - a different model,
+				   measured at -530.7% on the card against the module's 30.5% - and looks no
+				   different while doing it. The reason is kept on the instance for the sandbox's
+				   probe to read; nothing on the shipped tile renders it. */
+				.catch(err => {
+					this._runs[key] = null
+					this._runFailed = this._runFailed || {}
+					this._runFailed[key] = (err && (err.message || err.type)) || String(err)
+					return null
+				})
 		}
 		return this._runs[key]
 	}

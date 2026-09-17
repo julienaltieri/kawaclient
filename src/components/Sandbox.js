@@ -3,154 +3,69 @@ import BaseComponent from './BaseComponent';
 import Core from '../core.js';
 import DS from '../DesignSystem.js';
 import AppConfig from '../AppConfig';
-import memoize from 'memoize-one';
-import {getStreamAnalysis,reportingConfig,getAnalysisRootDate} from '../processors/ReportingCore.js';
 import {getAnalysisStartDate} from './StreamAuditView';
-import {TimeAndMoneyProgressView,TerminalStreamCurrentReportPeriodView,format} from './AnalysisView';
-import MiniGraph from './MiniGraph';
-import {Period} from '../Time';
-import utils from '../utils';
 import PageLoader from './PageLoader';
-import HeaderRowDrawer from './HeaderRowDrawer';
-import BalanceBench from './BalanceBench';
 import BalanceChart from './BalanceChart';
-import BalanceReadout from './BalanceReadout';
+import CardRepaymentProbe from './CardRepaymentProbe';
 
-//General sandbox page, hosting experiments. A first-class route behind login, so it follows the same
-//loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's ready.
-//
-//Currently two:
-//  - the BALANCE FORECAST BENCH, which is where page three's accuracy is actually measured. Its unit
-//    tests only prove the model is self-consistent; whether it is RIGHT is a question about this
-//    portfolio's real transactions, and there is nowhere else in the app those and the forecast meet.
-//  - several real compound-stream header rows (the same row CompoundStreamAuditView renders in
-//    StreamAuditView.js), composed from HeaderRowDrawer - the same drawer that row uses in production.
+/* General sandbox page, hosting experiments. A first-class route behind login, so it follows the same
+   loading lifecycle every other page uses (see loadData() below) rather than reading Core before it's
+   ready.
+
+   THE WORKBENCH IS WHATEVER IS BEING WORKED ON, and it is deliberately not an accumulating museum.
+   The balance readout, the forecast bench and a row of real compound-stream headers stood here while
+   each was the question; each is still its own component (BalanceReadout, BalanceBench,
+   HeaderRowDrawer) and comes back by re-adding one line and its import.
+
+   Currently one:
+     - the TILE itself, on live transactions, and under it the CARD REPAYMENT PROBE - because the
+       forecast and the card issuer's own app disagree about the next repayment, and no fixture can
+       settle that: a fixture is a photograph of a day that has already passed and the argument is
+       about today. See CardRepaymentProbe.js. */
 
 const titleStyle = {marginBottom:DS.spacing.xxs+"rem",textAlign:"left",fontWeight:"bold"};
-const ringConfig = {timeThickness:0.4,moneyThickness:1.3,moneyRadius:45,subdivGapAngles:0.0001};
-
-//Same reporting-date logic StreamAuditView keeps privately (it isn't exported): the end of the current
-//observation period, computed once since it doesn't change while this page is open.
-//Called, not computed at module scope. getAnalysisRootDate reads the user's preferences, which do not
-//exist until Core has loaded - and a module body runs the moment anything imports this file, which is
-//long before that. Evaluating it eagerly threw on `userPreferences` of undefined and took the whole app
-//down, from a page nobody had opened.
-const analysisDate = () => reportingConfig.observationPeriod.nextDateFromNow(getAnalysisRootDate());
-
-//One compound-stream header row, built on HeaderRowDrawer: this component supplies the stream's data and
-//the drawer/text/chart content, HeaderRowDrawer supplies the window, the gesture and the spring.
-class CompoundStreamHeaderRow extends BaseComponent{
-	constructor(props){
-		super(props);
-		//own memoize instance per row, not the shared module-level one StreamAuditView uses: several of these
-		//rows are on screen together, and a single shared cache would miss on every render as rows alternate.
-		this.mAnalyze = memoize((s,txns,observationPeriod,subReportingPeriod) => getStreamAnalysis(analysisDate(),s,txns,observationPeriod,subReportingPeriod));
-	}
-	getAnalysis(options){
-		return this.mAnalyze(this.props.stream,this.props.transactions,
-			options?.observationPeriod || reportingConfig.observationPeriod,
-			options?.subReportingPeriod || options?.observationPeriod?.subdivision)
-	}
-	//The ring compares money spent against time elapsed but never says the number it is comparing. Beside it
-	//goes exactly what the app already says about a period elsewhere - the same value and the same word
-	//("left", "over", "saved", "received", "paid") - taken from TerminalStreamCurrentReportPeriodView rather
-	//than re-derived. Those methods read only props.analysis and hold no state, so borrowing them costs an
-	//object and keeps the rule in one place; re-implementing its savings/income/paid branches here would be
-	//a second copy to keep in step.
-	periodValue(analysis){
-		var view = new TerminalStreamCurrentReportPeriodView({analysis:analysis});
-		return {text:format(view.getPrimaryValue()), word:view.getSubtext()}
-	}
-	renderDrawerCaption(analysis){
-		var v = this.periodValue(analysis);
-		//one wrapping line rather than two fixed ones - see the same caption in StreamAuditView
-		return <div style={{lineHeight:1.15,
-				fontSize:DS.fontSize.little+"rem",color:DS.getStyle().bodyText}}>{v.text}{" "}
-				<span style={{color:DS.getStyle().bodyTextSecondary}}>{v.word}</span></div>
-	}
-	render(){
-		var analysis = this.getAnalysis();
-		var current = analysis.getCurrentPeriodReport();
-		return <HeaderRowDrawer
-				//these rows never collapse, so there is only the one (expanded) margin to reproduce
-				style={{marginBottom:DS.verticalSpacing.s}}
-				drawer={<TimeAndMoneyProgressView analysis={current} viewConfig={ringConfig}/>}
-				drawerCaption={this.renderDrawerCaption(current)}
-				chart={<MiniGraph analysis={this.getAnalysis({observationPeriod:Period.yearly})} stream={this.props.stream}/>}>
-			<div style={{padding:DS.spacing.xs+"rem",flexGrow:0,marginRight:"auto",textAlign:"left"}}>
-				<div style={titleStyle}>{this.props.stream.name}</div>
-				<div>{utils.formatCurrencyAmount(this.props.stream.getExpectedAmountAtDate(current.reportingDate),0,true,null,Core.getPreferredCurrency())} per {Period[this.props.stream.period].unitName}</div>
-			</div>
-		</HeaderRowDrawer>
-	}
-}
-
-//Picks a handful of real streams for display: sorted by name length and the extremes (plus a couple of
-//midpoints) kept, so a long name and a short one both end up on screen rather than however many happen to
-//come first.
-function pickStreams(){
-	var master = Core.getMasterStream();
-	var all = master.getAllStreams().filter(s => s!==master && !s.isTerminal() && s.isActiveAtDate(new Date()));
-	var byLength = [...all].sort(utils.sorters.asc(s => s.name.length));
-	if(byLength.length<=5)return byLength
-	var picks = [byLength[0],byLength[Math.floor(byLength.length/3)],byLength[Math.floor(byLength.length*2/3)],byLength[byLength.length-1]];
-	return picks.filter((s,i) => picks.indexOf(s)===i)
-}
 
 export default class Sandbox extends BaseComponent{
 	constructor(props){
 		super(props);
 		this.state = {fetching:true,transactions:[]};
+		//the probe reads the TILE ITSELF through this - not a rebuild beside it. See CardRepaymentProbe:
+		//every reconstruction so far has agreed with the bank while the tile on screen did not, which
+		//leaves only one place the disagreement can be hiding: the instance that is actually drawing.
+		this.tile = React.createRef();
 	}
 	//Same loading lifecycle every page follows (see StreamView.js's MasterStreamView): fetching starts
 	//true, loadData() waits on Core.loadData() before touching Core for anything, then flips fetching
 	//off. Reading Core before that resolves - including at module scope - is what crashed this page before.
 	loadData(){
-		//same range MissionControl fetches over, so these rows analyze the same real transactions the audit view does
+		//same range MissionControl fetches over, so this page analyzes the same real transactions the
+		//audit view does
 		return Core.loadData()
 			.then(() => Core.getTransactionsBetweenDates(new Date(Math.min(AppConfig.transactionFetchMinDate,getAnalysisStartDate())),new Date()))
-			//ALL of them, categorised or not. The header rows want only the categorised ones and filter
-			//for themselves below; the balance bench needs the others, because money that no stream
-			//claims is exactly what its residual row exists to measure - and filtering here would have
-			//zeroed that row while leaving it looking computed.
+			//ALL of them, categorised or not. Money that no stream claims moved the balance exactly as
+			//much as money that does - and a card charge is a card charge whether or not anything has
+			//been told to expect it, which is the whole subject of the probe below.
 			.then(txns => this.updateState({fetching:false,transactions:(txns||[])}))
 	}
 	componentDidMount(){
 		super.componentDidMount?.();
 		this.loadData();
 	}
-	getTransactionsForStream(s){
-		return this.state.transactions.filter(t => t.categorized && t.isAllocatedToStream(s))}
 	render(){
 		if(this.state.fetching)return <PageLoader/>
-		var streams = pickStreams();
-		if(!streams.length)return <div style={{padding:DS.spacing.xs+"rem"}}>No streams to show.</div>
-		//DS.spacing.xs, not .l: production's header rows come within 1rem of the screen edge, and a page
-		//gutter three times that made every row narrower than the thing it is reproducing
-		//the bench takes ALL the transactions, not one stream's: it reconstructs an account, and an
-		//account is moved by everything that touched it - including whatever no stream claims, which
-		//is the number it exists to surface
+		//DS.spacing.xs, not .l: production's own tiles come within 1rem of the screen edge, and a page
+		//gutter three times that made every one of them narrower than the thing it is reproducing
 		return <div style={{maxWidth:"60rem",margin:"0 auto",padding:DS.spacing.xs+"rem"}}>
-			{/* THE TILE ITSELF, on the page beside the bench that scores it. The day table that used
-			    to sit under it is gone: the tile answers a day in place now - the cursor names every
-			    movement with its amount, and the balance it reaches - so the table was a second, older
-			    reading of the same question kept alive alongside the one being worked on. */}
+			{/* THE TILE ITSELF, on the page beside the instrument that questions it. */}
 			<div style={titleStyle}>The tile</div>
 			<div style={{maxWidth:"24.4rem"}}>
 				{/* sticky: a reading that survives the finger lifting, so a day can be looked at
 				    rather than only glimpsed under the drag. Tapping it again clears it. */}
-				<BalanceChart stream={Core.getMasterStream()} transactions={this.state.transactions}
-					sticky={true}/>
+				<BalanceChart ref={this.tile} stream={Core.getMasterStream()}
+					transactions={this.state.transactions} sticky={true}/>
 			</div>
-			{/* WHAT THE TILE THINKS THE BALANCE IS, on live data, beside the tile that drew it. The
-			    "bank balances went rogue" question used to be answered from a dumped fixture in a
-			    terminal, which is always about a day that has already passed. */}
-			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance readout</div>
-			<BalanceReadout transactions={this.state.transactions}/>
-			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Balance forecast bench</div>
-			<BalanceBench transactions={this.state.transactions}/>
-			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Header rows</div>
-			{streams.map(s => <CompoundStreamHeaderRow key={s.id} stream={s} transactions={this.getTransactionsForStream(s)}/>)}
+			<div style={{...titleStyle,marginTop:DS.spacing.m+"rem"}}>Card repayment, showing its working</div>
+			<CardRepaymentProbe transactions={this.state.transactions} tileRef={this.tile}/>
 		</div>
 	}
 }

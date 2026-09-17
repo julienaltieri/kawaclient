@@ -3075,3 +3075,171 @@ a card number"` pins the already-true baseline the module's own path never regre
 
 Verified: build compiles clean with the production marker; full suite passes at 567/567 (the one
 pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).
+
+**2026-09-17 — the repayment probe: an instrument, and what the captured portfolio already says**
+
+The forecast says $4,645 for the next repayment on Robinhood **9869; the issuer's own app says
+$4,378.03 (scheduled tomorrow, clears Sep 23). $266.97 apart. No fixture can settle that - the
+argument is about today - so the sandbox got an instrument instead of a test.
+
+**New: `repaymentProbe.js` (analysis) and `CardRepaymentProbe.js` (the page).** The sandbox's
+balance readout, forecast bench and header rows were removed to make room, on request; each is still
+its own component and returns by re-adding one line. The probe adds NO arithmetic: every window it
+shows is one `settlementsFor()` computed, and its members are read back through the very predicate
+the sum used. `settlement.js` gained `inWindow` (the boundary rule, named once so `owed()` and the
+new `membersIn()` cannot disagree) plus `chargesOf`/`historyOf` - the two readers `cardSettlements`
+already had inline, now shared rather than duplicated, each row keeping the ledger entry it came from
+so a charge can be NAMED. Behaviour-preserving: settlement/accountLedger/benchForecast suites
+unchanged.
+
+`repaymentProbe.test.js` pins what makes it believable, against the captured portfolio: every
+listing's own sum equals the amount reported for that window (computed by two routes on purpose), the
+probe's settlements ARE `cardSettlements()`'s settlements date-for-date and cent-for-cent, and at the
+fitted offset the cutoff scan reproduces the forecast's own next repayment. An instrument that listed
+one set while the forecast summed another would not merely be useless - it would send a reader to
+check a statement line that was never in the sum.
+
+**What the fixture (captured 2026-09-09, same card) already shows.**
+
+- Its last four repayments carry the SAME amounts as the issuer's app, dated 5-6 days earlier
+  ($2,319.01 at Aug 14 vs Aug 19, $836.54 at Aug 21 vs Aug 26, $1,354.53 at Aug 28 vs Sep 2, $602.78
+  at Sep 4 vs Sep 10). That is the "Clears by" gap: our ledger dates the initiation, the issuer's
+  page lists the clear. The cadence underneath is exactly weekly - 12 of 12 gaps are 7 days.
+- The fitted offset of 3 days is a genuine global minimum (mean |error| $138.89, against $205 at 2d
+  and $260 at 4d), and it is no better recently than historically ($131.72 over the last ten, $125.24
+  over the last five).
+- But NO fixed cut fits: asked which single offset best reproduces each of the last twelve
+  repayments, the answer wanders 0, 4, 4, 3, 3, 6, 0, 3, 5, 4, 2, 2. The charge dates the model cuts
+  on are the aggregator's POSTING dates, which lag a purchase by a merchant-dependent day or three;
+  the issuer cuts on what it actually owed.
+- The mechanism is proven, not inferred. The worst window (2025-10-24, +$765.14) is over by exactly
+  $739.89 + $25.25 - a medical charge and a Trader Joe's - and the very next repayment is short by
+  exactly -$765.14. Those two charges were cleared one cycle later than offset 3 places them.
+  Adjacent errors flip sign in 24 of 43 pairs and the whole history sums to only -$706.80 over 45
+  repayments: phase drift around the cut, not a leak.
+- **So $266.97 is inside this model's normal noise band on this card, not an outlier** - mean |error|
+  over the last five repayments is $125, with individual errors reaching $414.
+
+**What was checked and is NOT wrong.** The window arithmetic is self-consistent: 0 charges fall in
+more than one posted window, `from` is exclusive and `to` inclusive as intended (three charges dated
+exactly on a `from` boundary are correctly excluded there and present in the previous window), no
+repayment leg leaked into `charges`, and no settlement is read back as a charge. `pending` is
+computed over `(last, asOf]` while settlement #0 closes earlier, so the two differ by any charge in
+between - harmless, because nothing in the app consumes `pending`; it is reported by the instrument
+and read by nothing else.
+
+**What the instrument is for, then.** Two questions the fixture cannot answer: whether TODAY's gap is
+one identifiable charge (type the bank's number into the truth box - it names any single charge, or
+any pair, of exactly that size) or more phase drift; and whether some other cutoff reproduces the
+bank exactly (the offset scan holds the repayment date still, slides the close, and marks the row
+closest to the typed number). A scan row landing exactly on $4,378.03 would convict the fitted
+offset; no row landing near it says the cut is not the whole story.
+
+**2026-09-17 (later) — run on live data: §3 is right, and the tile is drawing something else**
+
+The instrument on today's real portfolio: last repayment 2026-09-11, close 2026-09-08, next
+repayment 2026-09-18 over eleven charges in (Sep 8, Sep 15] summing to **$4,378.03 - the issuer's
+number to the cent**. So `cardSettlements()` is not the fault. The tile nonetheless draws $4,645,
+$266.97 more, which means the disagreement lives between §3 and the picture.
+
+**The first thing found there, on the fixture: the amplitude correction inflates a repayment.**
+`accountLedgers()` applies the calibration multiplier to predicted charges (`x1.85` on this card) and
+`cardSettlements()` runs AFTER it, over the ledger it just rewrote - so a repayment whose window
+contains predicted charges repays the CORRECTED spending, not the forecast's own. Measured on the
+fixture, the same single settlement row:
+
+```
+repayment 2026-09-11  window all POSTED     settlement $551.52   tile draws $551.52   agree
+repayment 2026-09-18  window all PREDICTED  settlement $251.63   tile draws $417.26   x1.66
+```
+
+Whether that is a fault is a real question rather than an obvious yes: if the correction is believed
+for the charges, repaying the corrected charges follows. What it definitely breaks is comparability -
+the repayment the tile draws for any window reaching into the future is not a number the issuer's app
+will ever show, and cannot be checked against it. It is NOT the cause of today's $266.97: the
+Sep 18 window is entirely posted, so nothing in it is scaled.
+
+**So the remaining candidate is the day, not the repayment.** `benchForecast` sums EVERY non-posted
+entry landing on a date; the tile's caption then names that whole step after its largest row. A day
+carrying the repayment plus anything else - another card's settlement (this portfolio links three),
+an ordinary predicted outflow - steps by their sum while reading "Card repayment". The instrument
+grew a panel for exactly this: it runs the tile's own `benchForecast` call, same asOf, same horizon,
+same covered set, and lists every row on that date with the repayment marked, so the rider names
+itself.
+
+**2026-09-17 (later still) — found: the forecast never arrived, and the tile drew the legacy model in
+silence for the rest of the session**
+
+That panel answered $4,378.03 as well - the tile's own call, same arguments, one row, correct. Every
+reconstruction agreed with the bank while the tile did not, which leaves only the instance actually
+drawing. So the probe grew one more panel that reads the TILE ITSELF through a ref rather than
+rebuilding beside it, and it answered in one line:
+
+```
+forecaster in use: THE LEGACY MODEL - a.liveRun is null
+no failure recorded - still in flight, or never asked (1 run key, 1 promise)
+the legacy model's own extraFlow for that day - THIS is what is on screen:
+  total $4,645.33 - "Card repayment"    posted $4,645.33   projected $0.00
+```
+
+**One promise created, never settled, no error: the module's forecast HUNG.** `scheduleParallel` had
+no timeout anywhere. A worker that fails to load, is killed, or simply never receives its message
+fires no `error` event anyone can hear - so `Promise.all` waited for ever, `benchForecastAsync` never
+settled, `moduleRun`'s cache entry stayed `null`, and `computeSeries()` fell back to the LEGACY
+model's line - permanently, for the rest of the session, with nothing anywhere saying why. The
+$4,645.33 is that model's own `cardRepaymentForecast`/`extraFlow` answer, a different calculation
+reached by a different route. §3 was never involved.
+
+**And the label fix two entries up was masking it.** `stripStandInDisambiguation` strips the card
+number whenever `usingModule()` is true - which it is even when the module never answered. So a tile
+stuck on the legacy line read a clean "Card repayment" with the legacy AMOUNT: right label, wrong
+number, and the one visible clue that something was wrong had just been removed.
+
+**Fixed in `schedulePool.js`: every wait is bounded, and a failure hands the work back.**
+`ANSWER_TIMEOUT` (2500ms) bounds a worker's reply and `POOL_TIMEOUT` (1500ms) bounds the dynamic
+import that builds the pool - both tight rather than generous, because the main-thread fallback costs
+about 600ms and waiting seconds for a worker to maybe answer is the worse trade. Every failure now
+resolves `null` (compute here instead) rather than rejecting or hanging, and `retirePool()` stops
+asking a pool that has already let us down, so one lost worker is not a timeout on every later
+forecast. `moduleRun()` records the reason a run failed on the instance for the probe to read;
+nothing on the shipped tile renders it.
+
+**Resolved, with the reason in hand: the pool is OFF** (`POOL_ENABLED = false`, the whole switch,
+`schedulePool.js`). The browser named the fault the moment it was asked to load a worker in
+development:
+
+```
+Failed to execute 'importScripts' on 'WorkerGlobalScope': the script at
+.../vendors-node_modules_pmmmwh_react-refresh-webpack-plugin_..._chunk.js failed to load
+```
+
+`react-scripts start` injects the react-refresh runtime into every chunk including the worker's, and
+a worker cannot importScripts it. Silencing that needs `FAST_REFRESH=false` for the whole app or a
+webpack config CRA does not expose without ejecting - so the environment the app is actually worked
+in cannot run the pool at all, which also explains why the hang was reproducible rather than a fluke.
+The timeouts stay, because they are what makes any future attempt survivable, and the worker files
+stay with them: reviving this is one constant, and should take a measurement.
+
+**Why it was turned off rather than fixed.** The pool bought nothing measurable on the device it was
+built for ("on my phone it didn't change much" - few cores, and mobile browsers throttle workers
+regardless), cannot be exercised by the suite at all (jsdom has no `Worker`, so every test takes the
+fallback path and the pool has only ever run in a browser by hand), and in exchange introduced a
+failure that silently replaced a forecast measured at +30.5% on this card with one measured at
+-530.7%. Against that, the UX win that actually landed - a tile that paints immediately instead of
+blocking on ~600ms of work - was never the workers' doing: it came from making the forecast
+asynchronous, and `accountLedgersAsync` computes on the main thread whenever there is no pool, which
+is now always. The ~600ms is back, behind the shimmer rather than in front of the paint.
+
+**Confirmed on the reader's own data**: with the pool off the tile draws **$4,378.03** for the next
+repayment, matching the issuer's app to the cent, and the probe reports "the module (a.liveRun
+present)". The original question - "find the math discrepancy, likely a cutoff problem" - has a flat
+answer: there was no discrepancy and no cutoff problem. §3 was correct throughout, the fitted 3-day
+cutoff reproduces the bank exactly, and no offset in 0..14d produces $4,645. What was wrong was that
+the answer never arrived, and the tile said something else without saying so.
+
+**What to keep from this.** A fallback that is silent is not a fallback, it is a disguise. The legacy
+line is a reasonable thing to draw while the module is still thinking; drawing it for ever, with no
+error recorded and nothing on screen different, is how a hung promise passed for a wrong number for
+as long as it did - and the label fix two entries up had just removed the one visible clue. Every
+wait in that chain is bounded now, every failure is recorded, and the probe can ask the tile which
+forecaster it is actually using.
