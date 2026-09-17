@@ -22,7 +22,7 @@
    same accounting the legacy model does with `extraFlow`, which is why the two are comparable.
    ================================================================================================== */
 
-import {accountLedgers} from './accountLedger';
+import {accountLedgers, accountLedgersAsync} from './accountLedger';
 import {calibrate} from './calibration';
 import {withLoop} from './inCycle';
 
@@ -37,10 +37,22 @@ const dayKey = d => new Date(d).toISOString().slice(0, 10);
    A BUILD IS STILL CACHED AGAINST ITS AS-OF DATE, because a chart drawing a live line and a
    benchmark line asks the same question of the same day more than once. */
 const measured = new WeakMap();
+//the async twin's own results and in-flight promises, kept apart from `measured` so a sync and an
+//async caller asking about the same portfolio/window never trip over each other's half-built entry
+const measuredAsync = new WeakMap();
+
+/* THE SEAM/LOOP KEY, SHARED BY BOTH BUILDS - so a sync and an async caller asking the identical
+   question end up looking at the identical cache row's shape. */
+const buildKey = (cut, close, o) => cut.getTime() + '|' + new Date(close).getTime() + '|'
+	+ (o.seamDay || 21) + '|' + (o.loop === false ? 'flat' : 'ab');
+
+/* THE MEASURING WINDOW, SHARED TOO. See the comment on the sync build below for why it runs past
+   the caller's own horizon. */
+const measureWindowOf = (cut, close) =>
+	new Date(Math.max(new Date(close).getTime(), cut.getTime() + 75 * 24 * 3600 * 1000));
 
 function cachedBuild(portfolio, cut, close, o){
-	const key = cut.getTime() + '|' + new Date(close).getTime() + '|' + (o.seamDay || 21)
-		+ '|' + (o.loop === false ? 'flat' : 'ab');
+	const key = buildKey(cut, close, o);
 	let mine = measured.get(portfolio);
 	if(!mine){mine = {}; measured.set(portfolio, mine)}
 	if(mine[key] === undefined){
@@ -49,8 +61,7 @@ function cachedBuild(portfolio, cut, close, o){
 		   one WHOLE cycle of the forecast and the caller may only have asked for three weeks. A
 		   denominator cut off by the question being asked would read as an under-read and land in
 		   the multiplier. Seventy-five days always contains a whole cycle after the next seam. */
-		const measureTo = new Date(Math.max(new Date(close).getTime(),
-			cut.getTime() + 75 * 24 * 3600 * 1000));
+		const measureTo = measureWindowOf(cut, close);
 		const plain = accountLedgers(rewound, measureTo, {asOf: cut});
 		let calibration = o.calibrate === false ? {}
 			: calibrate(plain, {seamDay: o.seamDay || 21, cycles: o.cycles});
@@ -74,6 +85,42 @@ function cachedBuild(portfolio, cut, close, o){
 	return mine[key];
 }
 
+/* THE SAME BUILD, ACROSS A WORKER POOL INSTEAD OF ONE THREAD. Identical in every OUTPUT - same two
+   builds, same predictor handed from the first into the second, same calibration - the only
+   difference is that `accountLedgersAsync` spreads each build's 60-odd `scheduleOf` calls over the
+   pool rather than running them in a loop. See accountLedger.js and schedulePool.js.
+
+   DEDUPED AGAINST CONCURRENT CALLERS, not just against a finished one. A chart repainting twice
+   before the first forecast has resolved must not start the (expensive) build a second time - the
+   in-flight PROMISE is cached, not only the settled result, so a second caller during the wait
+   receives the same promise the first one is already waiting on. */
+function cachedBuildAsync(portfolio, cut, close, o){
+	const key = buildKey(cut, close, o);
+	let mine = measuredAsync.get(portfolio);
+	if(!mine){mine = {}; measuredAsync.set(portfolio, mine)}
+	if(!mine[key]){
+		mine[key] = (async () => {
+			const rewound = rewind(portfolio, cut);
+			const measureTo = measureWindowOf(cut, close);
+			const plain = await accountLedgersAsync(rewound, measureTo, {asOf: cut});
+			let calibration = o.calibrate === false ? {}
+				: calibrate(plain, {seamDay: o.seamDay || 21, cycles: o.cycles});
+			if(o.loop !== false && Object.keys(calibration).length)
+				calibration = withLoop(plain, calibration, {seamDay: o.seamDay || 21});
+			const built = Object.keys(calibration).length
+				? await accountLedgersAsync(rewound, close,
+					{asOf: cut, calibration: calibration, predictor: plain.predictor})
+				: plain;
+			return {calibration: calibration, built: built, history: (rewound.transactions || []).length};
+		})().catch(err => {
+			//a failed build is not cached under its own key forever - the next caller gets to retry
+			delete mine[key];
+			throw err;
+		});
+	}
+	return mine[key];
+}
+
 /* THE CAPTURE AS IT STOOD ON THE DAY THE WINDOW OPENED. */
 export function rewind(portfolio, at){
 	const cut = new Date(at);
@@ -85,16 +132,11 @@ export function rewind(portfolio, at){
 	});
 }
 
-/* ---- THE FORECAST, AS DAILY FLOWS ---------------------------------------------------------------
-   `covered` is the set of account hashes the bench's balance is about. `seamDay` is the analysis
-   anchor's day of the month, which is the lattice every cycle in the module is phased on. */
-export function benchForecast(portfolio, open, close, covered, opts){
-	const o = opts || {};
-	const cut = new Date(open);
-	const keep = {};
-	(covered || []).forEach(h => {keep[h] = true});
-
-	const run = cachedBuild(portfolio, cut, close, o);
+/* ---- THE FORECAST, AS DAILY FLOWS -----------------------------------------------------------------
+   SHARED BY THE SYNC AND ASYNC ENTRY POINTS. Both hand this the same shape of `run` (from
+   `cachedBuild`/`cachedBuildAsync`) and get back the identical answer - this never knows which one
+   built it. */
+function shapeForecast(run, cut, close, keep){
 	const calibration = run.calibration;
 	const built = run.built;
 
@@ -152,6 +194,29 @@ export function benchForecast(portfolio, open, close, covered, opts){
 		asOf: cut,
 		until: new Date(close)
 	};
+}
+
+/* ---- THE FORECAST, AS DAILY FLOWS ---------------------------------------------------------------
+   `covered` is the set of account hashes the bench's balance is about. `seamDay` is the analysis
+   anchor's day of the month, which is the lattice every cycle in the module is phased on. */
+export function benchForecast(portfolio, open, close, covered, opts){
+	const o = opts || {};
+	const cut = new Date(open);
+	const keep = {};
+	(covered || []).forEach(h => {keep[h] = true});
+	const run = cachedBuild(portfolio, cut, close, o);
+	return shapeForecast(run, cut, close, keep);
+}
+
+/* THE SAME FORECAST, BUILT ACROSS THE WORKER POOL. Same answer as `benchForecast`, given the same
+   inputs - see cachedBuildAsync's own header for what actually differs. */
+export async function benchForecastAsync(portfolio, open, close, covered, opts){
+	const o = opts || {};
+	const cut = new Date(open);
+	const keep = {};
+	(covered || []).forEach(h => {keep[h] = true});
+	const run = await cachedBuildAsync(portfolio, cut, close, o);
+	return shapeForecast(run, cut, close, keep);
 }
 
 export default benchForecast;

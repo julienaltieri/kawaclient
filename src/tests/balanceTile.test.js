@@ -114,6 +114,39 @@ const mountLegacy = async () => {
 	return ref
 }
 
+/* ---- the loading shimmer ------------------------------------------------------------------------
+   THE SHIMMER COVERS THE TILE FROM THE VERY FIRST FRAME, before the live balance that anchors the
+   whole reconstruction has even been asked for - `state.ready` starts false and only the tile's own
+   FIRST real paint (or its answer of "nothing to draw", for an account-less tile) flips it, and
+   Head/ChartHost/Empty all fade in together off that one flag - see paint() and the styled
+   components' own `$ready` prop in BalanceChart.js. */
+test("starts unready - the shimmer covers the tile before the live balance has even been asked for",
+() => {
+	const ref = React.createRef()
+	//NOT awaited: this reads the state on the same synchronous tick render() returns on, before the
+	//mocked account fetch's promise has had a chance to resolve
+	render(<BalanceChart ref={ref} stream={master} transactions={txns}/>)
+	expect(ref.current.state.loaded).toBe(false)
+	expect(ref.current.state.ready).toBe(false)
+})
+
+test("becomes ready the moment there is something to show, not merely once accounts load", async () => {
+	const ref = await mount()
+	//by the time the account fetch's own promise has settled (mount() awaits exactly that), the tile
+	//has already painted the past line and whatever forecast was available synchronously - so ready
+	//is already true in the same tick loaded became true, not some later render behind it
+	expect(ref.current.state.loaded).toBe(true)
+	expect(ref.current.state.ready).toBe(true)
+})
+
+test("an account-less tile still becomes ready - the empty message, not a shimmer forever", async () => {
+	Core.getAccountsWithBalances = () => Promise.resolve([])
+	const ref = await mount()
+	expect(ref.current.hasAnchor()).toBe(false)
+	expect(ref.current.state.ready).toBe(true)
+	expect(screen.getByText("Connect an account to see your balance")).toBeInTheDocument()
+})
+
 /* ---- the title -------------------------------------------------------------------------------- */
 
 test("mounts, and the title names the reading and the window", async () => {
@@ -816,6 +849,13 @@ test("the cache is dropped when the reading changes, and not before", async () =
 	const ref = await mount()
 	const c = ref.current
 	c.allSeries()
+	/* THE MODULE'S OWN FORECAST LANDS ASYNCHRONOUSLY (see moduleRun() in BalanceChart.js) and drops
+	   the series cache exactly once, itself, the moment it resolves - a real input to the picture,
+	   not a re-render. That one-time rebuild is not what this test is about; an ORDINARY re-render
+	   causing a POINTLESS rebuild is. So the forecast is allowed to land, and its own rebuild spent,
+	   before the counter below starts watching. */
+	await act(async () => {await c.pendingForecasts()})
+	c.allSeries()
 	let builds = 0
 	const real = c.computeSeries.bind(c)
 	c.computeSeries = w => {builds++; return real(w)}
@@ -825,10 +865,16 @@ test("the cache is dropped when the reading changes, and not before", async () =
 	c.allSeries()
 	expect(builds).toBe(0)
 
-	//a different reading is different money, so both months are rebuilt
+	/* A DIFFERENT READING IS DIFFERENT MONEY, so both months are rebuilt - twice over. Once
+	   immediately and synchronously (the new source is a new moduleRun() cache key, so it starts
+	   the picture over with no forecast yet - the same "draw something now" fallback a slow one
+	   always had), and once again the moment the new source's own forecast actually lands and
+	   drops the cache a second time, same as the wait above did for the first mount. Both rounds
+	   settle within this one `act()` - the async chain here is pure microtasks (no real worker, no
+	   timer, under Jest), so there is nothing left pending by the time it returns. */
 	await act(async () => {c.setState({source: "__netted__"})})
 	c.allSeries()
-	expect(builds).toBe(2)
+	expect(builds).toBe(4)
 })
 
 test("the two prerendered months really are different windows", async () => {

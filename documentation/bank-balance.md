@@ -2804,3 +2804,170 @@ suite (`accountLedger`, `calibration`, `inCycle`, `settlement`) and the balance-
 `StreamPredictor` instance a call reuses, never what it answers. Full build and full suite both green
 (`App.test.js` fails to even load, pre-existing and unrelated - a `dateformat` ESM import error in
 `core.js`, untouched by this change).
+
+**2026-09-17 — the "this month" forecast runs on a worker pool, off the main thread**
+
+Follow-up to the entry above. The remaining ~600ms is real, first-time cycle/shape-detection work
+(§2/§3, `cycleFit.js`'s candidate scoring against every terminal stream) - not duplicated, not
+cacheable away without touching the prediction algorithm itself, which was explicitly out of scope.
+What CAN move is *where* it runs: every stream's `scheduleOf()` depends only on the portfolio and its
+own id, never on another stream's answer, so the 60-stream loop is exact to split across threads.
+
+**New files**: `scheduleWorker.js` (the worker entry point - constructs a `StreamPredictor` from a
+posted portfolio and answers `scheduleOf()` for a batch of stream ids), `schedulePool.js` (a small,
+long-lived pool - `min(hardwareConcurrency - 1, 4)` workers, built once and reused for the page's
+life; the same stream id always buckets to the same worker, so a second call for the same window's
+calibrated build lands on a worker that already has that stream's §2/§3 answers warm - the same
+predictor-reuse trick as the sync fix, just per-worker instead of per-call), `workerFactory.js` (the
+one line that needs `import.meta.url` - see below).
+
+**`accountLedger.js`/`benchForecast.js`** gained async twins - `accountLedgersAsync`,
+`benchForecastAsync` - built by extracting the part that never changed (`assembleLedgers`,
+`shapeForecast`) so the sync and async paths produce provably the same answer from the same
+`scheduleOf` results, whichever thread computed them. `accountLedgersAsync` falls back to the
+ordinary per-stream loop whenever `scheduleParallel()` resolves `null` (no `Worker` global - true
+under Jest, and the same fallback a browser that refuses a module worker gets) - the pool is
+additive, nothing breaks if it never runs.
+
+**Why `import.meta.url` lives in its own file.** It is how webpack 5 finds `scheduleWorker.js` to
+bundle it as a worker chunk, and it is a Babel *parse-time* syntax error under Jest's CommonJS
+transform - not a runtime failure a `typeof Worker` guard can catch, since Jest parses every
+statically-imported file whether or not the guarded branch runs. `workerFactory.js` is reached only
+through a dynamic `import()` inside `ensurePool()`, itself gated behind `typeof Worker ===
+'undefined'` - false under jsdom, so the import line never executes in a test and Jest never has to
+parse the file. Confirmed against the real build: `CI=true npx --no-install react-scripts build`
+produces two extra chunks - one with `self.onmessage`/`postMessage` in it (the compiled worker
+script) and one with `makeScheduleWorker` (the factory) - proving webpack's native Worker detection
+fired.
+
+**`BalanceChart.js`'s `moduleRun()`** now fires `benchForecastAsync` and returns `null` immediately
+rather than blocking the render; `computeSeries()` already treated a null module run as "fall back to
+the legacy model's line for now" (both `live` and `liveRun` were already computed unconditionally
+every call, one synchronous and cheap, one now async), so the tile paints on the first tick either
+way - it just draws the older algorithm's line until the real one lands. When it does, the result is
+cached under the same key a synchronous call used, `this._series` (allSeries()'s own memo, keyed on
+`src`/`txns`/`accounts`/`basis`/`algo`/`day` - none of which "a forecast resolved" is one of) is
+dropped so the next `allSeries()` rebuilds fresh instead of replaying the stale placeholder forever,
+and one `updateState({})` repaints with the accurate line. `componentWillUnmount` sets `_unmounted`
+so a forecast landing after the tile is gone updates its own cache quietly instead of calling
+`setState` on nothing.
+
+**Tests.** `benchForecast.test.js` gained a correctness suite for the async path - Jest has no real
+`Worker`, so every assertion there runs the FALLBACK (single-thread) path, proving the async twins
+answer exactly what the sync originals do, never that the pool itself is fast; that speedup is not
+mechanically checkable here and was confirmed by hand (webpack build inspection above; the pool's own
+design - `min(cores-1,4)` workers dividing the ~570ms cold loop - implies roughly 150-250ms once
+warm-worker overhead is paid, on the fixture used throughout this investigation). Two existing tests
+had to change to account for the new async settling: `"draws both forecast lines..."`
+(`balanceChartAudit.test.js`) now awaits the new `pendingForecasts()` (test-facing only, never read by
+the render path) before reading `series()`, and `"the cache is dropped when the reading changes, and
+not before"` (`balanceTile.test.js`) now expects 4 `computeSeries()` calls instead of 2 across a
+reading change - 2 immediate (the new source starts the picture over with no forecast yet, same as
+before) and 2 more the moment that source's own forecast actually lands - confirmed deterministic
+across repeated runs (the fallback chain is pure microtasks, no timers, under Jest).
+
+Verified: `CI=true npx --no-install react-scripts build` compiles clean, carries the production
+config marker, and produces the two extra worker/factory chunks described above; full suite passes at
+562/562 (the one pre-existing, unrelated `App.test.js`/`dateformat` failure noted above is
+unchanged). `BalanceBench.js` (the audit page) was left on the synchronous `benchForecast` - this
+investigation was about the tile's own render, not the bench.
+
+**2026-09-17 — MAX_WORKERS raised to 16; and a loading state, since the pool alone "didn't change
+much" on a phone**
+
+- **`schedulePool.js`'s `MAX_WORKERS`: 4 → 16.** `poolSize()` still caps at `hardwareConcurrency - 1`,
+  so this only raises the ceiling for a machine with real cores to spend - a phone (typically 4-8,
+  and mobile browsers often throttle concurrent workers regardless of the count reported) sees little
+  or no change from this alone, which is exactly what was reported and is why the work below exists.
+
+- **The tile now shows a loading state instead of a blank rectangle.** `state.ready` (new, starts
+  `false`) gates a crossfade: `Head`, `ChartHost` and `Empty` share one `$ready`-driven
+  `REVEAL_TRANSITION` (`opacity 320ms ease`) so the title and the picture it names arrive as one
+  motion, not the title first and the graph catching up under it a beat later (the reported "title
+  shows up before the graph"). A new `Shimmer` covers the whole tile from the very first render -
+  before the live balance has even been asked for - and crossfades against the same flag. `paint()`
+  sets `ready` at the earliest point there is something worth looking at: not "accounts loaded" (a
+  moment earlier, nothing on screen yet) and not "the forecast landed" (moduleRun() may still be on
+  the worker pool - waiting for it would put the shimmer back in front of the exact delay the pool
+  exists to hide); the past line and whatever forecast is already available synchronously (the legacy
+  model's, while the module's own is still in flight) are already drawn by the time `paintAll()`
+  returns, so that is the reveal point. A tile with no account still resolves `ready` (the `Empty`
+  message is the answer, not a shimmer with nothing left to wait for).
+
+- **`ChartArea` gained `aspect-ratio:${RATIO}`.** `ChartHost` has no height of its own until an svg is
+  painted into it - before that a plain empty div has none, and the shimmer meant to cover the very
+  first frame would have had no area to appear in. Reserving the chart's own eventual shape by CSS
+  alone (no measurement needed) fixed that and, as a side effect, stops the tile's layout height from
+  jumping once painted.
+
+- **The shimmer's own colors, corrected on request**: not a separate placeholder grey
+  (`UIPlaceholder`) but exactly the tile's own two surfaces - `UIElementBackground` (`ContentTile`'s
+  own background, so the shimmer is invisible against the tile at rest rather than a foreign box on
+  top of it) sweeping toward `pageBackground` (the surface the tile already sits on), so nothing about
+  the shimmer's palette is a color the tile did not already use somewhere.
+
+- **The sweep: 1.5s ease-in-out → 0.9s ease-in**, on request ("faster... ease in, finish fast") - a
+  gentle start that accelerates through the rest of the cycle, then a hard cut back to the start
+  (unchanged - `@keyframes` jumping from `to` back to `from` was already how the loop worked), reading
+  as more alive than the original symmetric ease.
+
+Three new tests in `balanceTile.test.js`: the tile is provably `ready:false` (shimmer showing) on the
+very tick `render()` returns, before the mocked account fetch's promise has even had a chance to
+settle; `ready` is already `true` by the same tick `loaded` becomes `true` (the mount helper awaits
+exactly that); and an account-less tile still resolves `ready` so its `Empty` message is reachable.
+Two of the three were confirmed to fail against the pre-fix `paint()` before being restored (the
+`ready:false` assertion holds either way, since a component that never sets `ready` also never sets it
+early - only the other two actually exercise the fix). `@media (prefers-reduced-motion: reduce)`
+turns the sweep off entirely rather than merely slowing it.
+
+Verified: build compiles clean with the production marker; the balance-tile suite passes at 297/297
+(294 before, +3 new); full suite passes at 565/565 (same one pre-existing, unrelated `App.test.js`
+failure). The real multi-core benefit of the worker pool itself remains unverifiable from this
+environment (no headless browser available) - the loading state is what actually answers "on my
+phone it didn't change much": the wait itself may be no shorter on a low-core device, but it is no
+longer a blank tile while it happens.
+
+**2026-09-17 — the shimmer's own colors and timing, tuned through several rounds to their final
+shape**
+
+Iterated live against feedback rather than specified up front; the SETTLED design, in
+`shimmerSweep`/`shimmerWave`/`Shimmer` in `BalanceChart.js`:
+
+- **The base (the part that does not move) is `UIElementBackground`** - exactly what
+  `StyledContentTile` itself is painted, so at rest the shimmer is indistinguishable from the tile
+  already being there rather than a separate block sitting on top of it. (Tried and rejected along
+  the way: a separate `UIPlaceholder` grey, read as "very odd" against the tile's real colors; then
+  `pageBackground` as the base with the tile's own tone as the sweep - inverted on request, landing
+  back on the tile's own tone as the resting state.)
+
+- **The wave (the moving highlight) is the SAME hue as the base, shifted in HSL lightness** - not a
+  second DS color and not a flat RGB blend toward white/black. Light mode brightens, dark mode
+  darkens: `target = dark ? l - (l - floor)*share : l + (ceiling - l)*share`, with `ceiling=0.985`,
+  `floor=0.015`, `share=0.6` - a fixed SHARE of whatever headroom is left before the (deliberately
+  short-of-pure) ceiling/floor, not a fixed offset then clamped. That distinction mattered: light
+  mode's `UIElementBackground` is already ~97% lightness (`#f7f7f78f`), so an early version ("+16
+  points, capped at 94%") landed BELOW the base and quietly DARKENED the wave in the one mode that
+  was supposed to brighten - caught by hand-checking the actual hex output (`#f7f7f78f` → target
+  94% is darker than the base's own 96.9%), not by a test. The share-of-headroom form is correct by
+  construction in both directions and adapts to how little room a near-white or near-black base
+  actually has, rather than overshooting past a fixed offset. Genuinely limited by the design
+  system's own palette: light mode's base is already close to white, so its wave is a real but
+  necessarily subtle brightening (`#f7f7f78f` → `#fafafa`) - there is not much closer to white to go
+  without crossing into it, which was the one thing ruled out.
+
+- **The sweep: 1.5s ease-in-out → 0.9s ease-in**, on request ("faster... ease in, finish fast") - a
+  gentle start accelerating through the rest of the cycle, then the hard cut back to the start that
+  was already how the `@keyframes` loop worked.
+
+`hexToHsl`/`hslToHex` are small, self-contained conversions added for this (BalanceChart.js carried
+no color-space math before); `DS.hexToRgb`/`rgbToHex` in DesignSystem.js only handle 6- and 3-digit
+hex with no alpha, and `UIElementBackground` is 8-digit (`RRGGBBAA`) in both themes, so alpha is read
+off and dropped throughout - the shimmer wants one solid tone, not a second translucency stacked on
+the tile's own.
+
+No test pins the exact color output (there is no existing convention in this file for asserting
+rendered CSS/color values, and styled-components' generated classes are not easily inspected from
+jsdom) - correctness here was checked by evaluating the actual hex math in isolation (shown above),
+and the existing `balanceTile`/`balanceChartAudit`/`balanceBenchMount` suites (297 tests) continue to
+pass unchanged, confirming nothing about the tile's behavior - only its resting/sweep colors - moved.
+Build compiles clean with the production marker throughout every round of this.

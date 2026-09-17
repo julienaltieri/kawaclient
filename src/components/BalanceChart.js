@@ -1,13 +1,13 @@
 import React from 'react';
 import BaseComponent from './BaseComponent';
-import styled from 'styled-components';
+import styled, {keyframes} from 'styled-components';
 import DS from '../DesignSystem.js';
 import Core from '../core.js';
 import {reportingConfig} from '../processors/ReportingCore.js';
 import AppConfig from '../AppConfig';
 import {AccountTypes} from '../Bank';
 import {capturePortfolio} from '../processors/capturePortfolio.js';
-import {benchForecast} from '../processors/balancePrediction/benchForecast.js';
+import {benchForecastAsync} from '../processors/balancePrediction/benchForecast.js';
 import {reconstruct, forecast, trough, peak, eventsIn, dayKey, buildModel,
 	monthlyExpectationAt, classifyAll, CLASSES, groupByStream, explainOn}
 	from '../processors/BankBalance.js';
@@ -258,10 +258,17 @@ export const iconFor = name => {
    stretch is centred. Page two's header opts out with these same three properties; this one had not,
    and inherited the centring silently - which is why the title and its caption sat in the middle
    while every other heading in the app starts at the left margin. */
+/* THE SAME FADE, ON EVERY PIECE THAT HAS TO ARRIVE TOGETHER. `$ready` gates Head, ChartHost and
+   Empty identically - same opacity, same REVEAL_TRANSITION - so the title and the picture it names
+   appear as one motion rather than the title landing first and the graph catching up under it a
+   beat later. See the Shimmer this crossfades against, just below. */
+const REVEAL_TRANSITION = "opacity 320ms ease"
 const Head = styled.div`
 	display:flex; align-items:flex-start; justify-content:space-between;
 	width:100%; align-self:stretch; text-align:left;
 	gap:${DS.spacing.xxs}rem;
+	opacity:${props => (props.$ready ? 1 : 0)};
+	transition:${REVEAL_TRANSITION};
 `
 const Title = styled.h2`
 	margin:0; line-height:1.15;
@@ -286,7 +293,13 @@ const ToolButton = styled.button`
 	padding:0.15rem 0.5rem; border-radius:${DS.borderRadiusSmall}; white-space:nowrap;
 	&:hover{color:${props => DS.getStyle().bodyText};}
 `
-const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
+/* RESERVED BEFORE ANYTHING IS DRAWN. ChartHost has no height of its own until paintAll() writes an
+   svg into it - before that, an empty div has none, and the shimmer meant to cover the very first
+   frame would have no area to appear in. `aspect-ratio` gives the area the same shape the real chart
+   will have (the svg itself keeps RATIO via its own viewBox, width:100%;height:auto) without waiting
+   on a single measurement, so there is something to show, and nothing to reflow into, the instant
+   the tile mounts. */
+const ChartArea = styled.div`position:relative; width:100%; align-self:stretch; aspect-ratio:${RATIO};`
 /* touch-action:none IS THE DRAG, not an optimisation of it. Without it a touch that moves is a
    candidate gesture the browser is free to read as ITS OWN pan/scroll before wireOnce's pointermove
    ever sees it - the sequence gets cut short with a pointercancel partway through, which reads as
@@ -295,11 +308,105 @@ const ChartArea = styled.div`position:relative; width:100%; align-self:stretch;`
 const ChartHost = styled.div`
 	overflow:hidden; -webkit-tap-highlight-color:transparent; touch-action:none;
 	& svg{ display:block; -webkit-user-select:none; user-select:none; touch-action:none; }
+	opacity:${props => (props.$ready ? 1 : 0)};
+	transition:${REVEAL_TRANSITION};
 `
 const Empty = styled.div`
 	position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
 	text-align:center; padding:${DS.spacing.xs}rem;
 	font-size:${DS.fontSize.body}rem; color:${props => DS.getStyle().bodyTextSecondary};
+	opacity:${props => (props.$ready ? 1 : 0)};
+	transition:${REVEAL_TRANSITION};
+`
+
+/* ---- THE SHIMMER --------------------------------------------------------------------------------
+   UP FRONT, NOT AFTER A DELAY. The tile used to show nothing at all until the live balance arrived -
+   a blank rectangle that then, without warning, became a title and a graph at once. This paints a
+   placeholder from the very first frame instead, so there is always something on screen, and it
+   crossfades against the real content (`$ready`, above) rather than being swapped for it.
+
+   ONE SWEEP, NOT A SKELETON OF SEPARATE SHAPES. The tile's own layout (title, then graph) is not
+   fixed enough across account states - the empty-state message is centred text, not a chart-shaped
+   block - to be worth mimicking piece by piece; a single soft sweep over the whole tile reads as
+   "loading" without asserting a shape the real content might not match. */
+const shimmerSweep = keyframes`
+	from{ background-position:160% 0; }
+	to{ background-position:-60% 0; }
+`
+/* THE WAVE IS THE TILE'S OWN HUE, A FIXED DISTANCE LIGHTER OR DARKER - never a foreign color, and
+   never all the way to pure white or black, which would read as a different palette rather than a
+   variant of this one. Alpha is read off and dropped: `UIElementBackground` is meant to sit as a
+   translucent tint over whatever is under it, and the shimmer wants one SOLID tone, not a second
+   translucency layered on the tile's own.
+
+   LIGHTNESS, NOT A RAW RGB BLEND TOWARD 255/0. `UIElementBackground` in light mode is already close
+   to white (`#f7f7f78f` reads as roughly 97% lightness) - nudging its raw RGB channels toward 255
+   moves them by almost nothing, since there is almost no channel left to move. HSL lightness is
+   shifted by a fixed PERCENTAGE-POINT amount instead, clamped short of the extremes (6%-94%), so the
+   wave stays visibly distinct from the base in every theme regardless of how little headroom the
+   base color itself has - light mode brightens, dark mode darkens, same hue and saturation as the
+   tile either way. */
+const hexToHsl = hex => {
+	const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.replace("#", "").slice(i, i + 2), 16)/255)
+	const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min)/2
+	if(max === min)return [0, 0, l]
+	const d = max - min
+	const s = l > 0.5 ? d/(2 - max - min) : d/(max + min)
+	let h
+	if(max === r)h = (g - b)/d + (g < b ? 6 : 0)
+	else if(max === g)h = (b - r)/d + 2
+	else h = (r - g)/d + 4
+	return [h/6, s, l]
+}
+const hslToHex = (h, s, l) => {
+	const hue2rgb = (p, q, t) => {
+		if(t < 0)t += 1
+		if(t > 1)t -= 1
+		if(t < 1/6)return p + (q - p)*6*t
+		if(t < 1/2)return q
+		if(t < 2/3)return p + (q - p)*(2/3 - t)*6
+		return p
+	}
+	let r, g, b
+	if(s === 0){r = g = b = l}
+	else{
+		const q = l < 0.5 ? l*(1 + s) : l + s - l*s, p = 2*l - q
+		r = hue2rgb(p, q, h + 1/3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1/3)
+	}
+	const hex2 = v => Math.round(v*255).toString(16).padStart(2, "0")
+	return "#" + hex2(r) + hex2(g) + hex2(b)
+}
+/* A CLAMP THAT MOVES PART-WAY TOWARD THE CEILING/FLOOR, never a fixed offset then clamped - light
+   mode's `UIElementBackground` is already ~97% lightness (`#f7f7f78f`), so a flat "+16 points, capped
+   at 94%" lands BELOW the base and darkens exactly the mode meant to brighten. Moving a fixed SHARE
+   of whatever headroom is actually left is correct by construction: always the right direction,
+   never past the ceiling/floor, and it uses what little room a near-white or near-black base has
+   left instead of overshooting past it. */
+const shimmerWave = base => {
+	const [h, s, l] = hexToHsl(base)
+	const ceiling = 0.985, floor = 0.015, share = 0.6
+	const target = DS.isDarkMode() ? l - (l - floor)*share : l + (ceiling - l)*share
+	return hslToHex(h, s, target)
+}
+/* THE BASE IS THE TILE'S OWN DESTINATION BACKGROUND - `UIElementBackground`, exactly what
+   `StyledContentTile` itself paints - so at rest (`$ready`, before the sweep reaches a point, or
+   after it has passed) the shimmer is indistinguishable from the tile already being there, rather
+   than a foreign block sitting on top of it. Only the sweep departs from it, and only by the shift
+   above. */
+const Shimmer = styled.div`
+	position:absolute; inset:0; border-radius:${DS.borderRadiusSmall};
+	background-color:${props => DS.getStyle().UIElementBackground};
+	background-image:linear-gradient(90deg, transparent 0%,
+		${props => shimmerWave(DS.getStyle().UIElementBackground)} 50%,
+		transparent 100%);
+	background-size:60% 100%; background-repeat:no-repeat;
+	//eases in gently, then accelerates through the rest of the sweep - a snap at the end reads as
+	//more alive than a sweep that arrives at the same speed it left
+	animation:${shimmerSweep} 0.9s ease-in infinite;
+	opacity:${props => (props.$ready ? 0 : 1)};
+	transition:${REVEAL_TRANSITION};
+	pointer-events:none;
+	@media (prefers-reduced-motion: reduce){ animation:none; }
 `
 
 const LT = String.fromCharCode(60);
@@ -342,7 +449,10 @@ export default class BalanceChart extends BaseComponent{
 		super(props)
 		//the bench opens on the month it is auditing; the app opens on the one being lived in
 		this.state = {when:props.defaultWhen || "this", source:null, basis:"all", at:null,
-			accounts:null, loaded:false, copied:null}
+			accounts:null, loaded:false, copied:null,
+			//true from the first paint that actually drew something (or the first answer of "there is
+			//nothing to draw") - see paint(). Gates the title/graph's fade-in against the shimmer.
+			ready:false}
 		this.host = React.createRef()
 		this.drag = {down:false, x0:0, x1:0}
 		this.W = 334; this.H = Math.round(334/RATIO)
@@ -396,6 +506,9 @@ export default class BalanceChart extends BaseComponent{
 		if(this.ro)this.ro.disconnect()
 		if(this._growFrame)cancelAnimationFrame(this._growFrame)
 		this._growing = false
+		//so a forecast that resolves after the tile is gone (a carousel page left, a fast navigation
+		//away) updates its own cache quietly instead of calling setState on an unmounted component
+		this._unmounted = true
 	}
 	componentDidUpdate(){
 		this.paint()
@@ -662,19 +775,53 @@ export default class BalanceChart extends BaseComponent{
 				cards: this.creditHashes(), settlementDay: this.settlementDay()})
 		return this._portfolio
 	}
+	/* THE FORECAST, OFF THE MAIN THREAD - see documentation/bank-balance.md for the cost this is
+	   answering. `benchForecastAsync` spreads its ~60-stream schedule loop across a small worker
+	   pool (schedulePool.js) instead of running it in a loop on this thread; every existing caller
+	   of THIS method still gets a value back the same tick, because nothing here can actually wait -
+	   a render is synchronous. What changes is what that value is WHILE the real one is still being
+	   computed: `null`, exactly what a slow/failed forecast already returned before this - and
+	   `computeSeries()` already treats a null `liveRun` as "fall back to the legacy model's line for
+	   now", not as "draw nothing", so the tile paints immediately either way. The moment the async
+	   answer lands, it is cached under the same key a synchronous call would have used and one more
+	   `updateState` repaints with it - upgrading a tile that already had something to look at rather
+	   than a tile that was blank. A tile closed before that arrives (`_unmounted`) just lets the
+	   answer sit uncollected; nothing calls setState on it. */
 	moduleRun(asOf, until){
 		if(!this.usingModule() || !(this.state.accounts || []).length)return null
 		const key = asOf.getTime() + "|" + until.getTime() + "|" + this.source()
 		this._runs = this._runs || {}
+		this._runPromises = this._runPromises || {}
 		if(this._runs[key] === undefined){
-			try{
-				this._runs[key] = benchForecast(this.portfolio(), asOf, until, this.covered(), {})
-			}catch(e){
-				//a failed run draws no forecast rather than taking the page down
-				this._runs[key] = null
-			}
+			//marks the request as already in flight, so a render before the promise settles does not
+			//start a second one - the same role `undefined` played for the old synchronous call
+			this._runs[key] = null
+			this._runPromises[key] = benchForecastAsync(this.portfolio(), asOf, until, this.covered(), {})
+				.then(run => {
+					this._runs[key] = run
+					/* allSeries() MEMOISES computeSeries()'S OWN RESULT, keyed on the inputs a series
+					   depends on (src/txns/accounts/basis/algo/day) - moduleRun resolving later is
+					   not one of them, so the series built while this was still in flight (liveRun
+					   null) would sit cached forever otherwise, and the repaint below would draw the
+					   exact same picture it already drew. Dropping the memo makes the NEXT allSeries()
+					   call rebuild every window fresh - cheap, since every forecast this triggers is
+					   itself already resolved and cached right here. */
+					this._series = null
+					if(!this._unmounted)this.updateState({})
+					return run
+				})
+				//a failed run draws no forecast rather than taking the page down - same fallback the
+				//synchronous call's try/catch gave it
+				.catch(() => {this._runs[key] = null; return null})
 		}
 		return this._runs[key]
+	}
+	/* TEST-FACING ONLY: every forecast currently in flight, so a test can await the real answer
+	   instead of guessing how many microtask ticks a worker-pool promise chain needs. Never read by
+	   the render path - `moduleRun()` above never waits on this, by design (a render is synchronous
+	   and cannot). */
+	pendingForecasts(){
+		return Promise.all(Object.values(this._runPromises || {}))
 	}
 
 	/* every terminal, scored. Memoised with the grouped ledger it is derived from. */
@@ -1574,7 +1721,14 @@ export default class BalanceChart extends BaseComponent{
 		this._static = [a.past, a.future, this.W, this.H]
 	}
 	paint(){
-		if(!this.host.current || !this.state.loaded || !this.hasAnchor())return
+		if(!this.host.current || !this.state.loaded)return
+		/* NO ACCOUNT TO DRAW IS STILL AN ANSWER - the Empty message, not the shimmer forever. Reveals
+		   on the SAME flag the graph does, so a reader who never connects an account is not left
+		   staring at a sweep that has nothing left to wait for. */
+		if(!this.hasAnchor()){
+			if(!this.state.ready)this.updateState({ready:true})
+			return
+		}
 		if(this.animating)return
 		const a = this.series()
 		//the live layer alone, while the drawing under it is the one already on screen
@@ -1589,6 +1743,14 @@ export default class BalanceChart extends BaseComponent{
 			this.paintAll(a)
 			this.settling = false
 		}
+		/* THE FIRST REAL PAINT IS THE REVEAL. Not "accounts loaded" (a moment earlier, before there is
+		   anything on screen to look at) and not "the forecast landed" (moduleRun() may still be
+		   mid-flight on the worker pool - waiting for it here would put the shimmer back in front of
+		   exactly the delay this was built to hide). The past line and whatever forecast IS already
+		   available (the legacy model's, synchronously, while the module's own is still in flight -
+		   see moduleRun()) are already drawn by the paintAll() calls above, so this is the earliest
+		   point the tile has something worth showing. */
+		if(!this.state.ready)this.updateState({ready:true})
 	}
 
 	/* ---- interaction -----------------------------------------------------------------------------
@@ -1875,9 +2037,10 @@ export default class BalanceChart extends BaseComponent{
 			this._portfolio = null; this._runs = null
 			this._names = null; this._byStream = null; this._classes = null
 		}
+		const ready = this.state.ready
 		return <DS.component.ContentTile style={{position:"relative",width:"100%",height:"100%",
 				boxSizing:"border-box",margin:0,padding:DS.spacing.xs+"rem"}}>
-			<Head>
+			<Head $ready={ready}>
 				<Title $big={!Core.isMobile()}>
 					<TitleButton type="button" onClick={() => this.morphTo()}
 					>{wordOf(this.sources(), this.source())}</TitleButton>{" balance "}
@@ -1892,10 +2055,14 @@ export default class BalanceChart extends BaseComponent{
 			{/* the chart answers its own pointer gestures, so a drag starting on it belongs to it and
 			    not to the carousel - see documentation/visualisation-carousel.md */}
 			<ChartArea>
-				<ChartHost data-no-drag ref={this.host}/>
+				<ChartHost $ready={ready} data-no-drag ref={this.host}/>
 				{this.state.loaded && !this.hasAnchor()
-					? <Empty>Connect an account to see your balance</Empty> : null}
+					? <Empty $ready={ready}>Connect an account to see your balance</Empty> : null}
 			</ChartArea>
+			{/* PAINTED FROM THE FIRST FRAME, crossfading against Head/ChartHost/Empty above as `ready`
+			    flips - see the Shimmer definition for why this is one sweep rather than a skeleton
+			    shaped like the title and the chart separately. */}
+			<Shimmer $ready={ready}/>
 		</DS.component.ContentTile>
 	}
 }

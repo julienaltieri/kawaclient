@@ -19,6 +19,7 @@ import {StreamPredictor} from '../streamPredictor';
 import {cardRepayments} from '../streamPredictor/cardRepayments';
 import {cardSettlements} from './settlement';
 import {pinBalances} from './balanceCurve';
+import {scheduleParallel} from './schedulePool';
 
 const SOURCE = {posted: 'posted', predicted: 'predicted', settlement: 'settlement'};
 const ONE_DAY = 24 * 60 * 60 * 1000;
@@ -41,10 +42,13 @@ export function inScope(predictor, asOf){
 	});
 }
 
-/* ---- §2 — ONE LEDGER PER ACCOUNT ---------------------------------------------------------------- */
-export function accountLedgers(portfolio, until, opts){
+/* ---- §2 — ONE LEDGER PER ACCOUNT ----------------------------------------------------------------
+   EVERYTHING BELOW `scheduleFor` IS THE SAME WHETHER THE SCHEDULE CAME FROM ONE THREAD OR FOUR. The
+   only thing the sync and async entry points below disagree about is HOW each stream's `scheduleOf`
+   answer gets produced - one thread, in order, or a worker pool, merged - so that is the only thing
+   factored out. `assembleLedgers` never knows which. */
+function assembleLedgers(portfolio, predictor, until, opts, scheduleFor){
 	const o = opts || {};
-	const predictor = o.predictor || new StreamPredictor(portfolio);
 	const asOf = o.asOf ? new Date(o.asOf) : new Date(predictor.analysisNow());
 	const stop = new Date(until);
 
@@ -86,7 +90,7 @@ export function accountLedgers(portfolio, until, opts){
 	//why each stream says nothing, so a correct silence is not counted as a blind spot
 	const silence = {};
 	streams.forEach(stream => {
-		const r = predictor.scheduleOf(stream.id, stop, stream, {asOf: asOf});
+		const r = scheduleFor(stream, stop, asOf);
 		silence[stream.id] = r.silence || 'unreadable';
 
 		/* ---- WHICH OF THIS STREAM'S EVENTS ARE REPAYMENTS -------------------------------------
@@ -249,6 +253,43 @@ export function accountLedgers(portfolio, until, opts){
 		   that only wants the ledger; the shape below (`accounts`, `streams`, ...) is unchanged. */
 		predictor: predictor
 	}, predictor.accountsByHash || {});
+}
+
+/* THE ORDINARY, SINGLE-THREADED ENTRY POINT - unchanged in every observable way. Every existing
+   caller (the audit pages, the tests, the bench) keeps calling this exactly as before. */
+export function accountLedgers(portfolio, until, opts){
+	const o = opts || {};
+	const predictor = o.predictor || new StreamPredictor(portfolio);
+	return assembleLedgers(portfolio, predictor, until, opts,
+		(stream, stop, asOf) => predictor.scheduleOf(stream.id, stop, stream, {asOf: asOf}));
+}
+
+/* THE PARALLEL ENTRY POINT. Every stream's `scheduleOf` is independent of every other's - see the
+   header on scheduleWorker.js - so `scheduleParallel()` answers the whole in-scope list at once,
+   spread across a small worker pool, and this assembles the SAME ledger `accountLedgers()` would
+   from the SAME answers. `key` identifies the portfolio capture and the `asOf` the answers are good
+   for, so the pool only resends the (large) portfolio JSON when that identity changes - see
+   schedulePool.js.
+
+   FALLS BACK TO THE ORDINARY LOOP, never throws for the mere absence of workers. `scheduleParallel`
+   resolves `null` when no pool could be built (no `Worker`, jsdom under a test, a browser that
+   refused one) - this reads that as "compute it here instead", so the promise this returns still
+   resolves with the right answer, only without the speedup. A worker that itself threw on real data
+   is a different case and is allowed to reject, same as a synchronous bug would throw. */
+export async function accountLedgersAsync(portfolio, until, opts){
+	const o = opts || {};
+	const predictor = o.predictor || new StreamPredictor(portfolio);
+	const asOf = o.asOf ? new Date(o.asOf) : new Date(predictor.analysisNow());
+	const streams = inScope(predictor, asOf);
+	const key = (portfolio.capturedAt || '') + '|' + asOf.getTime();
+
+	const parallel = streams.length
+		? await scheduleParallel(portfolio, streams.map(s => s.id), until, asOf, o.scheduleOpts, key)
+		: null;
+
+	return assembleLedgers(portfolio, predictor, until, opts, (stream, stop, streamAsOf) =>
+		(parallel && parallel[stream.id])
+			|| predictor.scheduleOf(stream.id, stop, stream, {asOf: streamAsOf}));
 }
 
 export default accountLedgers;

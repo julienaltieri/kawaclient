@@ -404,6 +404,12 @@ describe("the forecaster", () => {
 		const legacy = await mount("this", false, "legacy")
 		const modular = await mount("this")
 
+		//the module's own forecast now runs off the main thread (see moduleRun() in BalanceChart.js) -
+		//the first series() built while it is still in flight draws the legacy line as a stand-in, so
+		//a test asking about the MODULE's own run has to wait for it the same way a reader's repaint
+		//does, then read series() again to get the version that was rebuilt once it landed.
+		modular.series()
+		await act(async () => {await modular.pendingForecasts()})
 		const a = modular.series()
 		expect(a.liveRun).toBeTruthy()
 		expect(a.future.length).toBeGreaterThan(0)
