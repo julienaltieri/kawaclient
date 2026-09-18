@@ -3243,3 +3243,138 @@ error recorded and nothing on screen different, is how a hung promise passed for
 as long as it did - and the label fix two entries up had just removed the one visible clue. Every
 wait in that chain is bounded now, every failure is recorded, and the probe can ask the tile which
 forecaster it is actually using.
+
+**2026-09-17 (later still) — the badge grows on desktop: `DESKTOP_BADGE_BOOST`**
+
+Reported: "the badge feels incredibly small on desktop" - held closer to the eye on a phone than a
+desktop screen typically sits, so a badge sized purely by the root rem (this session's own earlier
+work) holds a constant CSS size but shrinks in apparent (angular) size as the viewing distance grows.
+`remPx()` cannot see that on its own - the root font-size is a TYPOGRAPHY reference, 16px on both
+device classes by this app's own `App.css`, and tracks a reader's own text-size setting, never their
+distance from the screen.
+
+**Not a new number.** `DESKTOP_BADGE_BOOST` (`BalanceChart.js`) reuses the ratio the app had already
+chosen for exactly this reason: this same tile's own title, and MoneyFlowChart.js's identical
+pattern, both read `DS.fontSize.display` (2rem) on desktop against `DS.fontSize.title` (1.2rem) on
+mobile - `$big={!Core.isMobile()}` - and `display`'s own comment says why ("a chart that fills a card
+carries its title at the size a reader takes in from across the desk"). That is a viewing-distance
+correction someone had already made by feel, on this same tile, for a font. `2/1.2 = 5/3 ≈ 1.667` is
+the same ratio, carried to the badge.
+
+A survey before settling on that: other `Core.isMobile()`-branched sizing in the app runs the OPPOSITE
+direction. `AnalysisView.js`'s `EndOfPeriodProjectionGraph` makes almost everything BIGGER on mobile
+(`fontSizeBody` 14 vs 7, `scatterDotSize` 4 vs 2, `chartBarWidth` 8 vs 4 - all mobile:desktop = 2:1) -
+but that reads as a LAYOUT DENSITY decision (mobile gets a dedicated full-width view, desktop packs
+more into a grid), not a distance one, so it answers a different question and was not used as
+precedent. The title split is the only existing case that is actually about the same thing this is.
+
+**Fonts and graphics were checked separately, on request.** Browser/OS text-zoom reaches every field
+in `scaleAt()` identically on both device classes, mobile or desktop, through `r` (`rootPx/16`) -
+`DESKTOP_BADGE_BOOST` only ever multiplies on top of that, gated on device class, never confused with
+it. And the boost touches only what has to stay proportioned to the badge itself - `dotR`,
+`intersectR`, `strokeBadgeBase` (its own outline) and `badgeGap` (so bigger badges do not collide) -
+never fonts, line strokes, padding or `labelGap`, which the reader did not report a problem with.
+
+`scaleAt(rootPx, desktop)` gained an optional second argument (default falsy = the old, unboosted
+behaviour - every existing `scaleAt(16)`/`scaleAt(20)` call, in tests and elsewhere, is unaffected);
+all three live call sites now pass `!Core.isMobile()`. Three new tests in `balanceTile.test.js`: the
+pure ratio (`DS.fontSize.display/title`, and that nothing else moves between mobile and desktop),
+and the mounted tile's actual SVG radius under both a landscape and a portrait `window` size - with
+an explicit desktop-radius-not-equal-mobile-radius assertion, because a first version of that test
+compared the rendered SVG against `scaleAt()`'s OWN output and could not have caught a regression
+that made `scaleAt` ignore its new argument (both sides of the comparison would break identically).
+Confirmed failing against the badge computation reverted to ignore `desktop` before being restored.
+Two pre-existing literal-radius assertions (`r="2.20"`, written before any device split existed) now
+compute their expected value from `scaleAt(16, true)` explicitly rather than assume jsdom's default
+window landing on either device class by accident.
+
+Verified: build compiles clean with the production marker; full suite passes at 575/575 (the one
+pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).
+
+**2026-09-17 (later still) — the font's own treatment, ported from MoneyFlowChart.js rather than
+invented a second time**
+
+Reported: the badge boost above fixed the badges, but "the fonts didn't get the right treatement" -
+and pointed at `MoneyFlowChart.js`'s own desktop font handling as the reference to bring over, rather
+than asking for a new number.
+
+`MoneyFlowEngine.js` had already solved exactly this, in its own §9.8: "the 12px that fills a phone
+card is 3.7% of its width and 1.6% of a desktop one... the authored sizes are kept at phone width -
+they are what lets a phone carry twelve names - and the design system's are reached by the width
+where they cost none." Its mechanism is NOT a device check - `retype()` interpolates smoothly by the
+chart's own measured width (`this.host.clientWidth`), `TUNE.narrowW`/`wideW` (360/640px), a phone's
+authored size at or below the first, the design-system's own rem size (`DS.fontSize.body*rootPx()`)
+at or above the second, linear between - so a resized desktop window or a tablet gets a font in
+between, not a jump.
+
+**Ported, not reinvented.** `scaleAt()` (`BalanceChart.js`) gained a third argument, `widthPx` - the
+chart's own measured `this.W`, passed at all three live call sites alongside the existing `rootPx`
+and `desktop`. `fontSmall`/`fontNormal` now interpolate from their existing authored sizes (8/9, at
+`r`) toward `DS.fontSize.body*rootPx` using `NARROW_W`/`WIDE_W` = 360/640 - MoneyFlowEngine's own
+`TUNE.narrowW`/`wideW` verbatim, so the two tiles in the same carousel widen their own type at the
+same physical point rather than by two different, uncoordinated thresholds. Both font roles converge
+to the SAME wide target, matching MoneyFlow's own choice there too ("on a wide card the small size is
+retired: there is room for every name to be set at the body size").
+
+**Deliberately a second, independent axis from the badge boost.** The badge grows on `Core.isMobile()`
+(a device-class question - closer or farther from the eye); the font grows on measured width (a
+room question - how much space is actually there). They can disagree, and are meant to: a narrow
+desktop window is still "desktop" for the badge (it does not shrink back down just because the
+window was resized smaller) but reads as "narrow" for the font (there is nowhere to put a bigger
+one) - pinned directly in `"the badge grows on desktop... yet the font grows independently of it"`.
+
+Two new tests in `balanceTile.test.js`: the pure interpolation (clamped at both ends, linear between,
+both font roles converging to the same wide target, still tracking root text-zoom at either end, and
+independent of the badge-boost axis) and the mounted SVG's own `font-size` at `c.W = 320` (narrow)
+against `c.W = 800` (wide) - jsdom has no real layout, so `c.W` is set directly rather than relying on
+a measured width that never arrives. Confirmed failing against the interpolation reverted to a no-op
+before being restored.
+
+Verified: build compiles clean with the production marker; full suite passes at 577/577 (the one
+pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).
+
+**2026-09-17 (later still) — three constants that never learned the font could grow**
+
+The font-widening entry above let `fontSmall`/`fontNormal` grow past their old fixed 8/9px on a wide
+chart. Three OTHER numbers were written down assuming that could never happen, and did not move when
+it started to - all three reported at once, all three the same root cause:
+
+1. **The right gutter clipped balances and words on desktop.** `pad.r` (the plot's own right margin,
+   holding the "Balance" heading, the high/low guides, the cursor's own value) was a flat `48*r`,
+   sized once to fit that text at font-size 8 - a fixed 6:1 ratio (48/8). The text inside it is set at
+   `fontSmall`, which now grows on a wide chart; the box holding it did not, so the growing text ran
+   past its own edge. Fixed in `scaleAt()`: `pad.r` is now `6*fontSmall` - the same 6:1 ratio, at
+   every width, reducing to exactly `48*r` wherever `fontSmall` still does.
+
+2. **"Today (date)" overlapped the 1st/15th axis tick beside it, at rest.** The tick-suppression
+   check (`draw()`) compared the pixel gap between the two labels against a bare `34`, calibrated
+   when the date label was always set at `fontNormal=9`. Once `fontNormal` could grow past that, the
+   label printed wider than the gap the check still called "clear", and a tick that used to sit safely
+   past its edge started printing through it. Fixed the same way `half` (the date label's own
+   positioning estimate, a few lines above, calibrated on the identical "2.6px/character at
+   fontNormal=9") already had to be: `34 * (P.fontNormal/9)` - unchanged at the narrow end, where
+   `fontNormal/9 = 1`, growing only where the font actually does.
+
+3. **The cursor's own movement list packed its lines on top of each other on desktop.** The caption's
+   tspans are laid out at `dy="10*r"`-ish, a line-height calibrated at the same `fontNormal=9` (a
+   ~1.11 ratio) - and the caption's own font-size IS `fontNormal`. Same fix, same reasoning:
+   `10*(P.fontNormal/9)`.
+
+All three are the identical shape of bug: a constant written down when a font-size was still `9*r` by
+construction, that stopped tracking the font's own size once `fontNormal`/`fontSmall` could differ
+from `9*r`/`8*r` by width. None of them were wrong at the time they were written - they became wrong
+the moment the font gained a second axis of growth this session introduced.
+
+New tests, `balanceTile.test.js`: the gutter's own 6:1 ratio, pure-function, at both ends of
+NARROW_W/WIDE_W; the tick suppression, end to end - the SAME kind of gap (today's label two days
+from the "1" tick) painted at a narrow width where the raw pixel gap already clears the old flat
+threshold (control: the tick correctly prints) and at a wide one where the same kind of gap does not
+clear the NEW, font-scaled threshold (the tick correctly gives way) - chosen because plot width also
+grows with the chart (see fix #1, same investigation), so a fixed day-gap alone would not isolate the
+font-driven half of this from the gutter-driven half; and the movement list's own second-tspan `dy`,
+narrow against wide, reading the SECOND tspan specifically since the first of any wrapped caption
+always carries `dy="0"` by construction. All three confirmed failing against each fix reverted
+individually before being restored.
+
+Verified: build compiles clean with the production marker; full suite passes at 580/580 (the one
+pre-existing, unrelated `App.test.js`/`dateformat` failure, unchanged).

@@ -66,16 +66,75 @@ const RATIO = 2.25;                    //the tile is wider than it is tall, as p
 
    At the app's own default root (16px) every number below is exactly the bare pixel constant it
    replaced - nothing about the resting picture changes until a reader's own text size does. */
-export function scaleAt(rootPx){
-	const r = (rootPx || 16)/16
+/* THE BADGE'S OWN DESKTOP BOOST - reusing the ratio already established, not a guessed one. Reported:
+   held at arm's length a phone puts the tile roughly 20cm from the eye; a desktop screen is three
+   times that or more, so for the badge's APPARENT (angular) size to hold steady it has to grow with
+   the distance, roughly in proportion. `remPx()` cannot see that on its own - the root font-size is
+   a TYPOGRAPHY reference (it tracks a reader's own text-size setting, on either device) and is 16px
+   on both a phone and a desktop by this app's own App.css; nothing about viewing distance reaches it.
+   Rather than invent a new multiplier, this reuses the one the app already chose for exactly this
+   reason: BalanceChart's own title (and MoneyFlowChart's, the same pattern) already reads bigger on
+   desktop than on mobile - `$big={!Core.isMobile()}`, `DS.fontSize.display` (2rem) against
+   `DS.fontSize.title` (1.2rem) - and `display`'s own comment says why: "a chart that fills a card
+   carries its title at the size a reader takes in from across the desk". That is a viewing-distance
+   correction already made by feel, on this same tile, for a font. This is the identical ratio,
+   carried to the one other element distance actually changes the legibility of: a badge, which has
+   to resolve as a SHAPE rather than merely be readable the way running text can survive being a
+   little small. (A larger flat multiplier may still be warranted for a shape specifically - a mark
+   than has to resolve as an icon, not merely be legible as a letterform - and is a design call for
+   whoever is looking at it, not one to bury silently in the same number that already serves fonts.)
+
+   NEITHER SIGNAL IS BROWSER TEXT-ZOOM, and that is deliberate: a reader who has turned their own
+   text size up gets it through `r` (rootPx/16) on EVERY field here, mobile or desktop alike, exactly
+   as before - this boost only ever multiplies on top of that, gated on device class, never confused
+   with it. Applied only to the badge itself and what has to stay proportioned to it (its own outline
+   stroke, and the gap that keeps two of them from colliding) - never to fonts, line strokes or
+   padding, which the reader did not report a problem with and which this file's own rem-purity
+   already treats consistently across devices. */
+const DESKTOP_BADGE_BOOST = DS.fontSize.display / DS.fontSize.title     // 2 / 1.2 = 5/3 ≈ 1.667
+
+/* THE FONT'S OWN TREATMENT, LIFTED FROM MoneyFlowChart.js RATHER THAN INVENTED A SECOND TIME. Its
+   own §9.8 already solved this: "the 12px that fills a phone card is 3.7% of its width and 1.6% of
+   a desktop one" - a font sized only in rem tracks a reader's TEXT setting but not the ROOM the chart
+   actually has, and the two are different questions. Its answer is not a device check at all - a
+   binary mobile/desktop switch answers "which kind of screen" where the real question is "how wide
+   IS the chart right now" - so it interpolates smoothly by the chart's own measured width instead:
+   authored (phone-fitting) sizes below `NARROW_W`, the design system's own rem size by `WIDE_W`,
+   linear between. A resized desktop window or a tablet in between gets a font in between, exactly as
+   MoneyFlowEngine's own `retype()` does; nothing here is a fork of that logic, only its numbers
+   carried to this tile's own two font roles. `NARROW_W`/`WIDE_W` are its own `TUNE.narrowW`/`wideW`
+   verbatim, so the two tiles widen their own type at the same physical point in the carousel. */
+const NARROW_W = 360, WIDE_W = 640
+const wideFontPx = rootPx => DS.fontSize.body * rootPx     //"the design system's own size" - §9.8
+
+export function scaleAt(rootPx, desktop, widthPx){
+	const rp = rootPx || 16
+	const r = rp/16
+	//the badge's own scale: `r` alone on mobile (or when the caller does not say), boosted on desktop
+	const badge = desktop ? r * DESKTOP_BADGE_BOOST : r
+	//how much of the widening this chart has actually earned, by its own measured width - 0 at or
+	//below NARROW_W (a phone), 1 at or above WIDE_W (comfortably desktop), between the two between
+	const f = Math.max(0, Math.min(1, ((widthPx || NARROW_W) - NARROW_W)/(WIDE_W - NARROW_W)))
+	const wide = wideFontPx(rp)
+	const lerp = narrow => narrow + (wide - narrow)*f
+	const fontSmall = lerp(8*r), fontNormal = lerp(9*r)
 	return {
 		r: r,
-		pad: {l: 10*r, r: 48*r, t: 18*r, b: 15*r},
-		fontSmall: 8*r, fontNormal: 9*r,
+		/* THE RIGHT GUTTER, SIZED TO THE TEXT THAT ACTUALLY FILLS IT. Every label drawn inside it -
+		   the "Balance" heading, the high/low guides, the cursor's own value - is set at `fontSmall`,
+		   and the gutter was originally sized to fit them at exactly one ratio to it: 48px at
+		   font-size 8 is 6:1. That ratio held by construction as long as fontSmall was always `8*r` -
+		   it stopped holding the moment fontSmall started widening with the chart's own width (see
+		   NARROW_W/WIDE_W above) while the gutter itself stayed fixed, and the words it holds started
+		   clipping on a wide chart. `6*fontSmall` keeps the same ratio at every width instead of only
+		   at the narrow one - it reduces to exactly `48*r` wherever fontSmall still does. */
+		pad: {l: 10*r, r: 6*fontSmall, t: 18*r, b: 15*r},
+		fontSmall: fontSmall, fontNormal: fontNormal,
 		strokeActual: 3*r, strokeProjected: 2*r, strokeThin: 0.7*r,
-		strokeCursor: 1*r, strokeBadgeBase: 1*r, strokeOverhang: 2*r,
-		dotR: (4*r + 3*r)*0.75, intersectR: 2.2*r,
-		badgeGap: 2*r, labelGap: 11*r
+		strokeCursor: 1*r, strokeOverhang: 2*r,
+		//THE BADGE, AND ONLY WHAT STAYS PROPORTIONED TO IT
+		strokeBadgeBase: 1*badge, dotR: (4*badge + 3*badge)*0.75, intersectR: 2.2*badge,
+		badgeGap: 2*badge, labelGap: 11*r
 	}
 }
 //`planned` is the fill under the RECORD; `projected` is the DASHED LINE's own opacity, unrelated to
@@ -1184,7 +1243,7 @@ export default class BalanceChart extends BaseComponent{
 		const all = past.concat(future)
 		if(all.length < 2)return ""
 		const f = frame || this.frameOf({past: past, future: future})
-		const P = scaleAt(remPx())
+		const P = scaleAt(remPx(), !Core.isMobile(), this.W)
 		const X = t => P.pad.l + (t - f.x0)/(f.x1 - f.x0 || 1)*(W - P.pad.l - P.pad.r)
 		const Y = v => H - P.pad.b - (v - f.y0)/(f.y1 - f.y0 || 1)*(H - P.pad.t - P.pad.b)
 		const S = DS.getStyle()
@@ -1412,7 +1471,15 @@ export default class BalanceChart extends BaseComponent{
 							//the name in ink at normal weight, the value bold and in its own colour if any
 							const cut = l.text.length - l.valueLen
 							const head = esc(l.text.slice(0, cut)), tail = esc(l.text.slice(cut))
-							return '<tspan x="' + tx + '" dy="' + (i ? (10*P.r).toFixed(2) : 0) + '"'
+							/* "10" IS A LINE-HEIGHT CALIBRATED AT fontNormal=9 (a ~1.11 ratio), the
+							   same constant this file keeps re-deriving wherever a font-size and a
+							   pixel gap were written down together before either could move
+							   independently of the other. Left bare, a wide chart's bigger fontNormal
+							   (see NARROW_W/WIDE_W) kept the OLD, smaller line-height under it, and
+							   the cursor's own movement list packed its lines on top of each other -
+							   reported as "mobile-dimensioned" spacing on a desktop-sized font. */
+							return '<tspan x="' + tx + '" dy="'
+								+ (i ? (10*(P.fontNormal/9)).toFixed(2) : 0) + '"'
 								+ (l.quiet ? ' fill="' + dim + '"' : "") + '>' + head
 								+ '<tspan font-weight="600"' + (l.colour ? ' fill="' + l.colour + '"' : "")
 								+ '>' + tail + '</tspan></tspan>'
@@ -1431,7 +1498,13 @@ export default class BalanceChart extends BaseComponent{
 			   somewhere else it is dropped just as honestly, because that day is not today either way. */
 			const dayLabel = dayIdx(day.date) === dayIdx(now)
 				? ("Today (" + onDate(day.date) + ")") : onDate(day.date)
-			const half = dayLabel.length * 2.6*P.r
+			/* "2.6" IS CALIBRATED AT fontNormal=9 - an average character's own width in px at that
+			   size - so it has to scale WITH fontNormal, not with `P.r` alone, now that fontNormal
+			   itself can be bigger than `9*P.r` on a wide chart (see NARROW_W/WIDE_W). Before that
+			   existed the two were always equal and this line could not tell the difference; now it
+			   has to, or the estimate undershoots the label's real width exactly where the chart has
+			   grown its type the most. */
+			const half = dayLabel.length * 2.6 * (P.fontNormal/9)
 			const lx = Math.max(P.pad.l + half, Math.min(W - P.pad.r - half, cx))
 			dateLabel = '<text x="' + lx.toFixed(1) + '" y="' + (H - 4*P.r).toFixed(1)
 				+ '" text-anchor="middle" font-family="Inter" font-size="' + P.fontNormal.toFixed(2)
@@ -1519,7 +1592,13 @@ export default class BalanceChart extends BaseComponent{
 		//showing - held, fading, or the resting default alike, not only an active touch
 		const axis = ticks.map(tk => {
 			const tx = X(tk.t)
-			if(dateX !== null && Math.abs(tx - dateX) < 34)return ""
+			/* "34" WAS CALIBRATED AT fontNormal=9, THE SAME AS "2.6" ABOVE, and for the same reason
+			   has to scale with it: a tick sitting exactly 34px from the date label used to be a safe
+			   clearance because the label was never bigger than font-size 9 - once the chart's own
+			   width lets fontNormal grow past that (see NARROW_W/WIDE_W), the label is visibly wider
+			   than the gap this was still calling "clear", and the tick prints straight through it.
+			   Reported as "Today (date) overlaps the date at rest". */
+			if(dateX !== null && Math.abs(tx - dateX) < 34 * (P.fontNormal/9))return ""
 			return '<line x1="' + tx.toFixed(1) + '" y1="' + (H - P.pad.b) + '" x2="' + tx.toFixed(1)
 				+ '" y2="' + (H - P.pad.b + 3*P.r) + '" stroke="' + dim + '" stroke-width="'
 				+ P.strokeThin.toFixed(2) + '" opacity="0.6"/>'
@@ -1551,7 +1630,7 @@ export default class BalanceChart extends BaseComponent{
 		if(all.length < 2)return ""
 		const f = frame || this.frameOf({past: past, future: future})
 		const x0 = f.x0, x1 = f.x1, y0 = f.y0, y1 = f.y1
-		const P = scaleAt(remPx())
+		const P = scaleAt(remPx(), !Core.isMobile(), this.W)
 		const X = t => P.pad.l + (t - x0)/(x1 - x0 || 1)*(W - P.pad.l - P.pad.r)
 		const Y = v => H - P.pad.b - (v - y0)/(y1 - y0 || 1)*(H - P.pad.t - P.pad.b)
 		const S = DS.getStyle()
@@ -1813,7 +1892,7 @@ export default class BalanceChart extends BaseComponent{
 			   itself - past where the line actually ends. The fraction is taken over the same inset
 			   the drawing uses, so a screen pixel and the date drawn under it agree. */
 			const px = (e.clientX - r.left)/r.width*this.W
-			const P = scaleAt(remPx())
+			const P = scaleAt(remPx(), !Core.isMobile(), this.W)
 			const f = Math.max(0, Math.min(1, (px - P.pad.l)/(this.W - P.pad.l - P.pad.r)))
 			const t = this.drag.x0 + f*(this.drag.x1 - this.drag.x0)
 			if(!isFinite(t))return null

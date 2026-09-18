@@ -14,6 +14,7 @@ jest.mock('dateformat', () => ({__esModule: true, default: () => ''}))
 import React from 'react'
 import {render, screen, fireEvent, act} from '@testing-library/react'
 import Core from '../core'
+import DS from '../DesignSystem.js'
 import {CompoundStream, GenericTransaction} from '../model'
 import BalanceChart, {nameOf, iconFor, money, scaleAt, onDate} from '../components/BalanceChart'
 const PAD = scaleAt(16).pad
@@ -421,12 +422,17 @@ test("the fade rect reaches past the plot edge, covering the line's own stroke o
 })
 
 test("the balance of the current day is shown by default, with a dotted line to its own dot on the curve", async () => {
+	//jsdom's own default window (1024x768, landscape) reads as desktop through Core.isMobile() - made
+	//explicit here rather than relied on, since the intersect dot's radius now depends on it (see
+	//DESKTOP_BADGE_BOOST)
+	const intersectR = scaleAt(16, true).intersectR.toFixed(2)
 	const ref = await mount()
 	const svg = () => (ref.current.host.current || {}).innerHTML || ""
 	//AT REST, nothing touched: today's own value is already there, bold, in the gutter
 	expect(svg()).toMatch(/font-weight="600"[^>]*>\$/)
 	//a dotted line runs from the curve out to it, ending on a small dot where it meets the curve
-	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.20"/)
+	expect(svg()).toMatch(new RegExp('stroke-dasharray="2,3"[^>]*></line>\\s*<circle[^>]*r="'
+		+ intersectR + '"'))
 	await act(async () => {ref.current.setState({at: rentDay})})
 	//a badge on the same day the cursor is on grows, so the whole picture is still mid-motion right
 	//after this setState - which is exactly the frame that must already show a number, not a blank
@@ -434,7 +440,8 @@ test("the balance of the current day is shown by default, with a dotted line to 
 	expect(held).toBeTruthy()
 	//the value under the finger, bold, beside the two quiet ones it sits between
 	expect(svg()).toMatch(/font-weight="600"/)
-	expect(svg()).toMatch(/stroke-dasharray="2,3"[^>]*><\/line>\s*<circle[^>]*r="2.20"/)
+	expect(svg()).toMatch(new RegExp('stroke-dasharray="2,3"[^>]*></line>\\s*<circle[^>]*r="'
+		+ intersectR + '"'))
 })
 
 /* THE CURSOR ARRIVES AND LEAVES, rather than blinking on and off.
@@ -1163,6 +1170,92 @@ test("every drawn size scales with the root rem, not a bare pixel", () => {
 	expect(at20.dotR).toBeCloseTo(at16.dotR*r, 5)
 })
 
+/* DESKTOP_BADGE_BOOST: reported "the badge feels incredibly small on desktop" - held closer on a
+   phone than a desktop screen sits from the eye, so its APPARENT size shrinks unless the badge grows
+   to compensate. Not a guessed number: it reuses the ratio the app already chose for exactly this -
+   the same tile's own title (`$big={!Core.isMobile()}`) reads at `DS.fontSize.display` on desktop
+   against `DS.fontSize.title` on mobile, and MoneyFlowChart.js carries the identical split on its
+   own title. */
+test("the badge grows on desktop by the same ratio the title already does, and nothing else does", () => {
+	const mobile = scaleAt(16, false), desktop = scaleAt(16, true)
+	const boost = DS.fontSize.display / DS.fontSize.title
+	expect(boost).toBeCloseTo(5/3, 5)                     //2 / 1.2
+
+	//the badge itself, and what has to stay proportioned to it
+	expect(desktop.dotR).toBeCloseTo(mobile.dotR * boost, 5)
+	expect(desktop.intersectR).toBeCloseTo(mobile.intersectR * boost, 5)
+	expect(desktop.strokeBadgeBase).toBeCloseTo(mobile.strokeBadgeBase * boost, 5)
+	expect(desktop.badgeGap).toBeCloseTo(mobile.badgeGap * boost, 5)
+
+	//NOTHING ELSE moves - fonts, line strokes and padding are a typography/layout question this
+	//reader did not raise, and stay identical between the two device classes
+	expect(desktop.fontSmall).toBe(mobile.fontSmall)
+	expect(desktop.fontNormal).toBe(mobile.fontNormal)
+	expect(desktop.strokeActual).toBe(mobile.strokeActual)
+	expect(desktop.strokeProjected).toBe(mobile.strokeProjected)
+	expect(desktop.strokeThin).toBe(mobile.strokeThin)
+	expect(desktop.strokeCursor).toBe(mobile.strokeCursor)
+	expect(desktop.strokeOverhang).toBe(mobile.strokeOverhang)
+	expect(desktop.pad).toEqual(mobile.pad)
+	expect(desktop.labelGap).toBe(mobile.labelGap)
+
+	//and omitting the second argument entirely is the same as mobile - the boost is opt-in, never
+	//silently applied to a caller that has not said which device it means
+	expect(scaleAt(16)).toEqual(mobile)
+})
+
+/* REPORTED: "the right side rail for balance is too small on desktop (balances and words are cut
+   off)". The gutter (`pad.r`) holds three things - the "Balance" heading, the high/low guides, the
+   cursor's own value - all set at `fontSmall`, and was sized to fit them at one fixed ratio: 48px at
+   font-size 8 is 6:1. That ratio broke the moment fontSmall started widening with the chart's own
+   width (NARROW_W/WIDE_W, the entry right before this one) while the gutter itself stayed a flat
+   `48*r` - the text grew, the box that has to hold it did not. */
+test("the right gutter grows with the font that actually fills it, at a constant 6:1 ratio", () => {
+	const narrow = scaleAt(16, false, 360), wide = scaleAt(16, false, 640)
+	expect(narrow.pad.r).toBeCloseTo(6*narrow.fontSmall, 5)
+	expect(wide.pad.r).toBeCloseTo(6*wide.fontSmall, 5)
+	expect(wide.pad.r).toBeGreaterThan(narrow.pad.r)
+	//exactly the old constant at the narrow end - nothing about the mobile picture moved
+	expect(narrow.pad.r).toBeCloseTo(48, 5)
+	//everything else about the padding is untouched - only the side the gutter's own text fills
+	expect(wide.pad.l).toBe(narrow.pad.l)
+	expect(wide.pad.t).toBe(narrow.pad.t)
+	expect(wide.pad.b).toBe(narrow.pad.b)
+})
+
+/* THE MOUNTED TILE ACTUALLY ASKS Core.isMobile() FOR THIS - not a config flag, the same aspect-ratio
+   read every other isMobile() call in the app uses. jsdom's own default window (1024x768, landscape)
+   reads as desktop; this pins BOTH directions against the real window so the wiring - not just the
+   pure function - is under test. */
+test("the mounted tile's own badges follow Core.isMobile(), landscape and portrait alike", async () => {
+	const prevW = window.innerWidth, prevH = window.innerHeight
+	try{
+		const setSize = (w, h) => {
+			Object.defineProperty(window, "innerWidth", {value: w, configurable: true})
+			Object.defineProperty(window, "innerHeight", {value: h, configurable: true})
+		}
+		//independent of scaleAt() itself, so a regression that makes it ignore `desktop` (mobile and
+		//desktop computing the SAME radius) fails this even though it would not fail a comparison
+		//against scaleAt()'s own (equally broken) output
+		const desktopR = "3.67", mobileR = "2.20"
+		expect(desktopR).not.toBe(mobileR)
+
+		setSize(1024, 768)                                  //landscape - desktop
+		const ref = await mount()
+		const svg = () => (ref.current.host.current || {}).innerHTML || ""
+		expect(svg()).toMatch(new RegExp('r="' + desktopR + '"'))
+		expect(svg()).not.toMatch(new RegExp('r="' + mobileR + '"'))
+
+		setSize(390, 844)                                    //portrait - mobile
+		await act(async () => {ref.current.paint()})
+		expect(svg()).toMatch(new RegExp('r="' + mobileR + '"'))
+		expect(svg()).not.toMatch(new RegExp('r="' + desktopR + '"'))
+	}finally{
+		Object.defineProperty(window, "innerWidth", {value: prevW, configurable: true})
+		Object.defineProperty(window, "innerHeight", {value: prevH, configurable: true})
+	}
+})
+
 test("a wider root rem grows the live layer's own fonts and strokes in the mounted SVG", async () => {
 	const ref = await mount()
 	const c = ref.current
@@ -1185,6 +1278,144 @@ test("a wider root rem grows the live layer's own fonts and strokes in the mount
 	} finally {
 		document.documentElement.style.fontSize = prevSize
 	}
+})
+
+/* REPORTED: "the Today (date) string overlaps with the date at rest" - the 1st/15th axis tick right
+   beside it kept printing through it. The tick suppression that is supposed to prevent this
+   ("built here... so it can give way to whichever date label is actually showing") compared the
+   gap in PIXELS against a bare `34` calibrated at fontNormal=9 - once the chart's own width let
+   fontNormal grow past that (NARROW_W/WIDE_W, this session's own earlier change), the date label
+   printed visibly wider than the gap the check still called "clear", and a tick that used to sit
+   safely past the label's edge now sits on top of it.
+
+   PROVEN END TO END, not just in the constant: the SAME data (a window holding the "1" tick two
+   days before "today") is painted at a narrow width, where the old flat threshold already worked,
+   and at a wide one, scaled so the raw pixel gap is similar - chosen because plot width grows with
+   the chart too (see the pad.r fix, same investigation), so a fixed day-gap alone does not isolate
+   the font-driven half of this on its own. */
+test("a 1st/15th tick this close to today's own label gives way to it, at any chart width", async () => {
+	const ref = await mount()
+	const c = ref.current
+	const DAY = 24*60*60*1000
+	const utc = (y,m,dd) => new Date(Date.UTC(y,m,dd))
+	const build = spanDays => {
+		const content = []
+		const start = utc(2026,3,1).getTime() - Math.floor(spanDays/2)*DAY
+		for(let t = start; t <= start + spanDays*DAY; t += DAY)
+			content.push({date: new Date(t), value: 1000 + t/DAY, actual: true})
+		return content
+	}
+	const now = utc(2026, 3, 3)   //2 days after the "1" tick
+
+	//narrow: the gap clears the OLD, unscaled threshold (34px) - the tick is legitimately far enough
+	//and correctly prints. This is the control: it proves the two paints differ only by width/font,
+	//not by some other accident of the fixture.
+	c.W = 320
+	c.paintFrame(build(12), now, null)
+	expect((c.host.current || {}).innerHTML || "").toContain(">Apr 1<")
+
+	//wide: the SAME kind of gap, scaled so the raw pixel distance is similar - but fontNormal has
+	//grown past 9, so the threshold that used to be 34px is now wider, and the tick must give way
+	c.W = 800
+	c.paintFrame(build(31), now, null)
+	expect((c.host.current || {}).innerHTML || "").not.toContain(">Apr 1<")
+})
+
+test("a wide chart draws its own live-layer fonts at the design system's size, a narrow one at its authored size",
+async () => {
+	const ref = await mount()
+	const c = ref.current
+	const a = c.series("this")
+	const merged = c.union(a, c.series("last"))
+	const bodyPx = (DS.fontSize.body * 16).toFixed(2)
+
+	c.W = 320                                                //narrower than NARROW_W - a phone
+	c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
+	const narrow = (c.host.current || {}).innerHTML || ""
+	expect(narrow).toMatch(/font-size="9\.00"/)
+	expect(narrow).not.toMatch(new RegExp('font-size="' + bodyPx + '"'))
+
+	c.W = 800                                                //past WIDE_W - comfortably desktop
+	c.paintFrame(merged, a.now, c.frameOf(a), c.edgeOf(a))
+	const wide = (c.host.current || {}).innerHTML || ""
+	expect(wide).toMatch(new RegExp('font-size="' + bodyPx + '"'))
+	expect(wide).not.toMatch(/font-size="9\.00"/)
+})
+
+/* REPORTED: "the cursor's transaction list line spacing is also too small (mobile-dimensioned) so
+   lines overlap". The badge caption's own lines are laid out as SVG tspans at `dy="10"`-ish, a
+   line-height calibrated at fontNormal=9 (a ~1.11 ratio) - and the caption's own font-size IS
+   `fontNormal`, so once that started widening with the chart (same NARROW_W/WIDE_W as the two
+   entries above), the caption's lines kept the OLD, narrow spacing under the NEW, wider text and
+   started overlapping. */
+test("the cursor's own movement list keeps its line spacing proportioned to its own font, not the phone's", async () => {
+	//a second movement on the same day as the existing fixture's rent, so the caption actually wraps
+	//to more than one line
+	txns.push(new GenericTransaction(rentDay.toISOString(), -60, "coffee",
+		[{streamId: "food", amount: -60}], CHECKING, undefined, undefined, "iCoffee", "tCoffee"))
+	const ref = await mount()
+	const c = ref.current
+	await act(async () => {c.setState({at: rentDay})})
+
+	//the FIRST tspan of a wrapped caption always carries dy="0" (no offset from its own line) - the
+	//line-height under test is the SECOND tspan's, the one that actually separates two lines
+	const secondDy = svg => {
+		const all = (svg.match(/dy="([\d.]+)"/g) || []).map(m => Number(m.match(/[\d.]+/)[0]))
+		return all.filter(v => v > 0)[0]
+	}
+
+	c.W = 320
+	await act(async () => {c.paint()})
+	const narrowDy = secondDy((c.host.current || {}).innerHTML || "")
+	expect(narrowDy).toBeCloseTo(10, 1)                                 //fontNormal=9 here: the old spacing
+
+	c.W = 800
+	await act(async () => {c.paint()})
+	const wideDy = secondDy((c.host.current || {}).innerHTML || "")
+	//fontNormal has grown to the design system's own size (16) - the line-height must have grown
+	//with it, at the same ~1.11 ratio, not stayed at the phone's 10
+	expect(wideDy).toBeCloseTo(10*(16/9), 1)
+	expect(wideDy).toBeGreaterThan(narrowDy)
+})
+
+/* THE FONT'S OWN TREATMENT, LIFTED FROM MoneyFlowChart.js: not a device check, the chart's own
+   measured width - narrow (a phone) at its authored size, the design system's own rem size by the
+   time it is comfortably desktop-wide, smoothly between. Reported: the badge boost alone left the
+   FONTS "not the right treatment" on desktop; this is the fix, ported rather than reinvented -
+   MoneyFlowEngine's own `retype()` and TUNE.narrowW/wideW (360/640), carried to this tile's two font
+   roles instead of forked into a second implementation of the same idea. */
+test("the font widens smoothly with the chart's own measured width, not with a device check", () => {
+	const bodyPx = DS.fontSize.body * 16                    // "the design system's own size" at 16px root
+
+	//AT OR BELOW NARROW_W (360): the authored, phone-fitting sizes - unchanged from before this
+	expect(scaleAt(16, false, 360).fontSmall).toBeCloseTo(8, 5)
+	expect(scaleAt(16, false, 360).fontNormal).toBeCloseTo(9, 5)
+	expect(scaleAt(16, false, 0).fontSmall).toBeCloseTo(8, 5)         //narrower still clamps the same
+	//omitting the width entirely reads as narrow - a caller that has not measured yet gets the phone size
+	expect(scaleAt(16, false).fontNormal).toBeCloseTo(9, 5)
+
+	//AT OR ABOVE WIDE_W (640): the design system's own rem size, for BOTH roles - MoneyFlowChart's
+	//own §9.8 retires the small/body distinction on a wide card for the same reason
+	expect(scaleAt(16, false, 640).fontSmall).toBeCloseTo(bodyPx, 5)
+	expect(scaleAt(16, false, 640).fontNormal).toBeCloseTo(bodyPx, 5)
+	expect(scaleAt(16, false, 2000).fontSmall).toBeCloseTo(bodyPx, 5)  //wider still clamps the same
+
+	//BETWEEN THE TWO: linear, not a jump - exactly retype()'s own interpolation
+	const mid = scaleAt(16, false, 500)                      //halfway from 360 to 640
+	expect(mid.fontSmall).toBeCloseTo(8 + (bodyPx - 8)*0.5, 5)
+	expect(mid.fontNormal).toBeCloseTo(9 + (bodyPx - 9)*0.5, 5)
+
+	//AND IT TRACKS TEXT-ZOOM TOO, at both ends, since neither the authored nor the wide size is a
+	//bare pixel - `wideFontPx` reads the root just as `8*r`/`9*r` already did
+	const wide20 = scaleAt(20, false, 640)
+	expect(wide20.fontSmall).toBeCloseTo(DS.fontSize.body*20, 5)
+
+	//INDEPENDENT OF THE BADGE BOOST - a narrow desktop window (a resized browser) gets the small
+	//badge-boost-free... no: the badge boost is gated on Core.isMobile(), the font on width, and
+	//they must be free to disagree, e.g. a narrow desktop window
+	const narrowDesktop = scaleAt(16, true, 360)
+	expect(narrowDesktop.fontNormal).toBeCloseTo(9, 5)        //narrow: no font growth
+	expect(narrowDesktop.dotR).toBeGreaterThan(scaleAt(16, false, 360).dotR)  //still desktop-boosted
 })
 
 test("a frame mid-travel carries the beads and guides, not just the line", async () => {
